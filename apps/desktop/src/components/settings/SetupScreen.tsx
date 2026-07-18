@@ -1,0 +1,807 @@
+import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  AlertCircle,
+  BellRing,
+  CalendarCheck,
+  CheckCircle2,
+  Compass,
+  Download,
+  ExternalLink,
+  Eye,
+  FileText,
+  LoaderCircle,
+  Lock,
+  MessagesSquare,
+  Monitor,
+  Pause,
+  Play,
+  PlugZap,
+  RotateCcw,
+  Save,
+  Settings,
+  ShieldCheck,
+  Timer,
+  Upload
+} from "lucide-react";
+import type {
+  ActiveWindowSample,
+  ActivitySession,
+  AuditEvent,
+  OutlookCalendarEvent,
+  UserCorrection,
+  VisualContextInsight,
+  WorkBlock,
+  AIConfig,
+  AIProvider
+} from "../../../../../packages/domain/src/models";
+import { getLocalDateKey } from "../../lib/date";
+import { formatAuditTime, formatCount } from "../../lib/format";
+import { MAX_PROACTIVE_ALERTS_PER_DAY, MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY } from "../../lib/constants";
+import type { ProactiveAlertSettings } from "../../lib/proactiveAlerts";
+import {
+  downloadTextFile,
+  exportFilename,
+  exportMimeType,
+  serializeAuditTrail,
+  serializeWorkLedger,
+  type ExportFormat
+} from "../../lib/dataExport";
+import {
+  AI_PROVIDER_PRESETS,
+  aiProviderLabel,
+  createDefaultAIConfig,
+  getAIProviderPreset,
+  providerSupportsGeneration,
+  upgradeRetiredAppDefault
+} from "../../services/aiProviders";
+import { ConfirmDialog } from "../common/ConfirmDialog";
+import { CHAT_PROVIDERS } from "../../../../../packages/integrations/src/chat/chatSource";
+
+// Chat sources the prototype can ingest today: local file exports parsed on-device.
+// Providers that would need a native OAuth connector are omitted until one exists.
+const FILE_IMPORT_CHAT_PROVIDERS = CHAT_PROVIDERS.filter((provider) => provider.loopSafe);
+
+// Retention windows (in days) offered for auto-expiring stored activity samples.
+const RETENTION_OPTIONS = [7, 14, 30, 90] as const;
+
+// Reliable-capacity floors (%) offered for the proactive guardrail.
+const CAPACITY_THRESHOLD_OPTIONS = [5, 10, 15, 20] as const;
+
+// Optional proactive-alert rules (the capacity guardrail has its own row above).
+const OPTIONAL_ALERT_RULES = [
+  { key: "endOfDayReviewEnabled", label: "End-of-day review nudge", hint: "When blocks still need review late in the day" },
+  { key: "heavyDayAheadEnabled", label: "Heavy-day-ahead warning", hint: "The day before a meeting-heavy day" },
+  { key: "fragmentationEnabled", label: "Fragmentation nudge", hint: "When context-switching runs high" },
+  { key: "weeklyArtifactsEnabled", label: "Weekly summary ready", hint: "When the summary and forecast are ready to review" },
+] as const;
+
+interface TestConnectionResponse {
+  provider: string;
+  model: string;
+  message: string;
+}
+
+type ProviderStatus =
+  | { tone: "success" | "error" | "info"; message: string }
+  | null;
+
+export function SetupScreen({
+  paused,
+  setPaused,
+  visualContextEnabled,
+  setVisualContextEnabled,
+  visualContextInsights,
+  calendarEvents,
+  activeWindowSamples,
+  activeWindowSessions,
+  captureError,
+  importError,
+  lastCalendarImportSummary,
+  onImportOutlookIcs,
+  chatImportError,
+  onImportChatExport,
+  aiConfig,
+  setAiConfig,
+  blocks,
+  corrections,
+  auditEvents,
+  onResetLocalData,
+  onExportBackup,
+  retentionDays,
+  setRetentionDays,
+  proactiveAlertSettings,
+  onProactiveAlertSettingsChange,
+  onReplayWalkthrough,
+}: {
+  paused: boolean;
+  setPaused: (value: boolean) => void;
+  visualContextEnabled: boolean;
+  setVisualContextEnabled: (value: boolean) => void;
+  visualContextInsights: VisualContextInsight[];
+  calendarEvents: OutlookCalendarEvent[];
+  activeWindowSamples: ActiveWindowSample[];
+  activeWindowSessions: ActivitySession[];
+  captureError: string | null;
+  importError: string | null;
+  lastCalendarImportSummary: string | null;
+  onImportOutlookIcs: (file: File) => void;
+  chatImportError: string | null;
+  onImportChatExport: (file: File) => void;
+  aiConfig: AIConfig | null;
+  setAiConfig: (config: AIConfig | null) => void;
+  blocks: WorkBlock[];
+  corrections: UserCorrection[];
+  auditEvents: AuditEvent[];
+  onResetLocalData: () => void;
+  onExportBackup: () => void;
+  retentionDays: number | null;
+  setRetentionDays: (value: number | null) => void;
+  proactiveAlertSettings: ProactiveAlertSettings;
+  onProactiveAlertSettingsChange: (value: ProactiveAlertSettings) => void;
+  onReplayWalkthrough: () => void;
+}) {
+  const latestImport = calendarEvents.reduce<string | null>((latest, event) => {
+    if (!latest || new Date(event.imported_at) > new Date(latest)) {
+      return event.imported_at;
+    }
+    return latest;
+  }, null);
+  const visualCapturesToday = visualContextInsights.filter((insight) => getLocalDateKey(new Date(insight.captured_at)) === getLocalDateKey()).length;
+
+  const [draftConfig, setDraftConfig] = useState<AIConfig>(() =>
+    upgradeRetiredAppDefault(aiConfig || createDefaultAIConfig())
+  );
+  const [providerStatus, setProviderStatus] = useState<ProviderStatus>(() =>
+    aiConfig && aiConfig.model !== upgradeRetiredAppDefault(aiConfig).model
+      ? { tone: "info", message: `Updated the retired ${aiConfig.model} default. Save to keep the new model.` }
+      : null
+  );
+  const [isTesting, setIsTesting] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const selectedPreset = getAIProviderPreset(draftConfig.provider);
+  const modelSuggestions =
+    selectedPreset.modelSuggestions ?? (selectedPreset.model ? [selectedPreset.model] : []);
+  const isDirty = !aiConfig || JSON.stringify(draftConfig) !== JSON.stringify(aiConfig);
+
+  const updateDraftConfig = (patch: Partial<AIConfig>) => {
+    const newConfig: AIConfig = { ...draftConfig, ...patch };
+    if (patch.provider) {
+      const preset = getAIProviderPreset(patch.provider);
+      newConfig.baseUrl = preset.baseUrl;
+      newConfig.model = preset.model;
+      newConfig.visionModel = preset.visionModel;
+    }
+    setDraftConfig(newConfig);
+    setProviderStatus(null);
+  };
+
+  const restoreDefaults = () => {
+    const defaults = createDefaultAIConfig(draftConfig.provider);
+    setDraftConfig({ ...defaults, apiKey: draftConfig.apiKey });
+    setProviderStatus({ tone: "info", message: `Restored the recommended ${selectedPreset.label} settings.` });
+  };
+
+  const saveAIConfig = () => {
+    const config = {
+      ...draftConfig,
+      apiKey: draftConfig.apiKey.trim(),
+      baseUrl: draftConfig.baseUrl?.trim().replace(/\/+$/, ""),
+      model: draftConfig.model.trim(),
+      visionModel: draftConfig.visionModel?.trim() || undefined
+    };
+    if (!config.apiKey || !config.baseUrl || !config.model) {
+      setProviderStatus({ tone: "error", message: "API key, base URL, and model are required." });
+      return;
+    }
+    setDraftConfig(config);
+    setAiConfig(config);
+    setProviderStatus({ tone: "success", message: "Provider settings saved locally." });
+  };
+
+  const testConnection = async () => {
+    if (!draftConfig.apiKey.trim() || !draftConfig.baseUrl?.trim() || !draftConfig.model.trim()) {
+      setProviderStatus({ tone: "error", message: "Enter an API key, base URL, and model before testing." });
+      return;
+    }
+    if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
+      setProviderStatus({
+        tone: "error",
+        message: "Connection testing needs the desktop app — the browser preview can't reach your provider. Your settings can still be saved."
+      });
+      return;
+    }
+
+    setIsTesting(true);
+    setProviderStatus(null);
+    const testedConfig: AIConfig = {
+      ...draftConfig,
+      apiKey: draftConfig.apiKey.trim(),
+      baseUrl: draftConfig.baseUrl.trim().replace(/\/+$/, ""),
+      model: draftConfig.model.trim(),
+      visionModel: draftConfig.visionModel?.trim() || undefined
+    };
+    try {
+      const result = await invoke<TestConnectionResponse>("test_ai_connection", {
+        request: {
+          aiConfig: testedConfig
+        }
+      });
+      setDraftConfig(testedConfig);
+      setAiConfig(testedConfig);
+      setProviderStatus({ tone: "success", message: result.message });
+    } catch (error) {
+      setProviderStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const exportLedger = (format: ExportFormat) => {
+    downloadTextFile(
+      exportFilename("work-ledger", format),
+      serializeWorkLedger(blocks, format),
+      exportMimeType(format)
+    );
+  };
+
+  const exportAudit = (format: ExportFormat) => {
+    downloadTextFile(
+      exportFilename("audit-trail", format),
+      serializeAuditTrail(auditEvents, format),
+      exportMimeType(format)
+    );
+  };
+
+  const onRetentionChange = (value: string) => {
+    setRetentionDays(value === "off" ? null : Number(value));
+  };
+
+  // Nudge: let the user save a FULL local backup before the irreversible wipe —
+  // covering every data class the reset destroys (blocks, activity, imports,
+  // corrections, the audit trail, forecasts, narratives, plays, and saved skills),
+  // not just the ledger + audit. Handled in App.tsx (where the full state + audit
+  // emitter live). The dialog stays open after exporting so they can review the
+  // download and then confirm (or cancel).
+  const exportBeforeReset = () => {
+    onExportBackup();
+  };
+
+  return (
+    <section className="screen settings-screen">
+      <div className="screen-header">
+        <div>
+          <p className="eyebrow">Settings</p>
+          <h1>Privacy and data sources</h1>
+          <p className="screen-intro">ClearCapacity collects only the signals you enable. Tracking can be paused at any time.</p>
+        </div>
+        {/* Secondary on purpose: the toolbar owns the always-visible pause control;
+            this is a contextual echo next to the privacy summary, not the page's CTA. */}
+        <button className="secondary-action" type="button" onClick={() => setPaused(!paused)}>
+          {paused ? <Play size={18} aria-hidden /> : <Pause size={18} aria-hidden />}
+          <span>{paused ? "Resume Tracking" : "Pause Tracking"}</span>
+        </button>
+      </div>
+
+      <div className="settings-walkthrough-replay">
+        <div>
+          <strong>App walkthrough</strong>
+          <span>Replay the guided tour of the main sections.</span>
+        </div>
+        <button className="ghost-action" type="button" onClick={onReplayWalkthrough}>
+          <Compass size={15} aria-hidden />
+          <span>Replay walkthrough</span>
+        </button>
+      </div>
+
+      <section className="privacy-summary">
+        <div className={paused ? "privacy-state is-paused" : "privacy-state"}>
+          <span className={paused ? "live-dot is-paused" : "live-dot"} />
+          <div>
+            <strong>{paused ? "Tracking is paused" : "Tracking is active"}</strong>
+            <span>{paused ? "No new activity or visual signals are being collected." : "Foreground app and window-title metadata stay on this Mac."}</span>
+          </div>
+        </div>
+        <div className="privacy-facts">
+          <span><Lock size={15} aria-hidden /> Local storage</span>
+          <span><Eye size={15} aria-hidden /> User-reviewed output</span>
+          <span><ShieldCheck size={15} aria-hidden /> No keystrokes or webcam</span>
+        </div>
+      </section>
+
+      <div className="settings-section-heading">
+        <div>
+          <h2>Data sources</h2>
+          <span>Enable sources only when they add useful workload context.</span>
+        </div>
+      </div>
+
+      <section className="settings-row">
+        <div className="settings-row-icon"><Monitor size={18} aria-hidden /></div>
+        <div>
+          <h2>Active window activity</h2>
+          <p>Records foreground app, window title, and timestamp locally. It never records keystrokes or file contents.</p>
+        </div>
+        <div className="settings-row-status">
+          <strong>{formatCount(activeWindowSessions.length)} session{activeWindowSessions.length === 1 ? "" : "s"}</strong>
+          <span>{formatCount(activeWindowSamples.length)} sample{activeWindowSamples.length === 1 ? "" : "s"} stored</span>
+          {captureError && <small className="import-error">{captureError}</small>}
+        </div>
+        <span className={paused ? "source-status is-paused" : "source-status is-active"}>
+          {paused ? <Pause size={13} aria-hidden /> : <span className="source-status-dot" />}
+          {paused ? "Paused" : "Active"}
+        </span>
+      </section>
+
+      <section className="settings-row">
+        <div className="settings-row-icon"><CalendarCheck size={18} aria-hidden /></div>
+        <div>
+          <h2>Outlook calendar</h2>
+          <p>Imports meeting titles and time windows from a local `.ics` export. Email bodies and meeting notes are ignored.</p>
+        </div>
+        <div className="settings-row-status">
+          <strong>{formatCount(calendarEvents.length)} event{calendarEvents.length === 1 ? "" : "s"}</strong>
+          <span>{latestImport ? (
+            <>Imported <time dateTime={latestImport}>{formatAuditTime(latestImport)}</time></>
+          ) : "Not imported yet"}</span>
+          {lastCalendarImportSummary && <small className="import-delta">{lastCalendarImportSummary}</small>}
+          {importError && <small className="import-error">{importError}</small>}
+        </div>
+        <label className="settings-control">
+          <Upload size={16} aria-hidden />
+          <span>Import Calendar</span>
+          <input
+            accept=".ics,text/calendar"
+            type="file"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onImportOutlookIcs(file);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
+      </section>
+
+      <section className="settings-row">
+        <div className="settings-row-icon"><MessagesSquare size={18} aria-hidden /></div>
+        <div>
+          <h2>Workplace chat</h2>
+          <p>Turn Slack, Teams, or Webex activity into reactive-work signals. Only metadata is read — timestamps, channels, and message counts — never message text, and nothing leaves this Mac.</p>
+        </div>
+        <div className="settings-row-status">
+          <strong>Metadata only</strong>
+          <span>No message text imported</span>
+          {chatImportError && <small className="import-error">{chatImportError}</small>}
+        </div>
+        <div className="chat-connect-options">
+          {FILE_IMPORT_CHAT_PROVIDERS.map((provider) => (
+            <label key={provider.id} className="settings-control" title={provider.description}>
+              <Upload size={15} aria-hidden />
+              <span>Import {provider.label}</span>
+              <input
+                accept=".json,application/json"
+                type="file"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) onImportChatExport(file);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+          ))}
+        </div>
+      </section>
+
+      <section className="settings-row">
+        <div className="settings-row-icon"><Eye size={18} aria-hidden /></div>
+        <div>
+          <h2>Visual context</h2>
+          <p>Optional screenshot analysis for sustained sessions. Images are sent to your chosen AI provider with `store: false` (where supported), then deleted locally.</p>
+        </div>
+        <div className="settings-row-status">
+          <strong>{visualContextEnabled ? "On" : "Off"}</strong>
+          <span>{visualCapturesToday}/{MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY} captures today</span>
+        </div>
+        <button className={visualContextEnabled ? "settings-control is-on" : "settings-control"} type="button" onClick={() => setVisualContextEnabled(!visualContextEnabled)}>
+          {visualContextEnabled ? "Disable Visual Context" : "Enable Visual Context"}
+        </button>
+      </section>
+
+      <div className="settings-section-heading">
+        <div>
+          <h2>AI assistance</h2>
+          <span>
+            {aiConfig?.apiKey
+              ? `Configured — ${getAIProviderPreset(aiConfig.provider).label} · ${aiConfig.model}. Every AI feature stays reviewable.`
+              : "Optional. One provider key unlocks classification, the Review Copilot, forecasts, summaries, and the Agent."}
+          </span>
+        </div>
+      </div>
+
+      <div className="ai-assistance">
+          <p>Raw activity metadata stays in local storage. AI features send only the data required for classification, forecasts, and summaries to the provider you select.</p>
+          <p>Window titles and screenshots may include sensitive details. Pause tracking or disable visual context before handling confidential work.</p>
+
+          <div className="ai-provider">
+            <div className="ai-provider-header">
+              <div className="ai-provider-title">
+                <span className="ai-provider-icon"><PlugZap size={17} aria-hidden /></span>
+                <div>
+                  <strong>AI Provider</strong>
+                  <small><Lock size={12} aria-hidden /> API keys and endpoints are stored locally only.</small>
+                </div>
+              </div>
+              {selectedPreset.docsUrl && (
+                <a
+                  className="ai-provider-docs"
+                  href={selectedPreset.docsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink size={12} aria-hidden />
+                  <span>{selectedPreset.label} model docs</span>
+                </a>
+              )}
+            </div>
+
+            <div className="ai-form">
+              <div className="ai-field">
+                <label htmlFor="ai-provider">Provider</label>
+                <select
+                  id="ai-provider"
+                  value={draftConfig.provider}
+                  onChange={(e) => updateDraftConfig({ provider: e.target.value as AIProvider })}
+                >
+                  {AI_PROVIDER_PRESETS.map(p => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
+                  ))}
+                </select>
+                {!providerSupportsGeneration(draftConfig.provider) && (
+                  <small className="ai-provider-support-note" role="note">
+                    <AlertCircle size={12} aria-hidden />
+                    <span>
+                      {aiProviderLabel(draftConfig.provider)} currently powers only the Agent chat.
+                      Classification, forecasts, summaries, the Review Copilot, acceleration, and visual
+                      context need an OpenAI (or OpenAI-compatible) key today.
+                    </span>
+                  </small>
+                )}
+              </div>
+
+              <div className="ai-field">
+                <label htmlFor="ai-api-key">API Key</label>
+                <input
+                  id="ai-api-key"
+                  type="password"
+                  autoComplete="off"
+                  placeholder={selectedPreset.keyPlaceholder}
+                  value={draftConfig.apiKey}
+                  onChange={(e) => updateDraftConfig({ apiKey: e.target.value })}
+                />
+              </div>
+
+              <div className="ai-field">
+                <label htmlFor="ai-base-url">Base URL</label>
+                <input
+                  id="ai-base-url"
+                  type="text"
+                  placeholder="https://api.example.com/v1"
+                  value={draftConfig.baseUrl || ""}
+                  onChange={(e) => updateDraftConfig({ baseUrl: e.target.value || undefined })}
+                />
+                <small>{selectedPreset.baseUrlNote}</small>
+              </div>
+
+              <div className="ai-field">
+                <label htmlFor="ai-model">Model</label>
+                <input
+                  id="ai-model"
+                  type="text"
+                  placeholder={selectedPreset.model || "provider-model-id"}
+                  value={draftConfig.model}
+                  onChange={(e) => updateDraftConfig({ model: e.target.value })}
+                />
+                <small>{selectedPreset.modelNote}</small>
+                {modelSuggestions.length > 0 && (
+                  <div className="ai-model-suggestions">
+                    <span className="ai-model-suggestions-label">Recommended</span>
+                    {modelSuggestions.map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        className="ai-model-chip"
+                        aria-pressed={draftConfig.model === suggestion}
+                        onClick={() => updateDraftConfig({ model: suggestion })}
+                      >
+                        {suggestion}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="ai-field">
+                <label htmlFor="ai-vision-model">Vision Model <span>Optional</span></label>
+                <input
+                  id="ai-vision-model"
+                  type="text"
+                  placeholder={selectedPreset.visionModel || "No recommended vision model"}
+                  value={draftConfig.visionModel || ""}
+                  onChange={(e) => updateDraftConfig({ visionModel: e.target.value || undefined })}
+                />
+                <small>{selectedPreset.visionNote}</small>
+              </div>
+            </div>
+
+            <div className="ai-provider-footer">
+              <button className="ai-text-button" type="button" onClick={restoreDefaults}>
+                <RotateCcw size={14} aria-hidden />
+                Restore recommended defaults
+              </button>
+              <div className="ai-provider-actions">
+                <button className="settings-control" type="button" onClick={testConnection} disabled={isTesting}>
+                  {isTesting ? <LoaderCircle className="spin" size={15} aria-hidden /> : <PlugZap size={15} aria-hidden />}
+                  {isTesting ? "Testing…" : "Test Connection"}
+                </button>
+                <button className="primary-action" type="button" onClick={saveAIConfig} disabled={!isDirty}>
+                  <Save size={15} aria-hidden />
+                  {isDirty ? "Save Settings" : "Saved"}
+                </button>
+              </div>
+            </div>
+
+            <div
+              className={`ai-provider-status${providerStatus ? ` is-${providerStatus.tone}` : ''}`}
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {providerStatus && (
+                <>
+                  {providerStatus.tone === "success"
+                    ? <CheckCircle2 size={15} aria-hidden />
+                    : providerStatus.tone === "error"
+                      ? <AlertCircle size={15} aria-hidden />
+                      : <Settings size={15} aria-hidden />}
+                  <span>{providerStatus.message}</span>
+                </>
+              )}
+            </div>
+          </div>
+      </div>
+
+      <div className="settings-section-heading">
+        <div>
+          <h2>Notifications</h2>
+          <span>Turn menu-bar alerts on or off, and choose which workload signals notify you.</span>
+        </div>
+      </div>
+
+      <section className="settings-row">
+        <div className="settings-row-icon"><BellRing size={18} aria-hidden /></div>
+        <div>
+          <h2>Proactive alerts</h2>
+          <p>Get a menu-bar notification when your reliable capacity runs low or carryover risk climbs. Alerts use capacity metrics only — never window titles or app names — and are capped at {MAX_PROACTIVE_ALERTS_PER_DAY} per day. Turn everything off with this switch, or fine-tune individual alerts below.</p>
+        </div>
+        <div className="settings-row-status">
+          <strong>{proactiveAlertSettings.enabled ? "On" : "Off"}</strong>
+          <span>{proactiveAlertSettings.enabled ? `Warns at or below ${proactiveAlertSettings.capacityThresholdPct}%` : "No notifications sent"}</span>
+        </div>
+        <button
+          className={proactiveAlertSettings.enabled ? "settings-control is-on" : "settings-control"}
+          type="button"
+          onClick={() => onProactiveAlertSettingsChange({ ...proactiveAlertSettings, enabled: !proactiveAlertSettings.enabled })}
+        >
+          {proactiveAlertSettings.enabled ? "Disable Alerts" : "Enable Alerts"}
+        </button>
+      </section>
+
+      {proactiveAlertSettings.enabled && (
+        <section className="settings-row">
+          <div className="settings-row-icon"><AlertCircle size={18} aria-hidden /></div>
+          <div>
+            <h2>Capacity guardrail</h2>
+            <p>Notify me when reliable new-work capacity drops to or below this level (or carryover risk spikes). Lower it to be warned only when capacity is nearly gone.</p>
+          </div>
+          <div className="settings-row-status">
+            <strong>{proactiveAlertSettings.capacityGuardrailEnabled ? "Active" : "Muted"}</strong>
+            <span>Floor at {proactiveAlertSettings.capacityThresholdPct}%</span>
+          </div>
+          <div className="data-export-options">
+            <label className="sr-only" htmlFor="capacity-threshold">Capacity warning threshold</label>
+            <select
+              id="capacity-threshold"
+              value={String(proactiveAlertSettings.capacityThresholdPct)}
+              onChange={(event) => onProactiveAlertSettingsChange({ ...proactiveAlertSettings, capacityThresholdPct: Number(event.target.value) })}
+            >
+              {CAPACITY_THRESHOLD_OPTIONS.map((value) => (
+                <option key={value} value={value}>At or below {value}%</option>
+              ))}
+            </select>
+            <button
+              className={proactiveAlertSettings.capacityGuardrailEnabled ? "settings-control is-on" : "settings-control"}
+              type="button"
+              onClick={() => onProactiveAlertSettingsChange({ ...proactiveAlertSettings, capacityGuardrailEnabled: !proactiveAlertSettings.capacityGuardrailEnabled })}
+            >
+              {proactiveAlertSettings.capacityGuardrailEnabled ? "Mute Guardrail" : "Unmute Guardrail"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {proactiveAlertSettings.enabled && OPTIONAL_ALERT_RULES.map((rule) => (
+        <section className="settings-row" key={rule.key}>
+          <div className="settings-row-icon"><BellRing size={18} aria-hidden /></div>
+          <div>
+            <h2>{rule.label}</h2>
+            <p>{rule.hint}.</p>
+          </div>
+          <div className="settings-row-status">
+            <strong>{proactiveAlertSettings[rule.key] ? "On" : "Off"}</strong>
+            <span>Metrics only</span>
+          </div>
+          <button
+            className={proactiveAlertSettings[rule.key] ? "settings-control is-on" : "settings-control"}
+            type="button"
+            aria-label={`${proactiveAlertSettings[rule.key] ? "Disable" : "Enable"} — ${rule.label}`}
+            onClick={() => onProactiveAlertSettingsChange({ ...proactiveAlertSettings, [rule.key]: !proactiveAlertSettings[rule.key] })}
+          >
+            {proactiveAlertSettings[rule.key] ? "Disable" : "Enable"}
+          </button>
+        </section>
+      ))}
+
+      <div className="settings-section-heading">
+        <div>
+          <h2>Data control</h2>
+          <span>Your ledger stays local. Export it, or set how long raw activity samples are kept.</span>
+        </div>
+      </div>
+
+      <section className="settings-row">
+        <div className="settings-row-icon"><Timer size={18} aria-hidden /></div>
+        <div>
+          <h2>Activity retention</h2>
+          <p>Automatically delete stored active-window samples older than the window you choose. Sessions and work blocks already derived from them are kept — only the raw samples expire.</p>
+        </div>
+        <div className="settings-row-status">
+          <strong>{formatCount(activeWindowSamples.length)} sample{activeWindowSamples.length === 1 ? "" : "s"} stored</strong>
+          <span>{retentionDays === null ? "Kept until you reset" : `Auto-expire after ${retentionDays} days`}</span>
+        </div>
+        <div className="data-export-options">
+          <label className="sr-only" htmlFor="retention-window">Activity retention window</label>
+          <select
+            id="retention-window"
+            value={retentionDays === null ? "off" : String(retentionDays)}
+            onChange={(event) => onRetentionChange(event.target.value)}
+          >
+            <option value="off">Keep all samples</option>
+            {RETENTION_OPTIONS.map((days) => (
+              <option key={days} value={days}>Last {days} days</option>
+            ))}
+          </select>
+        </div>
+      </section>
+
+      <section className="settings-row">
+        <div className="settings-row-icon"><Download size={18} aria-hidden /></div>
+        <div>
+          <h2>Export work ledger</h2>
+          <p>Download every classified work block as JSON or CSV. The file is saved locally — nothing leaves this Mac.</p>
+        </div>
+        <div className="settings-row-status">
+          <strong>{formatCount(blocks.length)} work block{blocks.length === 1 ? "" : "s"}</strong>
+          <span>{blocks.length === 0 ? "Nothing to export yet" : "JSON keeps full detail"}</span>
+        </div>
+        <div className="data-export-options">
+          <button
+            className="settings-control"
+            type="button"
+            disabled={blocks.length === 0}
+            onClick={() => exportLedger("json")}
+            aria-label="Export work ledger as JSON"
+          >
+            <Download size={15} aria-hidden />
+            <span>JSON</span>
+          </button>
+          <button
+            className="settings-control"
+            type="button"
+            disabled={blocks.length === 0}
+            onClick={() => exportLedger("csv")}
+            aria-label="Export work ledger as CSV"
+          >
+            <Download size={15} aria-hidden />
+            <span>CSV</span>
+          </button>
+        </div>
+      </section>
+
+      <section className="settings-row">
+        <div className="settings-row-icon"><FileText size={18} aria-hidden /></div>
+        <div>
+          <h2>Export audit trail</h2>
+          <p>Download the full explainability log — every classification, correction, and privacy action — as JSON or CSV.</p>
+        </div>
+        <div className="settings-row-status">
+          <strong>{formatCount(auditEvents.length)} audit event{auditEvents.length === 1 ? "" : "s"}</strong>
+          <span>{auditEvents.length === 0 ? "Nothing to export yet" : "Stored locally only"}</span>
+        </div>
+        <div className="data-export-options">
+          <button
+            className="settings-control"
+            type="button"
+            disabled={auditEvents.length === 0}
+            onClick={() => exportAudit("json")}
+            aria-label="Export audit trail as JSON"
+          >
+            <Download size={15} aria-hidden />
+            <span>JSON</span>
+          </button>
+          <button
+            className="settings-control"
+            type="button"
+            disabled={auditEvents.length === 0}
+            onClick={() => exportAudit("csv")}
+            aria-label="Export audit trail as CSV"
+          >
+            <Download size={15} aria-hidden />
+            <span>CSV</span>
+          </button>
+        </div>
+      </section>
+
+      <section className="settings-row">
+        <div className="settings-row-icon"><RotateCcw size={18} aria-hidden /></div>
+        <div>
+          <h2>Reset all local data</h2>
+          <p>Permanently clears everything ClearCapacity has stored on this device — work blocks, activity samples, corrections, the audit trail, forecasts, and calendar imports. Export first if you want a copy.</p>
+        </div>
+        <div className="settings-row-status">
+          <strong>Irreversible</strong>
+          <span>Everything stays local until then</span>
+        </div>
+        <button
+          className="settings-control"
+          type="button"
+          onClick={() => setConfirmingReset(true)}
+        >
+          <RotateCcw size={15} aria-hidden />
+          <span>Reset Data</span>
+        </button>
+      </section>
+
+      {confirmingReset && (
+        <ConfirmDialog
+          title="Reset all local data?"
+          description="This permanently clears everything ClearCapacity has stored on this device. It can't be undone."
+          confirmLabel="Reset everything"
+          onConfirm={() => {
+            setConfirmingReset(false);
+            onResetLocalData();
+          }}
+          onCancel={() => setConfirmingReset(false)}
+        >
+          <ul className="dialog-delete-list">
+            <li>{formatCount(blocks.length)} work {blocks.length === 1 ? "block" : "blocks"} &amp; activity samples</li>
+            <li>{formatCount(corrections.length)} {corrections.length === 1 ? "correction" : "corrections"}</li>
+            <li>The audit trail, forecasts &amp; weekly history</li>
+            <li>Calendar imports &amp; retention settings</li>
+            <li>Your saved AI provider settings &amp; credentials</li>
+          </ul>
+          <button
+            type="button"
+            className="secondary-action dialog-export-action"
+            onClick={exportBeforeReset}
+          >
+            <Download size={15} aria-hidden />
+            <span>Export my data first</span>
+          </button>
+        </ConfirmDialog>
+      )}
+    </section>
+  );
+}

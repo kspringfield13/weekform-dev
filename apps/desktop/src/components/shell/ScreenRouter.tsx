@@ -1,0 +1,435 @@
+import type { Screen, WindowMode } from "../../lib/types";
+import type {
+  ActiveWindowSample,
+  ActivitySession,
+  AuditEvent,
+  OutlookCalendarEvent,
+  ReviewCopilotSuggestion,
+  UserCorrection,
+  VisualContextInsight,
+  WorkBlock,
+  AIConfig,
+  AccelerationPlay,
+  AccelerationSignal,
+  SavedSkill,
+} from "../../../../../packages/domain/src/models";
+import type { PersistedForecastRecord, PersistedNarrativeRecord, ForecastAccuracyReview, PersistedSnapshotRecord } from "../../services/localStore";
+import type { computeWeeklyCapacitySnapshot, generateWeeklyNarrative, ChatStakeholderSummary, ForecastAccuracyTrend, ForecastTrackRecordEntry, InterruptionLoadAnalysis } from "../../../../../packages/inference/src/capacity";
+import type { RealizedSavingsEntry, RealizedSavingsSummary } from "../../../../../packages/inference/src/accelerate";
+
+import { CompactWidget } from "../compact/CompactWidget";
+import { SetupScreen } from "../settings/SetupScreen";
+import { LedgerScreen } from "../ledger/LedgerScreen";
+import { DailyReviewScreen } from "../review/DailyReviewScreen";
+import { WeeklyCapacityScreen } from "../capacity/WeeklyCapacityScreen";
+import { ForecastScreen } from "../capacity/ForecastScreen";
+import { NarrativeScreen } from "../narrative/NarrativeScreen";
+import { AuditLogScreen } from "../audit/AuditLogScreen";
+import { SensitiveReviewScreen } from "../audit/SensitiveReviewScreen";
+import { AgentScreen } from "../agent/AgentScreen";
+import { AccelerationScreen } from "../accelerate/AccelerationScreen";
+import { SkillsLibraryScreen } from "../accelerate/SkillsLibraryScreen";
+import type { OnboardingStep } from "../common/OnboardingCard";
+import type { ProactiveAlert, ProactiveAlertSettings } from "../../lib/proactiveAlerts";
+import type { PushToast } from "../../hooks/useToasts";
+
+interface ScreenRouterProps {
+  active: Screen;
+  windowMode: WindowMode;
+  // shared
+  paused: boolean;
+  setPaused: (value: boolean) => void;
+  blocks: WorkBlock[];
+  activeWindowSamples: ActiveWindowSample[];
+  activeWindowSessions: ActivitySession[];
+  snapshot: ReturnType<typeof computeWeeklyCapacitySnapshot>;
+  snapshotHistory: PersistedSnapshotRecord[];
+  interruptionLoad: InterruptionLoadAnalysis | null;
+  chatStakeholders: ChatStakeholderSummary | null;
+  accelerationPlays: AccelerationPlay[];
+  realizedSavings: RealizedSavingsEntry[];
+  realizedSavingsSummary: RealizedSavingsSummary | null;
+  dismissedPlayIds: string[];
+  actedOnPlayIds: string[];
+  onDismissPlay: (signal: AccelerationSignal) => void;
+  onMarkPlayActedOn: (signal: AccelerationSignal) => void;
+  onUnmarkPlayActedOn: (signalId: string) => void;
+  onRestoreDismissedPlays: () => void;
+  // saved skills library
+  savedSkills: SavedSkill[];
+  savedSkillIds: string[];
+  onSaveSkill: (play: AccelerationPlay) => void;
+  onRemoveSkill: (signalId: string) => void;
+  // acceleration AI synthesis (opt-in)
+  accelerationStatus: "idle" | "generating" | "error";
+  accelerationError: string | null;
+  onGenerateAccelerationPlays: () => void;
+  accelerationConfigured: boolean;
+  accelerationGeneratedAt: string | null;
+  hasAuthoredPlays: boolean;
+  onConfirm: (blockId: string) => void;
+  onExclude: (blockId: string) => void;
+  onRelabel: (blockId: string, field: keyof WorkBlock, value: WorkBlock[keyof WorkBlock]) => void;
+  onUndoLastCorrection: () => void;
+  canUndoLastCorrection: boolean;
+  onOpenScreen: (screen: Screen) => void;
+  // first-run onboarding
+  onboardingSteps: OnboardingStep[];
+  showOnboarding: boolean;
+  onDismissOnboarding: () => void;
+  onReplayWalkthrough: () => void;
+  // setup screen
+  visualContextEnabled: boolean;
+  setVisualContextEnabled: (value: boolean) => void;
+  visualContextInsights: VisualContextInsight[];
+  onDiscardInsight: (insightId: string) => void;
+  calendarEvents: OutlookCalendarEvent[];
+  captureError: string | null;
+  importError: string | null;
+  lastCalendarImportSummary: string | null;
+  onImportOutlookIcs: (file: File) => void;
+  chatImportError: string | null;
+  onImportChatExport: (file: File) => void;
+  aiConfig: AIConfig | null;
+  setAiConfig: (value: AIConfig | null) => void;
+  retentionDays: number | null;
+  setRetentionDays: (value: number | null) => void;
+  // proactive alerts (compact widget + setup screen)
+  proactiveAlert: ProactiveAlert | null;
+  onDismissProactiveAlert: () => void;
+  proactiveAlertSettings: ProactiveAlertSettings;
+  onProactiveAlertSettingsChange: (value: ProactiveAlertSettings) => void;
+  // ledger screen
+  classificationStatus: "idle" | "classifying" | "error";
+  classificationError: string | null;
+  visualContextStatus: "idle" | "capturing" | "error";
+  visualContextError: string | null;
+  onClassifySessions: () => void;
+  // corrections screen
+  corrections: UserCorrection[];
+  onResetLocalData: () => void;
+  onExportBackup: () => void;
+  // daily review screen
+  reviewSuggestions: ReviewCopilotSuggestion[];
+  reviewCopilotStatus: "idle" | "generating" | "error";
+  reviewCopilotError: string | null;
+  onGenerateReviewSuggestions: () => void;
+  onApplyReviewSuggestion: (suggestion: ReviewCopilotSuggestion) => void;
+  onDismissReviewSuggestion: (suggestionId: string) => void;
+  // weekly capacity + forecast
+  weekRangeLabel: string;
+  nextWeekRangeLabel: string;
+  // forecast screen
+  generatedForecast: PersistedForecastRecord | null;
+  forecastAccuracy: ForecastAccuracyReview | null;
+  forecastAccuracyTrend: ForecastAccuracyTrend | null;
+  forecastTrackRecord: ForecastTrackRecordEntry[];
+  forecastStatus: "idle" | "generating" | "error";
+  forecastError: string | null;
+  onGenerateForecast: () => void;
+  // narrative screen
+  narrative: ReturnType<typeof generateWeeklyNarrative>;
+  generatedNarrative: PersistedNarrativeRecord | null;
+  hasNarrativeEvidence: boolean;
+  narrativeGenerationStatus: "idle" | "generating" | "error";
+  narrativeGenerationError: string | null;
+  managerSummaryText: string | null;
+  onManagerSummaryChange: (value: string) => void;
+  onRegenerate: () => void;
+  // audit log screen
+  auditEvents: AuditEvent[];
+  // agent screen
+  todayKey: string;
+  currentWeekRangeLabel: string;
+  // transient feedback
+  pushToast: PushToast;
+}
+
+export function ScreenRouter({
+  active,
+  windowMode,
+  paused,
+  setPaused,
+  blocks,
+  activeWindowSamples,
+  activeWindowSessions,
+  snapshot,
+  snapshotHistory,
+  interruptionLoad,
+  chatStakeholders,
+  accelerationPlays,
+  realizedSavings,
+  realizedSavingsSummary,
+  dismissedPlayIds,
+  actedOnPlayIds,
+  onDismissPlay,
+  onMarkPlayActedOn,
+  onUnmarkPlayActedOn,
+  onRestoreDismissedPlays,
+  savedSkills,
+  savedSkillIds,
+  onSaveSkill,
+  onRemoveSkill,
+  accelerationStatus,
+  accelerationError,
+  onGenerateAccelerationPlays,
+  accelerationConfigured,
+  accelerationGeneratedAt,
+  hasAuthoredPlays,
+  onConfirm,
+  onExclude,
+  onRelabel,
+  onUndoLastCorrection,
+  canUndoLastCorrection,
+  onOpenScreen,
+  onboardingSteps,
+  showOnboarding,
+  onDismissOnboarding,
+  onReplayWalkthrough,
+  visualContextEnabled,
+  setVisualContextEnabled,
+  visualContextInsights,
+  onDiscardInsight,
+  calendarEvents,
+  captureError,
+  importError,
+  lastCalendarImportSummary,
+  onImportOutlookIcs,
+  chatImportError,
+  onImportChatExport,
+  aiConfig,
+  setAiConfig,
+  retentionDays,
+  setRetentionDays,
+  proactiveAlert,
+  onDismissProactiveAlert,
+  proactiveAlertSettings,
+  onProactiveAlertSettingsChange,
+  classificationStatus,
+  classificationError,
+  visualContextStatus,
+  visualContextError,
+  onClassifySessions,
+  corrections,
+  onResetLocalData,
+  onExportBackup,
+  reviewSuggestions,
+  reviewCopilotStatus,
+  reviewCopilotError,
+  onGenerateReviewSuggestions,
+  onApplyReviewSuggestion,
+  onDismissReviewSuggestion,
+  weekRangeLabel,
+  nextWeekRangeLabel,
+  generatedForecast,
+  forecastAccuracy,
+  forecastAccuracyTrend,
+  forecastTrackRecord,
+  forecastStatus,
+  forecastError,
+  onGenerateForecast,
+  narrative,
+  generatedNarrative,
+  hasNarrativeEvidence,
+  narrativeGenerationStatus,
+  narrativeGenerationError,
+  managerSummaryText,
+  onManagerSummaryChange,
+  onRegenerate,
+  auditEvents,
+  todayKey,
+  currentWeekRangeLabel,
+  pushToast,
+}: ScreenRouterProps) {
+  if (windowMode === "compact") {
+    return (
+      <CompactWidget
+        paused={paused}
+        activeWindowSamples={activeWindowSamples}
+        activeWindowSessions={activeWindowSessions}
+        blocks={blocks}
+        snapshot={snapshot}
+        onPauseChange={setPaused}
+        onOpenScreen={onOpenScreen}
+        onConfirm={onConfirm}
+        onExclude={onExclude}
+        proactiveAlert={proactiveAlert}
+        onDismissProactiveAlert={onDismissProactiveAlert}
+      />
+    );
+  }
+
+  return (
+    <>
+      {active === "setup" && (
+        <SetupScreen
+          paused={paused}
+          setPaused={setPaused}
+          visualContextEnabled={visualContextEnabled}
+          setVisualContextEnabled={setVisualContextEnabled}
+          visualContextInsights={visualContextInsights}
+          calendarEvents={calendarEvents}
+          activeWindowSamples={activeWindowSamples}
+          activeWindowSessions={activeWindowSessions}
+          captureError={captureError}
+          importError={importError}
+          lastCalendarImportSummary={lastCalendarImportSummary}
+          onImportOutlookIcs={onImportOutlookIcs}
+          chatImportError={chatImportError}
+          onImportChatExport={onImportChatExport}
+          aiConfig={aiConfig}
+          setAiConfig={setAiConfig}
+          blocks={blocks}
+          corrections={corrections}
+          auditEvents={auditEvents}
+          onResetLocalData={onResetLocalData}
+          onExportBackup={onExportBackup}
+          retentionDays={retentionDays}
+          setRetentionDays={setRetentionDays}
+          proactiveAlertSettings={proactiveAlertSettings}
+          onProactiveAlertSettingsChange={onProactiveAlertSettingsChange}
+          onReplayWalkthrough={onReplayWalkthrough}
+        />
+      )}
+      {active === "ledger" && (
+        <LedgerScreen
+          blocks={blocks}
+          activeWindowSamples={activeWindowSamples}
+          activeWindowSessions={activeWindowSessions}
+          visualContextInsights={visualContextInsights}
+          captureError={captureError}
+          classificationStatus={classificationStatus}
+          classificationError={classificationError}
+          visualContextStatus={visualContextStatus}
+          visualContextError={visualContextError}
+          paused={paused}
+          onClassifySessions={onClassifySessions}
+          onConfirm={onConfirm}
+          onExclude={onExclude}
+          onRelabel={onRelabel}
+          onOpenScreen={onOpenScreen}
+        />
+      )}
+      {active === "daily" && (
+        <DailyReviewScreen
+          blocks={blocks}
+          onboardingSteps={onboardingSteps}
+          showOnboarding={showOnboarding}
+          onDismissOnboarding={onDismissOnboarding}
+          onOpenScreen={onOpenScreen}
+          reviewSuggestions={reviewSuggestions}
+          reviewCopilotStatus={reviewCopilotStatus}
+          reviewCopilotError={reviewCopilotError}
+          onGenerateReviewSuggestions={onGenerateReviewSuggestions}
+          onApplyReviewSuggestion={onApplyReviewSuggestion}
+          onDismissReviewSuggestion={onDismissReviewSuggestion}
+          onConfirm={onConfirm}
+          onExclude={onExclude}
+          onRelabel={onRelabel}
+          onUndoLastCorrection={onUndoLastCorrection}
+          canUndoLastCorrection={canUndoLastCorrection}
+          corrections={corrections}
+          pushToast={pushToast}
+        />
+      )}
+      {active === "weekly" && (
+        <WeeklyCapacityScreen
+          snapshot={snapshot}
+          snapshotHistory={snapshotHistory}
+          interruptionLoad={interruptionLoad}
+          chatStakeholders={chatStakeholders}
+          weekRangeLabel={weekRangeLabel}
+          hasWorkBlocks={blocks.length > 0}
+          blocks={blocks}
+          onOpenScreen={onOpenScreen}
+        />
+      )}
+      {active === "forecast" && (
+        <ForecastScreen
+          snapshot={snapshot}
+          snapshotHistory={snapshotHistory}
+          nextWeekRangeLabel={nextWeekRangeLabel}
+          onOpenScreen={onOpenScreen}
+          corrections={corrections}
+          generatedForecast={generatedForecast}
+          forecastAccuracy={forecastAccuracy}
+          forecastAccuracyTrend={forecastAccuracyTrend}
+          forecastTrackRecord={forecastTrackRecord}
+          forecastStatus={forecastStatus}
+          forecastError={forecastError}
+          onGenerateForecast={onGenerateForecast}
+          hasWorkBlocks={blocks.length > 0}
+        />
+      )}
+      {active === "narrative" && (
+        <NarrativeScreen
+          narrative={narrative}
+          generatedNarrative={generatedNarrative}
+          weekRangeLabel={weekRangeLabel}
+          hasNarrativeEvidence={hasNarrativeEvidence}
+          generationStatus={narrativeGenerationStatus}
+          generationError={narrativeGenerationError}
+          managerSummaryText={managerSummaryText}
+          onManagerSummaryChange={onManagerSummaryChange}
+          onRegenerate={onRegenerate}
+          pushToast={pushToast}
+        />
+      )}
+      {active === "audit" && <AuditLogScreen auditEvents={auditEvents} pushToast={pushToast} />}
+      {active === "sensitive" && (
+        <SensitiveReviewScreen
+          visualContextInsights={visualContextInsights}
+          onDiscardInsight={onDiscardInsight}
+        />
+      )}
+      {active === "accelerate" && (
+        <AccelerationScreen
+          signals={accelerationPlays}
+          realizedSavings={realizedSavings}
+          realizedSavingsSummary={realizedSavingsSummary}
+          dismissedPlayIds={dismissedPlayIds}
+          actedOnPlayIds={actedOnPlayIds}
+          savedSkillIds={savedSkillIds}
+          onDismissPlay={onDismissPlay}
+          onMarkPlayActedOn={onMarkPlayActedOn}
+          onUnmarkPlayActedOn={onUnmarkPlayActedOn}
+          onSaveSkill={onSaveSkill}
+          onRemoveSkill={onRemoveSkill}
+          onRestoreDismissedPlays={onRestoreDismissedPlays}
+          hasWorkBlocks={blocks.length > 0}
+          onOpenScreen={onOpenScreen}
+          generateStatus={accelerationStatus}
+          generateError={accelerationError}
+          onGenerateSkills={onGenerateAccelerationPlays}
+          aiConfigured={accelerationConfigured}
+          generatedAt={accelerationGeneratedAt}
+          hasAuthoredPlays={hasAuthoredPlays}
+          pushToast={pushToast}
+        />
+      )}
+      {active === "skills" && (
+        <SkillsLibraryScreen
+          savedSkills={savedSkills}
+          onRemoveSkill={onRemoveSkill}
+          onOpenScreen={onOpenScreen}
+          pushToast={pushToast}
+        />
+      )}
+      {active === "agent" && (
+        <AgentScreen
+          blocks={blocks}
+          snapshot={snapshot}
+          activeWindowSessions={activeWindowSessions}
+          calendarEvents={calendarEvents}
+          corrections={corrections}
+          visualContextInsights={visualContextInsights}
+          todayKey={todayKey}
+          currentWeekRangeLabel={currentWeekRangeLabel}
+          aiConfig={aiConfig}
+          onOpenScreen={onOpenScreen}
+          pushToast={pushToast}
+        />
+      )}
+    </>
+  );
+}
