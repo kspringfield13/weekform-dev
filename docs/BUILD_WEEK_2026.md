@@ -16,7 +16,7 @@ The first Weekform naming exploration is also prior work. On July 11, GPT-5.6 co
 
 ## Work completed during Build Week
 
-The submitted direction builds on that baseline. The table below is a selected material-change record from the reviewed source history through July 16 plus the pending July 18 working tree; it is not exhaustive. July 13 work included productionizing the approved identity alongside reliability and accessibility improvements; the larger product refresh followed on July 14. Final-submission behavior takes precedence where a later row removes or replaces an earlier experiment.
+The submitted direction builds on that baseline. The table below is a selected material-change record from the reviewed source history through July 16 plus the July 18 public-release work; it is not exhaustive. July 13 work included productionizing the approved identity alongside reliability and accessibility improvements; the larger product refresh followed on July 14. Final-submission behavior takes precedence where a later row removes or replaces an earlier experiment.
 
 | Date (EDT) | Commit | Build Week work |
 | --- | --- | --- |
@@ -31,9 +31,9 @@ The submitted direction builds on that baseline. The table below is a selected m
 | July 15 | `cf156f6`, `f96256a`, `b8cdfe2`, `290d8a1` | Hardened usage imports, wrapped chat exports, generated AI data, and persisted state. |
 | July 16 | `cf51d8a` | Improved the compact experience and enabled Agent actions. |
 | July 16 | `a566eb6` | Added motion polish across review, toasts, dialogs, onboarding, and buttons. |
-| July 18 | Working tree pending public-history creation | Removed retired integration paths, made OpenAI the recommended path, added audit-data migration, hardened the source installer, migrated the current AI SDK integration, restored reproducible build inputs, and documented submission provenance. |
+| July 18 | `1c08a6e` | Published the consolidated Build Week implementation: removed retired integration paths, made OpenAI the recommended path, added audit-data migration, hardened the source installer, migrated the current AI SDK integration, and restored reproducible build inputs. |
 
-The July 18 row must be replaced with its public commit hash when the clean public history is created. It is intentionally not assigned an inherited source-history hash.
+The July 13–16 hashes above identify the dated private source evidence. Public commit `1c08a6e` consolidates that in-period implementation on top of the sanitized public baseline without publishing the inherited private commit chain.
 
 ## Codex and GPT-5.6 evidence
 
@@ -93,7 +93,15 @@ Keep this as the single primary value in the submission form. The July 18 task r
 
 ## Evidence and reproducibility
 
-The original source baseline is permanently identified above by full hash. It belongs to the private source history and will not be copied into the public repository because that history contains retired names and metadata. After the clean public baseline is created, verify the public comparison with:
+The original source baseline is permanently identified above by full hash. It belongs to the private source history and was not copied into the public repository because that history contains retired names and metadata.
+
+The clean public history is anchored by:
+
+- **Sanitized pre-Build Week baseline:** `fb16b3a7506f4119fd8e95403e80d68825aa3b2c`
+- **Baseline tag:** `pre-build-week-2026`
+- **Consolidated Build Week implementation:** `1c08a6eb1fe3e888de940372324185736651aeed`
+
+Verify the public comparison with:
 
 ```bash
 git show --stat pre-build-week-2026
@@ -101,13 +109,13 @@ git diff --stat pre-build-week-2026..HEAD
 git log --date=iso-strict --oneline pre-build-week-2026..HEAD
 ```
 
-The public baseline commit and tag should be recorded here before submission. The maintainers retain the private source history needed to verify `e66fa9a9f13bb688387bfc655394c3e5c7f1100f`, `25dc18b`, and `0b8f611`; until equivalent public hashes are recorded, those objects are maintainer-held evidence references rather than promised objects in the clean public history.
+The maintainers retain the private source history needed to verify `e66fa9a9f13bb688387bfc655394c3e5c7f1100f`, `25dc18b`, and `0b8f611`. Those source objects are maintainer-held evidence references rather than promised objects in the clean public history.
 
 ## Public-repository integrity
 
 The public `weekform-dev` repository should start with an explicitly labeled **pre-existing baseline snapshot**, followed by dated Build Week commits. The baseline must be described as a public-release snapshot derived from the source baseline, with publication-only redactions documented, rather than claimed as the original commit. This structure keeps the prior/new boundary visible without publishing private Codex logs, retired history, or a false claim that prior work was created during the submission period.
 
-Before the first public push:
+The publication process requires these checks before the first public push:
 
 1. Confirm the intended baseline snapshot is complete and buildable.
 2. Create a new root history; do not push inherited branches, tags, or commit objects.
