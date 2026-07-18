@@ -14,7 +14,7 @@ The desktop app can collect:
 - derived activity sessions, work blocks, forecasts, and narratives
 - an audit trail of collection and review events
 
-This data is stored in the Tauri webview's local storage. It is not currently encrypted by Weekform and remains on the local macOS user account until the user resets prototype data or clears the application's webview storage.
+The desktop app persists this data locally with the Tauri Store plugin. Web and demo builds fall back to browser local storage. Weekform does not currently encrypt either store; data remains on the local macOS user account until the user resets prototype data or clears the corresponding application storage.
 
 ## AI and OpenAI API Data
 
@@ -43,10 +43,10 @@ When enabled, the app may:
 1. Capture the current macOS screen after a sustained activity session.
 2. Write the image to a temporary PNG.
 3. Read and encode the image for an OpenAI API request.
-4. Delete the temporary local file.
+4. Attempt to delete the temporary local file immediately after a successful read and before the provider request.
 5. Store only the derived text insight and audit metadata locally.
 
-The screenshot can include content outside the active application because the prototype captures the current screen. Do not enable this feature around confidential, regulated, personal, or otherwise sensitive material.
+Filesystem errors can prevent temporary-file cleanup. The screenshot can also include content outside the active application because the prototype captures the current screen. Do not enable this feature around confidential, regulated, personal, or otherwise sensitive material.
 
 ## Controls
 

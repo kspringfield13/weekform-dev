@@ -79,6 +79,17 @@ The hackathon-readiness and provenance task is supplemental evidence:
 - **Started:** July 18, 2026 at 11:56:26 AM EDT (15:56:26Z)
 - **Model:** `gpt-5.6-sol`
 
+### README product presentation
+
+The public product-presentation refresh is recorded in a separate in-period task:
+
+- **Codex Session ID:** `019f7666-06b1-7a73-80dd-b8ff3a8f9933`
+- **Date:** July 18, 2026
+- **Outcome:** Codex reorganized the README around the approved Weekform identity and product story, captured the real weekly-capacity interface with synthetic demo data, clarified installation and privacy boundaries, and retained the full Build Week evidence record.
+- **Human design direction:** Kyle required the application icon and name to lead the page, selected the weekly-capacity view as the primary product image, and set the `xai-org/grok-build` README as the visual-quality reference while keeping prototype and licensing status explicit.
+
+This task is supporting evidence for the public presentation only. It does not replace the primary Project-thread value used for `/feedback`.
+
 Only the session IDs and concise evidence summaries are intended for publication. Raw Codex rollout/session files can contain prompts, local paths, tool output, or other private context and are not part of the repository.
 
 ## Required `/feedback` submission field
