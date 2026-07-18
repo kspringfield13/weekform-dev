@@ -7,8 +7,9 @@ import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from "re
  * management the loop's a11y conventions expect: focus moves into the dialog on
  * open (the safe Cancel control, not the destructive confirm), is trapped while
  * open (Tab/Shift+Tab cycle within the panel), Esc and overlay-click both cancel,
- * and focus is restored to the trigger when the dialog unmounts. The animation is
- * covered by the global `prefers-reduced-motion` reset in styles.css.
+ * and focus is restored to the trigger when the dialog unmounts. The entrance
+ * animations carry their own `prefers-reduced-motion` override next to the dialog
+ * rules in styles.css.
  */
 export function ConfirmDialog({
   title,

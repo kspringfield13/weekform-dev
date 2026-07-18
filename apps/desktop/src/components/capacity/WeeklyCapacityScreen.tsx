@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ArrowDown, ArrowUp, BarChart3, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Info, Minus, Upload, Zap } from "lucide-react";
+import { ArrowDown, ArrowUp, BarChart3, ChevronDown, ChevronUp, Info, Minus, Upload, Zap } from "lucide-react";
 import type { WorkBlock } from "../../../../../packages/domain/src/models";
 import type { Screen } from "../../lib/types";
 import type { PersistedSnapshotRecord } from "../../services/localStore";
@@ -26,7 +26,7 @@ const BASELINE_METRICS: Array<{
   { key: "reliable_new_work_capacity_pct", label: "Reliable capacity", scale: 1, betterWhen: "higher" },
   { key: "reactive_pct", label: "Reactive load", scale: 1, betterWhen: "lower" },
   { key: "meeting_pct", label: "Meeting density", scale: 1, betterWhen: "lower" },
-  { key: "context_switch_score", label: "Context switching", scale: 100, betterWhen: "lower" },
+  { key: "context_switch_score", label: "Context switch burden", scale: 100, betterWhen: "lower" },
 ];
 
 // Plain-language gloss for each part of the committed-load breakdown, keyed on the part.key
@@ -40,6 +40,17 @@ const COMMITTED_PART_GLOSS: Record<string, string> = {
   fragmentation: "Capacity lost to context-switching across many short, scattered blocks rather than sustained focus.",
   wip: "Extra load from carrying too many projects in progress at once.",
 };
+
+const CAPACITY_PRESSURE_LABELS: Record<string, string> = {
+  recurring: "recurring commitments",
+  reactive: "reactive work",
+  carryover: "carryover risk",
+  fragmentation: "context switching",
+  wip: "parallel work",
+};
+
+const GENERAL_CAPACITY_DESCRIPTION =
+  "See how much of your standard 40-hour week is already committed and how much dependable room remains for new planned work.";
 
 // Delivery-risk bar saturation points (%): the Carryover / Meeting-density RiskRow bars fill to
 // 100% at these shares of the week. Single-sourced because each value is stated verbatim in its
@@ -132,7 +143,7 @@ function AllocationBreakdown<T extends string>({
               <span className="allocation-breakdown-label">
                 <span className="dot" style={{ background: colors[item.label] }} />
                 <span>
-                  <strong>{item.label}</strong>
+                  <strong title={item.label}>{item.label}</strong>
                   <small>{Math.round(share)}% of allocated work</small>
                 </span>
               </span>
@@ -167,7 +178,7 @@ export function WeeklyCapacityScreen({
   blocks: WorkBlock[];
   onOpenScreen: (screen: Screen) => void;
 }) {
-  const [weekOffset, setWeekOffset] = useState(0);
+  const weekOffset = 0;
   const [riskExpanded, setRiskExpanded] = useState(false);
 
   const viewedMonday = useMemo(() => {
@@ -333,20 +344,65 @@ export function WeeklyCapacityScreen({
     });
   }, [baselines, snapshot]);
 
+  const capacityDescription = useMemo(() => {
+    if (!hasWorkBlocks || (!isCurrentWeek && viewedBlocks.length === 0)) {
+      return GENERAL_CAPACITY_DESCRIPTION;
+    }
+
+    const committed = Math.round(snapshot.committed_utilization_pct);
+    const allocated = Math.round(snapshot.allocated_pct);
+    const reliable = Math.round(snapshot.reliable_new_work_capacity_pct);
+    const primaryPressure = committedBreakdown.parts.reduce<(typeof committedBreakdown.parts)[number] | null>(
+      (largest, part) => (!largest || part.value > largest.value ? part : largest),
+      null
+    );
+    const pressureLabel = primaryPressure ? CAPACITY_PRESSURE_LABELS[primaryPressure.key] : null;
+    const opening = committed > 0
+      ? `${committed}% of the week is already committed${pressureLabel ? `, led by ${pressureLabel}` : ""}.`
+      : allocated > 0
+        ? `${allocated}% of the standard week is currently allocated, with little forward-committed load.`
+        : GENERAL_CAPACITY_DESCRIPTION;
+
+    if (opening === GENERAL_CAPACITY_DESCRIPTION) return opening;
+
+    const guidance = reliable >= 30
+      ? "there is room for another focused commitment while preserving delivery buffer."
+      : reliable >= 15
+        ? "keep new commitments focused to preserve delivery buffer."
+        : reliable > 0
+          ? "keep additional commitments small until some load clears."
+          : "let existing load clear before committing more planned work.";
+    const reliableBaseline = baselineChips.find((chip) => chip.key === "reliable_new_work_capacity_pct");
+
+    if (!reliableBaseline) {
+      return `${opening} ${guidance.charAt(0).toUpperCase()}${guidance.slice(1)}`;
+    }
+
+    const comparison = reliableBaseline.delta === 0
+      ? `is in line with your ${baselines.week_count}-week median`
+      : `is ${Math.abs(reliableBaseline.delta)} point${Math.abs(reliableBaseline.delta) === 1 ? "" : "s"} ${reliableBaseline.delta > 0 ? "above" : "below"} your ${baselines.week_count}-week median`;
+
+    return `${opening} Reliable capacity ${comparison}; ${guidance}`;
+  }, [
+    baselineChips,
+    baselines.week_count,
+    committedBreakdown.parts,
+    hasWorkBlocks,
+    isCurrentWeek,
+    snapshot.allocated_pct,
+    snapshot.committed_utilization_pct,
+    snapshot.reliable_new_work_capacity_pct,
+    viewedBlocks.length,
+  ]);
+
   if (!hasWorkBlocks) {
     return (
       <section className="screen capacity-screen">
         <div className="screen-header">
           <div>
-            <p className="eyebrow">Weekly capacity view</p>
-            <div className="headline-with-score">
-              <h1>{weekRangeLabel}: waiting for real workload signal.</h1>
-              <div className="summary-score" title="No capacity estimate yet — confidence appears once work blocks exist">
-                <span>Summary confidence</span>
-                <strong className="summary-score-empty" aria-hidden>—</strong>
-                <span className="sr-only">No capacity estimate yet — confidence appears once work blocks exist</span>
-              </div>
-            </div>
+            <p className="eyebrow">Weekly capacity</p>
+            <h1>Waiting for real workload signal.</h1>
+            <p className="screen-intro">{capacityDescription}</p>
           </div>
         </div>
         <EmptyState
@@ -367,55 +423,19 @@ export function WeeklyCapacityScreen({
     <section className="screen capacity-screen">
       <div className="screen-header">
         <div>
-          <div className="week-nav">
-            <p className="eyebrow">Weekly capacity view</p>
-            <div className="week-nav-controls">
-              <button
-                className="week-nav-chevron"
-                type="button"
-                onClick={() => setWeekOffset((o) => o - 1)}
-                aria-label="Previous week"
-                title="Previous week"
-              >
-                <ChevronLeft size={16} aria-hidden />
-              </button>
-              <button
-                className="week-nav-chevron"
-                type="button"
-                disabled={isCurrentWeek}
-                onClick={() => setWeekOffset((o) => o + 1)}
-                aria-label={isCurrentWeek ? "Cannot navigate past current week" : "Next week"}
-                title={isCurrentWeek ? "Cannot navigate past current week" : "Next week"}
-              >
-                <ChevronRight size={16} aria-hidden />
-              </button>
-            </div>
-          </div>
-          <div className="headline-with-score">
-            {!isCurrentWeek && viewedBlocks.length === 0 ? (
-              <h1>{headlineWeekRangeLabel}: no tracked work.</h1>
-            ) : (
-              <h1>{headlineWeekRangeLabel}: {pct(snapshot.reliable_new_work_capacity_pct)} reliable capacity {isCurrentWeek ? "for new planned work" : "was open for new planned work"}.</h1>
-            )}
-            {!isCurrentWeek && viewedBlocks.length === 0 ? (
-              <div className="summary-score" title="No capacity estimate for that week — confidence appears once work blocks exist">
-                <span>Summary confidence</span>
-                <strong className="summary-score-empty" aria-hidden>—</strong>
-                <span className="sr-only">No capacity estimate for that week</span>
-              </div>
-            ) : (
-              <div className="summary-score" title={isCurrentWeek ? "How confident the model is in this week's capacity estimate" : "How confident the model is in that week's capacity estimate"}>
-                <span>Summary confidence</span>
-                <strong>{Math.round(snapshot.summary_confidence * 100)}%</strong>
-                <span className="sr-only">{isCurrentWeek ? "How confident the model is in this week's capacity estimate" : "How confident the model is in that week's capacity estimate"}</span>
-              </div>
-            )}
-          </div>
+          <p className="eyebrow">Weekly capacity</p>
+          {!isCurrentWeek && viewedBlocks.length === 0 ? (
+            <h1>No tracked work.</h1>
+          ) : (
+            <h1>{pct(snapshot.reliable_new_work_capacity_pct)} reliable capacity {isCurrentWeek ? "for new planned work" : "was open for new planned work"}.</h1>
+          )}
+          <p className="screen-intro">{capacityDescription}</p>
         </div>
       </div>
 
       {(isCurrentWeek || viewedBlocks.length > 0) && (
         <div className="hero-metrics">
+          <h2 className="sr-only">Capacity summary</h2>
           <MetricCard label="Allocated capacity" value={snapshot.allocated_pct} helper={isCurrentWeek ? "Estimated distribution this week" : "Estimated distribution that week"} title="The share of your working week already taken up by tracked work — meetings, planned tasks, and reactive load combined." />
           <MetricCard label="Effective planned work" value={snapshot.planned_pct} helper="Capacity spent on planned work" title="The share of your week spent on work you scheduled ahead of time, rather than reacting to interruptions." />
           <MetricCard label="Reactive load" value={snapshot.reactive_pct} helper="Unplanned support and interruption work" title="The share of your week absorbed by unplanned support, interruptions, and ad-hoc requests you didn't schedule." />
@@ -527,13 +547,13 @@ export function WeeklyCapacityScreen({
               aria-expanded={riskExpanded}
               onClick={() => setRiskExpanded((v) => !v)}
             >
-              {riskExpanded ? "Hide details" : "Details"}
+              {riskExpanded ? "Hide details" : "Show details"}
               {riskExpanded ? <ChevronUp size={13} aria-hidden /> : <ChevronDown size={13} aria-hidden />}
             </button>
           </div>
         </div>
         {!riskExpanded && (
-          <div className="baseline-chip-row risk-summary-row" aria-label="Delivery risk modifiers summary">
+          <div className="baseline-chip-row risk-summary-row" role="group" aria-label="Delivery risk modifiers summary">
             {riskSummaryChips.map((chip) => (
               <span
                 key={chip.key}

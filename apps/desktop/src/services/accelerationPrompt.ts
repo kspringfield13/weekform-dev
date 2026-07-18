@@ -1,6 +1,6 @@
 import type { AccelerationSignal } from "../../../../packages/domain/src/models";
 
-export const ACCELERATION_PROMPT_VERSION = "clear-capacity-acceleration-v1";
+export const ACCELERATION_PROMPT_VERSION = "weekform-acceleration-v1";
 
 /**
  * Build the Acceleration synthesis prompt from the deterministic miner's output.
@@ -34,7 +34,7 @@ export function buildAccelerationPrompt({
   signals: AccelerationSignal[];
 }) {
   const context = {
-    product: "ClearCapacity",
+    product: "Weekform",
     prompt_version: ACCELERATION_PROMPT_VERSION,
     objective:
       "Author one practical, evidence-grounded acceleration Play for each derived signal mined from an analyst's observed work, so they can reclaim recurring time.",
@@ -65,7 +65,7 @@ export function buildAccelerationPrompt({
   };
 
   return [
-    "Author the ClearCapacity Acceleration Plays from this structured context.",
+    "Author the Weekform Acceleration Plays from this structured context.",
     "Return strict JSON only. Do not include markdown.",
     JSON.stringify(context, null, 2)
   ].join("\n\n");

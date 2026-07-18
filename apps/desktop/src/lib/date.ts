@@ -58,13 +58,38 @@ export function replaceIsoWeekIds(value: string, weekRangeLabel: string) {
   return value.replace(/\b\d{4}-W\d{2}\b/g, weekRangeLabel);
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Headlines already sit beneath a weekly page label and persistent date range,
+ * so repeating the full range makes the hierarchy noisy. Older generated
+ * narratives may still contain it; keep those readable without mutating the
+ * persisted record.
+ */
+export function removeWeekRangeFromHeadline(value: string, weekRangeLabel: string) {
+  const displayValue = replaceIsoWeekIds(value, weekRangeLabel).trim();
+  const escapedRange = escapeRegExp(weekRangeLabel);
+  const leadingRange = new RegExp(`^${escapedRange}\\s*(?::|[–—])\\s*`, "i");
+  const withoutLeadingRange = displayValue.replace(leadingRange, "");
+  const withoutRepeatedRange = withoutLeadingRange === displayValue
+    ? displayValue.replace(new RegExp(escapedRange, "gi"), "the week")
+    : withoutLeadingRange;
+
+  return withoutRepeatedRange
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function displaySafeNarrative(
   narrative: ReturnType<typeof generateWeeklyNarrative>,
   weekRangeLabel: string
 ): ReturnType<typeof generateWeeklyNarrative> {
   return {
     ...narrative,
-    headline: replaceIsoWeekIds(narrative.headline, weekRangeLabel),
+    headline: removeWeekRangeFromHeadline(narrative.headline, weekRangeLabel),
     summary_text: replaceIsoWeekIds(narrative.summary_text, weekRangeLabel),
     key_drivers: narrative.key_drivers.map((driver) => replaceIsoWeekIds(driver, weekRangeLabel)),
     manager_ready_summary: replaceIsoWeekIds(narrative.manager_ready_summary, weekRangeLabel)

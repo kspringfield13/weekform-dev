@@ -97,8 +97,8 @@ export function ActivityCapturePanel({
       <div className="capture-grid">
         <div className="capture-stat">
           <span>Current app</span>
-          <strong>{paused ? "Paused" : latestSample?.app_name ?? "Waiting"}</strong>
-          <small>{latestSample?.window_title ?? "No active-window sample yet"}</small>
+          <strong title={paused ? "Paused" : latestSample?.app_name ?? "Waiting"}>{paused ? "Paused" : latestSample?.app_name ?? "Waiting"}</strong>
+          <small title={latestSample?.window_title ?? "No active-window sample yet"}>{latestSample?.window_title ?? "No active-window sample yet"}</small>
         </div>
         <div className="capture-stat">
           <span>Samples</span>
@@ -116,16 +116,16 @@ export function ActivityCapturePanel({
           <small>derived insights, raw images deleted</small>
         </div>
       </div>
-      {captureError && <p className="capture-error">{captureError}</p>}
+      {captureError && <InlineError message={captureError} />}
       {visualContextStatus === "capturing" && <p className="capture-note">Visual context capture is deriving a local insight.</p>}
-      {visualContextError && <p className="capture-error">{visualContextError}</p>}
+      {visualContextError && <InlineError message={visualContextError} />}
       {latestSessionSummaries.length > 0 && (
         <div className="session-list">
           {latestSessionSummaries.map((session, index) => (
             <div key={`${session.app_name}-${index}`}>
-              <span>{session.app_name}</span>
+              <span title={session.app_name}>{session.app_name}</span>
               <strong>{formatDurationMinutes(session.duration_minutes)}</strong>
-              <small>
+              <small title={session.window_title ?? "Window title unavailable"}>
                 {session.window_title ?? "Window title unavailable"}
                 {session.session_count > 1 ? ` · ${session.session_count} session fragments combined` : ""}
               </small>
@@ -137,11 +137,11 @@ export function ActivityCapturePanel({
         <div className="session-list">
           {visualContextInsights.slice(-3).reverse().map((insight) => (
             <div key={insight.insight_id}>
-              <span>{insight.visible_tool ?? insight.app_name}</span>
+              <span title={insight.visible_tool ?? insight.app_name}>{insight.visible_tool ?? insight.app_name}</span>
               <strong title="How confident this derived visual-context insight is">
                 {Number.isFinite(insight.confidence) ? Math.round(insight.confidence * 100) : 0}% confidence
               </strong>
-              <small>{insight.activity_summary}</small>
+              <small title={insight.activity_summary}>{insight.activity_summary}</small>
             </div>
           ))}
         </div>

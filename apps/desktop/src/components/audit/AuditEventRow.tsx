@@ -29,8 +29,8 @@ export function AuditEventRow({ event, pushToast }: { event: AuditEvent; pushToa
           <time dateTime={event.timestamp}>{formatAuditTime(event.timestamp)}</time>
         </div>
         <div>
-          <strong>{event.title}</strong>
-          <small>{event.summary}</small>
+          <strong title={event.title}>{event.title}</strong>
+          <small title={event.summary}>{event.summary}</small>
         </div>
         <span
           className={`audit-privacy audit-privacy--${event.privacy_level}`}
@@ -45,7 +45,7 @@ export function AuditEventRow({ event, pushToast }: { event: AuditEvent; pushToa
           <button
             type="button"
             onClick={() => void handleCopyJson()}
-            aria-label={copied ? `JSON copied for ${event.title}` : `Copy JSON for ${event.title}`}
+            aria-label={copied ? `JSON Copied for ${event.title}` : `Copy JSON for ${event.title}`}
           >
             <ClipboardCopy size={15} aria-hidden />
             {copied ? "JSON Copied" : "Copy JSON"}

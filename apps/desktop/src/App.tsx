@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { outlookEventsToWorkBlocks, parseOutlookIcs } from "../../../packages/integrations/src/calendar/outlookIcs";
 import { importChatExport } from "../../../packages/integrations/src/chat/chatExport";
 import { dedupeChatCallsAgainstCalendar } from "../../../packages/integrations/src/chat/callDedup";
+import { parseUsageCsv } from "../../../packages/integrations/src/usage/usageCsv";
+import { mergeTokenUsageDays } from "../../../packages/inference/src/aiUsage";
 import type {
   AccelerationPlay,
   AccelerationSignal,
@@ -12,6 +14,8 @@ import type {
   RawEvent,
   ReviewCopilotSuggestion,
   SavedSkill,
+  TokenUsageDay,
+  TokenUsageSettings,
   UserCorrection,
   VisualContextInsight,
   WorkBlock,
@@ -20,6 +24,7 @@ import type {
 import { normalizeWeekId } from "../../../packages/inference/src/capacity";
 import {
   clearPersistedState,
+  DEFAULT_TOKEN_USAGE_SETTINGS,
   readPersistedState,
   readStoredThemeSync,
   readThemePreference,
@@ -35,7 +40,7 @@ import {
 import { unionSpanMs } from "./lib/meetingLoad";
 import { fieldLabel, formatDurationMinutes, humanizeCorrectionValue } from "./lib/format";
 import { downloadTextFile, exportFilename, exportMimeType, serializeFullBackup, type FullBackup } from "./lib/dataExport";
-import { createAccelerationPlayAuditEvent, createAuditEvent, createCalendarImportAuditEvent, createChatImportAuditEvent } from "./lib/audit";
+import { createAccelerationPlayAuditEvent, createAuditEvent, createCalendarImportAuditEvent, createChatImportAuditEvent, createUsageImportAuditEvent, createUsageSettingsAuditEvent } from "./lib/audit";
 import { removeSeededCorrections, removeSeededWorkBlocks } from "./lib/blocks";
 import { useDateContext } from "./hooks/useDateContext";
 import { useDerived } from "./hooks/useDerived";
@@ -68,7 +73,7 @@ import { AppShell } from "./components/shell/AppShell";
 import { ScreenRouter } from "./components/shell/ScreenRouter";
 import { buildOnboardingSteps } from "./components/common/OnboardingCard";
 import { WalkthroughOverlay } from "./components/onboarding/WalkthroughOverlay";
-import type { Screen, WindowMode } from "./lib/types";
+import type { Screen, SettingsTab, WindowMode } from "./lib/types";
 
 // Correction fields whose inverse can be replayed cleanly through the relabel path
 // (`updateBlock`): every entry is a string-typed `keyof WorkBlock`, so the stored
@@ -155,6 +160,9 @@ export function App() {
         setLastNarrativeAutoRunDate(data.lastNarrativeAutoRunDate ?? null);
         setProactiveAlertSettings(data.proactiveAlertSettings ?? DEFAULT_PROACTIVE_ALERT_SETTINGS);
         setProactiveAlertRuntime(data.proactiveAlertRuntime ?? EMPTY_PROACTIVE_ALERT_RUNTIME);
+        setTokenUsageDays(data.tokenUsageDays ?? []);
+        setTokenUsageSettings(data.tokenUsageSettings ?? DEFAULT_TOKEN_USAGE_SETTINGS);
+        setUsageCsvRowHashes(data.usageCsvRowHashes ?? []);
       }
     }).catch(() => {});
   }, [isDemoMode]);
@@ -166,6 +174,7 @@ export function App() {
       ? requested
       : initialBlocks.some((block) => !block.user_verified) ? "daily" : "weekly";
   });
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>("data-sources");
   const [paused, setPaused] = useState(() => persistedSnapshot?.paused ?? true);
   // Tracks the last `paused` value we've already emitted an audit event for, so
   // the audit effect below records only real user-driven transitions — never the
@@ -247,10 +256,25 @@ export function App() {
   const [proactiveAlertRuntime, setProactiveAlertRuntime] = useState<ProactiveAlertRuntime>(
     () => persistedSnapshot?.proactiveAlertRuntime ?? EMPTY_PROACTIVE_ALERT_RUNTIME
   );
+  // Persisted measured usage rollups from CSV imports. Proxy days are derived live
+  // from sessions in useDerived, never stored — see aiUsage.ts.
+  const [tokenUsageDays, setTokenUsageDays] = useState<TokenUsageDay[]>(
+    () => persistedSnapshot?.tokenUsageDays ?? []
+  );
+  const [tokenUsageSettings, setTokenUsageSettings] = useState<TokenUsageSettings>(
+    () => persistedSnapshot?.tokenUsageSettings ?? DEFAULT_TOKEN_USAGE_SETTINGS
+  );
+  // Hashes of every accepted usage-CSV row, so re-importing the same export is a no-op.
+  const [usageCsvRowHashes, setUsageCsvRowHashes] = useState<string[]>(
+    () => persistedSnapshot?.usageCsvRowHashes ?? []
+  );
   const [visualContextAttemptedSessionIds, setVisualContextAttemptedSessionIds] = useState<string[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const [lastCalendarImportSummary, setLastCalendarImportSummary] = useState<string | null>(null);
   const [chatImportError, setChatImportError] = useState<string | null>(null);
+  const [usageImportError, setUsageImportError] = useState<string | null>(null);
+  // Lingering Settings status line for the last usage-CSV import (the toast expires).
+  const [lastUsageImportSummary, setLastUsageImportSummary] = useState<string | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // Seed synchronously from localStorage so a dark-preference user's first paint
@@ -339,6 +363,9 @@ export function App() {
     walkthroughCompleted,
     proactiveAlertSettings,
     proactiveAlertRuntime,
+    tokenUsageDays,
+    tokenUsageSettings,
+    usageCsvRowHashes,
     isDemoMode,
   }, persistenceHydrated, (error) => {
     console.error("Failed to persist app state", error);
@@ -365,6 +392,8 @@ export function App() {
     accelerationHistory,
     actedOnPlayIds,
     managerSummaryText,
+    tokenUsageDays,
+    tokenUsageSettings,
     todayKey,
     currentWeekId,
     currentWeekRangeLabel,
@@ -378,7 +407,6 @@ export function App() {
     activeWindowSessions,
     hasNarrativeEvidence,
     reviewQueue,
-    toolbarStatus,
     forecastAccuracy,
     forecastAccuracyTrend,
     forecastTrackRecord,
@@ -387,6 +415,8 @@ export function App() {
     accelerationSignals,
     realizedSavings,
     realizedSavingsSummary,
+    proxyUsageDays,
+    aiUsageSummary,
   } = derived;
 
   // Retain the latest computed snapshot per ISO week so cross-week trends and
@@ -396,7 +426,9 @@ export function App() {
   useEffect(() => {
     if (isDemoMode || blocks.length === 0) return;
     setSnapshotHistory((current) => {
-      const existing = current.find((entry) => entry.week_id === snapshot.week_id);
+      const existing = current.find(
+        (entry) => normalizeWeekId(entry.week_id) === normalizeWeekId(snapshot.week_id)
+      );
       if (existing && JSON.stringify(existing.snapshot) === JSON.stringify(snapshot)) {
         return current;
       }
@@ -405,7 +437,12 @@ export function App() {
         snapshot,
         computed_at: new Date().toISOString(),
       };
-      return [...current.filter((entry) => entry.week_id !== snapshot.week_id), record]
+      return [
+        ...current.filter(
+          (entry) => normalizeWeekId(entry.week_id) !== normalizeWeekId(snapshot.week_id)
+        ),
+        record,
+      ]
         .sort((left, right) => normalizeWeekId(left.week_id).localeCompare(normalizeWeekId(right.week_id)))
         .slice(-24);
     });
@@ -431,7 +468,9 @@ export function App() {
         left.signal_id < right.signal_id ? -1 : left.signal_id > right.signal_id ? 1 : 0
       );
     setAccelerationHistory((current) => {
-      const existing = current.find((entry) => entry.week_id === currentWeekId);
+      const existing = current.find(
+        (entry) => normalizeWeekId(entry.week_id) === normalizeWeekId(currentWeekId)
+      );
       if (existing && JSON.stringify(existing.signals) === JSON.stringify(summary)) {
         return current;
       }
@@ -440,7 +479,12 @@ export function App() {
         generated_at: new Date().toISOString(),
         signals: summary,
       };
-      return [...current.filter((entry) => entry.week_id !== currentWeekId), record]
+      return [
+        ...current.filter(
+          (entry) => normalizeWeekId(entry.week_id) !== normalizeWeekId(currentWeekId)
+        ),
+        record,
+      ]
         .sort((left, right) => normalizeWeekId(left.week_id).localeCompare(normalizeWeekId(right.week_id)))
         .slice(-24);
     });
@@ -564,6 +608,8 @@ export function App() {
       calendarEvents,
       visualContextInsights,
       corrections,
+      aiUsageSummary,
+      includeUsageInManagerSummary: tokenUsageSettings.include_in_manager_summary,
       currentWeekId,
       currentWeekRangeLabel,
       aiConfig,
@@ -1146,6 +1192,35 @@ export function App() {
     ].slice(-1000));
   }
 
+  // User-initiated AI-usage settings change (observed estimates, manager toggle, price map).
+  // Each change is a discrete consent action, logged once with the resulting flag
+  // states (mirrors changeVisualContextEnabled); price-map CONTENTS are never audited.
+  function changeTokenUsageSettings(next: TokenUsageSettings) {
+    const previous = tokenUsageSettings;
+    setTokenUsageSettings(next);
+    if (isDemoMode) return;
+    const changedFields: string[] = [];
+    if (previous.observed_proxy_enabled !== next.observed_proxy_enabled) {
+      changedFields.push(`observed AI estimates ${next.observed_proxy_enabled ? "enabled" : "disabled"}`);
+    }
+    if (previous.include_in_manager_summary !== next.include_in_manager_summary) {
+      changedFields.push(`manager-summary inclusion ${next.include_in_manager_summary ? "enabled" : "disabled"}`);
+    }
+    if (JSON.stringify(previous.price_map) !== JSON.stringify(next.price_map)) {
+      changedFields.push("model price map");
+    }
+    if (changedFields.length === 0) return;
+    setAuditEvents((current) => [
+      ...current,
+      createUsageSettingsAuditEvent({
+        changedFields,
+        observedProxyEnabled: next.observed_proxy_enabled,
+        includeInManagerSummary: next.include_in_manager_summary,
+        priceMapEntryCount: Object.keys(next.price_map).length
+      })
+    ].slice(-1000));
+  }
+
   // `addCorrection` (single source of truth) lives in `useBlocksLedger` — it stamps the
   // correction, appends it to state, and emits a humanized `user_correction` audit event
   // through the shared `fieldLabel`/`humanizeCorrectionValue` helpers. Both manual relabels
@@ -1266,11 +1341,29 @@ export function App() {
     });
 
     setBlocks((current) =>
-      current.map((block) =>
-        suggestion.work_block_ids.includes(block.work_block_id)
-          ? { ...block, ...updates, user_verified: false }
-          : block
-      )
+      current.map((block) => {
+        if (!suggestion.work_block_ids.includes(block.work_block_id)) {
+          return block;
+        }
+        const updated: WorkBlock = { ...block, ...updates, user_verified: false };
+        // blocker_flag is DERIVED (category === "Blocked / waiting / dependency delay" ||
+        // planned_status === "blocked"). The prompt tells the model to include only the fields
+        // that change on a relabel, so a suggestion moving a block into/out of a blocked state
+        // routinely leaves proposed_blocker_flag null — and this apply path only writes the flag
+        // when it is non-null. Without recomputing it here the flag goes stale: a block relabeled
+        // INTO blocked keeps blocker_flag false, dropping it from capacity's `included` filter
+        // (planned_status !== "blocked" || blocker_flag) so committed load is under-counted and
+        // reliable capacity over-stated, while a block relabeled OUT of blocked keeps the flag true
+        // and is still counted in blocked_pct / the Blockers badge. Recompute silently on the SAME
+        // rule as useBlocksLedger.updateBlock — the user-approved category/status change is the
+        // audited correction; the flag flip is its mechanical consequence.
+        if ("category" in updates || "planned_status" in updates) {
+          updated.blocker_flag =
+            updated.category === "Blocked / waiting / dependency delay" ||
+            updated.planned_status === "blocked";
+        }
+        return updated;
+      })
     );
     setAuditEvents((current) => [
       ...current,
@@ -1341,6 +1434,9 @@ export function App() {
       walkthroughCompleted,
       proactiveAlertSettings,
       proactiveAlertRuntime,
+      tokenUsageDays,
+      tokenUsageSettings,
+      usageCsvRowHashes,
     };
     downloadTextFile(
       exportFilename("full-backup", "json"),
@@ -1431,6 +1527,11 @@ export function App() {
     setLastNarrativeAutoRunDate(null);
     setProactiveAlertSettings(DEFAULT_PROACTIVE_ALERT_SETTINGS);
     setProactiveAlertRuntime(EMPTY_PROACTIVE_ALERT_RUNTIME);
+    setTokenUsageDays([]);
+    setTokenUsageSettings(DEFAULT_TOKEN_USAGE_SETTINGS);
+    setUsageCsvRowHashes([]);
+    setUsageImportError(null);
+    setLastUsageImportSummary(null);
     resetNarrative();
     resetClassification();
     resetReviewCopilot();
@@ -1648,6 +1749,69 @@ export function App() {
     reader.readAsText(file);
   }
 
+  function importUsageCsv(file: File) {
+    setUsageImportError(null);
+    const reader = new FileReader();
+
+    const failImport = (message: string) => {
+      setUsageImportError(message);
+      pushToast({ tone: "error", message });
+    };
+
+    reader.onerror = () => {
+      failImport("Could not read that usage CSV.");
+    };
+
+    reader.onload = () => {
+      // parseUsageCsv never throws — a malformed file returns an empty result
+      // whose `error` carries the reason, surfaced verbatim.
+      const content = String(reader.result ?? "");
+      const result = parseUsageCsv(content, { knownRowHashes: new Set(usageCsvRowHashes) });
+
+      if (result.error) {
+        failImport(result.error);
+        return;
+      }
+      if (result.imported === 0 && result.duplicates === 0) {
+        failImport("No usable usage rows were found in that file.");
+        return;
+      }
+
+      if (result.imported > 0) {
+        setTokenUsageDays((current) => mergeTokenUsageDays(current, result.days));
+        // Row hashes make a re-import idempotent; cap the list so it can't grow
+        // unboundedly inside the single persisted blob.
+        setUsageCsvRowHashes((current) => [...current, ...result.row_hashes].slice(-20000));
+      }
+
+      const summaryParts = [`${result.imported} imported`];
+      if (result.duplicates > 0) summaryParts.push(`${result.duplicates} already imported`);
+      if (result.skipped > 0) summaryParts.push(`${result.skipped} skipped`);
+      setLastUsageImportSummary(summaryParts.join(" · "));
+
+      if (!isDemoMode) {
+        setAuditEvents((current) => [
+          ...current,
+          createUsageImportAuditEvent({
+            fileName: file.name,
+            importedRowCount: result.imported,
+            skippedRowCount: result.skipped,
+            duplicateRowCount: result.duplicates
+          })
+        ].slice(-1000));
+      }
+      pushToast({
+        tone: result.imported === 0 ? "info" : "success",
+        message:
+          result.imported === 0
+            ? "Every row in that file was already imported — nothing new added"
+            : `${result.imported} usage row${result.imported === 1 ? "" : "s"} imported${result.duplicates > 0 ? ` · ${result.duplicates} duplicate${result.duplicates === 1 ? "" : "s"} skipped` : ""}`,
+      });
+    };
+
+    reader.readAsText(file);
+  }
+
   function openScreenFromQuickView(screen: Screen) {
     setActive(screen);
     setWindowMode("large");
@@ -1674,7 +1838,6 @@ export function App() {
     <AppShell
       active={active}
       setActive={setActive}
-      toolbarStatus={toolbarStatus}
       snapshot={snapshot}
       hasWorkBlocks={blocks.length > 0}
       reviewCount={reviewQueue.length}
@@ -1687,6 +1850,7 @@ export function App() {
       setWindowMode={setWindowMode}
       theme={theme}
       setTheme={setTheme}
+      weekRangeLabel={currentWeekRangeLabel}
       demoMode={isDemoMode}
       toasts={toasts}
       onDismissToast={dismissToast}
@@ -1731,6 +1895,8 @@ export function App() {
         onboardingSteps={onboardingSteps}
         showOnboarding={showOnboarding}
         onDismissOnboarding={dismissOnboarding}
+        activeSettingsTab={activeSettingsTab}
+        onActiveSettingsTabChange={setActiveSettingsTab}
         visualContextEnabled={visualContextEnabled}
         setVisualContextEnabled={changeVisualContextEnabled}
         visualContextInsights={visualContextInsights}
@@ -1742,6 +1908,14 @@ export function App() {
         onImportOutlookIcs={importOutlookIcs}
         chatImportError={chatImportError}
         onImportChatExport={importWorkplaceChat}
+        tokenUsageDays={tokenUsageDays}
+        tokenUsageSettings={tokenUsageSettings}
+        proxyUsageDays={proxyUsageDays}
+        aiUsageSummary={aiUsageSummary}
+        onTokenUsageSettingsChange={changeTokenUsageSettings}
+        usageImportError={usageImportError}
+        lastUsageImportSummary={lastUsageImportSummary}
+        onImportUsageCsv={importUsageCsv}
         aiConfig={aiConfig}
         setAiConfig={setAiConfig}
         retentionDays={retentionDays}
@@ -1754,7 +1928,7 @@ export function App() {
         classificationError={classificationError}
         visualContextStatus={visualContextStatus}
         visualContextError={visualContextError}
-        onClassifySessions={() => void classifyActiveWindowSessions()}
+        onClassifySessions={classifyActiveWindowSessions}
         corrections={corrections}
         onResetLocalData={resetLocalData}
         onExportBackup={exportFullBackup}
@@ -1772,7 +1946,7 @@ export function App() {
         forecastTrackRecord={forecastTrackRecord}
         forecastStatus={forecastStatus}
         forecastError={forecastError}
-        onGenerateForecast={() => void generateForecastAgent()}
+        onGenerateForecast={generateForecastAgent}
         narrative={narrative}
         generatedNarrative={generatedNarrative}
         hasNarrativeEvidence={hasNarrativeEvidence}
@@ -1780,7 +1954,7 @@ export function App() {
         narrativeGenerationError={narrativeGenerationError}
         managerSummaryText={managerSummaryText}
         onManagerSummaryChange={updateManagerSummary}
-        onRegenerate={() => void regenerateNarrative("manual")}
+        onRegenerate={() => regenerateNarrative("manual")}
         auditEvents={auditEvents}
         todayKey={todayKey}
         currentWeekRangeLabel={currentWeekRangeLabel}

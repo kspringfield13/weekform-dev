@@ -10,8 +10,8 @@ const TONE_ICON: Record<ToastTone, typeof Info> = {
 /**
  * Renders the active toast stack as a single polite live region. Mounted once in
  * `AppShell`; the region is always present in the DOM (even when empty) so screen
- * readers observe additions. The slide-in animation is auto-zeroed by the global
- * `prefers-reduced-motion` reset in `styles.css`.
+ * readers observe additions. The slide-in and slide-out get reduced-motion
+ * overrides next to the `.toast` rules in `styles.css`.
  */
 export function ToastHost({
   toasts,
@@ -25,7 +25,10 @@ export function ToastHost({
       {toasts.map((toast) => {
         const Icon = TONE_ICON[toast.tone];
         return (
-          <div className={`toast toast-${toast.tone}`} key={toast.id}>
+          <div
+            className={`toast toast-${toast.tone}${toast.leaving ? " toast-leaving" : ""}`}
+            key={toast.id}
+          >
             <Icon className="toast-icon" size={16} aria-hidden="true" />
             <span className="toast-message">{toast.message}</span>
             {toast.action && (

@@ -5,6 +5,7 @@ import type {
   OutlookCalendarEvent,
   UserCorrection,
   VisualContextInsight,
+  WeeklyAIUsageSummary,
   WorkBlock,
   WeeklyCapacitySnapshot,
   AIConfig,
@@ -17,6 +18,7 @@ import { aiAuditSource, generationProviderUnsupportedMessage, providerSupportsGe
 import { withAiTimeout } from "../lib/aiTimeout";
 import { displaySafeNarrative, getLocalDateKey } from "../lib/date";
 import type { PersistedNarrativeRecord } from "../services/localStore";
+import type { AppActionResult } from "../lib/types";
 
 interface NativeNarrativeGenerationResponse {
   narrative: ReturnType<typeof generateWeeklyNarrative>;
@@ -32,6 +34,9 @@ interface UseNarrativeGenerationParams {
   calendarEvents: OutlookCalendarEvent[];
   visualContextInsights: VisualContextInsight[];
   corrections: UserCorrection[];
+  aiUsageSummary: WeeklyAIUsageSummary;
+  /** Gates whether the usage digest enters the (manager-facing) prompt at all. */
+  includeUsageInManagerSummary: boolean;
   currentWeekId: string;
   currentWeekRangeLabel: string;
   aiConfig: AIConfig | null;
@@ -49,6 +54,8 @@ export function useNarrativeGeneration({
   calendarEvents,
   visualContextInsights,
   corrections,
+  aiUsageSummary,
+  includeUsageInManagerSummary,
   currentWeekId,
   currentWeekRangeLabel,
   aiConfig,
@@ -59,19 +66,42 @@ export function useNarrativeGeneration({
   const [narrativeGenerationStatus, narrativeGenerationError, narrativeAsync] =
     useAsyncStatus<"idle" | "generating">("idle");
 
-  async function regenerateNarrative(trigger: "auto" | "manual") {
-    if (isDemoMode) return;
-    if (!hasNarrativeEvidence || narrativeGenerationStatus === "generating") return;
+  async function regenerateNarrative(trigger: "auto" | "manual"): Promise<AppActionResult> {
+    if (isDemoMode) return { ok: false, message: "Narrative generation is unavailable in demo mode." };
+    if (!hasNarrativeEvidence) return { ok: false, message: "There is not enough reviewed evidence to generate a narrative yet." };
+    if (narrativeGenerationStatus === "generating") return { ok: false, message: "A narrative is already being generated." };
 
     const provider = aiConfig?.provider ?? "openai";
     // Fail fast (before the Rust round-trip 404s or times out) when the configured provider
     // can't run the Rust generation path — it only powers the Agent chat today.
     if (!providerSupportsGeneration(provider)) {
-      narrativeAsync.fail(generationProviderUnsupportedMessage(provider));
-      return;
+      const message = generationProviderUnsupportedMessage(provider);
+      narrativeAsync.fail(message);
+      return { ok: false, message };
     }
     const auditSource = aiAuditSource(provider);
     const generatedAt = new Date().toISOString();
+    // Usage enters the prompt ONLY behind the manager-summary opt-in: the generated
+    // narrative is manager-facing, so without the toggle token totals never leave
+    // the machine on this path. Skipped entirely when the week has no usage.
+    const measuredTokens =
+      aiUsageSummary.exact.input_tokens +
+      aiUsageSummary.exact.output_tokens +
+      aiUsageSummary.exact.cache_creation_tokens;
+    const usageContext =
+      includeUsageInManagerSummary &&
+      (aiUsageSummary.exact.prompt_count > 0 || aiUsageSummary.proxy.session_minutes > 0)
+        ? {
+            measured_tokens: measuredTokens,
+            measured_prompts: aiUsageSummary.exact.prompt_count,
+            observed_session_minutes: Math.round(aiUsageSummary.proxy.session_minutes),
+            estimated_cost_usd: aiUsageSummary.cost.total_usd,
+            top_models: aiUsageSummary.by_model
+              .filter((row) => row.measurement === "exact")
+              .slice(0, 3)
+              .map((row) => row.model),
+          }
+        : null;
     const prompt = buildWeeklyNarrativePrompt({
       weekId: currentWeekId,
       weekRangeLabel: currentWeekRangeLabel,
@@ -81,6 +111,7 @@ export function useNarrativeGeneration({
       calendarEvents,
       visualContextInsights,
       corrections,
+      usageContext,
     });
 
     narrativeAsync.start("generating");
@@ -91,7 +122,28 @@ export function useNarrativeGeneration({
           request: { prompt, ai_config: aiConfig },
         })
       );
-      const sanitizedNarrative = displaySafeNarrative(response.narrative, currentWeekRangeLabel);
+      // The native response is trusted TS but never runtime-checked (same posture the
+      // forecast/classification/visual hooks guard against), so a non-strict/custom provider
+      // can return a non-string headline/summary_text/manager_ready_summary or a non-array
+      // key_drivers — on which `displaySafeNarrative` unconditionally runs `.replace`/`.map`
+      // and THROWS. That throw is caught below and MISREPORTED as "Narrative generation failed",
+      // silently discarding a successful, already-paid generation. Coerce the four rendered
+      // fields first, mirroring `parseNarrativeRecord`'s reload-path guard (localStore.ts) and
+      // `useForecastAgent`'s live-path array coercion. Byte-identical on every well-formed/demo
+      // response (all four fields already satisfy the checks → pass through value-identical);
+      // only a malformed field degrades — to the same empty shape the reload parser would keep.
+      const rawNarrative = response.narrative;
+      const safeNarrative = {
+        ...rawNarrative,
+        headline: typeof rawNarrative.headline === "string" ? rawNarrative.headline : "",
+        summary_text: typeof rawNarrative.summary_text === "string" ? rawNarrative.summary_text : "",
+        manager_ready_summary:
+          typeof rawNarrative.manager_ready_summary === "string" ? rawNarrative.manager_ready_summary : "",
+        key_drivers: Array.isArray(rawNarrative.key_drivers)
+          ? rawNarrative.key_drivers.filter((driver): driver is string => typeof driver === "string")
+          : [],
+      };
+      const sanitizedNarrative = displaySafeNarrative(safeNarrative, currentWeekRangeLabel);
       const record: PersistedNarrativeRecord = {
         narrative: sanitizedNarrative,
         generated_at: generatedAt,
@@ -133,6 +185,10 @@ export function useNarrativeGeneration({
           },
         }),
       ].slice(-1000));
+      return {
+        ok: true,
+        message: `Generated a new weekly narrative and refreshed the manager-ready summary for ${currentWeekRangeLabel}.`,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       narrativeAsync.fail(message);
@@ -154,6 +210,7 @@ export function useNarrativeGeneration({
           },
         }),
       ].slice(-1000));
+      return { ok: false, message };
     }
   }
 

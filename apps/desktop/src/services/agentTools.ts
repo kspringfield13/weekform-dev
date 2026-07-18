@@ -5,6 +5,7 @@ import type {
   OutlookCalendarEvent,
   UserCorrection,
   VisualContextInsight,
+  WeeklyAIUsageSummary,
   WeeklyCapacitySnapshot,
 } from "../../../../packages/domain/src/models";
 import { unionSpanMs } from "../lib/meetingLoad";
@@ -18,6 +19,13 @@ import { unionSpanMs } from "../lib/meetingLoad";
 export function defineTool<T extends { description: string; inputSchema: any; execute: any }>(tool: T) {
   return tool;
 }
+
+export type AgentActionKind = "classify_sessions" | "generate_forecast" | "generate_narrative";
+
+type RequestAgentAction = (
+  action: AgentActionKind,
+  reason?: string
+) => Promise<Record<string, unknown>> | Record<string, unknown>;
 
 export const getCapacitySnapshot = defineTool({
   description: "Get the current week's capacity snapshot including reliable new-work capacity, planned vs reactive breakdown, and key metrics.",
@@ -185,6 +193,81 @@ export const getVisualInsightsSummary = defineTool({
   },
 });
 
+export const getUsageDigest = defineTool({
+  description: "Summarize this week's AI-assistance usage: measured tokens and prompts per model, observed assistant session minutes (estimates), computed cost and its coverage, and week-over-week change. Every figure is tagged 'measured' or 'estimate' — never blend the two when answering.",
+  inputSchema: z.object({}),
+  execute: async ({}: {}, { usageSummary }: { usageSummary: WeeklyAIUsageSummary }) => {
+    return {
+      weekId: usageSummary.week_id,
+      measured: {
+        inputTokens: usageSummary.exact.input_tokens,
+        outputTokens: usageSummary.exact.output_tokens,
+        cacheCreationTokens: usageSummary.exact.cache_creation_tokens,
+        cacheReadTokens: usageSummary.exact.cache_read_tokens,
+        promptCount: usageSummary.exact.prompt_count,
+      },
+      observedEstimates: {
+        sessionMinutes: Math.round(usageSummary.proxy.session_minutes),
+        estimatedPromptCount: usageSummary.proxy.estimated_prompt_count,
+        assistantCount: usageSummary.proxy.assistant_count,
+        note: "Derived from activity sessions — estimates, not measurements. Token counts are not observable for these.",
+      },
+      byModel: usageSummary.by_model.map((row) => ({
+        model: row.model,
+        provider: row.provider,
+        grade: row.measurement === "exact" ? "measured" : "estimate",
+        inputTokens: row.input_tokens,
+        outputTokens: row.output_tokens,
+        cacheReadTokens: row.cache_read_tokens,
+        cacheWriteTokens: row.cache_creation_tokens,
+        promptCount: row.prompt_count,
+        sessionMinutes: Math.round(row.session_minutes),
+        costUsd: row.cost_usd,
+      })),
+      cost: {
+        totalUsd: usageSummary.cost.total_usd,
+        coverage: usageSummary.cost.coverage,
+        unpricedModels: usageSummary.cost.unpriced_models,
+        authoritativeUsd: usageSummary.cost.authoritative_usd,
+      },
+      weekOverWeek: usageSummary.week_over_week,
+    };
+  },
+});
+
+export const requestSessionClassification = defineTool({
+  description: "Prepare a consent request to classify unclassified raw activity sessions into draft work blocks using Weekform's existing classifier. Call this when the user asks you to classify, organize, or process their raw activity. This tool never performs classification itself; the user must approve the in-chat action card.",
+  inputSchema: z.object({
+    reason: z.string().optional().describe("A short explanation of why classification helps the user's request."),
+  }),
+  execute: async (
+    { reason }: { reason?: string },
+    { requestAgentAction }: { requestAgentAction: RequestAgentAction }
+  ) => requestAgentAction("classify_sessions", reason),
+});
+
+export const requestForecastGeneration = defineTool({
+  description: "Prepare a consent request to generate or refresh the next-week capacity forecast using Weekform's existing Forecast workflow. Call this when the user asks for a new, refreshed, or updated forecast. This tool never generates before the user approves the in-chat action card.",
+  inputSchema: z.object({
+    reason: z.string().optional().describe("A short explanation of why a fresh forecast helps the user's request."),
+  }),
+  execute: async (
+    { reason }: { reason?: string },
+    { requestAgentAction }: { requestAgentAction: RequestAgentAction }
+  ) => requestAgentAction("generate_forecast", reason),
+});
+
+export const requestNarrativeGeneration = defineTool({
+  description: "Prepare a consent request to generate or refresh the weekly narrative and manager-ready summary using Weekform's existing Narrative workflow. Call this when the user asks for a weekly summary, narrative, or manager-ready update. This tool never generates before the user approves the in-chat action card.",
+  inputSchema: z.object({
+    reason: z.string().optional().describe("A short explanation of why a fresh narrative helps the user's request."),
+  }),
+  execute: async (
+    { reason }: { reason?: string },
+    { requestAgentAction }: { requestAgentAction: RequestAgentAction }
+  ) => requestAgentAction("generate_narrative", reason),
+});
+
 // For the AI SDK, we can export tools array or use directly.
 export const agentTools = {
   getCapacitySnapshot,
@@ -194,21 +277,30 @@ export const agentTools = {
   getRecentCorrections,
   getCalendarSummary,
   getVisualInsightsSummary,
+  getUsageDigest,
+  requestSessionClassification,
+  requestForecastGeneration,
+  requestNarrativeGeneration,
 };
 
 /**
  * Eve-style instructions (equivalent to agent/instructions.md).
  * Kept here so the embedded Agent chat has focused, always-on guidance.
  */
-export const AGENT_INSTRUCTIONS = `You are the ClearCapacity Agent.
+export const AGENT_INSTRUCTIONS = `You are the Weekform Agent.
 
 Your job is to help the user understand and explain:
 - Their capacity (reliable new-work % and drivers)
 - Current workload (today + this week: blocks, sessions, calendar events, visual activity insights, categories)
 - Primary focus for the week (top projects and areas)
+- AI-assistance usage (measured tokens/prompts per model, observed assistant minutes, cost) via getUsageDigest — keep "measured" and "estimate" figures clearly labeled and never blend them
+- Taking app actions with explicit user approval: classify raw sessions, generate a forecast, or generate a weekly narrative
 
 Rules:
 - Always call tools first to read live facts from the user's data before answering.
+- When the user asks you to classify sessions, generate/refresh a forecast, or generate/refresh a narrative, call the matching request tool. Do not ask them to paste data that Weekform already has.
+- Action request tools only stage an approval card. Never claim an action ran until the tool result says it completed; tell the user to review and approve the card.
+- Never perform or imply a state-changing action without the user's explicit confirmation in the Weekform UI.
 - Be specific: cite exact percentages, project names, app minutes, verified vs draft counts.
 - If data is missing or thin, say so and note what would improve the picture.
 - Stay strictly within the tracked workload domain. Do not give generic productivity advice.

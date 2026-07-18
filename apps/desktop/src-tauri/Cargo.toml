@@ -1,12 +1,12 @@
 [package]
-name = "clear-capacity"
+name = "weekform"
 version = "0.1.0"
 description = "Explainable analyst capacity for macOS"
-authors = ["ClearCapacity"]
+authors = ["Weekform"]
 edition = "2021"
 
 [lib]
-name = "clear_capacity_lib"
+name = "weekform_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   AlertCircle,
@@ -20,7 +20,7 @@ import {
   RotateCcw,
   Save,
   Settings,
-  ShieldCheck,
+  Share2,
   Timer,
   Upload
 } from "lucide-react";
@@ -29,12 +29,15 @@ import type {
   ActivitySession,
   AuditEvent,
   OutlookCalendarEvent,
+  TokenUsageDay,
+  TokenUsageSettings,
   UserCorrection,
   VisualContextInsight,
   WorkBlock,
   AIConfig,
   AIProvider
 } from "../../../../../packages/domain/src/models";
+import type { SettingsTab } from "../../lib/types";
 import { getLocalDateKey } from "../../lib/date";
 import { formatAuditTime, formatCount } from "../../lib/format";
 import { MAX_PROACTIVE_ALERTS_PER_DAY, MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY } from "../../lib/constants";
@@ -56,7 +59,9 @@ import {
   upgradeRetiredAppDefault
 } from "../../services/aiProviders";
 import { ConfirmDialog } from "../common/ConfirmDialog";
+import { AgentMark } from "../common/AgentMark";
 import { CHAT_PROVIDERS } from "../../../../../packages/integrations/src/chat/chatSource";
+import { ModelPricingPanel } from "./ModelPricingPanel";
 
 // Chat sources the prototype can ingest today: local file exports parsed on-device.
 // Providers that would need a native OAuth connector are omitted until one exists.
@@ -75,6 +80,22 @@ const OPTIONAL_ALERT_RULES = [
   { key: "fragmentationEnabled", label: "Fragmentation nudge", hint: "When context-switching runs high" },
   { key: "weeklyArtifactsEnabled", label: "Weekly summary ready", hint: "When the summary and forecast are ready to review" },
 ] as const;
+
+const SETTINGS_TABS = [
+  { id: "data-sources", label: "Data Sources" },
+  { id: "data-control", label: "Data Control" },
+  { id: "ai-assistance", label: "AI Assistance" },
+  { id: "ai-usage", label: "AI Usage" },
+  { id: "notifications", label: "Notifications" }
+] as const satisfies ReadonlyArray<{ id: SettingsTab; label: string }>;
+
+function settingsTabId(id: SettingsTab): string {
+  return `settings-tab-${id}`;
+}
+
+function settingsPanelId(id: SettingsTab): string {
+  return `settings-panel-${id}`;
+}
 
 interface TestConnectionResponse {
   provider: string;
@@ -101,6 +122,12 @@ export function SetupScreen({
   onImportOutlookIcs,
   chatImportError,
   onImportChatExport,
+  tokenUsageDays,
+  tokenUsageSettings,
+  onTokenUsageSettingsChange,
+  usageImportError,
+  lastUsageImportSummary,
+  onImportUsageCsv,
   aiConfig,
   setAiConfig,
   blocks,
@@ -113,6 +140,8 @@ export function SetupScreen({
   proactiveAlertSettings,
   onProactiveAlertSettingsChange,
   onReplayWalkthrough,
+  activeSettingsTab,
+  onActiveSettingsTabChange,
 }: {
   paused: boolean;
   setPaused: (value: boolean) => void;
@@ -128,6 +157,12 @@ export function SetupScreen({
   onImportOutlookIcs: (file: File) => void;
   chatImportError: string | null;
   onImportChatExport: (file: File) => void;
+  tokenUsageDays: TokenUsageDay[];
+  tokenUsageSettings: TokenUsageSettings;
+  onTokenUsageSettingsChange: (value: TokenUsageSettings) => void;
+  usageImportError: string | null;
+  lastUsageImportSummary: string | null;
+  onImportUsageCsv: (file: File) => void;
   aiConfig: AIConfig | null;
   setAiConfig: (config: AIConfig | null) => void;
   blocks: WorkBlock[];
@@ -140,6 +175,8 @@ export function SetupScreen({
   proactiveAlertSettings: ProactiveAlertSettings;
   onProactiveAlertSettingsChange: (value: ProactiveAlertSettings) => void;
   onReplayWalkthrough: () => void;
+  activeSettingsTab: SettingsTab;
+  onActiveSettingsTabChange: (tab: SettingsTab) => void;
 }) {
   const latestImport = calendarEvents.reduce<string | null>((latest, event) => {
     if (!latest || new Date(event.imported_at) > new Date(latest)) {
@@ -159,6 +196,26 @@ export function SetupScreen({
   );
   const [isTesting, setIsTesting] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const settingsTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  // "Reset all local data" from the in-app dialog on this screen clears aiConfig
+  // to null WITHOUT navigating away (unlike the native-menu path, which routes to
+  // "daily" and unmounts this screen), so SetupScreen stays mounted. The draft form
+  // is seeded from aiConfig only once (the useState initializer above) and never
+  // re-syncs, so without this the form would keep showing — and let isDirty re-enable
+  // "Save Settings" to re-persist — the very API key the reset just wiped from disk.
+  // Re-sync the draft to defaults whenever aiConfig is cleared so the form matches
+  // the wiped state. Guarded on `!aiConfig`, so an in-progress edit of a configured
+  // provider is untouched; on first run (aiConfig already null) it's a no-op reset
+  // to the same defaults the initializer produced.
+  useEffect(() => {
+    if (!aiConfig) {
+      setDraftConfig(createDefaultAIConfig());
+      setProviderStatus(null);
+    }
+  }, [aiConfig]);
+
+  const csvBucketCount = tokenUsageDays.filter((day) => day.source_type === "csv_import").length;
   const selectedPreset = getAIProviderPreset(draftConfig.provider);
   const modelSuggestions =
     selectedPreset.modelSuggestions ?? (selectedPreset.model ? [selectedPreset.model] : []);
@@ -270,16 +327,48 @@ export function SetupScreen({
     onExportBackup();
   };
 
+  const focusSettingsTab = (index: number) => {
+    const tab = SETTINGS_TABS[index];
+    if (!tab) return;
+    onActiveSettingsTabChange(tab.id);
+    settingsTabRefs.current[index]?.focus();
+  };
+
+  const handleSettingsTabKeyDown = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number
+  ) => {
+    let nextIndex: number | null = null;
+    switch (event.key) {
+      case "ArrowLeft":
+        nextIndex = (index - 1 + SETTINGS_TABS.length) % SETTINGS_TABS.length;
+        break;
+      case "ArrowRight":
+        nextIndex = (index + 1) % SETTINGS_TABS.length;
+        break;
+      case "Home":
+        nextIndex = 0;
+        break;
+      case "End":
+        nextIndex = SETTINGS_TABS.length - 1;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    focusSettingsTab(nextIndex);
+  };
+
   return (
     <section className="screen settings-screen">
       <div className="screen-header">
         <div>
           <p className="eyebrow">Settings</p>
           <h1>Privacy and data sources</h1>
-          <p className="screen-intro">ClearCapacity collects only the signals you enable. Tracking can be paused at any time.</p>
+          <p className="screen-intro">Weekform collects only the signals you enable. Tracking can be paused at any time.</p>
         </div>
         {/* Secondary on purpose: the toolbar owns the always-visible pause control;
-            this is a contextual echo next to the privacy summary, not the page's CTA. */}
+            this is a contextual page action, not the page's primary CTA. */}
         <button className="secondary-action" type="button" onClick={() => setPaused(!paused)}>
           {paused ? <Play size={18} aria-hidden /> : <Pause size={18} aria-hidden />}
           <span>{paused ? "Resume Tracking" : "Pause Tracking"}</span>
@@ -297,21 +386,34 @@ export function SetupScreen({
         </button>
       </div>
 
-      <section className="privacy-summary">
-        <div className={paused ? "privacy-state is-paused" : "privacy-state"}>
-          <span className={paused ? "live-dot is-paused" : "live-dot"} />
-          <div>
-            <strong>{paused ? "Tracking is paused" : "Tracking is active"}</strong>
-            <span>{paused ? "No new activity or visual signals are being collected." : "Foreground app and window-title metadata stay on this Mac."}</span>
-          </div>
-        </div>
-        <div className="privacy-facts">
-          <span><Lock size={15} aria-hidden /> Local storage</span>
-          <span><Eye size={15} aria-hidden /> User-reviewed output</span>
-          <span><ShieldCheck size={15} aria-hidden /> No keystrokes or webcam</span>
-        </div>
-      </section>
+      <nav className="settings-tabs" role="tablist" aria-label="Settings sections">
+        {SETTINGS_TABS.map((tab, index) => (
+          <button
+            key={tab.id}
+            ref={(node) => { settingsTabRefs.current[index] = node; }}
+            id={settingsTabId(tab.id)}
+            className={activeSettingsTab === tab.id ? "is-active" : ""}
+            type="button"
+            role="tab"
+            aria-selected={activeSettingsTab === tab.id}
+            aria-controls={settingsPanelId(tab.id)}
+            tabIndex={activeSettingsTab === tab.id ? 0 : -1}
+            onClick={() => onActiveSettingsTabChange(tab.id)}
+            onKeyDown={(event) => handleSettingsTabKeyDown(event, index)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
 
+      <div
+        className="settings-tab-panel"
+        id={settingsPanelId("data-sources")}
+        role="tabpanel"
+        aria-labelledby={settingsTabId("data-sources")}
+        tabIndex={0}
+        hidden={activeSettingsTab !== "data-sources"}
+      >
       <div className="settings-section-heading">
         <div>
           <h2>Data sources</h2>
@@ -322,7 +424,7 @@ export function SetupScreen({
       <section className="settings-row">
         <div className="settings-row-icon"><Monitor size={18} aria-hidden /></div>
         <div>
-          <h2>Active window activity</h2>
+          <h3>Active window activity</h3>
           <p>Records foreground app, window title, and timestamp locally. It never records keystrokes or file contents.</p>
         </div>
         <div className="settings-row-status">
@@ -339,7 +441,7 @@ export function SetupScreen({
       <section className="settings-row">
         <div className="settings-row-icon"><CalendarCheck size={18} aria-hidden /></div>
         <div>
-          <h2>Outlook calendar</h2>
+          <h3>Outlook calendar</h3>
           <p>Imports meeting titles and time windows from a local `.ics` export. Email bodies and meeting notes are ignored.</p>
         </div>
         <div className="settings-row-status">
@@ -368,8 +470,8 @@ export function SetupScreen({
       <section className="settings-row">
         <div className="settings-row-icon"><MessagesSquare size={18} aria-hidden /></div>
         <div>
-          <h2>Workplace chat</h2>
-          <p>Turn Slack, Teams, or Webex activity into reactive-work signals. Only metadata is read — timestamps, channels, and message counts — never message text, and nothing leaves this Mac.</p>
+          <h3>Workplace chat</h3>
+          <p>Turn Slack, Teams, or Webex activity into reactive-work signals. Only metadata is read — timestamps, channels, and message counts — never message text, and nothing leaves this device.</p>
         </div>
         <div className="settings-row-status">
           <strong>Metadata only</strong>
@@ -398,18 +500,126 @@ export function SetupScreen({
       <section className="settings-row">
         <div className="settings-row-icon"><Eye size={18} aria-hidden /></div>
         <div>
-          <h2>Visual context</h2>
+          <h3>Visual context</h3>
           <p>Optional screenshot analysis for sustained sessions. Images are sent to your chosen AI provider with `store: false` (where supported), then deleted locally.</p>
         </div>
         <div className="settings-row-status">
           <strong>{visualContextEnabled ? "On" : "Off"}</strong>
           <span>{visualCapturesToday}/{MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY} captures today</span>
         </div>
-        <button className={visualContextEnabled ? "settings-control is-on" : "settings-control"} type="button" onClick={() => setVisualContextEnabled(!visualContextEnabled)}>
+        <button className={visualContextEnabled ? "settings-control is-on" : "settings-control"} type="button" aria-pressed={visualContextEnabled} onClick={() => setVisualContextEnabled(!visualContextEnabled)}>
           {visualContextEnabled ? "Disable Visual Context" : "Enable Visual Context"}
         </button>
       </section>
+      </div>
 
+      <div
+        className="settings-tab-panel"
+        id={settingsPanelId("ai-usage")}
+        role="tabpanel"
+        aria-labelledby={settingsTabId("ai-usage")}
+        tabIndex={0}
+        hidden={activeSettingsTab !== "ai-usage"}
+      >
+      <div className="settings-section-heading">
+        <div>
+          <h2>AI usage</h2>
+          <span>Track how much AI assistance you use. Tokens are the source of truth; costs are a computed overlay. Everything here is opt-in and stays local.</span>
+        </div>
+      </div>
+
+      <section className="settings-row">
+        <div className="settings-row-icon"><AgentMark size={18} aria-hidden /></div>
+        <div>
+          <h3>Observed AI estimates</h3>
+          <p>Estimates AI assistant time from apps and browser tabs you already capture. Window titles are matched on-device only and never stored or sent — only labels like &quot;Browser AI session&quot; and minutes are kept. Always shown as estimates, and estimates cover your retained activity window.</p>
+        </div>
+        <div className="settings-row-status">
+          <strong>{tokenUsageSettings.observed_proxy_enabled ? "On" : "Off"}</strong>
+          <span>Estimates, never token counts</span>
+        </div>
+        <button
+          className={tokenUsageSettings.observed_proxy_enabled ? "settings-control is-on" : "settings-control"}
+          type="button"
+          onClick={() =>
+            onTokenUsageSettingsChange({
+              ...tokenUsageSettings,
+              observed_proxy_enabled: !tokenUsageSettings.observed_proxy_enabled
+            })
+          }
+        >
+          {tokenUsageSettings.observed_proxy_enabled ? "Disable Estimates" : "Enable Estimates"}
+        </button>
+      </section>
+
+      <section className="settings-row">
+        <div className="settings-row-icon"><Share2 size={18} aria-hidden /></div>
+        <div>
+          <h3>Include AI usage in manager summaries</h3>
+          <p>Adds a one-line AI-usage note to the manager-ready weekly summary (and the AI-generated narrative). Off by default — your internal summary always shows usage either way; sharing it upward is your call.</p>
+        </div>
+        <div className="settings-row-status">
+          <strong>{tokenUsageSettings.include_in_manager_summary ? "Shared" : "Internal only"}</strong>
+          <span>{tokenUsageSettings.include_in_manager_summary ? "Manager summary includes usage" : "Usage stays in your internal view"}</span>
+        </div>
+        <button
+          className={tokenUsageSettings.include_in_manager_summary ? "settings-control is-on" : "settings-control"}
+          type="button"
+          onClick={() =>
+            onTokenUsageSettingsChange({
+              ...tokenUsageSettings,
+              include_in_manager_summary: !tokenUsageSettings.include_in_manager_summary
+            })
+          }
+        >
+          {tokenUsageSettings.include_in_manager_summary ? "Make Internal Only" : "Include in Summary"}
+        </button>
+      </section>
+
+      <section className="settings-row">
+        <div className="settings-row-icon"><Upload size={18} aria-hidden /></div>
+        <div>
+          <h3>Usage CSV import</h3>
+          <p>Import a token-usage export from the OpenAI console or another compatible provider. Columns are matched flexibly; rows that carry a cost column keep that cost as authoritative. Re-importing the same file never double-counts.</p>
+        </div>
+        <div className="settings-row-status">
+          <strong>{csvBucketCount > 0 ? `${csvBucketCount} day-bucket${csvBucketCount === 1 ? "" : "s"}` : "Nothing imported"}</strong>
+          <span>{lastUsageImportSummary ?? "Parsed locally, never uploaded"}</span>
+          {usageImportError && <small className="import-error">{usageImportError}</small>}
+        </div>
+        <label className="settings-control">
+          <Upload size={16} aria-hidden />
+          <span>Import Usage CSV</span>
+          <input
+            accept=".csv,text/csv"
+            type="file"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) onImportUsageCsv(file);
+              event.currentTarget.value = "";
+            }}
+          />
+        </label>
+      </section>
+
+      <ModelPricingPanel
+        tokenUsageDays={tokenUsageDays}
+        priceMap={tokenUsageSettings.price_map}
+        preferredProvider={draftConfig.provider}
+        onSave={(priceMap) =>
+          onTokenUsageSettingsChange({ ...tokenUsageSettings, price_map: priceMap })
+        }
+      />
+      </div>
+
+      <div
+        className="settings-tab-panel"
+        id={settingsPanelId("ai-assistance")}
+        role="tabpanel"
+        aria-labelledby={settingsTabId("ai-assistance")}
+        tabIndex={0}
+        hidden={activeSettingsTab !== "ai-assistance"}
+      >
       <div className="settings-section-heading">
         <div>
           <h2>AI assistance</h2>
@@ -542,7 +752,7 @@ export function SetupScreen({
                 Restore recommended defaults
               </button>
               <div className="ai-provider-actions">
-                <button className="settings-control" type="button" onClick={testConnection} disabled={isTesting}>
+                <button className="settings-control" type="button" onClick={testConnection} disabled={isTesting} aria-busy={isTesting}>
                   {isTesting ? <LoaderCircle className="spin" size={15} aria-hidden /> : <PlugZap size={15} aria-hidden />}
                   {isTesting ? "Testing…" : "Test Connection"}
                 </button>
@@ -572,7 +782,16 @@ export function SetupScreen({
             </div>
           </div>
       </div>
+      </div>
 
+      <div
+        className="settings-tab-panel"
+        id={settingsPanelId("notifications")}
+        role="tabpanel"
+        aria-labelledby={settingsTabId("notifications")}
+        tabIndex={0}
+        hidden={activeSettingsTab !== "notifications"}
+      >
       <div className="settings-section-heading">
         <div>
           <h2>Notifications</h2>
@@ -583,7 +802,7 @@ export function SetupScreen({
       <section className="settings-row">
         <div className="settings-row-icon"><BellRing size={18} aria-hidden /></div>
         <div>
-          <h2>Proactive alerts</h2>
+          <h3>Proactive alerts</h3>
           <p>Get a menu-bar notification when your reliable capacity runs low or carryover risk climbs. Alerts use capacity metrics only — never window titles or app names — and are capped at {MAX_PROACTIVE_ALERTS_PER_DAY} per day. Turn everything off with this switch, or fine-tune individual alerts below.</p>
         </div>
         <div className="settings-row-status">
@@ -593,6 +812,7 @@ export function SetupScreen({
         <button
           className={proactiveAlertSettings.enabled ? "settings-control is-on" : "settings-control"}
           type="button"
+          aria-pressed={proactiveAlertSettings.enabled}
           onClick={() => onProactiveAlertSettingsChange({ ...proactiveAlertSettings, enabled: !proactiveAlertSettings.enabled })}
         >
           {proactiveAlertSettings.enabled ? "Disable Alerts" : "Enable Alerts"}
@@ -603,7 +823,7 @@ export function SetupScreen({
         <section className="settings-row">
           <div className="settings-row-icon"><AlertCircle size={18} aria-hidden /></div>
           <div>
-            <h2>Capacity guardrail</h2>
+            <h3>Capacity guardrail</h3>
             <p>Notify me when reliable new-work capacity drops to or below this level (or carryover risk spikes). Lower it to be warned only when capacity is nearly gone.</p>
           </div>
           <div className="settings-row-status">
@@ -624,6 +844,7 @@ export function SetupScreen({
             <button
               className={proactiveAlertSettings.capacityGuardrailEnabled ? "settings-control is-on" : "settings-control"}
               type="button"
+              aria-pressed={proactiveAlertSettings.capacityGuardrailEnabled}
               onClick={() => onProactiveAlertSettingsChange({ ...proactiveAlertSettings, capacityGuardrailEnabled: !proactiveAlertSettings.capacityGuardrailEnabled })}
             >
               {proactiveAlertSettings.capacityGuardrailEnabled ? "Mute Guardrail" : "Unmute Guardrail"}
@@ -636,7 +857,7 @@ export function SetupScreen({
         <section className="settings-row" key={rule.key}>
           <div className="settings-row-icon"><BellRing size={18} aria-hidden /></div>
           <div>
-            <h2>{rule.label}</h2>
+            <h3>{rule.label}</h3>
             <p>{rule.hint}.</p>
           </div>
           <div className="settings-row-status">
@@ -646,6 +867,7 @@ export function SetupScreen({
           <button
             className={proactiveAlertSettings[rule.key] ? "settings-control is-on" : "settings-control"}
             type="button"
+            aria-pressed={proactiveAlertSettings[rule.key]}
             aria-label={`${proactiveAlertSettings[rule.key] ? "Disable" : "Enable"} — ${rule.label}`}
             onClick={() => onProactiveAlertSettingsChange({ ...proactiveAlertSettings, [rule.key]: !proactiveAlertSettings[rule.key] })}
           >
@@ -653,7 +875,16 @@ export function SetupScreen({
           </button>
         </section>
       ))}
+      </div>
 
+      <div
+        className="settings-tab-panel"
+        id={settingsPanelId("data-control")}
+        role="tabpanel"
+        aria-labelledby={settingsTabId("data-control")}
+        tabIndex={0}
+        hidden={activeSettingsTab !== "data-control"}
+      >
       <div className="settings-section-heading">
         <div>
           <h2>Data control</h2>
@@ -664,7 +895,7 @@ export function SetupScreen({
       <section className="settings-row">
         <div className="settings-row-icon"><Timer size={18} aria-hidden /></div>
         <div>
-          <h2>Activity retention</h2>
+          <h3>Activity retention</h3>
           <p>Automatically delete stored active-window samples older than the window you choose. Sessions and work blocks already derived from them are kept — only the raw samples expire.</p>
         </div>
         <div className="settings-row-status">
@@ -689,8 +920,8 @@ export function SetupScreen({
       <section className="settings-row">
         <div className="settings-row-icon"><Download size={18} aria-hidden /></div>
         <div>
-          <h2>Export work ledger</h2>
-          <p>Download every classified work block as JSON or CSV. The file is saved locally — nothing leaves this Mac.</p>
+          <h3>Export work ledger</h3>
+          <p>Download every classified work block as JSON or CSV. The file is saved locally — nothing leaves this device.</p>
         </div>
         <div className="settings-row-status">
           <strong>{formatCount(blocks.length)} work block{blocks.length === 1 ? "" : "s"}</strong>
@@ -723,7 +954,7 @@ export function SetupScreen({
       <section className="settings-row">
         <div className="settings-row-icon"><FileText size={18} aria-hidden /></div>
         <div>
-          <h2>Export audit trail</h2>
+          <h3>Export audit trail</h3>
           <p>Download the full explainability log — every classification, correction, and privacy action — as JSON or CSV.</p>
         </div>
         <div className="settings-row-status">
@@ -757,8 +988,8 @@ export function SetupScreen({
       <section className="settings-row">
         <div className="settings-row-icon"><RotateCcw size={18} aria-hidden /></div>
         <div>
-          <h2>Reset all local data</h2>
-          <p>Permanently clears everything ClearCapacity has stored on this device — work blocks, activity samples, corrections, the audit trail, forecasts, and calendar imports. Export first if you want a copy.</p>
+          <h3>Reset all local data</h3>
+          <p>Permanently clears everything Weekform has stored on this device — work blocks, activity samples, corrections, the audit trail, forecasts, and calendar imports. Export first if you want a copy.</p>
         </div>
         <div className="settings-row-status">
           <strong>Irreversible</strong>
@@ -773,11 +1004,12 @@ export function SetupScreen({
           <span>Reset Data</span>
         </button>
       </section>
+      </div>
 
       {confirmingReset && (
         <ConfirmDialog
           title="Reset all local data?"
-          description="This permanently clears everything ClearCapacity has stored on this device. It can't be undone."
+          description="This permanently clears everything Weekform has stored on this device. It can't be undone."
           confirmLabel="Reset everything"
           onConfirm={() => {
             setConfirmingReset(false);

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { analyzeInterruptionLoad, buildForecastTrackRecord, computeCapacityBaselines, computeWeeklyCapacitySnapshot, generateWeeklyNarrative, normalizeWeekId, scoreForecastAccuracy, summarizeChatStakeholders, summarizeForecastAccuracy } from "../../../../packages/inference/src/capacity";
 import type { ChatStakeholderSummary, ForecastAccuracyTrend, ForecastTrackRecordEntry, InterruptionLoadAnalysis } from "../../../../packages/inference/src/capacity";
 import { sessionizeActiveWindowSamples } from "../../../../packages/inference/src/sessionizer/activeWindow";
+import { computeWeeklyAIUsageSummary, detectProxyUsage, proxyEventsToUsageDays } from "../../../../packages/inference/src/aiUsage";
 import { buildAccelerationSignals, buildRealizedSavings, summarizeRealizedSavings } from "../../../../packages/inference/src/accelerate";
 import type { RealizedSavingsEntry, RealizedSavingsSummary } from "../../../../packages/inference/src/accelerate";
 import type {
@@ -10,6 +11,9 @@ import type {
   OutlookCalendarEvent,
   RawEvent,
   AccelerationSignal,
+  TokenUsageDay,
+  TokenUsageSettings,
+  WeeklyAIUsageSummary,
 } from "../../../../packages/domain/src/models";
 import type { PersistedNarrativeRecord, PersistedForecastRecord, PersistedSnapshotRecord, PersistedAccelerationSnapshot, ForecastAccuracyReview } from "../services/localStore";
 import { getCurrentIsoWeekId, replaceIsoWeekIds } from "../lib/date";
@@ -32,6 +36,8 @@ interface UseDerivedParams {
   accelerationHistory: PersistedAccelerationSnapshot[];
   actedOnPlayIds: string[];
   managerSummaryText: string | null;
+  tokenUsageDays: TokenUsageDay[];
+  tokenUsageSettings: TokenUsageSettings;
   todayKey: string;
   currentWeekId: string;
   currentWeekRangeLabel: string;
@@ -50,6 +56,8 @@ export function useDerived(params: UseDerivedParams) {
     accelerationHistory,
     actedOnPlayIds,
     managerSummaryText,
+    tokenUsageDays,
+    tokenUsageSettings,
     todayKey,
     currentWeekId,
     currentWeekRangeLabel,
@@ -63,7 +71,12 @@ export function useDerived(params: UseDerivedParams) {
   // (it sums estimated_capacity_pct over whatever it's given), so scoping here is what keeps every
   // current-week derivation describing *this* week's load rather than accumulated lifetime totals.
   const weekBlocks = useMemo(
-    () => blocks.filter((block) => block.week_id === currentWeekId),
+    // Normalize both sides of the stored-`week_id` compare (like scoredForecasts/capacityBaselines/
+    // recurrenceBySignalId below): a legacy/imported non-padded id (`2026-W5`) must collapse onto its
+    // padded twin (`2026-W05`) so a current-week block isn't silently dropped from the snapshot —
+    // CapacityTrendChart already normalizes the same ids, so a raw compare here would omit a week the
+    // trend chart still plots. Byte-identical on the padded ids every capacity path already emits.
+    () => blocks.filter((block) => normalizeWeekId(block.week_id) === normalizeWeekId(currentWeekId)),
     [blocks, currentWeekId]
   );
 
@@ -88,21 +101,25 @@ export function useDerived(params: UseDerivedParams) {
     };
   }, [forecastHistory, currentWeekId, snapshot.reliable_new_work_capacity_pct]);
 
-  // Pair every past forecast we can score with the capacity the model actually computed for the
-  // week it targeted. Actuals come from the retained per-week snapshots, with the live snapshot
-  // preferred for the current week. One scored entry per target week (latest forecast wins),
-  // mirroring the single-week accuracy banner above. Feeds both the rolling trend and the
-  // per-week track-record list.
+  // Pair every SETTLED past forecast we can score with the capacity the model actually computed for
+  // the week it targeted. Actuals come from the retained per-week snapshots. The still-accumulating
+  // CURRENT week is deliberately EXCLUDED — only settled, completed weeks are scored — otherwise a
+  // track-record row + the rolling MAE would flip beat↔miss mid-week as this week's blocks fill in
+  // (App.tsx continuously rewrites the current week's snapshot into snapshotHistory as it accrues).
+  // This mirrors buildRealizedSavings' current-week exclusion (accelerate.ts) and honors its
+  // documented invariant ("mirrors the forecast track record scoring only once a week completes").
+  // The live current-week read is the separate `forecastAccuracy` banner above. One scored entry per
+  // target week (latest forecast wins). Feeds both the rolling trend and the per-week track-record list.
   const scoredForecasts = useMemo(() => {
     // Normalize every week-id key/compare (like the baseline + acceleration blocks below): a
     // legacy/imported non-padded id (`2026-W5`) must collapse onto its padded twin (`2026-W05`)
     // so it isn't silently dropped from scoring — CapacityTrendChart already normalizes the same
     // snapshotHistory keys, so a raw compare here would omit a week the trend chart still plots.
+    const normalizedCurrentWeekId = normalizeWeekId(currentWeekId);
     const actualByWeek = new Map<string, number>();
     for (const record of snapshotHistory) {
       actualByWeek.set(normalizeWeekId(record.week_id), record.snapshot.reliable_new_work_capacity_pct);
     }
-    actualByWeek.set(normalizeWeekId(currentWeekId), snapshot.reliable_new_work_capacity_pct);
 
     const latestForecastByWeek = new Map<string, PersistedForecastRecord>();
     for (const entry of forecastHistory) {
@@ -114,13 +131,13 @@ export function useDerived(params: UseDerivedParams) {
     }
 
     return [...latestForecastByWeek.entries()]
-      .filter(([weekId]) => actualByWeek.has(weekId))
+      .filter(([weekId]) => weekId !== normalizedCurrentWeekId && actualByWeek.has(weekId))
       .map(([weekId, entry]) => ({
         week_id: weekId,
         predicted_pct: entry.forecast.reliable_new_work_capacity_pct,
         actual_pct: actualByWeek.get(weekId) as number,
       }));
-  }, [forecastHistory, snapshotHistory, currentWeekId, snapshot.reliable_new_work_capacity_pct]);
+  }, [forecastHistory, snapshotHistory, currentWeekId]);
 
   // Roll the scored forecasts into a single mean-absolute-error so the latest forecast can be
   // read against the model's own track record.
@@ -180,14 +197,13 @@ export function useDerived(params: UseDerivedParams) {
     return computeCapacityBaselines(prior);
   }, [snapshotHistory, currentWeekId]);
 
-  const narrative = useMemo(
-    () => generateWeeklyNarrative(snapshot, capacityBaselines),
-    [snapshot, capacityBaselines]
-  );
-
+  // Pass the user-edited draft (managerSummaryText, always stored already-humanized) through
+  // verbatim so a typed ISO-week token isn't rewritten in the native copy; keep replaceIsoWeekIds
+  // on the generated fallback, which has no other sanitizer here (unlike NarrativeScreen's :39).
   const managerText = generatedNarrative
-    ? replaceIsoWeekIds(
-        managerSummaryText ?? `${generatedNarrative.narrative.headline}\n\n${generatedNarrative.narrative.manager_ready_summary}`,
+    ? managerSummaryText ??
+      replaceIsoWeekIds(
+        `${generatedNarrative.narrative.headline}\n\n${generatedNarrative.narrative.manager_ready_summary}`,
         currentWeekRangeLabel
       )
     : "";
@@ -195,6 +211,38 @@ export function useDerived(params: UseDerivedParams) {
   const activeWindowSessions = useMemo(
     () => sessionizeActiveWindowSamples(activeWindowSamples),
     [activeWindowSamples]
+  );
+
+  // Proxy AI-usage days, derived live from the retained sessions (never persisted —
+  // heuristic improvements retroactively apply, and sessions already persist).
+  // Empty when the observed-estimates opt-in is off, so nothing downstream renders.
+  const proxyUsageDays = useMemo<TokenUsageDay[]>(
+    () =>
+      tokenUsageSettings.observed_proxy_enabled
+        ? proxyEventsToUsageDays(detectProxyUsage(activeWindowSessions))
+        : [],
+    [tokenUsageSettings.observed_proxy_enabled, activeWindowSessions]
+  );
+
+  // The week's usage rollup — persisted exact buckets plus live proxy days, with the
+  // cost overlay computed from the Settings price map (tokens stay the source of truth).
+  const aiUsageSummary = useMemo<WeeklyAIUsageSummary>(
+    () =>
+      computeWeeklyAIUsageSummary(
+        [...tokenUsageDays, ...proxyUsageDays],
+        currentWeekId,
+        tokenUsageSettings.price_map
+      ),
+    [tokenUsageDays, proxyUsageDays, currentWeekId, tokenUsageSettings.price_map]
+  );
+
+  const narrative = useMemo(
+    () =>
+      generateWeeklyNarrative(snapshot, capacityBaselines, {
+        summary: aiUsageSummary,
+        include_in_manager_summary: tokenUsageSettings.include_in_manager_summary,
+      }),
+    [snapshot, capacityBaselines, aiUsageSummary, tokenUsageSettings.include_in_manager_summary]
   );
 
   // Sessions fed to the Acceleration engine, scoped to a trailing 7-day window. The two session
@@ -290,6 +338,8 @@ export function useDerived(params: UseDerivedParams) {
     narrative,
     managerText,
     activeWindowSessions,
+    proxyUsageDays,
+    aiUsageSummary,
     hasNarrativeEvidence,
     reviewQueue,
     toolbarStatus,

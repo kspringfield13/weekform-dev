@@ -1,7 +1,7 @@
 import type { ActivitySession } from "../../../../packages/domain/src/models";
 import { workCategories, workModes } from "../../../../packages/domain/src/taxonomy";
 
-export const VISUAL_CONTEXT_PROMPT_VERSION = "clear-capacity-visual-context-v1";
+export const VISUAL_CONTEXT_PROMPT_VERSION = "weekform-visual-context-v1";
 
 export function buildVisualContextPrompt({
   session,
@@ -13,7 +13,7 @@ export function buildVisualContextPrompt({
   maxDailyCaptures: number;
 }) {
   const context = {
-    product: "ClearCapacity",
+    product: "Weekform",
     prompt_version: VISUAL_CONTEXT_PROMPT_VERSION,
     objective:
       "Analyze a consented screenshot to derive a privacy-conscious visual context insight for analyst workload classification.",
@@ -53,7 +53,7 @@ export function buildVisualContextPrompt({
   };
 
   return [
-    "Generate a ClearCapacity Visual Context insight from the screenshot and metadata.",
+    "Generate a Weekform Visual Context insight from the screenshot and metadata.",
     "Return strict JSON only. Do not include markdown.",
     JSON.stringify(context, null, 2)
   ].join("\n\n");

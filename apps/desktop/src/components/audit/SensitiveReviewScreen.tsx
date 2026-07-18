@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ShieldAlert, Trash2 } from "lucide-react";
 import type { VisualContextInsight } from "../../../../../packages/domain/src/models";
 import { formatAuditTime, formatCount, privacyLevelLabel } from "../../lib/format";
@@ -13,6 +13,11 @@ export function SensitiveReviewScreen({
   onDiscardInsight: (insightId: string) => void;
 }) {
   const [pendingDiscardId, setPendingDiscardId] = useState<string | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  // Set to the discarded item's list index in onConfirm; the effect below then
+  // moves focus off the (now-unmounted) Discard trigger onto a stable target.
+  const focusAfterDiscardIndex = useRef<number | null>(null);
 
   const flagged = visualContextInsights
     .filter((insight) => insight.sensitive_content_detected)
@@ -22,12 +27,31 @@ export function SensitiveReviewScreen({
     ? flagged.find((insight) => insight.insight_id === pendingDiscardId) ?? null
     : null;
 
+  // After a discard, keep the keyboard/SR user on the list instead of letting
+  // focus fall to <body>. ConfirmDialog's unmount cleanup restores focus to the
+  // Discard button it captured — but that button just unmounted, so its restore
+  // is a no-op. React flushes all passive-effect destroys (that restore) before
+  // any creates, so this effect (keyed on the shrinking list) runs afterward and
+  // wins: it lands focus on the item that slid into the discarded slot, or the
+  // heading when the list is now empty.
+  useEffect(() => {
+    const index = focusAfterDiscardIndex.current;
+    if (index === null) return;
+    focusAfterDiscardIndex.current = null;
+    const buttons = listRef.current?.querySelectorAll<HTMLButtonElement>("button.sensitive-discard");
+    if (buttons && buttons.length > 0) {
+      buttons[Math.min(index, buttons.length - 1)].focus();
+    } else {
+      headingRef.current?.focus();
+    }
+  }, [flagged.length]);
+
   return (
     <section className="screen sensitive-screen">
       <div className="screen-header">
         <div>
           <p className="eyebrow">Flagged captures</p>
-          <h1>Review and purge visual captures flagged as sensitive.</h1>
+          <h1 ref={headingRef} tabIndex={-1}>Review and purge visual captures flagged as sensitive.</h1>
         </div>
         <div className="summary-score" title="Visual captures flagged as potentially sensitive and awaiting review">
           <span>Flagged</span>
@@ -41,7 +65,7 @@ export function SensitiveReviewScreen({
         an insight removes it from local storage and records the action in your audit history.
       </p>
 
-      <div className="sensitive-list">
+      <div className="sensitive-list" ref={listRef}>
         {flagged.length === 0 ? (
           <EmptyState
             icon={ShieldAlert}
@@ -84,6 +108,9 @@ export function SensitiveReviewScreen({
           description={`This permanently removes the flagged ${pendingInsight.app_name} capture ("${pendingInsight.activity_summary}") from local storage and records the action in your audit history. It can't be undone.`}
           confirmLabel="Discard capture"
           onConfirm={() => {
+            focusAfterDiscardIndex.current = flagged.findIndex(
+              (insight) => insight.insight_id === pendingInsight.insight_id
+            );
             onDiscardInsight(pendingInsight.insight_id);
             setPendingDiscardId(null);
           }}

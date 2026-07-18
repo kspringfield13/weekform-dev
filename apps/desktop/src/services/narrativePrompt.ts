@@ -8,7 +8,22 @@ import type {
 } from "../../../../packages/domain/src/models";
 import { summarizeSessionForPrompt, summarizeVisualInsightForPrompt } from "./promptSummaries";
 
-export const NARRATIVE_PROMPT_VERSION = "clear-capacity-weekly-narrative-v4";
+export const NARRATIVE_PROMPT_VERSION = "weekform-weekly-narrative-v6";
+
+/**
+ * Compact AI-usage digest for the narrative prompt. Supplied ONLY when the
+ * user's "include AI usage in manager summaries" toggle is on — the generated
+ * narrative is manager-facing, so the toggle gates the prompt itself and token
+ * totals never reach the provider otherwise.
+ */
+export interface NarrativePromptUsageContext {
+  measured_tokens: number;
+  measured_prompts: number;
+  /** Observed assistant-session minutes — an on-device estimate, never a measurement. */
+  observed_session_minutes: number;
+  estimated_cost_usd: number | null;
+  top_models: string[];
+}
 
 function sortByStartTime<T extends { start_time: string }>(items: T[]) {
   return [...items].sort((left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime());
@@ -62,7 +77,8 @@ export function buildWeeklyNarrativePrompt({
   activeWindowSessions,
   calendarEvents,
   visualContextInsights,
-  corrections
+  corrections,
+  usageContext
 }: {
   weekId: string;
   weekRangeLabel: string;
@@ -72,6 +88,7 @@ export function buildWeeklyNarrativePrompt({
   calendarEvents: OutlookCalendarEvent[];
   visualContextInsights: VisualContextInsight[];
   corrections: UserCorrection[];
+  usageContext?: NarrativePromptUsageContext | null;
 }) {
   const verifiedCount = blocks.filter((block) => block.user_verified).length;
   const unverifiedCount = blocks.length - verifiedCount;
@@ -79,7 +96,7 @@ export function buildWeeklyNarrativePrompt({
     .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
     .slice(0, 30);
   const context = {
-    product: "ClearCapacity",
+    product: "Weekform",
     prompt_version: NARRATIVE_PROMPT_VERSION,
     objective:
       "Generate a weekly workload narrative for an analyst using local ledger, daily review, and weekly capacity context.",
@@ -90,7 +107,7 @@ export function buildWeeklyNarrativePrompt({
     },
     guardrails: [
       "Do not imply surveillance, performance scoring, or perfect time tracking.",
-      `Refer to the week as "${weekRangeLabel}" in all prose. The ISO week_id "${weekId}" is internal metadata only; never quote it in headline, summary_text, key_drivers, or manager_ready_summary.`,
+      `Use "${weekRangeLabel}" when a date reference helps the body copy. Keep the headline date-free. The ISO week_id "${weekId}" is internal metadata only; never quote it in headline, summary_text, key_drivers, or manager_ready_summary.`,
       "Separate observed evidence from inference.",
       "Do not expose raw private data beyond what is needed to explain workload patterns.",
       "If visual context is sensitive or low-confidence, summarize the work pattern without exposing specific sensitive content.",
@@ -120,7 +137,7 @@ export function buildWeeklyNarrativePrompt({
     ],
     required_output: {
       week_id: "string",
-      headline: `One short, work-centered title sentence under 90 characters for ${weekRangeLabel}. Emphasize a project, task, accomplishment, interruption, or blocker. Avoid confidence, model, app, tracking, classification, and technical capacity terminology. Do not include the ISO week id.`,
+      headline: `One short, work-centered title sentence under 90 characters. Emphasize a project, task, accomplishment, interruption, or blocker. Avoid confidence, model, app, tracking, classification, and technical capacity terminology. Do not include dates, the display range "${weekRangeLabel}", or the ISO week id.`,
       summary_text:
         "Analyst-facing paragraph, 5 to 8 sentences. Describe what the analyst worked on, likely projects/workstreams, what went well or created friction, what displaced planned work, whether the week looked busy or under-classified, and whether additional project capacity looks realistic. Include planned vs reactive, meetings/recurring load, fragmented/deep work, and confidence caveats when relevant.",
       key_drivers:
@@ -145,14 +162,31 @@ export function buildWeeklyNarrativePrompt({
       work_blocks: sortByStartTime(blocks).map(summarizeBlock),
       active_window_sessions: sortByStartTime(activeWindowSessions).map(summarizeSessionForPrompt),
       outlook_calendar_events: sortByStartTime(calendarEvents).map(summarizeCalendarEvent),
-      visual_context_insights: [...visualContextInsights]
+      // Flagged captures (sensitive_content_detected) await user review/purge in the
+      // Flagged Captures queue and must never leave the device in an AI payload before
+      // then — mirror the Agent tool's guard (agentTools.ts) so this path can't transmit
+      // an unreviewed sensitive insight's derived summary/evidence/project hint. `.filter`
+      // returns a fresh array, so the following `.sort` no longer needs a spread copy.
+      visual_context_insights: visualContextInsights
+        .filter((insight) => !insight.sensitive_content_detected)
         .sort((left, right) => new Date(left.captured_at).getTime() - new Date(right.captured_at).getTime())
         .map(summarizeVisualInsightForPrompt)
-    }
+    },
+    // Present only when the user opted AI usage into manager-facing output.
+    ...(usageContext
+      ? {
+          ai_usage_context: usageContext,
+          ai_usage_guidance: [
+            "The user opted in to mentioning AI-assistance usage. Weave ONE brief sentence about it into manager_ready_summary, framed as leverage (what it helped accomplish), not as raw consumption.",
+            "measured_tokens/measured_prompts are measured; observed_session_minutes is an on-device estimate — if mentioned, keep it clearly approximate.",
+            "Do not quote token counts verbatim in manager_ready_summary; round or describe them naturally (e.g. 'used AI assistance heavily on the modeling work')."
+          ]
+        }
+      : {})
   };
 
   return [
-    "Generate the ClearCapacity weekly narrative from this structured context.",
+    "Generate the Weekform weekly narrative from this structured context.",
     "Return strict JSON only. Do not include markdown.",
     JSON.stringify(context, null, 2)
   ].join("\n\n");

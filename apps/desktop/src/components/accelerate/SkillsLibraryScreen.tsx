@@ -40,7 +40,11 @@ function SavedSkillCard({
   onRemove: (signalId: string) => void;
   pushToast: PushToast;
 }) {
-  const Icon = TYPE_ICONS[skill.play_type];
+  // Fall back to Lightbulb for an off-enum play_type on a corrupt/legacy persisted skill —
+  // `<Icon>` with an undefined component throws "Element type is invalid" and (no ErrorBoundary)
+  // white-screens the whole app. Mirrors the `?? type` graceful degradation the sibling
+  // accelerationTypeLabel/Gloss helpers already do for the raw string in this same card.
+  const Icon = TYPE_ICONS[skill.play_type] ?? Lightbulb;
   const [copied, setCopied] = useState(false);
   const [copiedSkillMd, setCopiedSkillMd] = useState(false);
 
@@ -165,7 +169,7 @@ export function SkillsLibraryScreen({
     const now = new Date();
     const stamp = now.toISOString().slice(0, 19).replace(/[:T]/g, "-");
     const content = serializeSavedSkillsAsSkillBundle(ordered, now);
-    downloadTextFile(`clear-capacity-agent-skills-${stamp}.md`, content, "text/markdown");
+    downloadTextFile(`weekform-agent-skills-${stamp}.md`, content, "text/markdown");
     pushToast({
       tone: "success",
       message: `Exported ${ordered.length} Agent ${ordered.length === 1 ? "Skill" : "Skills"} (SKILL.md)`,
@@ -219,6 +223,7 @@ export function SkillsLibraryScreen({
         </div>
       </div>
       <div className="play-grid">
+        <h2 className="sr-only">Saved skill recipes</h2>
         {ordered.map((skill) => (
           <SavedSkillCard
             key={skill.signal_id}

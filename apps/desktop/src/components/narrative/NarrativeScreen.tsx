@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ClipboardCopy, Download, Pencil, RefreshCw, FileText } from "lucide-react";
 import type { PersistedNarrativeRecord } from "../../services/localStore";
 import { generateWeeklyNarrative } from "../../../../../packages/inference/src/capacity";
-import { displaySafeNarrative, replaceIsoWeekIds } from "../../lib/date";
+import { displaySafeNarrative } from "../../lib/date";
 import { formatAuditTime } from "../../lib/format";
 import { downloadTextFile } from "../../lib/dataExport";
 import type { PushToast } from "../../hooks/useToasts";
@@ -38,7 +38,11 @@ export function NarrativeScreen({
   const revealTimeoutRef = useRef<number | null>(null);
   const displayNarrative = displaySafeNarrative(generatedNarrative?.narrative ?? narrative, weekRangeLabel);
   const generatedManagerText = `${displayNarrative.headline}\n\n${displayNarrative.manager_ready_summary}`;
-  const managerText = replaceIsoWeekIds(managerSummaryText ?? generatedManagerText, weekRangeLabel);
+  // `managerText` is the controlled value of an editable <textarea>, so it must echo the stored
+  // value verbatim — do NOT re-run replaceIsoWeekIds here (it would rewrite any ISO-week token the
+  // user types mid-edit). Both branches are already display-safe: generatedManagerText comes from
+  // displaySafeNarrative above, and managerSummaryText is only ever stored already-humanized.
+  const managerText = managerSummaryText ?? generatedManagerText;
 
   const firstBreak = managerText.indexOf('\n\n');
   const markdownContent = firstBreak > -1
@@ -110,7 +114,7 @@ export function NarrativeScreen({
         <EmptyState
           icon={FileText}
           title="Narrative generation is waiting."
-          description="ClearCapacity will generate analyst and manager-ready text after Outlook imports or active-window-derived work blocks create enough explainable workload evidence."
+          description="Weekform will generate analyst and manager-ready text after Outlook imports or active-window-derived work blocks create enough explainable workload evidence."
         />
       </section>
     );
@@ -192,44 +196,46 @@ export function NarrativeScreen({
           <div className="narrative-hero-copy">
             <p className="eyebrow">Weekly summary</p>
             <h1>{displayNarrative.headline}</h1>
+          </div>
+          <div className="narrative-hero-footer">
             <div className="narrative-status">
               <span>Generated <time dateTime={generatedNarrative.generated_at}>{formatAuditTime(generatedNarrative.generated_at)}</time></span>
               <span>{generatedNarrative.model}</span>
               <span>{generatedNarrative.trigger === "auto" ? "Daily automatic run" : "Manual regeneration"}</span>
             </div>
-          </div>
-          <div className="narrative-actions">
-            <button
-              className={`secondary-action narrative-generate-action${generationStatus === "generating" ? " is-generating" : ""}`}
-              type="button"
-              disabled={generationStatus === "generating"}
-              aria-busy={generationStatus === "generating"}
-              onClick={onRegenerate}
-            >
-              <RefreshCw
-                key={generationStatus === "generating" ? "generating" : "idle"}
-                className="narrative-generate-icon"
-                size={17}
-                aria-hidden
-              />
-              <span>{generationStatus === "generating" ? "Generating…" : "Regenerate Narrative"}</span>
-            </button>
-            <button
-              className="secondary-action"
-              type="button"
-              onClick={handleDownload}
-            >
-              <Download size={17} aria-hidden />
-              <span>Download .txt</span>
-            </button>
-            <button
-              className="primary-action"
-              type="button"
-              onClick={() => void handleCopyMarkdown()}
-            >
-              <ClipboardCopy size={18} aria-hidden />
-              <span>{copied ? "Copied" : "Copy as Markdown"}</span>
-            </button>
+            <div className="narrative-actions">
+              <button
+                className={`secondary-action narrative-generate-action${generationStatus === "generating" ? " is-generating" : ""}`}
+                type="button"
+                disabled={generationStatus === "generating"}
+                aria-busy={generationStatus === "generating"}
+                onClick={onRegenerate}
+              >
+                <RefreshCw
+                  key={generationStatus === "generating" ? "generating" : "idle"}
+                  className="narrative-generate-icon"
+                  size={17}
+                  aria-hidden
+                />
+                <span>{generationStatus === "generating" ? "Generating…" : "Regenerate Narrative"}</span>
+              </button>
+              <button
+                className="secondary-action"
+                type="button"
+                onClick={handleDownload}
+              >
+                <Download size={17} aria-hidden />
+                <span>Download .txt</span>
+              </button>
+              <button
+                className="primary-action"
+                type="button"
+                onClick={() => void handleCopyMarkdown()}
+              >
+                <ClipboardCopy size={18} aria-hidden />
+                <span>{copied ? "Copied!" : "Copy as Markdown"}</span>
+              </button>
+            </div>
           </div>
         </div>
         {generationError && <InlineError message={generationError} onRetry={onRegenerate} />}

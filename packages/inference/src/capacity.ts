@@ -1,6 +1,7 @@
 import type {
   RawEvent,
   UserCorrection,
+  WeeklyAIUsageSummary,
   WeeklyCapacitySnapshot,
   WeeklyNarrative,
   WorkBlock,
@@ -829,20 +830,30 @@ const DEFAULT_STAKEHOLDER_LIMIT = 4;
 const UNLABELED_STAKEHOLDER_GROUP = "Direct & untagged";
 
 /**
- * Split a metadata `channels` value ("#a\n#b") into trimmed labels; missing/empty → [].
+ * Split a metadata `channels` value ("#a\n#b") into DISTINCT trimmed labels; missing/empty → [].
  * Splits on NEWLINE, not comma: a channel/space display name can itself contain a comma
  * (Webex spaces, free-form Teams channels), and `chatExport.ts` joins the burst's labels
  * with "\n" for exactly that reason — a comma split would fracture one real channel into
  * phantom stakeholder groups. (Records written before the delimiter switch used ", "; a
  * legacy single-channel name now parses whole — correct — while a legacy multi-channel
  * burst merges into one label until it is re-imported, a self-healing display-only edge.)
+ * Deduped (post-trim) so the parser is symmetric with the emitter, which collects the burst's
+ * labels through a `Set` before joining (`chatExport.ts`): a corrupt/hand-authored `channels`
+ * carrying a repeated label ("#a\n#a") must not credit its group's `burst_count` twice for one
+ * burst — `summarizeChatStakeholders` increments `bursts` once per target — nor skew the even
+ * `perLabel` weight split (a "#a\n#b\n#a" burst would otherwise weight #a 2:1 over #b). Real/demo
+ * records already carry distinct labels, so this only defends corrupt persisted JSON.
  */
 function parseChannelLabels(value: string | null | undefined): string[] {
   if (typeof value !== "string") return [];
-  return value
-    .split(/\r?\n/)
-    .map((label) => label.trim())
-    .filter((label) => label.length > 0);
+  return [
+    ...new Set(
+      value
+        .split(/\r?\n/)
+        .map((label) => label.trim())
+        .filter((label) => label.length > 0)
+    )
+  ];
 }
 
 /**
@@ -896,7 +907,10 @@ export function summarizeChatStakeholders(
     .map((group) => ({
       label: group.label,
       burst_count: group.bursts,
-      share_pct: Math.round((group.weight / totalMessages) * 100)
+      // Floor to 1% (mirrors `mention_pct`/`after_hours_pct`) so a real group — every group here
+      // has `weight > 0` and `burst_count >= 1` thanks to the `messages === 0` skip above — never
+      // renders "N bursts · 0%" when a skewed week rounds its share down to 0.
+      share_pct: Math.max(1, Math.round((group.weight / totalMessages) * 100))
     }));
 
   return {
@@ -906,9 +920,56 @@ export function summarizeChatStakeholders(
   };
 }
 
+/**
+ * AI-usage input to the deterministic narrative. The usage sentence ALWAYS
+ * lands in the internal `summary_text` when there is data; it reaches the
+ * manager-facing `manager_ready_summary` only when the user's Settings toggle
+ * (`include_in_manager_summary`, default off) says so — sharing AI usage
+ * upward is the user's call, not the model's.
+ */
+export interface NarrativeUsageInput {
+  summary: WeeklyAIUsageSummary | null;
+  include_in_manager_summary: boolean;
+}
+
+/** Compact token count for narrative prose: 1_437_000 → "~1.4M", 45_300 → "~45k". */
+function formatTokensApprox(tokens: number): string {
+  if (tokens >= 1_000_000) return `~${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (tokens >= 1_000) return `~${Math.round(tokens / 1_000)}k`;
+  return `${Math.round(tokens)}`;
+}
+
+/**
+ * One deterministic sentence describing the week's AI usage, or null when
+ * there is nothing to report. Measured (exact) figures lead; observed proxy
+ * minutes are always suffixed "(estimate)" so the two grades can't blur.
+ */
+function buildUsageSentence(usage: NarrativeUsageInput | null | undefined): string | null {
+  const summary = usage?.summary;
+  if (!summary) return null;
+  const measuredTokens =
+    summary.exact.input_tokens + summary.exact.output_tokens + summary.exact.cache_creation_tokens;
+  const hasMeasured = summary.exact.prompt_count > 0 || measuredTokens > 0;
+  const hasProxy = summary.proxy.session_minutes > 0;
+  if (!hasMeasured && !hasProxy) return null;
+
+  const costClause =
+    summary.cost.total_usd !== null && summary.cost.coverage === "full"
+      ? ` (~$${summary.cost.total_usd.toFixed(2)})`
+      : "";
+  const proxyClause = hasProxy
+    ? `${hasMeasured ? ", plus " : ""}~${Math.round(summary.proxy.session_minutes)} min of observed AI-assistant sessions (estimate)`
+    : "";
+  const measuredClause = hasMeasured
+    ? `~${summary.exact.prompt_count} prompts and ${formatTokensApprox(measuredTokens)} tokens measured${costClause}`
+    : "";
+  return `AI assistance this week: ${measuredClause}${proxyClause}.`;
+}
+
 export function generateWeeklyNarrative(
   snapshot: WeeklyCapacitySnapshot,
-  baselines?: CapacityBaselines | null
+  baselines?: CapacityBaselines | null,
+  usage?: NarrativeUsageInput | null
 ): WeeklyNarrative {
   // Frame the headline + lead driver on whichever tracked allocation actually leads the week — not
   // a planned-vs-reactive binary. The old `reactive_pct > planned_pct * 0.7` test collapsed to
@@ -971,13 +1032,25 @@ export function generateWeeklyNarrative(
   const reliabilityClause = overKnee
     ? `reliable new-work capacity is estimated at ${snapshot.reliable_new_work_capacity_pct}% — already past the ~${TARGET_UTILIZATION_PCT}% utilization knee where delivery reliability degrades`
     : `reliable new-work capacity is estimated at ${snapshot.reliable_new_work_capacity_pct}% — enough to stay near the ~${TARGET_UTILIZATION_PCT}% utilization knee where delivery reliability holds`;
+  const usageSentence = buildUsageSentence(usage);
+  if (usageSentence) {
+    topDrivers.push(
+      usage?.summary && usage.summary.exact.prompt_count > 0
+        ? "AI assistance contributed measured work throughout the week"
+        : "AI-assistant sessions were observed alongside tracked work (estimate)"
+    );
+  }
+  const managerBase = overKnee
+    ? "I kept my core priorities moving this week while also handling several interruptions and recurring commitments. Those demands left less uninterrupted time than planned, and I am carrying some work into next week. My immediate focus is finishing those commitments before I take on another substantial project."
+    : "I kept my core priorities moving this week while balancing a few interruptions and recurring commitments. I made steady progress on the work already in flight and still have some room for an additional focused priority next week. I will protect time for the current deliverables and flag early if new requests begin to compete with them.";
   return {
     week_id: snapshot.week_id,
     headline,
-    summary_text: `Estimated allocation reached ${snapshot.allocated_pct}% of a standard ${WEEKLY_BASELINE_HOURS}-hour week. Planned work accounted for ${snapshot.planned_pct}%, reactive work for ${snapshot.reactive_pct}%, and meetings for ${snapshot.meeting_pct}%. About ${snapshot.committed_utilization_pct}% of next week is already committed (recurring work, carryover, reactive load and fragmentation), so ${reliabilityClause}.`,
+    summary_text: `Estimated allocation reached ${snapshot.allocated_pct}% of a standard ${WEEKLY_BASELINE_HOURS}-hour week. Planned work accounted for ${snapshot.planned_pct}%, reactive work for ${snapshot.reactive_pct}%, and meetings for ${snapshot.meeting_pct}%. About ${snapshot.committed_utilization_pct}% of next week is already committed (recurring work, carryover, reactive load and fragmentation), so ${reliabilityClause}.${usageSentence ? ` ${usageSentence}` : ""}`,
     key_drivers: topDrivers,
-    manager_ready_summary: overKnee
-      ? "I kept my core priorities moving this week while also handling several interruptions and recurring commitments. Those demands left less uninterrupted time than planned, and I am carrying some work into next week. My immediate focus is finishing those commitments before I take on another substantial project."
-      : "I kept my core priorities moving this week while balancing a few interruptions and recurring commitments. I made steady progress on the work already in flight and still have some room for an additional focused priority next week. I will protect time for the current deliverables and flag early if new requests begin to compete with them."
+    manager_ready_summary:
+      usageSentence && usage?.include_in_manager_summary
+        ? `${managerBase} ${usageSentence}`
+        : managerBase
   };
 }

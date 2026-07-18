@@ -10,7 +10,6 @@ import {
   Rocket,
   RotateCcw,
   Settings,
-  Sparkles,
   Upload,
   Wrench,
   Workflow,
@@ -21,12 +20,13 @@ import type { LucideIcon } from "lucide-react";
 import type { AccelerationPlay, AccelerationSignal, AccelerationPlayType } from "../../../../../packages/domain/src/models";
 import type { RealizedSavingsEntry, RealizedSavingsSummary } from "../../../../../packages/inference/src/accelerate";
 import { MIN_ACCELERATION_MINUTES_SAVED_PER_WEEK } from "../../../../../packages/inference/src/accelerate";
-import type { Screen } from "../../lib/types";
+import type { Screen, SettingsTab } from "../../lib/types";
 import { accelerationTypeGloss, accelerationTypeLabel, formatAuditTime, formatDurationMinutes } from "../../lib/format";
 import type { PushToast } from "../../hooks/useToasts";
 import { EmptyState } from "../common/EmptyState";
 import { EvidenceDetails } from "../common/EvidenceDetails";
 import { InlineError } from "../common/InlineError";
+import { AgentMark } from "../common/AgentMark";
 import { AccelerationTrackRecord } from "./AccelerationTrackRecord";
 
 const TYPE_ICONS: Record<AccelerationPlayType, LucideIcon> = {
@@ -56,7 +56,11 @@ function PlayCard({
   onDismiss: (signal: AccelerationSignal) => void;
   pushToast: PushToast;
 }) {
-  const Icon = TYPE_ICONS[signal.type];
+  // Fall back to Lightbulb for an off-enum play type — `<Icon>` with an undefined component
+  // throws "Element type is invalid" and (no ErrorBoundary) white-screens the whole app.
+  // Mirrors the sibling SkillsLibraryScreen SavedSkillCard guard and the `?? type` graceful
+  // degradation the accelerationTypeLabel/Gloss helpers already do for the raw string below.
+  const Icon = TYPE_ICONS[signal.type] ?? Lightbulb;
   const savedLabel = `~${formatDurationMinutes(signal.estimated_minutes_saved_per_week)}`;
   const confidencePct = Math.round(signal.confidence * 100);
   const recurrenceWeeks = signal.recurrence_weeks ?? 0;
@@ -90,7 +94,7 @@ function PlayCard({
               className="play-ai-badge"
               title="Your configured AI wrote this play's description, recipe, and tool picks. The reclaimable estimate, confidence, and cited evidence stay derived from your observed work."
             >
-              <Sparkles size={12} aria-hidden />
+              <AgentMark size={12} aria-hidden />
               <span>AI-authored</span>
               <span className="sr-only">
                 . The description, recipe, and tool picks were written by your configured AI; the
@@ -261,6 +265,7 @@ export function AccelerationScreen({
   onRestoreDismissedPlays,
   hasWorkBlocks,
   onOpenScreen,
+  onOpenSettingsTab,
   generateStatus,
   generateError,
   onGenerateSkills,
@@ -283,6 +288,7 @@ export function AccelerationScreen({
   onRestoreDismissedPlays: () => void;
   hasWorkBlocks: boolean;
   onOpenScreen: (screen: Screen) => void;
+  onOpenSettingsTab: (tab: SettingsTab) => void;
   generateStatus: "idle" | "generating" | "error";
   generateError: string | null;
   onGenerateSkills: () => void;
@@ -339,7 +345,7 @@ export function AccelerationScreen({
         >
           <button className="primary-action" type="button" onClick={() => onOpenScreen("setup")}>
             <Upload size={16} aria-hidden />
-            <span>Import calendar</span>
+            <span>Import calendar in Settings</span>
           </button>
           <button className="secondary-action" type="button" onClick={() => onOpenScreen("daily")}>
             <span>Review today</span>
@@ -408,7 +414,7 @@ export function AccelerationScreen({
           )}
         </div>
         <div className="acceleration-total" title="Combined estimated time the plays below could reclaim each week">
-          <Sparkles size={16} aria-hidden />
+          <Zap size={16} aria-hidden />
           <div>
             <strong>~{formatDurationMinutes(totalSaved)}</strong>
             <small>est. saved / week</small>
@@ -425,16 +431,17 @@ export function AccelerationScreen({
               type="button"
               className="primary-action"
               disabled={generateStatus === "generating"}
+              aria-busy={generateStatus === "generating"}
               onClick={onGenerateSkills}
               title="Send the derived signals above (app-name flows and counts only — never window titles) to your configured AI to author step-by-step skill recipes and tool picks"
             >
-              <Sparkles size={16} aria-hidden />
+              <AgentMark size={16} animated={generateStatus === "generating"} aria-hidden />
               <span>
                 {generateStatus === "generating"
-                  ? "Authoring skills…"
+                  ? "Authoring Skills…"
                   : hasAuthoredPlays
-                    ? "Regenerate skills"
-                    : "Generate skills"}
+                    ? "Regenerate Skills"
+                    : "Generate Skills"}
               </span>
             </button>
             <p className="acceleration-synth-note">
@@ -449,7 +456,7 @@ export function AccelerationScreen({
               Add an AI key in Settings to author runnable skill recipes and tool picks from these
               plays. The plays above are always available without AI.
             </p>
-            <button type="button" className="secondary-action" onClick={() => onOpenScreen("setup")}>
+            <button type="button" className="secondary-action" onClick={() => onOpenSettingsTab("ai-assistance")}>
               <Settings size={16} aria-hidden />
               <span>Open Settings</span>
             </button>
@@ -463,6 +470,7 @@ export function AccelerationScreen({
         titleBySignalId={titleBySignalId}
       />
       <div className="play-grid">
+        <h2 className="sr-only">Acceleration plays</h2>
         {visibleSignals.map((signal) => (
           <PlayCard
             key={signal.signal_id}

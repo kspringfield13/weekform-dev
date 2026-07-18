@@ -120,12 +120,15 @@ export function CapacityTrendChart({
               className={`trend-legend-item ${item.className}`}
               role="listitem"
               key={item.key}
+              tabIndex={0}
               style={{
                 opacity: hoveredSeries && hoveredSeries !== item.key ? 0.3 : 1,
                 transition: "opacity 0.12s",
               }}
               onMouseEnter={() => setHoveredSeries(item.key)}
               onMouseLeave={() => setHoveredSeries(null)}
+              onFocus={() => setHoveredSeries(item.key)}
+              onBlur={() => setHoveredSeries(null)}
             >
               <span className="trend-legend-swatch" aria-hidden />
               <span className="trend-legend-label">{item.label}</span>

@@ -83,6 +83,73 @@ export function createCalendarImportAuditEvent(input: {
 }
 
 /**
+ * Build the audit event for a usage-CSV import (mirrors `createChatImportAuditEvent`).
+ * Usage imports carry token counts, model ids, dates, and optional costs — no prompt
+ * text exists in the format — so the details affirm that (`prompt_text: false`). A
+ * local file import is not a network call, so `privacy_level` is `local_only`.
+ */
+export function createUsageImportAuditEvent(input: {
+  fileName: string;
+  importedRowCount: number;
+  skippedRowCount: number;
+  duplicateRowCount: number;
+}): AuditEvent {
+  const { fileName, importedRowCount, skippedRowCount, duplicateRowCount } = input;
+  return createAuditEvent({
+    type: "usage_import",
+    source: "usage_csv",
+    title: "Token usage CSV imported",
+    summary: `${importedRowCount} usage row${importedRowCount === 1 ? "" : "s"} from ${fileName}`,
+    privacy_level: "local_only",
+    details: {
+      file_name: fileName,
+      imported_row_count: importedRowCount,
+      skipped_row_count: skippedRowCount,
+      duplicate_row_count: duplicateRowCount,
+      stored_locally: true,
+      sent_to_cloud: false,
+      prompt_text: false
+    }
+  });
+}
+
+/**
+ * Build the audit event for a change to the AI-usage settings (observed estimates,
+ * manager-summary toggle, and price-map edits). Consent changes are exactly what the
+ * audit trail exists to explain, so each change records the new flag states and
+ * the price-map size — never the map contents (model pricing is user config, not
+ * needed for explainability).
+ */
+export function createUsageSettingsAuditEvent(input: {
+  changedFields: string[];
+  observedProxyEnabled: boolean;
+  includeInManagerSummary: boolean;
+  priceMapEntryCount: number;
+}): AuditEvent {
+  const {
+    changedFields,
+    observedProxyEnabled,
+    includeInManagerSummary,
+    priceMapEntryCount
+  } = input;
+  return createAuditEvent({
+    type: "usage_settings",
+    source: "settings",
+    title: "AI usage settings changed",
+    summary: `Updated ${changedFields.join(", ")}`,
+    privacy_level: "local_only",
+    details: {
+      changed_fields: changedFields,
+      observed_proxy_enabled: observedProxyEnabled,
+      include_in_manager_summary: includeInManagerSummary,
+      price_map_entry_count: priceMapEntryCount,
+      stored_locally: true,
+      sent_to_cloud: false
+    }
+  });
+}
+
+/**
  * Build the audit event for a discrete user action on an Acceleration Play: hide
  * (`dismissed`), snapshot its generated recipe into the Saved Skills library
  * (`saved_to_library`), or mark it acted on. Plays are mined from the user's observed work, so the event

@@ -72,7 +72,7 @@ export function ForecastScreen({
         <div>
           <p className="eyebrow">Weekly forecast</p>
           <h1>Next week: {nextWeekRangeLabel}.</h1>
-          <p className="screen-subhead">
+          <p className="screen-intro">
             This week's model leaves {pct(snapshot.reliable_new_work_capacity_pct)} reliable capacity —
             the baseline the AI forecast refines for next week. Generate one to add assumptions,
             constraints, scenarios, and planning recommendations.

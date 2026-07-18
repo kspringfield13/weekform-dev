@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { addDays, getBusinessWeekRangeLabel, getCurrentIsoWeekId, getLocalDateKey } from "../lib/date";
 
-// Cadence for detecting a local-date rollover. ClearCapacity is a menu-bar/tray
+// Cadence for detecting a local-date rollover. Weekform is a menu-bar/tray
 // app that can stay mounted for days, so the date-derived keys must not stay
 // frozen at their mount-time value — otherwise the narrative daily-run guard, the
 // visual-context daily cap, and week attribution all drift once the clock crosses

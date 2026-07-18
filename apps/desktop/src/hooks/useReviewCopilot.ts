@@ -112,20 +112,37 @@ export function useReviewCopilot({
         )
       );
       const blockIds = new Set(blocks.map((block) => block.work_block_id));
-      const suggestions = response.result.suggestions
-        .map<ReviewCopilotSuggestion>((suggestion) => ({
-          ...suggestion,
-          // Normalize the AI-returned confidence to a finite [0,1] value so a malformed
-          // response can't render "NaN%" or an out-of-range percentage in the suggestion row
-          // (matches the parse-layer normalization in useClassification/useAcceleration).
-          confidence: Number.isFinite(suggestion.confidence)
-            ? Math.max(0, Math.min(1, suggestion.confidence))
-            : 0,
-          work_block_ids: suggestion.work_block_ids.filter((blockId) => blockIds.has(blockId)),
-          suggestion_id: `review-${stableHash(
-            `${startedAt}-${suggestion.action}-${suggestion.work_block_ids.join("|")}-${suggestion.title}`
-          )}`,
-        }))
+      // The native response is JSON.parse-only (the strict schema is server-side and
+      // unenforceable for a custom provider), so `suggestions` and each `work_block_ids`
+      // are trusted-TS-but-not-runtime-checked arrays. A non-array would throw in the
+      // `.map`/`.filter`/`.join` below, get caught, and misreport a paid, successful
+      // generation as "failed" — coerce both to `[]` so a malformed payload degrades
+      // (drops the bad suggestion, keeps well-formed siblings) instead (matches the
+      // confidence guard below and the array coercion in useNarrativeGeneration/useForecastAgent).
+      const rawSuggestions = Array.isArray(response.result?.suggestions)
+        ? response.result.suggestions
+        : [];
+      const suggestions = rawSuggestions
+        .map<ReviewCopilotSuggestion>((suggestion) => {
+          // Coerce once and reuse for both the filter and the suggestion_id hash so the
+          // hash input stays byte-identical to the raw array on well-formed data.
+          const rawBlockIds = Array.isArray(suggestion.work_block_ids)
+            ? suggestion.work_block_ids
+            : [];
+          return {
+            ...suggestion,
+            // Normalize the AI-returned confidence to a finite [0,1] value so a malformed
+            // response can't render "NaN%" or an out-of-range percentage in the suggestion row
+            // (matches the parse-layer normalization in useClassification/useAcceleration).
+            confidence: Number.isFinite(suggestion.confidence)
+              ? Math.max(0, Math.min(1, suggestion.confidence))
+              : 0,
+            work_block_ids: rawBlockIds.filter((blockId) => blockIds.has(blockId)),
+            suggestion_id: `review-${stableHash(
+              `${startedAt}-${suggestion.action}-${rawBlockIds.join("|")}-${suggestion.title}`
+            )}`,
+          };
+        })
         .filter((suggestion) => suggestion.work_block_ids.length > 0);
 
       setReviewSuggestions(suggestions);

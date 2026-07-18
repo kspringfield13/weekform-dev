@@ -1,10 +1,13 @@
-import type { Screen, WindowMode } from "../../lib/types";
+import type { AppActionResult, Screen, SettingsTab, WindowMode } from "../../lib/types";
 import type {
   ActiveWindowSample,
   ActivitySession,
   AuditEvent,
   OutlookCalendarEvent,
   ReviewCopilotSuggestion,
+  TokenUsageDay,
+  TokenUsageSettings,
+  WeeklyAIUsageSummary,
   UserCorrection,
   VisualContextInsight,
   WorkBlock,
@@ -24,6 +27,7 @@ import { DailyReviewScreen } from "../review/DailyReviewScreen";
 import { WeeklyCapacityScreen } from "../capacity/WeeklyCapacityScreen";
 import { ForecastScreen } from "../capacity/ForecastScreen";
 import { NarrativeScreen } from "../narrative/NarrativeScreen";
+import { UsageScreen } from "../usage/UsageScreen";
 import { AuditLogScreen } from "../audit/AuditLogScreen";
 import { SensitiveReviewScreen } from "../audit/SensitiveReviewScreen";
 import { AgentScreen } from "../agent/AgentScreen";
@@ -79,6 +83,8 @@ interface ScreenRouterProps {
   onDismissOnboarding: () => void;
   onReplayWalkthrough: () => void;
   // setup screen
+  activeSettingsTab: SettingsTab;
+  onActiveSettingsTabChange: (tab: SettingsTab) => void;
   visualContextEnabled: boolean;
   setVisualContextEnabled: (value: boolean) => void;
   visualContextInsights: VisualContextInsight[];
@@ -90,6 +96,15 @@ interface ScreenRouterProps {
   onImportOutlookIcs: (file: File) => void;
   chatImportError: string | null;
   onImportChatExport: (file: File) => void;
+  // AI usage tracking (setup + usage screens)
+  tokenUsageDays: TokenUsageDay[];
+  tokenUsageSettings: TokenUsageSettings;
+  proxyUsageDays: TokenUsageDay[];
+  aiUsageSummary: WeeklyAIUsageSummary;
+  onTokenUsageSettingsChange: (value: TokenUsageSettings) => void;
+  usageImportError: string | null;
+  lastUsageImportSummary: string | null;
+  onImportUsageCsv: (file: File) => void;
   aiConfig: AIConfig | null;
   setAiConfig: (value: AIConfig | null) => void;
   retentionDays: number | null;
@@ -104,7 +119,7 @@ interface ScreenRouterProps {
   classificationError: string | null;
   visualContextStatus: "idle" | "capturing" | "error";
   visualContextError: string | null;
-  onClassifySessions: () => void;
+  onClassifySessions: () => Promise<AppActionResult>;
   // corrections screen
   corrections: UserCorrection[];
   onResetLocalData: () => void;
@@ -126,7 +141,7 @@ interface ScreenRouterProps {
   forecastTrackRecord: ForecastTrackRecordEntry[];
   forecastStatus: "idle" | "generating" | "error";
   forecastError: string | null;
-  onGenerateForecast: () => void;
+  onGenerateForecast: () => Promise<AppActionResult>;
   // narrative screen
   narrative: ReturnType<typeof generateWeeklyNarrative>;
   generatedNarrative: PersistedNarrativeRecord | null;
@@ -135,7 +150,7 @@ interface ScreenRouterProps {
   narrativeGenerationError: string | null;
   managerSummaryText: string | null;
   onManagerSummaryChange: (value: string) => void;
-  onRegenerate: () => void;
+  onRegenerate: () => Promise<AppActionResult>;
   // audit log screen
   auditEvents: AuditEvent[];
   // agent screen
@@ -186,6 +201,8 @@ export function ScreenRouter({
   showOnboarding,
   onDismissOnboarding,
   onReplayWalkthrough,
+  activeSettingsTab,
+  onActiveSettingsTabChange,
   visualContextEnabled,
   setVisualContextEnabled,
   visualContextInsights,
@@ -197,6 +214,14 @@ export function ScreenRouter({
   onImportOutlookIcs,
   chatImportError,
   onImportChatExport,
+  tokenUsageDays,
+  tokenUsageSettings,
+  proxyUsageDays,
+  aiUsageSummary,
+  onTokenUsageSettingsChange,
+  usageImportError,
+  lastUsageImportSummary,
+  onImportUsageCsv,
   aiConfig,
   setAiConfig,
   retentionDays,
@@ -241,6 +266,18 @@ export function ScreenRouter({
   currentWeekRangeLabel,
   pushToast,
 }: ScreenRouterProps) {
+  const openScreen = (screen: Screen) => {
+    if (screen === "setup") {
+      onActiveSettingsTabChange("data-sources");
+    }
+    onOpenScreen(screen);
+  };
+
+  const openSettingsTab = (tab: SettingsTab) => {
+    onActiveSettingsTabChange(tab);
+    onOpenScreen("setup");
+  };
+
   if (windowMode === "compact") {
     return (
       <CompactWidget
@@ -250,7 +287,7 @@ export function ScreenRouter({
         blocks={blocks}
         snapshot={snapshot}
         onPauseChange={setPaused}
-        onOpenScreen={onOpenScreen}
+        onOpenScreen={openScreen}
         onConfirm={onConfirm}
         onExclude={onExclude}
         proactiveAlert={proactiveAlert}
@@ -277,6 +314,12 @@ export function ScreenRouter({
           onImportOutlookIcs={onImportOutlookIcs}
           chatImportError={chatImportError}
           onImportChatExport={onImportChatExport}
+          tokenUsageDays={tokenUsageDays}
+          tokenUsageSettings={tokenUsageSettings}
+          onTokenUsageSettingsChange={onTokenUsageSettingsChange}
+          usageImportError={usageImportError}
+          lastUsageImportSummary={lastUsageImportSummary}
+          onImportUsageCsv={onImportUsageCsv}
           aiConfig={aiConfig}
           setAiConfig={setAiConfig}
           blocks={blocks}
@@ -289,6 +332,8 @@ export function ScreenRouter({
           proactiveAlertSettings={proactiveAlertSettings}
           onProactiveAlertSettingsChange={onProactiveAlertSettingsChange}
           onReplayWalkthrough={onReplayWalkthrough}
+          activeSettingsTab={activeSettingsTab}
+          onActiveSettingsTabChange={onActiveSettingsTabChange}
         />
       )}
       {active === "ledger" && (
@@ -307,7 +352,7 @@ export function ScreenRouter({
           onConfirm={onConfirm}
           onExclude={onExclude}
           onRelabel={onRelabel}
-          onOpenScreen={onOpenScreen}
+          onOpenScreen={openScreen}
         />
       )}
       {active === "daily" && (
@@ -316,7 +361,7 @@ export function ScreenRouter({
           onboardingSteps={onboardingSteps}
           showOnboarding={showOnboarding}
           onDismissOnboarding={onDismissOnboarding}
-          onOpenScreen={onOpenScreen}
+          onOpenScreen={openScreen}
           reviewSuggestions={reviewSuggestions}
           reviewCopilotStatus={reviewCopilotStatus}
           reviewCopilotError={reviewCopilotError}
@@ -341,7 +386,7 @@ export function ScreenRouter({
           weekRangeLabel={weekRangeLabel}
           hasWorkBlocks={blocks.length > 0}
           blocks={blocks}
-          onOpenScreen={onOpenScreen}
+          onOpenScreen={openScreen}
         />
       )}
       {active === "forecast" && (
@@ -349,7 +394,7 @@ export function ScreenRouter({
           snapshot={snapshot}
           snapshotHistory={snapshotHistory}
           nextWeekRangeLabel={nextWeekRangeLabel}
-          onOpenScreen={onOpenScreen}
+          onOpenScreen={openScreen}
           corrections={corrections}
           generatedForecast={generatedForecast}
           forecastAccuracy={forecastAccuracy}
@@ -375,6 +420,16 @@ export function ScreenRouter({
           pushToast={pushToast}
         />
       )}
+      {active === "usage" && (
+        <UsageScreen
+          summary={aiUsageSummary}
+          tokenUsageDays={tokenUsageDays}
+          proxyUsageDays={proxyUsageDays}
+          tokenUsageSettings={tokenUsageSettings}
+          todayKey={todayKey}
+          onOpenSettingsTab={openSettingsTab}
+        />
+      )}
       {active === "audit" && <AuditLogScreen auditEvents={auditEvents} pushToast={pushToast} />}
       {active === "sensitive" && (
         <SensitiveReviewScreen
@@ -397,7 +452,8 @@ export function ScreenRouter({
           onRemoveSkill={onRemoveSkill}
           onRestoreDismissedPlays={onRestoreDismissedPlays}
           hasWorkBlocks={blocks.length > 0}
-          onOpenScreen={onOpenScreen}
+          onOpenScreen={openScreen}
+          onOpenSettingsTab={openSettingsTab}
           generateStatus={accelerationStatus}
           generateError={accelerationError}
           onGenerateSkills={onGenerateAccelerationPlays}
@@ -411,7 +467,7 @@ export function ScreenRouter({
         <SkillsLibraryScreen
           savedSkills={savedSkills}
           onRemoveSkill={onRemoveSkill}
-          onOpenScreen={onOpenScreen}
+          onOpenScreen={openScreen}
           pushToast={pushToast}
         />
       )}
@@ -423,10 +479,15 @@ export function ScreenRouter({
           calendarEvents={calendarEvents}
           corrections={corrections}
           visualContextInsights={visualContextInsights}
+          aiUsageSummary={aiUsageSummary}
           todayKey={todayKey}
           currentWeekRangeLabel={currentWeekRangeLabel}
           aiConfig={aiConfig}
-          onOpenScreen={onOpenScreen}
+          hasNarrativeEvidence={hasNarrativeEvidence}
+          onOpenScreen={openScreen}
+          onClassifySessions={onClassifySessions}
+          onGenerateForecast={onGenerateForecast}
+          onGenerateNarrative={onRegenerate}
           pushToast={pushToast}
         />
       )}

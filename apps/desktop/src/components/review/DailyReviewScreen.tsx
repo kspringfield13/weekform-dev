@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Check, CalendarCheck, Sparkles, Undo2, Upload } from "lucide-react";
+import { useEffect, useMemo, useRef } from "react";
+import { Check, CalendarCheck, Undo2, Upload } from "lucide-react";
 import type {
   WorkBlock,
   ReviewCopilotSuggestion,
@@ -12,6 +12,7 @@ import { learnedLabelsForBlock } from "../../lib/learnedLabels";
 import { BlockCard } from "../ledger/BlockCard";
 import { EmptyState } from "../common/EmptyState";
 import { OnboardingCard, type OnboardingStep } from "../common/OnboardingCard";
+import { AgentMark } from "../common/AgentMark";
 import { ReviewCopilotPanel } from "./ReviewCopilotPanel";
 
 export function DailyReviewScreen({
@@ -70,6 +71,15 @@ export function DailyReviewScreen({
     return map;
   }, [blocks]);
 
+  // Play the completion entrance only when the queue empties while this screen
+  // is mounted — not when the user navigates here and it was already done.
+  // Placed above the no-blocks early return to keep hook order unconditional.
+  const hadQueueRef = useRef(false);
+  const justCompleted = reviewQueue.length === 0 && hadQueueRef.current;
+  useEffect(() => {
+    hadQueueRef.current = reviewQueue.length > 0;
+  }, [reviewQueue.length]);
+
   if (blocks.length === 0) {
     return (
       <section className="screen review-screen">
@@ -85,7 +95,7 @@ export function DailyReviewScreen({
         <EmptyState
           icon={CalendarCheck}
           title="Your review queue is empty."
-          description="ClearCapacity will place inferred work here after Outlook meetings are imported or active-window sessions are classified."
+          description="Weekform will place inferred work here after Outlook meetings are imported or active-window sessions are classified."
         >
           <button className="primary-action" type="button" onClick={() => onOpenScreen("setup")}>
             <Upload size={16} aria-hidden />
@@ -119,10 +129,11 @@ export function DailyReviewScreen({
               className="secondary-action"
               type="button"
               disabled={reviewCopilotStatus === "generating"}
+              aria-busy={reviewCopilotStatus === "generating"}
               onClick={onGenerateReviewSuggestions}
               title="Ask AI to suggest cleanup actions for unconfirmed blocks"
             >
-              <Sparkles size={16} aria-hidden />
+              <AgentMark size={16} animated={reviewCopilotStatus === "generating"} aria-hidden />
               <span>{reviewCopilotStatus === "generating" ? "Thinking…" : "Suggest cleanup"}</span>
             </button>
             <button
@@ -176,11 +187,13 @@ export function DailyReviewScreen({
       {allDone ? (
         <EmptyState
           icon={Check}
+          className={justCompleted ? "empty-state-celebrate" : undefined}
           title="Everything is confirmed."
           description="New Outlook imports and active-window-derived blocks will appear here when they need your review."
         />
       ) : (
         <div className="ledger-list">
+          <h2 className="sr-only">Blocks to review</h2>
           {reviewQueue.map((block) => (
             <BlockCard
               block={block}

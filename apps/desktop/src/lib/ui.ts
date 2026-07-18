@@ -5,6 +5,7 @@ export const screenLabels: Record<string, string> = {
   weekly: "Weekly Capacity",
   forecast: "Weekly Forecast",
   narrative: "Weekly Summary",
+  usage: "AI Usage",
   audit: "Audit History",
   sensitive: "Flagged Captures",
   agent: "Agent",
@@ -26,7 +27,7 @@ export const tabId = (screen: string) => `tab-${screen}`;
 
 export function primarySectionForScreen(screen: string): string | null {
   if (screen === "daily") return "today";
-  if (screen === "weekly" || screen === "forecast" || screen === "narrative") return "week";
+  if (screen === "weekly" || screen === "forecast" || screen === "narrative" || screen === "usage") return "week";
   if (screen === "ledger" || screen === "audit" || screen === "sensitive") return "history";
   if (screen === "agent" || screen === "accelerate" || screen === "skills") return "agent";
   return null;
@@ -37,6 +38,7 @@ export function sectionViews(section: string | null, options?: { includeFlagged?
     return [
       { id: "weekly" as const, label: "Capacity" },
       { id: "forecast" as const, label: "Forecast" },
+      { id: "usage" as const, label: "AI Usage" },
       { id: "narrative" as const, label: "Summary" }
     ];
   }

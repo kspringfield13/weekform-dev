@@ -20,8 +20,8 @@ use tauri::{
 };
 
 const MAIN_WINDOW_LABEL: &str = "main";
-const COMPACT_WINDOW_WIDTH: u32 = 780;
-const COMPACT_WINDOW_HEIGHT: u32 = 980;
+const COMPACT_WINDOW_WIDTH: u32 = 620;
+const COMPACT_WINDOW_HEIGHT: u32 = 850;
 const COMPACT_WINDOW_RIGHT_MARGIN: i32 = 16;
 const COMPACT_WINDOW_TOP_OFFSET: i32 = 44;
 
@@ -34,7 +34,6 @@ struct TrayHandle(TrayIcon<Wry>);
 struct ActivityCaptureState {
     paused: Arc<AtomicBool>,
 }
-
 #[derive(Clone, Serialize)]
 struct ActiveWindowPayload {
     timestamp_ms: u64,
@@ -262,7 +261,7 @@ fn show_dashboard(app: &AppHandle) {
     }
 
     let _ = WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::default())
-        .title("ClearCapacity")
+        .title("Weekform")
         .inner_size(1280.0, 860.0)
         .min_inner_size(1024.0, 720.0)
         .visible(true)
@@ -423,7 +422,7 @@ fn extract_response_text(value: &Value) -> Option<String> {
 }
 
 fn capture_screen_png_base64() -> Result<String, String> {
-    let path = env::temp_dir().join(format!("clear-capacity-visual-context-{}.png", now_ms()));
+    let path = env::temp_dir().join(format!("weekform-visual-context-{}.png", now_ms()));
     let status = Command::new("screencapture")
         .args(["-x", "-t", "png"])
         .arg(&path)
@@ -433,7 +432,7 @@ fn capture_screen_png_base64() -> Result<String, String> {
     if !status.success() {
         let _ = fs::remove_file(&path);
         return Err(
-            "macOS screen capture failed. ClearCapacity may need Screen Recording permission."
+            "macOS screen capture failed. Weekform may need Screen Recording permission."
                 .to_string(),
         );
     }
@@ -657,12 +656,12 @@ async fn generate_weekly_narrative_with_openai(
     let mut body = json!({
       "model": model,
       "store": false,
-      "instructions": "You generate ClearCapacity weekly workload narratives from structured local work context. Keep summary_text and key_drivers concrete, explainable, and careful not to overstate certainty. Write manager_ready_summary as a polished first-person update in the user's own voice, focused on projects, tasks, progress, interruptions, blockers, and next steps. The manager-ready text must never mention confidence, evidence, tracking, classification, sessions, work blocks, models, estimates, app mechanics, review status, or technical capacity terminology. Return only JSON matching the requested schema. Adapt to any model capabilities.",
+      "instructions": "You generate Weekform weekly workload narratives from structured local work context. Keep summary_text and key_drivers concrete, explainable, and careful not to overstate certainty. Write manager_ready_summary as a polished first-person update in the user's own voice, focused on projects, tasks, progress, interruptions, blockers, and next steps. The manager-ready text must never mention confidence, evidence, tracking, classification, sessions, work blocks, models, estimates, app mechanics, review status, or technical capacity terminology. Return only JSON matching the requested schema. Adapt to any model capabilities.",
       "input": request.prompt,
       "text": {
         "format": {
           "type": "json_schema",
-          "name": "clear_capacity_weekly_narrative",
+          "name": "weekform_weekly_narrative",
           "strict": true,
           "schema": schema
         }
@@ -792,12 +791,12 @@ async fn classify_active_window_sessions_with_openai(
     let mut body = json!({
       "model": model,
       "store": false,
-      "instructions": "You classify local macOS active-window sessions into ClearCapacity draft work blocks. Be conservative, evidence-based, prefer high-confidence only when signals are clear. Return only JSON matching the requested schema.",
+      "instructions": "You classify local macOS active-window sessions into Weekform draft work blocks. Be conservative, evidence-based, prefer high-confidence only when signals are clear. Return only JSON matching the requested schema.",
       "input": request.prompt,
       "text": {
         "format": {
           "type": "json_schema",
-          "name": "clear_capacity_work_block_classification",
+          "name": "weekform_work_block_classification",
           "strict": true,
           "schema": schema
         }
@@ -942,12 +941,12 @@ async fn generate_review_copilot_suggestions_with_openai(
     let mut body = json!({
       "model": model,
       "store": false,
-      "instructions": "You generate ClearCapacity Daily Review Copilot suggestions. Be conservative, actionable, and return only JSON matching the requested schema.",
+      "instructions": "You generate Weekform Daily Review Copilot suggestions. Be conservative, actionable, and return only JSON matching the requested schema.",
       "input": request.prompt,
       "text": {
         "format": {
           "type": "json_schema",
-          "name": "clear_capacity_review_copilot_suggestions",
+          "name": "weekform_review_copilot_suggestions",
           "strict": true,
           "schema": schema
         }
@@ -1050,12 +1049,12 @@ async fn generate_forecast_agent_with_openai(
     let mut body = json!({
       "model": model,
       "store": false,
-      "instructions": "You generate ClearCapacity next-week capacity forecasts. Be conservative, explainable, planning-oriented, and return only JSON matching the requested schema.",
+      "instructions": "You generate Weekform next-week capacity forecasts. Be conservative, explainable, planning-oriented, and return only JSON matching the requested schema.",
       "input": request.prompt,
       "text": {
         "format": {
           "type": "json_schema",
-          "name": "clear_capacity_forecast_agent",
+          "name": "weekform_forecast_agent",
           "strict": true,
           "schema": schema
         }
@@ -1176,7 +1175,7 @@ async fn capture_visual_context_with_openai(
     let mut body = json!({
       "model": model,
       "store": false,
-      "instructions": "You generate privacy-conscious ClearCapacity Visual Context insights from consented screenshots. Avoid transcribing sensitive details and return only JSON matching the requested schema.",
+      "instructions": "You generate privacy-conscious Weekform Visual Context insights from consented screenshots. Avoid transcribing sensitive details and return only JSON matching the requested schema.",
       "input": [{
         "role": "user",
         "content": [
@@ -1194,7 +1193,7 @@ async fn capture_visual_context_with_openai(
       "text": {
         "format": {
           "type": "json_schema",
-          "name": "clear_capacity_visual_context",
+          "name": "weekform_visual_context",
           "strict": true,
           "schema": schema
         }
@@ -1255,7 +1254,7 @@ async fn chat_with_agent(request: AgentChatRequest) -> Result<AgentChatResponse,
     let body = json!({
       "model": model,
       "store": false,
-      "instructions": "You are the ClearCapacity Agent. Your focus is helping the user understand and explain their tracked capacity (reliable new-work %), current day/week workload (blocks, sessions, calendar, corrections), and primary focus/projects. Use only provided context and tool results. Be factual, concise, reference specific numbers/projects/times. If insufficient data say so.",
+      "instructions": "You are the Weekform Agent. Your focus is helping the user understand and explain their tracked capacity (reliable new-work %), current day/week workload (blocks, sessions, calendar, corrections), and primary focus/projects. Use only provided context and tool results. Be factual, concise, reference specific numbers/projects/times. If insufficient data say so.",
       "input": request.prompt,
       "text": {
         "format": { "type": "text" }
@@ -1426,7 +1425,7 @@ fn configure_tray(app: &tauri::App) -> tauri::Result<()> {
         true,
         None::<&str>,
     )?;
-    let quit = MenuItem::with_id(app, "quit", "Quit ClearCapacity", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Weekform", true, None::<&str>)?;
     let separator_one = PredefinedMenuItem::separator(app)?;
     let separator_two = PredefinedMenuItem::separator(app)?;
     let separator_three = PredefinedMenuItem::separator(app)?;
@@ -1454,7 +1453,7 @@ fn configure_tray(app: &tauri::App) -> tauri::Result<()> {
     app.manage(PauseMenuItem(pause_tracking.clone()));
 
     let tray = TrayIconBuilder::new()
-        .tooltip("ClearCapacity")
+        .tooltip("Weekform")
         .icon(icon)
         .icon_as_template(true)
         .menu(&menu)
@@ -1564,5 +1563,5 @@ pub fn run() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("error while running ClearCapacity");
+        .expect("error while running Weekform");
 }

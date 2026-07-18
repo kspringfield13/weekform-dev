@@ -8,7 +8,7 @@ import type {
 import { plannedStatuses, workCategories, workModes } from "../../../../packages/domain/src/taxonomy";
 import { summarizeSessionForPrompt } from "./promptSummaries";
 
-export const REVIEW_COPILOT_PROMPT_VERSION = "clear-capacity-review-copilot-v2";
+export const REVIEW_COPILOT_PROMPT_VERSION = "weekform-review-copilot-v2";
 
 function sortByStartTime<T extends { start_time: string }>(items: T[]) {
   return [...items].sort((left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime());
@@ -79,7 +79,7 @@ export function buildReviewCopilotPrompt({
     .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
     .slice(0, 50);
   const context = {
-    product: "ClearCapacity",
+    product: "Weekform",
     prompt_version: REVIEW_COPILOT_PROMPT_VERSION,
     objective:
       "Suggest safe, reviewable actions that help the analyst clean up today's unverified work blocks quickly.",
@@ -118,7 +118,7 @@ export function buildReviewCopilotPrompt({
   };
 
   return [
-    "Generate ClearCapacity Daily Review Copilot suggestions from this structured context.",
+    "Generate Weekform Daily Review Copilot suggestions from this structured context.",
     "Return strict JSON only. Do not include markdown.",
     JSON.stringify(context, null, 2)
   ].join("\n\n");

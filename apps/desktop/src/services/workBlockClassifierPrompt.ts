@@ -9,7 +9,7 @@ import { plannedStatuses, workCategories, workModes } from "../../../../packages
 import { analyzeCorrections } from "../../../../packages/inference/src/capacity";
 import { summarizeSessionForPrompt, summarizeVisualInsightForPrompt } from "./promptSummaries";
 
-export const WORK_BLOCK_CLASSIFIER_PROMPT_VERSION = "clear-capacity-work-block-classifier-v4";
+export const WORK_BLOCK_CLASSIFIER_PROMPT_VERSION = "weekform-work-block-classifier-v4";
 
 // How many systematic biases to surface as few-shot relabel hints. The analysis
 // already sorts by frequency and applies a repeat threshold, so the top handful are
@@ -91,7 +91,7 @@ export function buildWorkBlockClassifierPrompt({
     }));
 
   const context = {
-    product: "ClearCapacity",
+    product: "Weekform",
     prompt_version: WORK_BLOCK_CLASSIFIER_PROMPT_VERSION,
     objective:
       "Convert active-window sessions into explainable draft work blocks for an analyst workload ledger. Use evidence from app names, calendar, and derived visual context. Be precise with categories.",
@@ -119,8 +119,16 @@ export function buildWorkBlockClassifierPrompt({
       baseline: "100% = standard 40-hour work week"
     },
     input_sessions: sortByStartTime(sessions).map(summarizeSessionForPrompt),
+    // Skip flagged captures (sensitive_content_detected): they await user review/purge in
+    // the Flagged Captures queue and must never leave the device in an AI payload before
+    // then, mirroring the Agent tool's guard (agentTools.ts).
     visual_context_insights: visualContextInsights
-      .filter((insight) => insight.session_id && sessions.some((session) => session.session_id === insight.session_id))
+      .filter(
+        (insight) =>
+          !insight.sensitive_content_detected &&
+          insight.session_id &&
+          sessions.some((session) => session.session_id === insight.session_id)
+      )
       .map(summarizeVisualInsightForPrompt),
     existing_work_blocks: sortByStartTime(existingBlocks).map(summarizeExistingBlock),
     outlook_calendar_context: sortByStartTime(calendarEvents).map(summarizeCalendarEvent),
@@ -143,7 +151,7 @@ export function buildWorkBlockClassifierPrompt({
   };
 
   return [
-    "Classify these ClearCapacity active-window sessions into draft work blocks.",
+    "Classify these Weekform active-window sessions into draft work blocks.",
     "Return strict JSON only. Do not include markdown.",
     JSON.stringify(context, null, 2)
   ].join("\n\n");

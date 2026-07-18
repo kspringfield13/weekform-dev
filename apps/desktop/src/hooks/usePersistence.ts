@@ -68,6 +68,9 @@ export function usePersistence(
     persistData.walkthroughCompleted,
     persistData.proactiveAlertSettings,
     persistData.proactiveAlertRuntime,
+    persistData.tokenUsageDays,
+    persistData.tokenUsageSettings,
+    persistData.usageCsvRowHashes,
     isDemoMode,
   ]);
 }

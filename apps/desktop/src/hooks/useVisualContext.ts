@@ -83,9 +83,22 @@ export function useVisualContext({
           },
         })
       );
+      // Guard the native `captured_at_ms` before ISO-formatting it: a missing / NaN /
+      // out-of-range value makes `new Date(x).toISOString()` throw a RangeError, which
+      // (inside this try) would be caught and MISREPORTED as a "capture failed" — silently
+      // discarding a successful, already-paid vision analysis. Fall back to the capture-start
+      // ISO (`startedAt`) so the insight is preserved. Uses the shared finite-before-toISOString
+      // idiom (`Number.isFinite(new Date(x).getTime())`, mirroring useActiveWindow's guard on
+      // the native timestamp_ms) — which also catches an in-range-finite-but-out-of-Date-range
+      // value a bare `Number.isFinite(captured_at_ms)` would miss. `insight.captured_at` is
+      // reused for the audit timestamp below, so both stay on one valid ISO.
+      const capturedDate = new Date(response.captured_at_ms);
+      const capturedAt = Number.isFinite(capturedDate.getTime())
+        ? capturedDate.toISOString()
+        : startedAt;
       const insight: VisualContextInsight = {
         insight_id: `visual-${stableHash(`${response.captured_at_ms}-${session.session_id}`)}`,
-        captured_at: new Date(response.captured_at_ms).toISOString(),
+        captured_at: capturedAt,
         session_id: response.session_id,
         app_name: response.app_name,
         window_title: response.window_title,

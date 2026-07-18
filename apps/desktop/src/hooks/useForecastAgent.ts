@@ -17,11 +17,18 @@ import { aiAuditSource, generationProviderUnsupportedMessage, providerSupportsGe
 import { withAiTimeout } from "../lib/aiTimeout";
 import { pct } from "../lib/format";
 import type { PersistedForecastRecord } from "../services/localStore";
+import type { AppActionResult } from "../lib/types";
 
 interface NativeForecastAgentResponse {
   forecast: ForecastAgentResult;
   model: string;
 }
+
+// Mirrors the guard in `parseForecastRecord` (services/localStore.ts). Used to coerce the AI-authored
+// forecast narrative arrays on the LIVE generation path so a malformed/omitted array degrades to `[]`
+// (ForecastList's "None identified" empty state) instead of crash-rendering the Forecast screen.
+const isStringArray = (candidate: unknown): candidate is string[] =>
+  Array.isArray(candidate) && candidate.every((entry) => typeof entry === "string");
 
 interface UseForecastAgentParams {
   isDemoMode: boolean;
@@ -58,23 +65,23 @@ export function useForecastAgent({
 }: UseForecastAgentParams) {
   const [forecastStatus, forecastError, forecastAsync] = useAsyncStatus<"idle" | "generating">("idle");
 
-  async function generateForecastAgent() {
-    if (isDemoMode) return;
-    if (forecastStatus === "generating") return;
+  async function generateForecastAgent(): Promise<AppActionResult> {
+    if (isDemoMode) return { ok: false, message: "Forecast generation is unavailable in demo mode." };
+    if (forecastStatus === "generating") return { ok: false, message: "A forecast is already being generated." };
 
     if (blocks.length === 0) {
-      forecastAsync.fail(
-        "The Forecast Agent needs at least one work block before it can estimate next-week capacity."
-      );
-      return;
+      const message = "The Forecast Agent needs at least one work block before it can estimate next-week capacity.";
+      forecastAsync.fail(message);
+      return { ok: false, message };
     }
 
     const provider = aiConfig?.provider ?? "openai";
     // Fail fast (before the Rust round-trip 404s or times out) when the configured provider
     // can't run the Rust generation path — it only powers the Agent chat today.
     if (!providerSupportsGeneration(provider)) {
-      forecastAsync.fail(generationProviderUnsupportedMessage(provider));
-      return;
+      const message = generationProviderUnsupportedMessage(provider);
+      forecastAsync.fail(message);
+      return { ok: false, message };
     }
     const auditSource = aiAuditSource(provider);
     const startedAt = new Date().toISOString();
@@ -127,6 +134,14 @@ export function useForecastAgent({
       ]
         .map((value) => (Number.isFinite(value) ? Math.max(0, Math.min(40, value)) : 0))
         .sort((a, b) => a - b);
+      // Coerce the four narrative string-arrays here too — the spread above trusts them verbatim,
+      // but ForecastAgentPanel renders each through ForecastList (`items.length`/`items.map`, no
+      // internal guard), so a non-strict provider returning a non-array/omitted field would throw a
+      // hard render crash and white-screen the Forecast screen (no ErrorBoundary in apps/desktop/src).
+      // This is the exact vector `parseForecastRecord` guards on RELOAD; the live post-generation
+      // record never passes through that guard, so enforce the same invariant here. A well-formed
+      // response (and every demo seed) is already `string[]`, so this passes through value-identical;
+      // only a malformed array degrades to `[]`, ForecastList's intended "None identified" state.
       const record: PersistedForecastRecord = {
         forecast: {
           ...response.forecast,
@@ -135,6 +150,14 @@ export function useForecastAgent({
           conservative_capacity_pct: conservativeCapacityPct,
           likely_capacity_pct: likelyCapacityPct,
           optimistic_capacity_pct: optimisticCapacityPct,
+          key_constraints: isStringArray(response.forecast.key_constraints)
+            ? response.forecast.key_constraints
+            : [],
+          risk_flags: isStringArray(response.forecast.risk_flags) ? response.forecast.risk_flags : [],
+          recommended_actions: isStringArray(response.forecast.recommended_actions)
+            ? response.forecast.recommended_actions
+            : [],
+          assumptions: isStringArray(response.forecast.assumptions) ? response.forecast.assumptions : [],
         },
         generated_at: startedAt,
         generated_for_week: nextWeekId,
@@ -181,6 +204,10 @@ export function useForecastAgent({
           },
         }),
       ].slice(-1000));
+      return {
+        ok: true,
+        message: `Generated a forecast with ${pct(reliableNewWorkCapacityPct)} reliable new-work capacity for ${nextWeekRangeLabel}.`,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       forecastAsync.fail(message);
@@ -202,6 +229,7 @@ export function useForecastAgent({
           },
         }),
       ].slice(-1000));
+      return { ok: false, message };
     }
   }
 

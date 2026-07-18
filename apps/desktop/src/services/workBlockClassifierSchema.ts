@@ -8,7 +8,7 @@ import { plannedStatuses, workCategories, workModes } from "../../../../packages
  */
 
 export const WORK_BLOCK_CLASSIFIER_INSTRUCTIONS =
-  "You classify local macOS active-window sessions into ClearCapacity draft work blocks. Be conservative, evidence-based, prefer high-confidence only when signals are clear. Return only JSON matching the requested schema.";
+  "You classify local macOS active-window sessions into Weekform draft work blocks. Be conservative, evidence-based, prefer high-confidence only when signals are clear. Return only JSON matching the requested schema.";
 
 export const workBlockClassifierSchema = {
   type: "object",

@@ -469,22 +469,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clear-capacity"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "dotenvy",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
- "tauri-plugin-store",
-]
-
-[[package]]
 name = "combine"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4750,6 +4734,22 @@ dependencies = [
  "thiserror 2.0.18",
  "windows",
  "windows-core 0.61.2",
+]
+
+[[package]]
+name = "weekform"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "dotenvy",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tauri-plugin-store",
 ]
 
 [[package]]

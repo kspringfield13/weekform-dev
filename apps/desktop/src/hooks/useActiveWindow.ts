@@ -7,7 +7,6 @@ interface UseActiveWindowParams {
   isDemoMode: boolean;
   setActiveWindowSamples: React.Dispatch<React.SetStateAction<ActiveWindowSample[]>>;
   setAuditEvents: React.Dispatch<React.SetStateAction<AuditEvent[]>>;
-  addAuditForSession?: (session: any) => void;
 }
 
 export function useActiveWindow(params: UseActiveWindowParams) {
@@ -30,10 +29,23 @@ export function useActiveWindow(params: UseActiveWindowParams) {
         return;
       }
 
+      // Guard the native `timestamp_ms` before ISO-formatting it: a missing / NaN /
+      // out-of-range value makes `new Date(x).toISOString()` throw a RangeError, which
+      // would lose the sample AND its audit row (both call sites below format it). Drop
+      // the malformed sample instead, using the shared finite-before-toISOString idiom
+      // (format.ts `Number.isFinite(new Date(x).getTime())`, useClassification's
+      // NaN-filter). Computing the ISO once also keeps the sample and its audit event on
+      // the exact same timestamp.
+      const sampleDate = new Date(payload.timestamp_ms);
+      if (!Number.isFinite(sampleDate.getTime())) {
+        return;
+      }
+      const timestamp = sampleDate.toISOString();
+
       setActiveWindowSamples((current) => {
         const sample: ActiveWindowSample = {
           sample_id: crypto.randomUUID(),
-          timestamp: new Date(payload.timestamp_ms).toISOString(),
+          timestamp,
           app_name: payload.app_name ?? "Unknown app",
           window_title: payload.window_title || null,
           source_type: "macos_active_window",
@@ -51,7 +63,7 @@ export function useActiveWindow(params: UseActiveWindowParams) {
           title: "Active-window sample captured",
           summary: `${payload.app_name}${payload.window_title ? ` - ${payload.window_title}` : ""}`,
           privacy_level: "local_only",
-          timestamp: new Date(payload.timestamp_ms).toISOString(),
+          timestamp,
           details: {
             app_name: payload.app_name,
             window_title: payload.window_title,
@@ -81,6 +93,4 @@ export function useActiveWindow(params: UseActiveWindowParams) {
       unlisten?.();
     };
   }, [isDemoMode, setActiveWindowSamples, setAuditEvents]);
-
-  // Session grouping audit can be added here too if wanted
 }

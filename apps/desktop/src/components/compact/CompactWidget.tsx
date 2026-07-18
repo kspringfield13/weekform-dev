@@ -48,13 +48,7 @@ export function CompactWidget({
 
   return (
     <section className="quick-view">
-      <header className="quick-view-header">
-        <div>
-          <span className={paused ? "live-dot is-paused" : "live-dot"} />
-          <strong>{paused ? "Tracking paused" : "Tracking"}</strong>
-        </div>
-      </header>
-
+      <div className="quick-view-content">
       {proactiveAlert && (
         <section className={`quick-alert is-${proactiveAlert.severity}`} role="alert">
           <AlertTriangle size={16} aria-hidden />
@@ -77,17 +71,22 @@ export function CompactWidget({
         </section>
       )}
 
-      <section className="quick-current">
+      <button
+        className="quick-current"
+        type="button"
+        title="Open work ledger"
+        onClick={() => onOpenScreen("ledger")}
+      >
         <span>Current activity</span>
         <div>
           <Monitor size={18} aria-hidden />
           <div>
-            <strong>{paused ? "Tracking paused" : latestSample?.app_name ?? "Waiting for activity"}</strong>
-            <small>{paused ? "Resume when you are ready" : latestSample?.window_title ?? "No active-window sample yet"}</small>
+            <strong title={paused ? "Tracking paused" : latestSample?.app_name ?? "Waiting for activity"}>{paused ? "Tracking paused" : latestSample?.app_name ?? "Waiting for activity"}</strong>
+            <small title={paused ? "Resume when you are ready" : latestSample?.window_title ?? "No active-window sample yet"}>{paused ? "Resume when you are ready" : latestSample?.window_title ?? "No active-window sample yet"}</small>
           </div>
         </div>
         {latestSession && !paused && <p>{formatDurationMinutes(latestSession.duration_minutes)} in this session</p>}
-      </section>
+      </button>
 
       <section className="quick-stats">
         <button
@@ -112,11 +111,19 @@ export function CompactWidget({
       </section>
 
       <section className={reviewQueue.length > 0 ? "quick-review has-items" : "quick-review"}>
-        <div>
-          <span>Today’s review</span>
-          <strong>{reviewQueue.length > 0 ? `${reviewQueue.length} item${reviewQueue.length === 1 ? " needs" : "s need"} attention` : "You’re all caught up"}</strong>
-          <small>{nextReview ? nextReview.project_name : "New inferred work will appear here."}</small>
-        </div>
+        <button
+          className="quick-review-body"
+          type="button"
+          title="Open daily review"
+          onClick={() => onOpenScreen("daily")}
+        >
+          <span className="quick-review-copy">
+            <span>Today’s review</span>
+            <strong>{reviewQueue.length > 0 ? `${reviewQueue.length} item${reviewQueue.length === 1 ? " needs" : "s need"} attention` : "You’re all caught up"}</strong>
+            <small title={nextReview?.project_name}>{nextReview ? nextReview.project_name : "New inferred work will appear here."}</small>
+          </span>
+          <ChevronRight className="quick-review-chevron" size={16} aria-hidden />
+        </button>
         {nextReview && (
           <div className="quick-review-actions">
             <button type="button" className="quick-review-confirm" aria-label={`Confirm — ${nextReview.project_name}`} onClick={() => onConfirm(nextReview.work_block_id)}>
@@ -137,16 +144,20 @@ export function CompactWidget({
           <ChevronRight size={17} aria-hidden />
         </button>
       )}
+      </div>
 
-      <button className="quick-pause" type="button" onClick={() => onPauseChange(!paused)}>
-        {paused ? <Play size={16} aria-hidden /> : <Pause size={16} aria-hidden />}
-        {paused ? "Resume Tracking" : "Pause Tracking"}
-      </button>
-
-      <footer className="quick-footer">
-        <button type="button" onClick={() => onOpenScreen("weekly")}>Open weekly summary</button>
-        <button type="button" onClick={() => onOpenScreen("setup")}>Settings</button>
-      </footer>
+      <div className="quick-bottom">
+        <footer className="quick-footer">
+          <button type="button" onClick={() => onOpenScreen("weekly")}>Capacity</button>
+          <button type="button" onClick={() => onOpenScreen("usage")}>AI usage</button>
+          <button type="button" onClick={() => onOpenScreen("agent")}>Agent</button>
+          <button type="button" onClick={() => onOpenScreen("setup")}>Settings</button>
+        </footer>
+        <button className="quick-pause" type="button" onClick={() => onPauseChange(!paused)}>
+          {paused ? <Play size={16} aria-hidden /> : <Pause size={16} aria-hidden />}
+          {paused ? "Resume Tracking" : "Pause Tracking"}
+        </button>
+      </div>
     </section>
   );
 }

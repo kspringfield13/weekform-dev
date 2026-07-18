@@ -1,13 +1,3 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36">
-  <rect width="36" height="36" fill="none"/>
-  <text
-    x="18"
-    y="20.5"
-    fill="#000000"
-    font-family="Arial, Helvetica, sans-serif"
-    font-size="20"
-    font-weight="700"
-    letter-spacing="-1"
-    text-anchor="middle"
-    dominant-baseline="middle">cc</text>
+  <path fill="#000000" transform="translate(2 6.2) scale(.032)" d="M0 232C-2 214 10 205 29 205c23 0 38 16 43 42l6 28c5 24 20 38 42 38 26 0 42-18 46-46l8-62c4-35 27-54 57-55 35-1 60 21 64 54l9 66c3 24 20 38 44 38 26 0 41-17 43-43l6-98c2-41 29-70 64-73 39-3 74 23 79 66l8 108c2 26 14 39 31 40 21 2 35-13 36-38l4-139c1-48 31-82 67-85 41-3 73 23 77 66l6 155c1 26 16 41 38 42 23 1 38-17 39-42l2-183c0-46 31-81 70-84 46-4 81 28 82 73v200c-13 256-223 466-495 466C234 730 12 517 0 248Z"/>
 </svg>

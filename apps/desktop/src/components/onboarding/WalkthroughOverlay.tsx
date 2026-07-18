@@ -28,13 +28,13 @@ export interface WalkthroughStep {
 // if a target is ever missing, e.g. on a narrow viewport).
 export const WALKTHROUGH_STEPS: WalkthroughStep[] = [
   {
-    title: "Welcome to ClearCapacity",
-    body: "A quick tour of where things live. ClearCapacity turns your calendar and app activity into reviewable work blocks, then an explainable estimate of your weekly capacity — all on this Mac.",
+    title: "Welcome to Weekform",
+    body: "A quick tour of where things live. Weekform turns your calendar and app activity into reviewable work blocks, then an explainable estimate of your weekly capacity — all on this Mac.",
   },
   {
     target: '[data-tour="today"]',
     title: "Today",
-    body: "Your daily review queue. Confirm, relabel, or exclude the work blocks ClearCapacity inferred. Nothing counts toward your capacity until you've reviewed it here.",
+    body: "Your daily review queue. Confirm, relabel, or exclude the work blocks Weekform inferred. Nothing counts toward your capacity until you've reviewed it here.",
   },
   {
     target: '[data-tour="week"]',
@@ -135,10 +135,10 @@ export function WalkthroughOverlay({
     };
   }, []);
 
-  // Keyboard control: arrows/Enter advance, Escape skips. Mirrors the buttons so
-  // the tour is fully keyboard-navigable. Respects the app's input/textarea focus
-  // guard (the tour is replayable from Settings, where real inputs exist) so it
-  // never hijacks typing.
+  // Keyboard control: arrows advance/go back, Enter advances, Escape skips.
+  // Mirrors the buttons so the tour is fully keyboard-navigable. Respects the
+  // app's input/textarea focus guard (the tour is replayable from Settings, where
+  // real inputs exist) so it never hijacks typing.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -152,12 +152,23 @@ export function WalkthroughOverlay({
       if (e.key === "Escape") {
         e.preventDefault();
         onSkip();
-      } else if (e.key === "ArrowRight" || e.key === "Enter") {
+      } else if (e.key === "ArrowRight") {
         e.preventDefault();
         goNext();
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
         goBack();
+      } else if (e.key === "Enter") {
+        // The card is focus-trapped with Back/Skip/close all Tab-reachable, so
+        // let a focused button handle its OWN Enter activation instead of every
+        // Enter meaning "Next". Only when focus is on the backdrop/card body (no
+        // button) does Enter advance the tour. Deferring to the native click also
+        // keeps the primary button advancing exactly once (no double-fire): the
+        // handler returns without preventDefault, so the button's synthesized
+        // Enter click fires goNext() a single time.
+        if (target?.closest("button")) return;
+        e.preventDefault();
+        goNext();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -205,6 +216,15 @@ export function WalkthroughOverlay({
     cardStyle = { top, left, width: CARD_WIDTH };
   }
 
+  // Glide the card only between two anchored steps: the centered card positions
+  // via transform (see .is-centered), so transitioning top/left across the
+  // centered↔anchored switch would visibly lurch.
+  const wasAnchoredRef = useRef(false);
+  const isGliding = rect !== null && wasAnchoredRef.current;
+  useEffect(() => {
+    wasAnchoredRef.current = rect !== null;
+  }, [rect]);
+
   return (
     <div className="walkthrough" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={bodyId}>
       {rect ? (
@@ -214,7 +234,13 @@ export function WalkthroughOverlay({
       )}
       <div
         ref={cardRef}
-        className={rect ? "walkthrough-card" : "walkthrough-card is-centered"}
+        className={
+          rect
+            ? isGliding
+              ? "walkthrough-card is-gliding"
+              : "walkthrough-card"
+            : "walkthrough-card is-centered"
+        }
         style={cardStyle}
         onKeyDown={handleCardKeyDown}
       >

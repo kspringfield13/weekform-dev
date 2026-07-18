@@ -167,7 +167,7 @@ export function LedgerScreen({
     <section className="screen ledger-screen">
       <div className="screen-header compact">
         <div>
-          <p className="eyebrow">Live work ledger</p>
+          <p className="eyebrow">Activity ledger</p>
           <h1>Explainable inferred work blocks.</h1>
         </div>
         <div className="search-box">
@@ -227,13 +227,14 @@ export function LedgerScreen({
         <EmptyState
           icon={Monitor}
           title="No work blocks yet."
-          description="ClearCapacity starts empty. Import an Outlook .ics export or let active-window capture build local sessions, then use Classify sessions to draft reviewable work blocks."
+          description="Weekform starts empty. Import an Outlook .ics export or let active-window capture build local sessions, then use Classify sessions to draft reviewable work blocks."
         >
           {unclassifiedSessionCount > 0 ? (
             <button
               type="button"
               className="primary-action"
               disabled={classificationStatus === "classifying"}
+              aria-busy={classificationStatus === "classifying"}
               onClick={onClassifySessions}
             >
               <span>
@@ -265,6 +266,7 @@ export function LedgerScreen({
         </EmptyState>
       ) : (
         <div className="ledger-list" ref={ledgerListRef}>
+          <h2 className="sr-only">Work blocks</h2>
           {visibleBlocks.map((block) => {
             const revealIndex = revealIndexById.get(block.work_block_id);
             const revealStyle = revealIndex === undefined

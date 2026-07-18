@@ -386,13 +386,18 @@ function expandRecurringRecord(record: IcsEventRecord, windowEnd: number): IcsEv
 
   emit(record.start.getTime());
 
-  // WEEKLY + BYDAY: the series lands on several weekdays per active week (e.g.
-  // Mon/Wed/Fri or Tue/Thu), so a single `interval*7` step from DTSTART would
-  // emit only ONE weekday/week and undercount meeting load. Walk day-by-day and
-  // emit each listed weekday that falls in a week whose Monday-anchored index is
-  // a multiple of INTERVAL. Preserves the same DTSTART-first / windowEnd / UNTIL
-  // / COUNT-slot / EXDATE invariants as the plain step below.
-  if (rule.freq === WEEKLY_FREQ && rule.byDays.length > 0) {
+  // DAILY/WEEKLY + BYDAY: the series lands on several weekdays (e.g. Mon/Wed/Fri
+  // or Tue/Thu), so the plain `stepDays` step below is wrong for BOTH. WEEKLY
+  // would step `interval*7` from DTSTART and emit only ONE weekday/week
+  // (undercount meeting load); DAILY (the RFC-valid "every weekday" encoding
+  // `FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR` some exporters emit) would step 1 day and
+  // emit EVERY day INCLUDING weekends (phantom Sat/Sun occurrences that inflate
+  // meeting load). RFC 5545 §3.3.10: for a WEEKLY series BYDAY EXPANDS the week;
+  // for a DAILY series BYDAY LIMITS the every-INTERVAL-days set to the listed
+  // weekdays. Either way, walk day-by-day and emit each listed weekday that also
+  // satisfies INTERVAL. Preserves the same DTSTART-first / windowEnd / UNTIL /
+  // COUNT-slot / EXDATE invariants as the plain step below.
+  if ((rule.freq === WEEKLY_FREQ || rule.freq === DAILY_FREQ) && rule.byDays.length > 0) {
     const byDaySet = new Set(rule.byDays);
     // Days from the Monday of DTSTART's week to DTSTART (Monday-first: 0=Mon..6=Sun),
     // so `weekIndex` counts whole Monday-started weeks since DTSTART's own week (0).
@@ -413,8 +418,14 @@ function expandRecurringRecord(record: IcsEventRecord, windowEnd: number): IcsEv
       if (rule.until !== null && startMs > rule.until) {
         break;
       }
-      const weekIndex = Math.floor((dtStartMondayOffset + dayOffset) / 7);
-      if (weekIndex % rule.interval !== 0 || !byDaySet.has(day.getDay())) {
+      // INTERVAL is week-based for WEEKLY (skip whole weeks between active weeks)
+      // and day-based for DAILY (skip whole days between candidates), each
+      // anchored at DTSTART; BYDAY then keeps only the listed weekdays.
+      const inInterval =
+        rule.freq === WEEKLY_FREQ
+          ? Math.floor((dtStartMondayOffset + dayOffset) / 7) % rule.interval === 0
+          : dayOffset % rule.interval === 0;
+      if (!inInterval || !byDaySet.has(day.getDay())) {
         continue;
       }
       slot += 1;
@@ -488,11 +499,32 @@ function parseIcsEvent(lines: string[]): IcsEventRecord | null {
   let organizer: string | null = null;
   let attendeeCount = 0;
   let recurrence: RecurrenceRule | null = null;
+  let durationMinutes: number | null = null;
+  let inSubcomponent = false;
   const exDates: number[] = [];
 
   for (const line of lines) {
     const parsed = splitIcsLine(line);
     if (!parsed) {
+      continue;
+    }
+
+    // RFC 5545 lets a VEVENT nest sub-components (e.g. BEGIN:VALARM … END:VALARM),
+    // and `parseOutlookIcs` feeds every line between BEGIN/END:VEVENT into this
+    // loop. A nested reminder carries its own SUMMARY/ATTENDEE/DURATION, so gate
+    // those out — otherwise an alarm's "Alarm notification" SUMMARY would overwrite
+    // the real meeting title and its ATTENDEE would inflate attendee_count.
+    // (`splitIcsLine("BEGIN:VALARM")` yields name:"BEGIN", so this catches every
+    // sub-component property cleanly.)
+    if (parsed.name === "BEGIN") {
+      inSubcomponent = true;
+      continue;
+    }
+    if (parsed.name === "END") {
+      inSubcomponent = false;
+      continue;
+    }
+    if (inSubcomponent) {
       continue;
     }
 
@@ -511,12 +543,10 @@ function parseIcsEvent(lines: string[]): IcsEventRecord | null {
         end = parseIcsDate(parsed.value, getIcsParam(parsed.params, "TZID"));
         break;
       case "DURATION":
-        if (start && !end) {
-          const minutes = parseIcsDurationMinutes(parsed.value);
-          if (minutes !== null && minutes > 0) {
-            end = new Date(start.getTime() + minutes * 60_000);
-          }
-        }
+        // RFC 5545 §3.6 allows properties in any order, so DURATION may precede
+        // DTSTART. Stash the value and resolve it after the loop once `start` is
+        // known, rather than acting on `start` here (an explicit DTEND still wins).
+        durationMinutes = parseIcsDurationMinutes(parsed.value);
         break;
       case "LOCATION":
         location = unescapeIcsText(parsed.value) || null;
@@ -543,6 +573,12 @@ function parseIcsEvent(lines: string[]): IcsEventRecord | null {
       default:
         break;
     }
+  }
+
+  // Resolve a DURATION now that DTSTART is known (order-independent per RFC 5545
+  // §3.6). An explicit DTEND already set `end`, so it still wins (`!end` guard).
+  if (start && !end && durationMinutes !== null && durationMinutes > 0) {
+    end = new Date(start.getTime() + durationMinutes * 60_000);
   }
 
   // RFC 5545: an all-day VEVENT with no DTEND/DURATION occupies exactly one day.

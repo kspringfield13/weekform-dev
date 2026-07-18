@@ -12,6 +12,7 @@ import type {
 import type { PersistedAccelerationSnapshot, PersistedAppState, PersistedSnapshotRecord } from "./localStore";
 import { DEFAULT_PROACTIVE_ALERT_SETTINGS, EMPTY_PROACTIVE_ALERT_RUNTIME } from "../lib/proactiveAlerts";
 import { humanizeCorrectionValue } from "../lib/format";
+import { getLocalDateKey } from "../lib/date";
 
 function addMinutes(date: Date, minutes: number) {
   return new Date(date.getTime() + minutes * 60_000);
@@ -297,7 +298,7 @@ export function createDemoState(reference = new Date()): PersistedAppState {
 
   const activeWindowSamples = [
     // Today
-    ...samples("Codex", "ClearCapacity - capacity model", activeStart, 47),
+    ...samples("Codex", "Weekform - capacity model", activeStart, 47),
     ...samples("Figma", "Executive capacity dashboard", addMinutes(activeStart, 58), 31),
     ...samples("Slack", "Customer Success - retention request", addMinutes(activeStart, 99), 18),
     // Yesterday — spread across morning and afternoon for visual depth
@@ -403,7 +404,7 @@ export function createDemoState(reference = new Date()): PersistedAppState {
 
   const visualContextInsights: VisualContextInsight[] = [{
     insight_id: "demo-visual-1", captured_at: addMinutes(activeStart, 25).toISOString(), session_id: null,
-    app_name: "Codex", window_title: "ClearCapacity - capacity model",
+    app_name: "Codex", window_title: "Weekform - capacity model",
     activity_summary: "Editing capacity logic and reviewing the desktop interface.", visible_tool: "Codex",
     likely_work_category: "SQL / data modeling / query work", likely_mode: "Deep work",
     project_hint: "Capacity model v2", sensitive_content_detected: false, confidence: 0.9,
@@ -507,7 +508,7 @@ export function createDemoState(reference = new Date()): PersistedAppState {
     managerSummaryText: managerSummary,
     generatedForecast: {
       generated_at: addMinutes(now, -31).toISOString(), generated_for_week: weekId(addMinutes(now, 10_080)),
-      trigger: "manual", model: "OpenAI forecast agent", prompt_version: "clear-capacity-forecast-agent-v1",
+      trigger: "manual", model: "OpenAI forecast agent", prompt_version: "weekform-forecast-agent-v1",
       forecast: {
         forecast_week_label: "Next week", reliable_new_work_capacity_pct: 24, confidence: 0.88,
         headline: "Protect one deep-work block before accepting additional analysis.",
@@ -521,9 +522,26 @@ export function createDemoState(reference = new Date()): PersistedAppState {
     },
     forecastHistory: [
       {
+        // Targets a snapshot three weeks back (actual 33) — predicted 26, off by 7 → "Close".
+        // A SETTLED week so the track record shows all three chips (On target / Close / Off)
+        // without leaning on the current, still-accumulating week (which useDerived excludes).
+        generated_at: addMinutes(now, -40_320 - 31).toISOString(), generated_for_week: weekId(addMinutes(now, -30_240)),
+        trigger: "manual", model: "OpenAI forecast agent", prompt_version: "clear-capacity-forecast-agent-v1",
+        forecast: {
+          forecast_week_label: "That week", reliable_new_work_capacity_pct: 26, confidence: 0.79,
+          headline: "A lighter week if reactive load stays contained.",
+          summary_text: "An earlier projection retained so the forecast can be scored against what actually materialized.",
+          key_constraints: ["Recurring reporting baseline", "Standing meeting cadence"],
+          risk_flags: ["Reactive requests may displace planned analysis"],
+          recommended_actions: ["Reserve a focus block", "Batch ad hoc requests"],
+          assumptions: ["No new production incident", "Meeting cadence stays stable"],
+          optimistic_capacity_pct: 34, likely_capacity_pct: 28, conservative_capacity_pct: 16
+        }
+      },
+      {
         // Targets a snapshot two weeks back (actual 26) — predicted 24, off by 2 → "On target".
         generated_at: addMinutes(now, -30_240 - 31).toISOString(), generated_for_week: weekId(addMinutes(now, -20_160)),
-        trigger: "manual", model: "OpenAI forecast agent", prompt_version: "clear-capacity-forecast-agent-v1",
+        trigger: "manual", model: "OpenAI forecast agent", prompt_version: "weekform-forecast-agent-v1",
         forecast: {
           forecast_week_label: "That week", reliable_new_work_capacity_pct: 24, confidence: 0.8,
           headline: "Recurring load looks heavy; protect one focus block.",
@@ -538,7 +556,7 @@ export function createDemoState(reference = new Date()): PersistedAppState {
       {
         // Targets last week's snapshot (actual 29) — predicted 15, off by 14 → "Off".
         generated_at: addMinutes(now, -20_160 - 31).toISOString(), generated_for_week: weekId(addMinutes(now, -10_080)),
-        trigger: "manual", model: "OpenAI forecast agent", prompt_version: "clear-capacity-forecast-agent-v1",
+        trigger: "manual", model: "OpenAI forecast agent", prompt_version: "weekform-forecast-agent-v1",
         forecast: {
           forecast_week_label: "That week", reliable_new_work_capacity_pct: 15, confidence: 0.82,
           headline: "Two new analyses are realistic if the access blocker clears.",
@@ -552,7 +570,7 @@ export function createDemoState(reference = new Date()): PersistedAppState {
       },
       {
         generated_at: addMinutes(now, -10_080 - 31).toISOString(), generated_for_week: currentWeek,
-        trigger: "manual", model: "OpenAI forecast agent", prompt_version: "clear-capacity-forecast-agent-v1",
+        trigger: "manual", model: "OpenAI forecast agent", prompt_version: "weekform-forecast-agent-v1",
         forecast: {
           forecast_week_label: "This week", reliable_new_work_capacity_pct: 31, confidence: 0.84,
           headline: "One new analysis is realistic if reactive load stays contained.",
@@ -569,7 +587,7 @@ export function createDemoState(reference = new Date()): PersistedAppState {
     accelerationHistory,
     generatedNarrative: {
       generated_at: generatedAt.toISOString(), generated_for_date: now.toISOString().slice(0, 10),
-      trigger: "manual", model: "OpenAI narrative", prompt_version: "clear-capacity-weekly-narrative-v4",
+      trigger: "manual", model: "OpenAI narrative", prompt_version: "weekform-weekly-narrative-v4",
       narrative: {
         week_id: currentWeek, headline: "Unplanned investigations narrowed an otherwise productive week.",
         summary_text: "The week was anchored by the capacity model, executive dashboard, and recurring operating metrics. Planned deep work moved forward, but retention and attribution investigations created meaningful reactive load. Fixed meetings and reporting absorbed a substantial portion of the baseline. Two remaining blocks need review before the story is final.",
@@ -584,6 +602,40 @@ export function createDemoState(reference = new Date()): PersistedAppState {
     onboardingDismissed: false,
     walkthroughCompleted: true,
     proactiveAlertSettings: DEFAULT_PROACTIVE_ALERT_SETTINGS,
-    proactiveAlertRuntime: EMPTY_PROACTIVE_ALERT_RUNTIME
+    proactiveAlertRuntime: EMPTY_PROACTIVE_ALERT_RUNTIME,
+    // AI-usage showcase: a few exact OpenAI CSV days plus one row carrying an
+    // authoritative imported cost. Proxy estimates derive live from the demo sessions.
+    tokenUsageDays: [
+      {
+        date: getLocalDateKey(addMinutes(now, -2_880)),
+        source_type: "csv_import", provider: "openai", model: "gpt-5.6-sol", measurement: "exact",
+        input_tokens: 48_200, output_tokens: 96_400, cache_read_tokens: 512_000, cache_creation_tokens: 118_000,
+        prompt_count: 42, session_minutes: 0, cost_usd: null
+      },
+      {
+        date: getLocalDateKey(addMinutes(now, -1_440)),
+        source_type: "csv_import", provider: "openai", model: "gpt-5.6-sol", measurement: "exact",
+        input_tokens: 31_500, output_tokens: 64_100, cache_read_tokens: 388_000, cache_creation_tokens: 92_000,
+        prompt_count: 28, session_minutes: 0, cost_usd: null
+      },
+      {
+        date: getLocalDateKey(now),
+        source_type: "csv_import", provider: "openai", model: "gpt-5.6-sol", measurement: "exact",
+        input_tokens: 12_900, output_tokens: 25_300, cache_read_tokens: 141_000, cache_creation_tokens: 36_000,
+        prompt_count: 11, session_minutes: 0, cost_usd: null
+      },
+      {
+        date: getLocalDateKey(addMinutes(now, -1_440)),
+        source_type: "csv_import", provider: "openai", model: "gpt-4.1", measurement: "exact",
+        input_tokens: 210_000, output_tokens: 54_000, cache_read_tokens: 0, cache_creation_tokens: 0,
+        prompt_count: 96, session_minutes: 0, cost_usd: 1.87
+      }
+    ],
+    tokenUsageSettings: {
+      observed_proxy_enabled: true,
+      include_in_manager_summary: false,
+      price_map: {}
+    },
+    usageCsvRowHashes: []
   };
 }

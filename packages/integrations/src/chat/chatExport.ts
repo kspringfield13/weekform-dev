@@ -41,8 +41,8 @@ import {
  *
  * ## Export contract (JSON)
  *
- * Pass an array, a `{ "messages": [...] }` wrapper, or the JSON string of
- * either. Each element is a metadata-only message:
+ * Pass an array, a `{ "messages": [...] }` (or `{ "events": [...] }`) wrapper,
+ * or the JSON string of any of these. Each element is a metadata-only message:
  *
  * ```json
  * {
@@ -206,7 +206,7 @@ function normalizeLabel(value: unknown): string | null {
  * field that could carry message text.
  */
 export function parseChatExport(
-  content: string | unknown[] | { messages?: unknown[] }
+  content: string | unknown[] | { messages?: unknown[]; events?: unknown[] }
 ): ChatMessageRecord[] {
   const { data } = parseImportJson(content);
   let rows: unknown[] = [];
@@ -214,6 +214,12 @@ export function parseChatExport(
     rows = data;
   } else if (data && typeof data === "object" && Array.isArray((data as { messages?: unknown }).messages)) {
     rows = (data as { messages: unknown[] }).messages;
+  } else if (data && typeof data === "object" && Array.isArray((data as { events?: unknown }).events)) {
+    // `{ events: [...] }` is the sibling import-envelope shape (rawEvents.ts#coercePayload)
+    // and is promised by this function's own JSDoc. Read it as a fallback after
+    // `.messages` so an export following either documented wrapper parses instead
+    // of silently dropping to zero records.
+    rows = (data as { events: unknown[] }).events;
   }
 
   const records: ChatMessageRecord[] = [];
@@ -406,7 +412,7 @@ export function chatMessagesToImport(
  * calendar source): it returns an empty result whose `error` the UI can surface.
  */
 export function importChatExport(
-  content: string | unknown[] | { messages?: unknown[] },
+  content: string | unknown[] | { messages?: unknown[]; events?: unknown[] },
   options: ChatExportOptions = {}
 ): RawEventImportResult {
   // Parse once, up front, so a malformed string becomes a surfaceable error
@@ -421,7 +427,7 @@ export function importChatExport(
       error: "That chat export could not be read — it isn't valid JSON."
     };
   }
-  const messages = parseChatExport(data as string | unknown[] | { messages?: unknown[] });
+  const messages = parseChatExport(data as string | unknown[] | { messages?: unknown[]; events?: unknown[] });
   const imports = chatMessagesToImport(messages, options);
   return importRawEvents(imports, { weekId: options.weekId, userId: options.userId });
 }

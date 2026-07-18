@@ -25,10 +25,10 @@ export function useTrayStatus({
     if (isDemoMode) return;
 
     const tooltip = paused
-      ? "ClearCapacity — tracking paused"
+      ? "Weekform — tracking paused"
       : hasWorkBlocks
-        ? `ClearCapacity — ${reviewCount} to review · ${Math.round(reliableCapacityPct)}% reliable capacity`
-        : "ClearCapacity";
+        ? `Weekform — ${reviewCount} to review · ${Math.round(reliableCapacityPct)}% reliable capacity`
+        : "Weekform";
 
     if (lastTooltip.current === tooltip) return;
     lastTooltip.current = tooltip;

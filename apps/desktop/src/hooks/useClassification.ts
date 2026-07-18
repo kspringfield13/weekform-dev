@@ -19,6 +19,7 @@ import { WORK_BLOCK_CLASSIFIER_INSTRUCTIONS, workBlockClassifierSchema } from ".
 import { createAuditEvent } from "../lib/audit";
 import { stableHash, capacityPctFromMinutes } from "../lib/blocks";
 import { aiAuditSource, aiProviderLabel, generationProviderUnsupportedMessage, providerSupportsGeneration } from "../services/aiProviders";
+import type { AppActionResult } from "../lib/types";
 
 interface NativeClassifiedWorkBlock {
   session_ids: string[];
@@ -64,7 +65,16 @@ function classifiedBlockToWorkBlock(
   currentWeekId: string,
   providerLabel: string
 ): WorkBlock | null {
-  const sessions = block.session_ids
+  // Coerce the four un-taxonomy'd provider fields before dereferencing them — the
+  // response is trusted TS but JSON.parse-only at runtime (aiCompleteJson never enforces
+  // the schema), so a non-strict/custom provider can return `session_ids`/`evidence` as a
+  // non-array or `project_name`/`stakeholder_group` as a non-string. Spreading/mapping a
+  // non-array or `.trim()`-ing a non-string THROWS inside the `data.work_blocks.map`, is
+  // caught at the outer try, and misreports a successful, already-paid generation as
+  // "Active-window classification failed". Mirrors the sibling confidence finite-guard
+  // (below) and the taxonomy validation (below), and the useForecastAgent/useNarrativeGeneration
+  // live-path coercion.
+  const sessions = (Array.isArray(block.session_ids) ? block.session_ids : [])
     .map((sessionId) => sourceSessions.get(sessionId))
     .filter((session): session is ActivitySession => Boolean(session));
 
@@ -118,15 +128,18 @@ function classifiedBlockToWorkBlock(
     category,
     mode,
     planned_status: plannedStatus,
-    project_name: block.project_name.trim() || "Local activity",
-    stakeholder_group: block.stakeholder_group.trim() || "Unknown stakeholder",
+    project_name: (typeof block.project_name === "string" ? block.project_name.trim() : "") || "Local activity",
+    stakeholder_group:
+      (typeof block.stakeholder_group === "string" ? block.stakeholder_group.trim() : "") || "Unknown stakeholder",
     derived_from: sessionIds,
     evidence: [
       `Drafted by ${providerLabel} from local active-window sessions`,
       ...(coercedFields.length > 0
         ? [`Adjusted off-taxonomy ${coercedFields.join(", ")} to a conservative default`]
         : []),
-      ...block.evidence,
+      ...(Array.isArray(block.evidence)
+        ? block.evidence.filter((entry): entry is string => typeof entry === "string")
+        : []),
     ],
     // Finite-guard BEFORE clamping: the schema enums are advisory (aiCompleteJson is
     // JSON.parse only), so a non-strict provider can return a missing/null/non-numeric
@@ -167,9 +180,9 @@ export function useClassification({
     }
   }, [aiConfig]);
 
-  async function classifyActiveWindowSessions() {
-    if (isDemoMode) return;
-    if (classificationStatus === "classifying") return;
+  async function classifyActiveWindowSessions(): Promise<AppActionResult> {
+    if (isDemoMode) return { ok: false, message: "Classification is unavailable in demo mode." };
+    if (classificationStatus === "classifying") return { ok: false, message: "Classification is already running." };
 
     const alreadyClassified = new Set(blocks.flatMap((block) => block.derived_from));
     const candidateSessions = activeWindowSessions
@@ -177,16 +190,18 @@ export function useClassification({
       .sort((left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime());
 
     if (candidateSessions.length === 0) {
-      classificationAsync.fail("No unclassified active-window sessions are ready yet.");
-      return;
+      const message = "No unclassified active-window sessions are ready yet.";
+      classificationAsync.fail(message);
+      return { ok: false, message };
     }
 
     const provider = aiConfig?.provider ?? "openai";
     // Fail fast (before the Rust round-trip 404s or times out) when the configured provider
     // can't run the Rust generation path — it only powers the Agent chat today.
     if (!providerSupportsGeneration(provider)) {
-      classificationAsync.fail(generationProviderUnsupportedMessage(provider));
-      return;
+      const message = generationProviderUnsupportedMessage(provider);
+      classificationAsync.fail(message);
+      return { ok: false, message };
     }
     const auditSource = aiAuditSource(provider);
     const startedAt = new Date().toISOString();
@@ -206,7 +221,7 @@ export function useClassification({
       const { data, model } = await aiCompleteJson<{ work_blocks: NativeClassifiedWorkBlock[] }>({
         prompt,
         instructions: WORK_BLOCK_CLASSIFIER_INSTRUCTIONS,
-        responseFormat: jsonSchemaFormat("clear_capacity_work_block_classification", workBlockClassifierSchema),
+        responseFormat: jsonSchemaFormat("weekform_work_block_classification", workBlockClassifierSchema),
         aiConfig,
       });
       const sessionMap = new Map(candidateSessions.map((session) => [session.session_id, session]));
@@ -240,7 +255,7 @@ export function useClassification({
             },
           }),
         ].slice(-1000));
-        return;
+        return { ok: false, message };
       }
 
       if (draftBlocks.length === 0) {
@@ -269,7 +284,7 @@ export function useClassification({
             },
           }),
         ].slice(-1000));
-        return;
+        return { ok: false, message };
       }
 
       setBlocks((current) => {
@@ -302,6 +317,10 @@ export function useClassification({
           },
         }),
       ].slice(-1000));
+      return {
+        ok: true,
+        message: `${draftBlocks.length} draft work block${draftBlocks.length === 1 ? " was" : "s were"} created from ${candidateSessions.length} session${candidateSessions.length === 1 ? "" : "s"}.`,
+      };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       classificationAsync.fail(message);
@@ -323,6 +342,7 @@ export function useClassification({
           },
         }),
       ].slice(-1000));
+      return { ok: false, message };
     }
   }
 

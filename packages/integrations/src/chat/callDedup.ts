@@ -24,15 +24,6 @@ import type { WorkBlock } from "../../../domain/src/models";
 const MEETING_CATEGORY: WorkBlock["category"] = "Meetings / stakeholder syncs";
 
 /**
- * True when two half-open `[start, end)` spans (epoch ms) intersect. Spans that
- * merely touch at an endpoint (`aEnd === bStart`) do NOT overlap — adjacent
- * back-to-back meetings stay distinct.
- */
-export function spansOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
-  return aStart < bEnd && bStart < aEnd;
-}
-
-/**
  * Length (epoch ms) of the intersection of two half-open `[start, end)` spans;
  * `0` when they don't overlap (or only touch at an endpoint).
  */

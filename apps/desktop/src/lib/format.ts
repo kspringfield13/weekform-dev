@@ -113,7 +113,7 @@ export function applyLocalTime(originalIso: string, hhmm: string): string {
 }
 
 export function compactCategory(category: WorkCategory) {
-  return category.replace(" / ", " / ").replace(" stakeholder ", " ");
+  return category.replace(" stakeholder ", " ");
 }
 
 export function pct(value: number) {
@@ -129,6 +129,16 @@ export function pct(value: number) {
 export function formatCount(count: number): string {
   const total = Number.isFinite(count) ? Math.max(0, Math.round(count)) : 0;
   return total.toLocaleString();
+}
+
+/** Compact large token counts for dense UI while keeping exact values available elsewhere. */
+export function formatTokenCount(tokens: number): string {
+  const total = Number.isFinite(tokens) ? Math.max(0, Math.round(tokens)) : 0;
+  if (total >= 999_500) {
+    return `${(total / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  }
+  if (total >= 1_000) return `${Math.round(total / 1_000)}k`;
+  return String(total);
 }
 
 /**
@@ -316,6 +326,8 @@ const AUDIT_SOURCE_LABELS: Record<string, string> = {
   macos_active_window: "macOS active window",
   outlook_ics: "Outlook .ics",
   chat_export: "Chat export",
+  usage_csv: "Usage CSV",
+  settings: "AI usage settings",
   proactive_alerts: "Proactive alerts",
   acceleration_engine: "Acceleration engine",
   privacy_control: "Privacy control",
@@ -355,7 +367,9 @@ export function auditTypeLabel(type: AuditEventType) {
     data_reset: "Privacy",
     data_export: "Privacy",
     acceleration_engine: "Acceleration",
-    onboarding: "Onboarding"
+    onboarding: "Onboarding",
+    usage_import: "AI Usage",
+    usage_settings: "AI Usage"
   };
 
   return labels[type];

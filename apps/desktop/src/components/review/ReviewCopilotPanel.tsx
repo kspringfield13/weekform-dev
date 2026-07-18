@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { AgentMark } from "../common/AgentMark";
 import type { ReviewCopilotSuggestion } from "../../../../../packages/domain/src/models";
 import { reviewActionLabel } from "../../lib/format";
 import { InlineError } from "../common/InlineError";
@@ -53,7 +53,7 @@ export function ReviewCopilotPanel({
   return (
     <section className="copilot-inline">
       <div className="copilot-inline-head">
-        <Sparkles size={15} aria-hidden />
+        <AgentMark size={15} animated={isGenerating} aria-hidden />
         <strong>Suggested cleanup</strong>
         <span className="copilot-inline-sub">AI-proposed — you approve every change.</span>
       </div>
@@ -90,8 +90,8 @@ export function ReviewCopilotPanel({
                 {affected.names ? `${affected.count} · ${affected.names}` : affected.count}
               </small>
               <div className="copilot-actions">
-                <button type="button" aria-label={`Apply suggestion: ${suggestion.title}`} onClick={() => onApply(suggestion)}>Apply Suggestion</button>
-                <button type="button" aria-label={`Dismiss suggestion: ${suggestion.title}`} onClick={() => onDismiss(suggestion.suggestion_id)}>Dismiss Suggestion</button>
+                <button type="button" aria-label={`Apply suggestion: ${suggestion.title}`} onClick={() => onApply(suggestion)}>Apply suggestion</button>
+                <button type="button" aria-label={`Dismiss suggestion: ${suggestion.title}`} onClick={() => onDismiss(suggestion.suggestion_id)}>Dismiss suggestion</button>
               </div>
             </li>
             );

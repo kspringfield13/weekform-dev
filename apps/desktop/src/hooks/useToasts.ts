@@ -15,6 +15,7 @@ export interface ToastInput {
 
 export interface Toast extends ToastInput {
   id: string;
+  leaving?: boolean;
 }
 
 export type PushToast = (input: ToastInput) => void;
@@ -23,6 +24,7 @@ export type PushToast = (input: ToastInput) => void;
 // auto-expire each toast after a few seconds (manual close stays available).
 const MAX_TOASTS = 4;
 const AUTO_DISMISS_MS = 5000;
+const EXIT_MS = 160;
 
 /**
  * Lightweight, in-memory toast queue. State lives at the App level (single source
@@ -35,12 +37,25 @@ export function useToasts() {
   const timers = useRef<Map<string, number>>(new Map());
 
   const dismissToast = useCallback((id: string) => {
-    setToasts((current) => current.filter((toast) => toast.id !== id));
     const timer = timers.current.get(id);
     if (timer !== undefined) {
       window.clearTimeout(timer);
       timers.current.delete(id);
     }
+    let alreadyLeaving = false;
+    setToasts((current) =>
+      current.map((toast) => {
+        if (toast.id !== id) return toast;
+        if (toast.leaving) alreadyLeaving = true;
+        return { ...toast, leaving: true };
+      })
+    );
+    if (alreadyLeaving) return;
+    const removal = window.setTimeout(() => {
+      timers.current.delete(id);
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, EXIT_MS);
+    timers.current.set(id, removal);
   }, []);
 
   const pushToast = useCallback<PushToast>(

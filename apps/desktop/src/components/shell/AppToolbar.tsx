@@ -1,32 +1,21 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { Moon, Pause, Play, PanelLeft, Sun, Maximize2, Minimize2 } from "lucide-react";
-import { screenLabels } from "../../lib/ui";
-import type { Screen } from "../../lib/types";
+import { Maximize2, Moon, Pause, Play, Sun, Minimize2 } from "lucide-react";
+import { WeekformMark } from "../common/WeekformMark";
 
 export function AppToolbar({
-  active,
-  status,
   paused,
   setPaused,
-  sidebarCollapsed,
-  setSidebarCollapsed,
   windowMode,
   setWindowMode,
   theme,
-  setTheme,
-  demoMode
+  setTheme
 }: {
-  active: Screen;
-  status: string;
   paused: boolean;
   setPaused: (value: boolean) => void;
-  sidebarCollapsed: boolean;
-  setSidebarCollapsed: (value: boolean) => void;
   windowMode: "large" | "compact";
   setWindowMode: (value: "large" | "compact") => void;
   theme: "light" | "dark";
   setTheme: (value: "light" | "dark") => void;
-  demoMode: boolean;
 }) {
   function startToolbarDrag(event: React.PointerEvent<HTMLElement>) {
     if (event.button !== 0) {
@@ -43,62 +32,72 @@ export function AppToolbar({
 
   return (
     <header className="app-toolbar" onPointerDown={startToolbarDrag}>
-      <div className="toolbar-left">
-        {windowMode === "large" && (
+      {windowMode === "large" && (
+        <div className="toolbar-sidebar-drag" aria-hidden="true" />
+      )}
+
+      {windowMode === "compact" && (
+        <>
+          <div className="toolbar-drag-region" />
+          <strong className="compact-toolbar-name">
+            <WeekformMark className="compact-toolbar-logo" />
+            <span>Weekform</span>
+          </strong>
+          <div className="compact-toolbar-actions" onPointerDown={(event) => event.stopPropagation()}>
+            <button
+              aria-label={theme === "dark" ? "Use Light Theme" : "Use Dark Theme"}
+              aria-pressed={theme === "dark"}
+              type="button"
+              title={theme === "dark" ? "Use Light Theme" : "Use Dark Theme"}
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            >
+              {theme === "dark" ? <Sun size={13} aria-hidden /> : <Moon size={13} aria-hidden />}
+            </button>
+            <button
+              aria-label="Expand to large window"
+              type="button"
+              title="Expand to large window"
+              onClick={() => setWindowMode("large")}
+            >
+              <Maximize2 size={13} aria-hidden />
+            </button>
+          </div>
+        </>
+      )}
+
+      {windowMode === "large" && (
+        <div className="toolbar-actions" onPointerDown={(event) => event.stopPropagation()}>
           <button
-            aria-label={sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar"}
-            aria-pressed={!sidebarCollapsed}
+            aria-label={paused ? "Resume Tracking" : "Pause Tracking"}
+            aria-pressed={paused}
+            className={paused ? "chrome-button is-paused" : "chrome-button"}
+            type="button"
+            onClick={() => setPaused(!paused)}
+            title={paused ? "Resume Tracking" : "Pause Tracking"}
+          >
+            {paused ? <Play size={15} aria-hidden /> : <Pause size={15} aria-hidden />}
+          </button>
+          <button
+            aria-label={theme === "dark" ? "Use Light Theme" : "Use Dark Theme"}
+            aria-pressed={theme === "dark"}
+            className="chrome-button theme-toggle"
+            type="button"
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            title={theme === "dark" ? "Use Light Theme" : "Use Dark Theme"}
+          >
+            {theme === "dark" ? <Sun size={15} aria-hidden /> : <Moon size={15} aria-hidden />}
+          </button>
+          <button
+            aria-label="Use Compact Widget"
             className="chrome-button"
             type="button"
-            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-            title={sidebarCollapsed ? "Show Sidebar" : "Hide Sidebar"}
+            onClick={() => setWindowMode("compact")}
+            title="Use Compact Widget"
           >
-            <PanelLeft size={15} aria-hidden />
+            <Minimize2 size={15} aria-hidden />
           </button>
-        )}
-        <div className="toolbar-title">
-          <div>
-            <strong>{windowMode === "compact" ? "ClearCapacity" : screenLabels[active]}</strong>
-            {demoMode && <b className="demo-badge">Demo</b>}
-          </div>
-          <span>{paused ? "Tracking paused" : status}</span>
         </div>
-      </div>
-
-      <div className="toolbar-drag-region" />
-
-      <div className="toolbar-actions" onPointerDown={(event) => event.stopPropagation()}>
-        <button
-          aria-label={paused ? "Resume Tracking" : "Pause Tracking"}
-          aria-pressed={paused}
-          className={paused ? "chrome-button is-paused" : "chrome-button"}
-          type="button"
-          onClick={() => setPaused(!paused)}
-          title={paused ? "Resume Tracking" : "Pause Tracking"}
-        >
-          {paused ? <Play size={15} aria-hidden /> : <Pause size={15} aria-hidden />}
-        </button>
-        <button
-          aria-label={theme === "dark" ? "Use Light Theme" : "Use Dark Theme"}
-          aria-pressed={theme === "dark"}
-          className="chrome-button theme-toggle"
-          type="button"
-          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          title={theme === "dark" ? "Use Light Theme" : "Use Dark Theme"}
-        >
-          {theme === "dark" ? <Sun size={15} aria-hidden /> : <Moon size={15} aria-hidden />}
-        </button>
-        <button
-          aria-label={windowMode === "compact" ? "Use Large Window" : "Use Compact Widget"}
-          aria-pressed={windowMode === "compact"}
-          className="chrome-button"
-          type="button"
-          onClick={() => setWindowMode(windowMode === "compact" ? "large" : "compact")}
-          title={windowMode === "compact" ? "Use Large Window" : "Use Compact Widget"}
-        >
-          {windowMode === "compact" ? <Maximize2 size={15} aria-hidden /> : <Minimize2 size={15} aria-hidden />}
-        </button>
-      </div>
+      )}
     </header>
   );
 }

@@ -7,7 +7,7 @@ import type {
 } from "../../../../packages/domain/src/models";
 import { summarizeSessionForPrompt } from "./promptSummaries";
 
-export const FORECAST_AGENT_PROMPT_VERSION = "clear-capacity-forecast-agent-v2";
+export const FORECAST_AGENT_PROMPT_VERSION = "weekform-forecast-agent-v2";
 
 function sortByStartTime<T extends { start_time: string }>(items: T[]) {
   return [...items].sort((left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime());
@@ -79,7 +79,7 @@ export function buildForecastAgentPrompt({
     .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
     .slice(0, 50);
   const context = {
-    product: "ClearCapacity",
+    product: "Weekform",
     prompt_version: FORECAST_AGENT_PROMPT_VERSION,
     objective:
       "Forecast next week's reliable new-work capacity for an analyst using current-week capacity, local work evidence, review status, and calendar context.",
@@ -115,7 +115,7 @@ export function buildForecastAgentPrompt({
   };
 
   return [
-    "Generate the ClearCapacity Forecast Agent result from this structured context.",
+    "Generate the Weekform Forecast Agent result from this structured context.",
     "Return strict JSON only. Do not include markdown.",
     JSON.stringify(context, null, 2)
   ].join("\n\n");

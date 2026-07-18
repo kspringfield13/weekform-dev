@@ -1,6 +1,6 @@
 # Privacy and Data Flow
 
-ClearCapacity processes potentially sensitive work metadata. This document describes the current prototype behavior so users and contributors can evaluate it accurately.
+Weekform processes potentially sensitive work metadata. This document describes the current prototype behavior so users and contributors can evaluate it accurately.
 
 ## Local Data
 
@@ -14,11 +14,13 @@ The desktop app can collect:
 - derived activity sessions, work blocks, forecasts, and narratives
 - an audit trail of collection and review events
 
-This data is stored in the Tauri webview's local storage. It is not currently encrypted by ClearCapacity and remains on the local macOS user account until the user resets prototype data or clears the application's webview storage.
+This data is stored in the Tauri webview's local storage. It is not currently encrypted by Weekform and remains on the local macOS user account until the user resets prototype data or clears the application's webview storage.
 
-## OpenAI API Data
+## AI and OpenAI API Data
 
-AI features require `OPENAI_API_KEY`, normally configured in the repository's ignored `.env` file for local development. ClearCapacity loads this file into the native desktop process at startup; the key is not exposed through the Vite browser bundle. When an AI feature runs, ClearCapacity sends the prompt context required by that feature to the OpenAI Responses API. Classification, review suggestions, and forecasts are user-triggered; weekly narrative generation can run automatically after workload evidence exists.
+OpenAI is Weekform's default and recommended AI provider. A key can be configured in the app's local Settings, or through `OPENAI_API_KEY` in the repository's ignored `.env` file during development. Credentials are never compiled into the Vite bundle. Native classification, review, forecast, narrative, and visual-context requests are sent through the Tauri process. The conversational Agent may use its configured provider directly from the webview so its tools can access current in-memory workload state; in that path, the configured key is available to the running webview and remains stored only in local prototype state.
+
+When an AI feature runs, Weekform sends the prompt context required by that feature to the selected provider. Classification, review suggestions, and forecasts are user-triggered; weekly narrative generation can run automatically after workload evidence exists.
 
 Depending on the feature, prompt context can include:
 

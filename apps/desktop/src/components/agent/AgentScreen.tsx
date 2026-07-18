@@ -1,7 +1,6 @@
-import { lazy, Suspense, useMemo, useState, useEffect, useRef, type CSSProperties } from "react";
+import { lazy, Suspense, useMemo, useState, useEffect, useRef } from "react";
 import {
   ArrowRight,
-  Bot,
   BrainCircuit,
   CalendarRange,
   Check,
@@ -12,10 +11,8 @@ import {
   RotateCcw,
   Send,
   ShieldCheck,
-  Sparkles,
   Square,
   Trash2,
-  User,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import type {
@@ -24,20 +21,23 @@ import type {
   OutlookCalendarEvent,
   UserCorrection,
   VisualContextInsight,
+  WeeklyAIUsageSummary,
   WeeklyCapacitySnapshot,
   AIConfig,
 } from "../../../../../packages/domain/src/models";
-import type { AgentChatMessage } from "../../lib/types";
+import type { AgentActionKind } from "../../services/agentTools";
+import type { AgentChatMessage, AppActionResult, Screen } from "../../lib/types";
 import type { PushToast } from "../../hooks/useToasts";
 import { agentTools, AGENT_INSTRUCTIONS } from "../../services/agentTools";
 import { getAIProviderPreset } from "../../services/aiProviders";
+import { normalizeWeekId } from "../../../../../packages/inference/src/capacity";
 import { getCurrentIsoWeekId, getLocalDateKey } from "../../lib/date";
 import { formatClockTime, formatCount } from "../../lib/format";
 import { withAiTimeout } from "../../lib/aiTimeout";
 import { scrollBehavior } from "../../lib/motion";
 import { ConfirmDialog } from "../common/ConfirmDialog";
+import { AgentMark } from "../common/AgentMark";
 import type { tool as AiToolFn } from "ai";
-import type { Screen } from "../../lib/types";
 
 const AgentMarkdown = lazy(() => import("./AgentMarkdown"));
 const CHAT_STORAGE_KEY = "clear-capacity.agent-chat.v2";
@@ -53,11 +53,71 @@ const AGENT_THINKING_LABEL = "Thinking";
 const AGENT_STREAM_REVEAL_MIN_MS = 900;
 const AGENT_STREAM_REVEAL_MAX_MS = 2600;
 const AGENT_STREAM_REVEAL_PER_LINE_MS = 120;
-const GROUNDED_AGENT_FALLBACK_INSTRUCTIONS = `You are the ClearCapacity Agent.
+const GROUNDED_AGENT_FALLBACK_INSTRUCTIONS = `You are the Weekform Agent.
 
-Answer using only the provided local ClearCapacity facts and recent conversation.
+Answer using only the provided local Weekform facts and recent conversation.
 Be concrete, concise, and honest about thin data.
 If the user has raw sessions but no reviewed work blocks, explain that capacity and workload recommendations are limited until sessions are classified/reviewed.`;
+
+type AgentActionStatus = "awaiting" | "running" | "completed" | "failed";
+
+interface PendingAgentAction {
+  id: string;
+  kind: AgentActionKind;
+  reason: string;
+  status: AgentActionStatus;
+  resultMessage?: string;
+}
+
+const AGENT_ACTION_COPY: Record<AgentActionKind, {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  runningLabel: string;
+  destination: Screen;
+  destinationLabel: string;
+}> = {
+  classify_sessions: {
+    title: "Classify raw activity",
+    description: "Send eligible raw activity sessions through Weekform’s classifier and create draft work blocks for your review. Nothing is auto-confirmed.",
+    confirmLabel: "Classify sessions",
+    runningLabel: "Classifying sessions…",
+    destination: "daily",
+    destinationLabel: "Open Daily Review",
+  },
+  generate_forecast: {
+    title: "Generate a new forecast",
+    description: "Use the current reviewed workload, calendar, and corrections to refresh the next-week capacity forecast.",
+    confirmLabel: "Generate forecast",
+    runningLabel: "Generating forecast…",
+    destination: "forecast",
+    destinationLabel: "Open Forecast",
+  },
+  generate_narrative: {
+    title: "Generate a weekly narrative",
+    description: "Refresh the weekly narrative and replace the manager-ready summary draft using the current reviewed evidence.",
+    confirmLabel: "Generate narrative",
+    runningLabel: "Generating narrative…",
+    destination: "narrative",
+    destinationLabel: "Open Narrative",
+  },
+};
+
+function detectExplicitAgentAction(message: string): AgentActionKind | null {
+  const normalized = message.toLowerCase().replace(/\s+/g, " ").trim();
+  const asksToClassify = /\b(classify|categorize|group)\b/.test(normalized)
+    && /\b(raw|unclassified|eligible|activity|activities|session|sessions|work block|work blocks)\b/.test(normalized);
+  if (asksToClassify) return "classify_sessions";
+
+  const actionVerb = /\b(generate|create|refresh|update|regenerate|run|make)\b/;
+  if (actionVerb.test(normalized) && /\bforecast\b/.test(normalized)) return "generate_forecast";
+  if (
+    actionVerb.test(normalized)
+    && /\b(narrative|weekly summary|manager summary|manager-ready summary)\b/.test(normalized)
+  ) return "generate_narrative";
+
+  return null;
+}
 
 interface AgentScreenProps {
   blocks: WorkBlock[];
@@ -66,10 +126,15 @@ interface AgentScreenProps {
   calendarEvents: OutlookCalendarEvent[];
   corrections: UserCorrection[];
   visualContextInsights: VisualContextInsight[];
+  aiUsageSummary: WeeklyAIUsageSummary;
   todayKey: string;
   currentWeekRangeLabel: string;
   aiConfig: AIConfig | null;
+  hasNarrativeEvidence: boolean;
   onOpenScreen: (screen: Screen) => void;
+  onClassifySessions: () => Promise<AppActionResult>;
+  onGenerateForecast: () => Promise<AppActionResult>;
+  onGenerateNarrative: () => Promise<AppActionResult>;
   pushToast: PushToast;
 }
 
@@ -93,20 +158,31 @@ function AgentThinkingText() {
   );
 }
 
-function StreamingAgentContent({ content }: { content: string }) {
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
+// An assistant answer that quotes percentages gets a live footer grounding it in
+// the current snapshot — the same evidence-citing habit the rest of the app has.
+// Values are read from the snapshot at render time, never parsed from the answer.
+const CAPACITY_CITATION_RE = /\d+(?:\.\d+)?\s?%/;
 
+function CapacityContextStrip({ capacity, planned, reactive }: { capacity: number; planned: number; reactive: number }) {
+  const plannedShare = Math.max(0, Math.min(100, planned));
+  const reactiveShare = Math.max(0, Math.min(100 - plannedShare, reactive));
+  const openShare = Math.round(Math.max(0, 100 - plannedShare - reactiveShare));
   return (
-    <div className="agent-streaming-content">
-      {lines.map((line, index) => (
-        <span
-          key={`stream-line-${index}`}
-          className={`agent-stream-line${line.trim() ? "" : " is-empty"}`}
-          style={{ "--line-index": index } as CSSProperties}
-        >
-          <span className="agent-stream-line-text">{line || "\u00a0"}</span>
-        </span>
-      ))}
+    <div
+      className="agent-context-strip"
+      role="group"
+      aria-label={`Live week context: ${capacity}% reliable capacity, ${planned}% planned, ${reactive}% reactive`}
+      title="Live values from this week's snapshot — shown so you can check the answer against your data, not parsed from the reply."
+    >
+      <span className="agent-context-label">This week</span>
+      <span className="agent-context-bar" aria-hidden>
+        <span className="is-planned" style={{ width: `${plannedShare}%` }} />
+        <span className="is-reactive" style={{ width: `${reactiveShare}%` }} />
+      </span>
+      <span className="agent-context-chip"><strong>{capacity}%</strong> reliable</span>
+      <span className="agent-context-chip">planned {planned}%</span>
+      <span className="agent-context-chip">reactive {reactive}%</span>
+      <span className="agent-context-chip">open {openShare}%</span>
     </div>
   );
 }
@@ -144,10 +220,15 @@ export function AgentScreen({
   calendarEvents,
   corrections,
   visualContextInsights,
+  aiUsageSummary,
   todayKey,
   currentWeekRangeLabel,
   aiConfig,
+  hasNarrativeEvidence,
   onOpenScreen,
+  onClassifySessions,
+  onGenerateForecast,
+  onGenerateNarrative,
   pushToast,
 }: AgentScreenProps) {
   const [messages, setMessages] = useState<AgentChatMessage[]>(() => {
@@ -179,10 +260,12 @@ export function AgentScreen({
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAgentAction | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const pendingActionRef = useRef<PendingAgentAction | null>(null);
 
   const topProjects = useMemo(() => {
     const totals = new Map<string, number>();
@@ -191,7 +274,7 @@ export function AgentScreen({
     // tool (and the sibling `weekBlocks` memo's block.week_id predicate) instead
     // of surfacing a project that only dominated the full accumulated ledger.
     blocks
-      .filter((block) => block.week_id === snapshot.week_id)
+      .filter((block) => normalizeWeekId(block.week_id) === normalizeWeekId(snapshot.week_id))
       .forEach((block) => {
         const name = block.project_name?.trim() || "Unassigned work";
         totals.set(name, (totals.get(name) || 0) + block.estimated_capacity_pct);
@@ -278,13 +361,82 @@ export function AgentScreen({
   // (block.week_id equality; calendar events keyed by ISO week of start_time). Sessions
   // stay full — getDayActivity filters them by todayKey; corrections stay full ("recent").
   const weekBlocks = useMemo(
-    () => blocks.filter((block) => block.week_id === snapshot.week_id),
+    () => blocks.filter((block) => normalizeWeekId(block.week_id) === normalizeWeekId(snapshot.week_id)),
     [blocks, snapshot.week_id]
   );
   const weekCalendarEvents = useMemo(
     () => calendarEvents.filter((event) => getCurrentIsoWeekId(new Date(event.start_time)) === snapshot.week_id),
     [calendarEvents, snapshot.week_id]
   );
+
+  const unclassifiedSessionCount = useMemo(() => {
+    const alreadyClassified = new Set(blocks.flatMap((block) => block.derived_from));
+    return activeWindowSessions.filter(
+      (session) => !alreadyClassified.has(session.session_id) && session.sample_count >= 2
+    ).length;
+  }, [activeWindowSessions, blocks]);
+
+  function commitPendingAction(next: PendingAgentAction | null) {
+    pendingActionRef.current = next;
+    setPendingAction(next);
+  }
+
+  function requestAgentAction(kind: AgentActionKind, reason?: string): Record<string, unknown> {
+    const existing = pendingActionRef.current;
+    if (existing && (existing.status === "awaiting" || existing.status === "running")) {
+      return {
+        status: "already_pending",
+        action: existing.kind,
+        message: "An action is already waiting for approval or running. Ask the user to finish that action first.",
+      };
+    }
+
+    if (!aiConfig?.apiKey?.trim()) {
+      return {
+        status: "unavailable",
+        action: kind,
+        message: "No AI provider key is saved. Guide the user to Settings → AI assistance before proposing this action.",
+      };
+    }
+    if (kind === "classify_sessions" && unclassifiedSessionCount === 0) {
+      return {
+        status: "unavailable",
+        action: kind,
+        message: "No unclassified active-window sessions are ready. Do not ask the user to paste sessions.",
+      };
+    }
+    if (kind === "generate_forecast" && blocks.length === 0) {
+      return {
+        status: "unavailable",
+        action: kind,
+        message: "A forecast needs at least one work block. Recommend classification or review first.",
+      };
+    }
+    if (kind === "generate_narrative" && !hasNarrativeEvidence) {
+      return {
+        status: "unavailable",
+        action: kind,
+        message: "There is not enough reviewed evidence for a narrative yet. Recommend classification or review first.",
+      };
+    }
+
+    const copy = AGENT_ACTION_COPY[kind];
+    const proposal: PendingAgentAction = {
+      id: `agent-action-${Date.now()}`,
+      kind,
+      reason: reason?.trim().slice(0, 240) || copy.description,
+      status: "awaiting",
+    };
+    commitPendingAction(proposal);
+    return {
+      status: "awaiting_user_confirmation",
+      action: kind,
+      title: copy.title,
+      confirmationRequired: true,
+      eligibleSessionCount: kind === "classify_sessions" ? unclassifiedSessionCount : undefined,
+      message: "The approval card is ready. Ask the user to review and approve it; do not claim the action has run.",
+    };
+  }
 
   // Data context for tools (bound here)
   const context = {
@@ -294,7 +446,9 @@ export function AgentScreen({
     calendarEvents: weekCalendarEvents,
     corrections,
     visualContextInsights,
+    usageSummary: aiUsageSummary,
     todayKey,
+    requestAgentAction,
   };
 
   useEffect(() => {
@@ -344,6 +498,10 @@ export function AgentScreen({
     if (visibleMessageCount === INITIAL_MESSAGE_COUNT) scrollToBottom();
   }, [messages, visibleMessageCount]);
 
+  useEffect(() => {
+    if (pendingAction && visibleMessageCount === INITIAL_MESSAGE_COUNT) scrollToBottom();
+  }, [pendingAction, visibleMessageCount]);
+
   const visibleMessages = useMemo(
     () => messages.slice(Math.max(0, messages.length - visibleMessageCount)),
     [messages, visibleMessageCount]
@@ -376,24 +534,26 @@ export function AgentScreen({
     if (!config?.apiKey?.trim()) return null;
     const provider = config.provider;
     const apiKey = config.apiKey;
-    // Fall back to the provider's own preset default, not a hardcoded "gpt-4o". Custom presets
-    // have no default, so that path still relies on the user-entered model.
+    // Fall back to the provider's own preset default, not a hardcoded retired OpenAI model.
+    // Custom presets have no default, so that path still relies on the user-entered model.
     const modelId = config.model?.trim() || getAIProviderPreset(provider).model;
     const baseURL = config.baseUrl ? config.baseUrl.replace(/\/$/, "") : undefined;
 
-    // All providers use an OpenAI-compatible endpoint.
-    // Use "compatible" for 3rd-party / non-strict OpenAI endpoints.
-    const isCustomish = provider === "custom" || provider === "grok" || provider === "deepseek";
-    const { createOpenAI } = await import("@ai-sdk/openai");
-    const openaiProvider = createOpenAI({
+    if (provider === "openai") {
+      const { createOpenAI } = await import("@ai-sdk/openai");
+      return createOpenAI({ apiKey, baseURL })(modelId);
+    }
+
+    const { createOpenAICompatible } = await import("@ai-sdk/openai-compatible");
+    const compatibleProvider = createOpenAICompatible({
+      name: provider,
       apiKey,
-      baseURL,
-      compatibility: isCustomish ? "compatible" : "strict",
+      baseURL: baseURL ?? getAIProviderPreset(provider).baseUrl,
     });
-    return openaiProvider(modelId);
+    return compatibleProvider(modelId);
   }
 
-  // Wrap Eve-style tools (inputSchema) for the ai SDK (expects parameters).
+  // Wrap app tools for the AI SDK's inputSchema contract.
   // Execute is rebound to inject our app context (the "ctx" in a real Eve tool).
   // createTool is the `tool` helper from the ai SDK; t is intentionally `any` because Eve
   // tool execute signatures have narrow ctx types (e.g. { snapshot }) that are structurally
@@ -403,7 +563,7 @@ export function AgentScreen({
     const toAiTool = (t: any) =>
       createTool({
         description: t.description,
-        parameters: t.inputSchema ?? t.parameters,
+        inputSchema: t.inputSchema ?? t.parameters,
         execute: async (input: Record<string, unknown>) => t.execute(input ?? {}, ctx),
       });
 
@@ -415,6 +575,10 @@ export function AgentScreen({
       getRecentCorrections: toAiTool(agentTools.getRecentCorrections),
       getCalendarSummary: toAiTool(agentTools.getCalendarSummary),
       getVisualInsightsSummary: toAiTool(agentTools.getVisualInsightsSummary),
+      getUsageDigest: toAiTool(agentTools.getUsageDigest),
+      requestSessionClassification: toAiTool(agentTools.requestSessionClassification),
+      requestForecastGeneration: toAiTool(agentTools.requestForecastGeneration),
+      requestNarrativeGeneration: toAiTool(agentTools.requestNarrativeGeneration),
     } as const;
   }
 
@@ -427,6 +591,7 @@ export function AgentScreen({
       recentCorrections,
       calendarSummary,
       visualInsightsSummary,
+      usageDigest,
     ] = await Promise.all([
       agentTools.getCapacitySnapshot.execute({}, context),
       agentTools.getWeekWorkload.execute({}, context),
@@ -435,6 +600,7 @@ export function AgentScreen({
       agentTools.getRecentCorrections.execute({ limit: 5 }, context),
       agentTools.getCalendarSummary.execute({}, context),
       agentTools.getVisualInsightsSummary.execute({ limit: 5 }, context),
+      agentTools.getUsageDigest.execute({}, context),
     ]);
 
     const latestUserQuestion = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
@@ -443,7 +609,7 @@ export function AgentScreen({
       .map((m) => `${m.role}: ${m.content}`)
       .join("\n");
 
-    return `Local ClearCapacity facts:
+    return `Local Weekform facts:
 ${JSON.stringify(
   {
     weekRange: currentWeekRangeLabel,
@@ -458,6 +624,7 @@ ${JSON.stringify(
     recentCorrections,
     calendarSummary,
     visualInsightsSummary,
+    usageDigest,
   },
   null,
   2
@@ -496,15 +663,44 @@ ${latestUserQuestion}`;
   async function sendMessage(messageText: string) {
     if (!messageText.trim() || isSending) return;
 
+    const trimmedMessage = messageText.trim();
     const userMsg: AgentChatMessage = {
       id: `user-${Date.now()}`,
       role: "user",
-      content: messageText.trim(),
+      content: trimmedMessage,
       createdAt: new Date().toISOString(),
     };
     const updated = [...messages, userMsg];
-    setMessages(updated);
+    // Sending a message returns the user to the live tail, so re-arm the auto-scroll
+    // effect (gated on `visibleMessageCount === INITIAL_MESSAGE_COUNT`). Without this, a
+    // prior "Show earlier" click leaves the counter elevated forever, so the new turn and
+    // its streaming reply would land below the fold with no scroll. No-op (byte-identical)
+    // when history was never expanded, since the counter already holds INITIAL_MESSAGE_COUNT.
+    setVisibleMessageCount(INITIAL_MESSAGE_COUNT);
     setInput("");
+
+    // Clear requests to perform an existing Weekform action should never depend on the
+    // language model deciding whether to call a tool. Stage the consent card directly;
+    // the underlying mutation still cannot run until the user explicitly approves it.
+    const explicitAction = detectExplicitAgentAction(trimmedMessage);
+    if (explicitAction) {
+      const actionCopy = AGENT_ACTION_COPY[explicitAction];
+      const actionResult = requestAgentAction(explicitAction, actionCopy.description);
+      const actionStatus = String(actionResult.status ?? "");
+      const assistantContent = actionStatus === "awaiting_user_confirmation"
+        ? `I can do that. I’ve prepared the ${actionCopy.title.toLowerCase()} action below. Review what it will do, then approve it when you’re ready.`
+        : String(actionResult.message ?? "I couldn’t prepare that action right now.");
+      const assistantMsg: AgentChatMessage = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: assistantContent,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages([...updated, assistantMsg]);
+      return;
+    }
+
+    setMessages(updated);
     await runAssistantTurn(updated);
   }
 
@@ -525,7 +721,7 @@ ${latestUserQuestion}`;
       const sdkModel = await resolveAgentModel(aiConfig);
 
       if (sdkModel) {
-        const [{ generateText, streamText, tool: createTool }] = await Promise.all([import("ai")]);
+        const [{ generateText, streamText, tool: createTool, stepCountIs }] = await Promise.all([import("ai")]);
         const boundTools = createBoundTools(context, createTool);
 
         const historyForModel = history
@@ -538,7 +734,7 @@ ${latestUserQuestion}`;
           system: AGENT_INSTRUCTIONS,
           messages: historyForModel,
           tools: boundTools,
-          maxSteps: 6,
+          stopWhen: stepCountIs(6),
           abortSignal: controller.signal,
         });
 
@@ -553,23 +749,16 @@ ${latestUserQuestion}`;
         setIsStreaming(true);
 
         let streamed = "";
-        let firstStreamedAt: number | null = null;
         let streamTimedOut = false;
         let streamTimeout: ReturnType<typeof window.setTimeout> | null = null;
         const holdStreamingReveal = async (content: string) => {
           if (!content.trim() || controller.signal.aborted) return;
-          const startedAt = firstStreamedAt ?? Date.now();
-          const elapsed = Date.now() - startedAt;
-          await sleep(getStreamingRevealDuration(content) - elapsed, controller.signal);
+          await sleep(getStreamingRevealDuration(content), controller.signal);
         };
         const consumeStream = async () => {
           for await (const delta of streamResult.textStream) {
             if (streamTimedOut) return;
             streamed += delta;
-            firstStreamedAt ??= Date.now();
-            setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, content: streamed } : m))
-            );
           }
         };
 
@@ -587,7 +776,6 @@ ${latestUserQuestion}`;
 
           if (streamStatus === "timeout") {
             streamed = buildDeterministicAgentFallback(latestUserQuestion, AGENT_STREAM_TIMEOUT_MESSAGE);
-            firstStreamedAt = Date.now();
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, content: streamed, interrupted: false } : m))
             );
@@ -599,7 +787,6 @@ ${latestUserQuestion}`;
         } catch {
           if (streamTimedOut) {
             streamed = buildDeterministicAgentFallback(latestUserQuestion, AGENT_STREAM_TIMEOUT_MESSAGE);
-            firstStreamedAt = Date.now();
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, content: streamed, interrupted: false } : m))
             );
@@ -639,16 +826,12 @@ ${latestUserQuestion}`;
 
         let finalText = "";
         try {
-          finalText = (await withAiTimeout(streamResult.text, FINAL_AGENT_TEXT_TIMEOUT_MS)).trim();
+          finalText = (await withAiTimeout(Promise.resolve(streamResult.text), FINAL_AGENT_TEXT_TIMEOUT_MS)).trim();
         } catch {
           finalText = "";
         }
         if (finalText && finalText !== streamed.trim()) {
           streamed = finalText;
-          firstStreamedAt = Date.now();
-          setMessages((prev) =>
-            prev.map((m) => (m.id === assistantId ? { ...m, content: streamed } : m))
-          );
         }
 
         // Some provider/model combinations complete tool calls but yield no final streamed text.
@@ -675,12 +858,14 @@ ${latestUserQuestion}`;
             streamed = buildDeterministicAgentFallback(latestUserQuestion);
           }
 
-          firstStreamedAt = Date.now();
-          setMessages((prev) =>
-            prev.map((m) => (m.id === assistantId ? { ...m, content: streamed, interrupted: false } : m))
-          );
         }
 
+        // Commit the completed answer once so the reveal animates the formatted Markdown
+        // tree. Rendering token deltas as plain lines made Markdown syntax flash before
+        // ReactMarkdown replaced it with the polished response.
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, content: streamed, interrupted: false } : m))
+        );
         await holdStreamingReveal(streamed);
         setMessages((prev) => prev.map((message) =>
           message.id === assistantId
@@ -712,7 +897,7 @@ ${latestUserQuestion}`;
       // Best effort fallback via the Rust path, then pure data
       try {
         const historyStr = history.map((m) => `${m.role}: ${m.content}`).join("\n");
-        const fallbackPrompt = `You are the ClearCapacity Agent focused only on capacity, workload and weekly focus. Use only the user's data. Conversation so far:\n${historyStr}\n\nLatest user question: ${latestUserQuestion}`;
+        const fallbackPrompt = `You are the Weekform Agent focused only on capacity, workload and weekly focus. Use only the user's data. Conversation so far:\n${historyStr}\n\nLatest user question: ${latestUserQuestion}`;
         const resp = await withAiTimeout(
           invoke<{ response?: string }>("chat_with_agent", {
             request: { prompt: fallbackPrompt, ai_config: aiConfig || undefined },
@@ -755,6 +940,36 @@ ${latestUserQuestion}`;
     void sendMessage(question);
   }
 
+  async function approvePendingAction() {
+    const action = pendingActionRef.current;
+    if (!action || action.status === "running") return;
+
+    const runningAction = { ...action, status: "running" as const, resultMessage: undefined };
+    commitPendingAction(runningAction);
+
+    let result: AppActionResult;
+    try {
+      if (action.kind === "classify_sessions") result = await onClassifySessions();
+      else if (action.kind === "generate_forecast") result = await onGenerateForecast();
+      else result = await onGenerateNarrative();
+    } catch (error) {
+      result = { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
+
+    const settledAction: PendingAgentAction = {
+      ...runningAction,
+      status: result.ok ? "completed" : "failed",
+      resultMessage: result.message,
+    };
+    commitPendingAction(settledAction);
+    if (result.ok) pushToast({ tone: "success", message: result.message });
+  }
+
+  function cancelPendingAction() {
+    if (pendingActionRef.current?.status === "running") return;
+    commitPendingAction(null);
+  }
+
   // Abort the active stream; the partial assistant message stays put, no error surfaced.
   function stopGeneration() {
     abortControllerRef.current?.abort();
@@ -766,6 +981,10 @@ ${latestUserQuestion}`;
   function finalizeAbortedStream(assistantId: string, streamed: string) {
     if (!streamed.trim()) {
       setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+    } else {
+      setMessages((prev) => prev.map((message) =>
+        message.id === assistantId ? { ...message, content: streamed } : message
+      ));
     }
     setIsStreaming(false);
     setStreamingMessageId(null);
@@ -785,6 +1004,7 @@ ${latestUserQuestion}`;
 
   function clearChat() {
     setMessages([]);
+    commitPendingAction(null);
     setVisibleMessageCount(INITIAL_MESSAGE_COUNT);
     setIsStreaming(false);
     setStreamingMessageId(null);
@@ -830,21 +1050,28 @@ ${latestUserQuestion}`;
     "Comparing planned and reactive work",
     "Calculating capacity implications",
   ];
+  const pendingActionCopy = pendingAction ? AGENT_ACTION_COPY[pendingAction.kind] : null;
+  const PendingActionIcon = pendingAction?.kind === "classify_sessions"
+    ? Database
+    : pendingAction?.kind === "generate_forecast"
+      ? CalendarRange
+      : BrainCircuit;
 
   return (
     <section className="screen agent-screen">
       <div className="agent-page-header">
         <div>
+          <p className="eyebrow">Ask Agent</p>
           <div className="agent-title-row">
-            <span className="agent-title-icon"><Sparkles size={16} aria-hidden /></span>
-            <h1>Workload Agent</h1>
+            <span className="agent-title-icon"><AgentMark size={16} aria-hidden /></span>
+            <h1>Weekform Agent</h1>
           </div>
           <p>Understand your capacity and decide what to work on next.</p>
         </div>
         <div className="agent-header-actions">
           <span className={`agent-data-freshness${hasSignal ? "" : " agent-data-freshness--waiting"}`}><span /> {signalStatusLabel}</span>
         {messages.length > 0 && (
-          <button className="secondary-action" onClick={() => setConfirmingClear(true)} title="Clear chat">
+          <button type="button" className="secondary-action" onClick={() => setConfirmingClear(true)} title="Clear chat">
             <Trash2 size={16} aria-hidden /> Clear
           </button>
         )}
@@ -854,7 +1081,7 @@ ${latestUserQuestion}`;
       <div className="agent-workspace">
         <section className="agent-briefing" aria-label="Current workload context">
           <p className="briefing-line">
-            <Sparkles size={13} aria-hidden />
+            <AgentMark size={13} aria-hidden />
             {hasSignal ? (
               <span>
                 <strong>{briefing.capacity}%</strong> reliable capacity this week · primary focus{" "}
@@ -913,25 +1140,40 @@ ${latestUserQuestion}`;
           {visibleMessages.map((m, idx) => {
             const isCurrentStream = streamingMessageId === m.id;
             const isThinking = isCurrentStream && m.content === AGENT_PENDING_MESSAGE;
+            const isRevealing = isCurrentStream && !isThinking;
             return (
               <div key={m.id || idx} className={`agent-message ${m.role}`}>
-                <div className="agent-avatar">
-                  {m.role === "assistant" ? <Bot size={16} /> : <User size={16} />}
-                </div>
+                {m.role === "assistant" && (
+                  <div className="agent-avatar">
+                    <span className="sr-only">Assistant</span>
+                    <AgentMark size={16} animated={isCurrentStream} aria-hidden />
+                  </div>
+                )}
                 <div className="agent-bubble">
-                  <div className={`agent-content${isCurrentStream ? " streaming" : ""}${isThinking ? " thinking" : ""}`}>
+                  {m.role === "user" && <span className="sr-only">You: </span>}
+                  <div className={`agent-content${isCurrentStream ? " streaming" : ""}${isThinking ? " thinking" : ""}${isRevealing ? " revealing" : ""}`}>
                     {isThinking ? (
                       <AgentThinkingText />
                     ) : m.role === "assistant" && isCurrentStream ? (
-                      <StreamingAgentContent content={m.content} />
+                      <Suspense fallback={<AgentThinkingText />}>
+                        <AgentMarkdown content={m.content} />
+                      </Suspense>
                     ) : m.role === "assistant" ? (
-                      <Suspense fallback={<span>{m.content}</span>}>
+                      <Suspense fallback={<AgentThinkingText />}>
                         <AgentMarkdown content={m.content} />
                       </Suspense>
                     ) : (
                       m.content
                     )}
                   </div>
+                  {!isCurrentStream &&
+                    m.role === "assistant" &&
+                    m.content &&
+                    hasSignal &&
+                    idx === visibleMessages.length - 1 &&
+                    CAPACITY_CITATION_RE.test(m.content) && (
+                      <CapacityContextStrip capacity={briefing.capacity} planned={briefing.planned} reactive={briefing.reactive} />
+                    )}
                   {!isCurrentStream && m.content && (
                     <div className="agent-message-meta">
                       {m.createdAt && (
@@ -952,6 +1194,7 @@ ${latestUserQuestion}`;
                           type="button"
                           onClick={() => setExpandedDetails((value) => ({ ...value, [m.id]: !value[m.id] }))}
                           aria-expanded={Boolean(expandedDetails[m.id])}
+                          aria-controls={`analysis-detail-${m.id}`}
                           aria-label="Toggle analysis details"
                         >
                           Analysis <ChevronDown size={13} aria-hidden />
@@ -960,12 +1203,15 @@ ${latestUserQuestion}`;
                     </div>
                   )}
                   {expandedDetails[m.id] && m.analysisSummary && (
-                    <div className="agent-analysis-detail">
+                    <div id={`analysis-detail-${m.id}`} className="agent-analysis-detail">
                       <Database size={14} aria-hidden />
                       <span>{m.analysisSummary}</span>
                     </div>
                   )}
-                  {!isCurrentStream && m.role === "assistant" && m.interrupted && (
+                  {!isCurrentStream &&
+                    m.role === "assistant" &&
+                    m.interrupted &&
+                    idx === visibleMessages.length - 1 && (
                     <div className="agent-retry-row">
                       <button
                         type="button"
@@ -1002,10 +1248,74 @@ ${latestUserQuestion}`;
             );
           })}
 
+          {pendingAction && pendingActionCopy && (
+            <section
+              className={`agent-action-card is-${pendingAction.status}`}
+              aria-label={`${pendingActionCopy.title} action`}
+              aria-live="polite"
+            >
+              <div className="agent-action-icon" aria-hidden>
+                {pendingAction.status === "completed"
+                  ? <Check size={16} />
+                  : <PendingActionIcon size={16} />}
+              </div>
+              <div className="agent-action-copy">
+                <span className="agent-action-eyebrow">
+                  {pendingAction.status === "awaiting" && "Approval required"}
+                  {pendingAction.status === "running" && "Running with your approval"}
+                  {pendingAction.status === "completed" && "Action completed"}
+                  {pendingAction.status === "failed" && "Action needs attention"}
+                </span>
+                <strong>{pendingActionCopy.title}</strong>
+                <p>{pendingAction.resultMessage || pendingAction.reason}</p>
+              </div>
+              <div className="agent-action-controls">
+                {pendingAction.status === "awaiting" && (
+                  <>
+                    <button
+                      className="agent-action-confirm"
+                      type="button"
+                      onClick={() => void approvePendingAction()}
+                      disabled={isSending}
+                    >
+                      {pendingActionCopy.confirmLabel}
+                    </button>
+                    <button type="button" onClick={cancelPendingAction} disabled={isSending}>Not now</button>
+                  </>
+                )}
+                {pendingAction.status === "running" && (
+                  <button className="agent-action-confirm" type="button" disabled>
+                    <AgentMark size={13} animated aria-hidden /> {pendingActionCopy.runningLabel}
+                  </button>
+                )}
+                {pendingAction.status === "completed" && (
+                  <>
+                    <button
+                      className="agent-action-confirm"
+                      type="button"
+                      onClick={() => onOpenScreen(pendingActionCopy.destination)}
+                    >
+                      {pendingActionCopy.destinationLabel} <ArrowRight size={13} aria-hidden />
+                    </button>
+                    <button type="button" onClick={cancelPendingAction}>Dismiss</button>
+                  </>
+                )}
+                {pendingAction.status === "failed" && (
+                  <>
+                    <button className="agent-action-confirm" type="button" onClick={() => void approvePendingAction()}>
+                      Try again
+                    </button>
+                    <button type="button" onClick={cancelPendingAction}>Dismiss</button>
+                  </>
+                )}
+              </div>
+            </section>
+          )}
+
           {isSending && !streamingMessageId && (
             <div className="agent-progress" role="status">
               <div className="agent-progress-head">
-                <span className="agent-pulse"><BrainCircuit size={15} aria-hidden /></span>
+                <span className="agent-pulse"><AgentMark size={15} animated aria-hidden /></span>
                 <div><strong>Working through your workload</strong><small>Using local activity, calendar, blocks, and corrections</small></div>
               </div>
               <div className="agent-progress-steps">
@@ -1040,6 +1350,7 @@ ${latestUserQuestion}`;
           />
           {isStreaming ? (
             <button
+              type="button"
               className="agent-send agent-stop"
               onClick={stopGeneration}
               title="Stop generating"
@@ -1049,13 +1360,14 @@ ${latestUserQuestion}`;
             </button>
           ) : (
             <button
+              type="button"
               className="agent-send"
               onClick={handleSend}
               disabled={!input.trim() || isSending}
               title="Send"
               aria-label="Send message"
             >
-              <Send size={16} aria-hidden />
+              {isSending ? <AgentMark size={16} animated aria-hidden /> : <Send size={16} aria-hidden />}
             </button>
           )}
         </div>

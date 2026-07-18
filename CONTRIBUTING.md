@@ -1,6 +1,6 @@
 # Contributing
 
-ClearCapacity is an early prototype. Contributions should preserve user control, explainability, and conservative handling of work metadata.
+Weekform is an early prototype. Contributions should preserve user control, explainability, and conservative handling of work metadata.
 
 ## Development Setup
 

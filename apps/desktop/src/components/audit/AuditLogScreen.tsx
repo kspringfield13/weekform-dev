@@ -15,7 +15,7 @@ export function AuditLogScreen({ auditEvents, pushToast }: { auditEvents: AuditE
   const searchInputRef = useRef<HTMLInputElement>(null);
   const filters: Array<{ id: AuditFilter; label: string; hint?: string }> = [
     { id: "all", label: "All" },
-    { id: "sources", label: "Sources", hint: "Capture samples, sessions, visual context, calendar and chat imports" },
+    { id: "sources", label: "Sources", hint: "Capture samples, sessions, visual context, calendar, chat, and AI-usage imports" },
     { id: "ai", label: "AI activity", hint: "Classifier, Review Copilot, forecasts, narratives, and the acceleration engine" },
     { id: "correction", label: "Corrections", hint: "Your relabels, confirmations, and exclusions" },
     { id: "privacy", label: "Privacy", hint: "Pause/resume and retention changes" },
@@ -29,7 +29,8 @@ export function AuditLogScreen({ auditEvents, pushToast }: { auditEvents: AuditE
       event.type === "activity_session" ||
       event.type === "visual_context" ||
       event.type === "calendar_import" ||
-      event.type === "chat_import",
+      event.type === "chat_import" ||
+      event.type === "usage_import",
     ai: (event) =>
       event.type === "work_block_classification" ||
       event.type === "review_copilot" ||
@@ -43,7 +44,8 @@ export function AuditLogScreen({ auditEvents, pushToast }: { auditEvents: AuditE
       event.type === "retention_policy" ||
       event.type === "visual_context_policy" ||
       event.type === "data_reset" ||
-      event.type === "data_export",
+      event.type === "data_export" ||
+      event.type === "usage_settings",
     alerts: (event) => event.type === "proactive_alert",
     onboarding: (event) => event.type === "onboarding"
   };
@@ -113,7 +115,7 @@ export function AuditLogScreen({ auditEvents, pushToast }: { auditEvents: AuditE
             <EmptyState
               icon={ScrollText}
               title="No audit events yet."
-              description="Capture samples, imports, corrections, and privacy changes will appear here as you use ClearCapacity."
+              description="Capture samples, imports, corrections, and privacy changes will appear here as you use Weekform."
             />
           ) : (
             <EmptyState

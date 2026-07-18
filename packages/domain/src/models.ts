@@ -80,7 +80,9 @@ export type AuditEventType =
   | "data_export"
   | "proactive_alert"
   | "acceleration_engine"
-  | "onboarding";
+  | "onboarding"
+  | "usage_import"
+  | "usage_settings";
 
 export interface AuditEvent {
   event_id: string;
@@ -240,7 +242,7 @@ export interface AccelerationPlay extends AccelerationSignal {
   recipe: string | null;
   recommended_tools: string[];
   /**
-   * Agent Skills authoring fields (`SKILL.md` format). When the opt-in AI pass
+   * Agent Skill authoring fields in `SKILL.md` format. When the opt-in AI pass
    * authors an AUTOMATE play it also proposes a hyphenated `skill_name` and a trigger-oriented
    * `skill_description` ("what it does + when to use it"), so a saved recipe can be exported as a
    * runnable Agent Skill. Null for TOOL/TECHNIQUE and for deterministic (unauthored) plays; the
@@ -270,8 +272,8 @@ export interface SavedSkill {
   estimated_minutes_saved_per_week: number;
   saved_at: string;
   /**
-   * Optional Agent Skills authoring fields snapshotted from the play (`SKILL.md`
-   * standard): a hyphenated `skill_name` and a trigger-oriented `skill_description`. Optional so
+   * Optional Agent Skill authoring fields snapshotted from the play: a hyphenated `skill_name`
+   * and a trigger-oriented `skill_description`. Optional so
    * skills saved before this feature (and any without an AI-authored name/description) still
    * parse; the SKILL.md exporter falls back to deriving them from `title`/`detail`.
    */
@@ -350,4 +352,176 @@ export interface AIConfig {
   model: string;
   visionModel?: string;
   // future: temperature, etc.
+}
+
+/**
+ * How a usage figure was obtained: `exact` = measured from a source of record
+ * (local tool logs, a provider CSV export); `proxy` = estimated from observed
+ * activity sessions. Every surface that renders usage must keep the two grades
+ * visually and textually distinct so an estimate never reads as a measurement.
+ */
+export type UsageMeasurement = "exact" | "proxy";
+
+/**
+ * Where a usage bucket came from. Room is deliberately left for `app_native`
+ * (instrumenting Weekform's own AI calls) and `provider_api` (billing/usage
+ * APIs) in later phases — add to the union, not a parallel field.
+ */
+export type UsageSourceType = "observed" | "csv_import";
+
+/**
+ * One day of AI usage from one source, for one provider+model, at one
+ * measurement grade — the ONLY persisted usage shape (bounded daily rollups,
+ * never raw per-message events). Bucket identity is
+ * `date|source_type|provider|model|measurement`; re-scans and re-imports merge
+ * into the same bucket. Proxy buckets are derived live from retained sessions
+ * and are never persisted.
+ */
+export interface TokenUsageDay {
+  /** Local calendar date bucket, `YYYY-MM-DD`. */
+  date: string;
+  source_type: UsageSourceType;
+  /** Normalized provider slug (for example, "openai", "google", or "unknown"). */
+  provider: string;
+  /** Model id as reported by the source; "unknown" when the source has none. */
+  model: string;
+  measurement: UsageMeasurement;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  /** Distinct API messages (exact) or conservatively estimated prompts (proxy). */
+  prompt_count: number;
+  /** Observed AI-assistant session minutes; 0 for token-bearing sources. */
+  session_minutes: number;
+  /**
+   * Sum of authoritative row costs (CSV rows that carried a cost column).
+   * `null` means "no authoritative cost — compute from the price map at
+   * summary time". Never a price-map product: the overlay is always computed,
+   * never stored, so editing a price retroactively reprices history.
+   */
+  cost_usd: number | null;
+}
+
+/**
+ * Editable per-model pricing (USD per million tokens) driving the computed cost overlay.
+ *
+ * Cache rates are optional for backward compatibility. When absent, cache writes
+ * retain the legacy input-token rate and cache reads remain unpriced. Official
+ * catalog entries carry provenance so a later catalog can offer a reviewable
+ * update without silently replacing a manual override.
+ */
+export interface ModelPrice {
+  input_usd_per_mtok: number;
+  output_usd_per_mtok: number;
+  cache_read_usd_per_mtok?: number;
+  cache_write_usd_per_mtok?: number;
+  /** Provider slug used by provider-qualified `price_map` keys. */
+  provider?: string;
+  source_kind?: "manual" | "official";
+  source_id?: string;
+  source_url?: string;
+  updated_at?: string;
+  /** Last usage date covered by a temporary official rate (`YYYY-MM-DD`). */
+  effective_until?: string;
+}
+
+/** Opt-in configuration for AI-usage tracking. Everything defaults OFF. */
+export interface TokenUsageSettings {
+  /**
+   * Derive proxy estimates from AI app names plus local-only browser-title
+   * keyword matching. Titles are matched in memory and never stored or sent.
+   */
+  observed_proxy_enabled: boolean;
+  /**
+   * Include the usage sentence in manager-facing summaries (both the
+   * deterministic `manager_ready_summary` and the AI narrative prompt).
+   * Default false — sharing AI usage upward is the user's call, not ours.
+   */
+  include_in_manager_summary: boolean;
+  /**
+   * `provider|model` (preferred) or legacy model id → price. Resolution checks
+   * the provider-qualified key first, then the legacy exact-model fallback.
+   */
+  price_map: Record<string, ModelPrice>;
+}
+
+/**
+ * A detected AI-assistant session (proxy measurement), derived from
+ * ActivitySession fields. Privacy: `evidence` carries derived labels only
+ * ("Browser AI session", minutes, the matched assistant's display name) —
+ * NEVER raw window titles; title matching happens in memory only.
+ */
+export interface ProxyUsageEvent {
+  /** `proxy-${stableHash(session_id)}` — deterministic across recomputes. */
+  event_id: string;
+  /** Local date key (`YYYY-MM-DD`) of the session start. */
+  date: string;
+  /** Display label of the assistant (for example, "ChatGPT") from our own keyword table. */
+  assistant: string;
+  provider: string;
+  detected_via: "app_name" | "browser_title";
+  session_minutes: number;
+  estimated_prompt_count: number;
+  evidence: string[];
+}
+
+/**
+ * Per-week usage rollup consumed by the Usage screen, the `getUsageDigest`
+ * agent tool, and the weekly narrative. Exact and proxy figures are kept in
+ * separate blocks (and tagged per row in `by_model`) so estimates never blend
+ * into measurements.
+ */
+export interface WeeklyAIUsageSummary {
+  week_id: string;
+  exact: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+    cache_creation_tokens: number;
+    prompt_count: number;
+  };
+  proxy: {
+    session_minutes: number;
+    estimated_prompt_count: number;
+    /** Distinct assistants observed. */
+    assistant_count: number;
+  };
+  by_model: Array<{
+    provider: string;
+    model: string;
+    measurement: UsageMeasurement;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+    cache_creation_tokens: number;
+    prompt_count: number;
+    session_minutes: number;
+    /** Authoritative cost plus price-map product for this model; null when unpriceable. */
+    cost_usd: number | null;
+  }>;
+  by_day: Array<{
+    date: string;
+    input_tokens: number;
+    output_tokens: number;
+    prompt_count: number;
+    session_minutes: number;
+  }>;
+  cost: {
+    /** Sum over priced model groups — token-derived cost plus authoritative CSV cost,
+     *  including zero-token cost-only rows; null when nothing priceable exists. */
+    total_usd: number | null;
+    /** full = every token-bearing bucket priced (cost-only rows always count as priced);
+     *  partial = some token-bearing models unpriced; none = nothing priceable. */
+    coverage: "full" | "partial" | "none";
+    /** Models with tokens but no price-map entry and no authoritative cost. */
+    unpriced_models: string[];
+    /** The authoritative (CSV-carried) share of `total_usd`. */
+    authoritative_usd: number;
+  };
+  week_over_week: {
+    prev_week_id: string;
+    total_tokens_delta_pct: number | null;
+    prompt_count_delta_pct: number | null;
+  } | null;
 }
