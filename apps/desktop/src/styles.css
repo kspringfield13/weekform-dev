@@ -5297,7 +5297,6 @@ select {
    screen carries more above-the-fold context than other screens, so it uses a
    slightly denser desktop rhythm while retaining the roomier narrow layout. */
 @media (min-width: 821px) {
-  .capacity-screen,
   .forecast-screen,
   .narrative-screen {
     scrollbar-gutter: stable;
