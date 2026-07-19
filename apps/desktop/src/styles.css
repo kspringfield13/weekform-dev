@@ -29,6 +29,186 @@
   -webkit-font-smoothing: antialiased;
 }
 
+/* Weekly review ritual — one calm, ordered pass through existing evidence. */
+.weekly-review-screen {
+  overflow-y: auto;
+}
+
+.weekly-review-header {
+  margin-bottom: 18px;
+}
+
+.weekly-review-summary {
+  display: grid;
+  min-width: 112px;
+  padding: 10px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.weekly-review-summary strong {
+  color: var(--text);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.weekly-review-summary span {
+  margin-top: 5px;
+  color: var(--text-subtle);
+  font-size: 11px;
+}
+
+.weekly-review-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.weekly-review-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.weekly-review-item.is-done {
+  background: color-mix(in srgb, var(--success) 4%, var(--surface));
+}
+
+.weekly-review-step {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--surface-muted);
+  color: var(--text-subtle);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.weekly-review-status-icon {
+  color: var(--text-subtle);
+}
+
+.weekly-review-item.is-done .weekly-review-status-icon {
+  color: var(--success);
+}
+
+.weekly-review-copy {
+  min-width: 0;
+}
+
+.weekly-review-item-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.weekly-review-item-heading h2 {
+  font-size: 14px;
+}
+
+.weekly-review-copy > p {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.weekly-review-copy > small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-subtle);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+}
+
+.weekly-review-item-heading .status-chip {
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-subtle);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.weekly-review-item-heading .status-chip--success {
+  border-color: color-mix(in srgb, var(--success) 30%, var(--border));
+  color: var(--success);
+}
+
+.weekly-review-item-action {
+  min-width: 88px;
+}
+
+.weekly-review-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 14px;
+  padding: 14px 15px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-elevated);
+}
+
+.weekly-review-footer > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text-subtle);
+}
+
+.weekly-review-footer p {
+  display: grid;
+  gap: 3px;
+}
+
+.weekly-review-footer strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.weekly-review-footer span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+@media (max-width: 760px) {
+  .weekly-review-header,
+  .weekly-review-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .weekly-review-summary {
+    min-width: 0;
+  }
+
+  .weekly-review-item {
+    grid-template-columns: 28px 22px minmax(0, 1fr);
+  }
+
+  .weekly-review-item-action {
+    grid-column: 3;
+    justify-self: start;
+  }
+}
+
 html,
 body,
 #root {
@@ -5750,6 +5930,47 @@ select {
   font-weight: 600;
 }
 
+/* Consent receipts — the durable "what actually left this device" panel on the
+   audit screen. Collapsed by default so the event stream stays the headline. */
+.audit-screen .consent-receipts {
+  flex: 0 0 auto;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.consent-receipts summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.consent-receipts-count {
+  margin-left: 6px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.consent-receipts-intro {
+  margin: 10px 0 0;
+  max-width: 70ch;
+  color: var(--text-subtle);
+  font-size: 13px;
+}
+
+.consent-receipts-actions {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.consent-receipts-list {
+  max-height: 320px;
+}
+
 .audit-toolbar {
   display: flex;
   align-items: center;
@@ -5880,6 +6101,82 @@ select {
   min-height: 0;
   overflow: hidden;
   background: var(--background);
+}
+
+.compact-window-handoff {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  min-height: 100%;
+  padding: 32px;
+  background:
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--info) 8%, transparent), transparent 34%),
+    var(--background);
+}
+
+.compact-window-handoff-card {
+  width: min(520px, 100%);
+  padding: 30px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.compact-window-handoff-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  color: var(--text);
+  background: var(--surface-elevated);
+}
+
+.compact-window-handoff-mark svg {
+  width: 19px;
+  height: auto;
+}
+
+.compact-window-handoff-card h1 {
+  max-width: 430px;
+  margin: 8px 0 12px;
+  color: var(--text);
+  font-size: clamp(26px, 4vw, 38px);
+  line-height: 1.05;
+  letter-spacing: -1.2px;
+}
+
+.compact-window-handoff-card > p:not(.eyebrow) {
+  max-width: 440px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.compact-window-handoff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+@media (max-width: 560px) {
+  .compact-window-handoff {
+    padding: 18px;
+  }
+
+  .compact-window-handoff-card {
+    padding: 24px;
+  }
+
+  .compact-window-handoff-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 
 .is-compact-widget .main-panel {
@@ -10931,9 +11228,8 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
 }
 
 /* Toast notifications — transient app-level success/error/info feedback.
-   The host is a single polite live region pinned bottom-right (always in the DOM
-   so screen readers observe additions). The slide-in is auto-zeroed by the global
-   prefers-reduced-motion reset above. */
+   Each toast owns its tone-appropriate live region (assertive errors, polite
+   success/info). The slide-in is auto-zeroed by the global reduced-motion reset. */
 .toast-host {
   position: fixed;
   bottom: 20px;
@@ -11084,6 +11380,16 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
   background: rgba(0, 0, 0, 0.55);
 }
 
+.walkthrough-settings-escape {
+  position: fixed;
+  z-index: 1;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  cursor: pointer;
+}
+
 /* Anchored steps: the huge box-shadow spread dims everything except the
    highlighted nav button, leaving a crisp "hole" around it. */
 .walkthrough-spotlight {
@@ -11097,6 +11403,7 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
 
 .walkthrough-card {
   position: fixed;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -11265,7 +11572,7 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
 
 .settings-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   width: 100%;
   min-width: 0;
   margin: 0;
@@ -11344,6 +11651,129 @@ html[data-theme="dark"] .settings-tabs button.is-active {
   outline: 2px solid var(--info);
   outline-offset: 3px;
   border-radius: 4px;
+}
+
+/* Account & Sharing: sign-in form, metric consent grid, and the exact-payload preview. */
+.cloud-signin-form {
+  margin-top: 12px;
+  max-width: 360px;
+}
+
+.cloud-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 16px;
+  margin-top: 10px;
+}
+
+.cloud-metric-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.cloud-metric-toggle input {
+  accent-color: var(--accent);
+}
+
+.cloud-project-allowlist {
+  width: 100%;
+  max-width: 420px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--control-background, var(--surface));
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  resize: vertical;
+}
+
+.cloud-share-preview {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+}
+
+.cloud-share-preview.is-empty p {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: 12.5px;
+}
+
+.cloud-share-preview-recipient {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.cloud-share-preview-lines {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.cloud-share-preview-json {
+  margin-top: 10px;
+}
+
+.cloud-share-preview-json summary {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-subtle);
+  cursor: pointer;
+}
+
+.cloud-share-preview-json pre {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.cloud-consent-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--success);
+}
+
+.cloud-allowlist-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--warning);
+}
+
+.cloud-allowlist-hint .link-action {
+  border: none;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 @media (max-width: 720px) {

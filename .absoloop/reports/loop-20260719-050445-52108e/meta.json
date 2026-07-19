@@ -1,0 +1,13 @@
+{
+  "loopId": "loop-20260719-050445-52108e",
+  "missionId": "ABS-MINIMAL-001",
+  "status": "COMPLETED",
+  "stopReason": "human_approved",
+  "iteration": 3,
+  "costUsd": 19.451745250000002,
+  "objective": null,
+  "archivedAt": 1784471197.332992,
+  "hasMarkdown": true,
+  "hasHtml": true,
+  "source": "backfill-runs"
+}

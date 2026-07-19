@@ -89,7 +89,7 @@ export function ActivityCapturePanel({
         </div>
       </summary>
       {classificationStatus === "classifying" && (
-        <p className="capture-note">
+        <p className="capture-note" role="status">
           Sending {formatCount(unclassifiedSessionCount)} ready session{unclassifiedSessionCount === 1 ? "" : "s"} to your AI provider…
         </p>
       )}
@@ -117,7 +117,7 @@ export function ActivityCapturePanel({
         </div>
       </div>
       {captureError && <InlineError message={captureError} />}
-      {visualContextStatus === "capturing" && <p className="capture-note">Visual context capture is deriving a local insight.</p>}
+      {visualContextStatus === "capturing" && <p className="capture-note" role="status">Visual context capture is deriving a local insight.</p>}
       {visualContextError && <InlineError message={visualContextError} />}
       {latestSessionSummaries.length > 0 && (
         <div className="session-list">

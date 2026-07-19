@@ -1,0 +1,131 @@
+{
+  "mission_id": "ABS-MINIMAL-001",
+  "loop_id": "loop-20260719-124044-436388",
+  "objective": "Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what\u2019s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence.",
+  "model": "gpt-5.6-sol",
+  "definition_of_done": [
+    "The objective is achieved and demonstrated in the working tree.",
+    "An independent critic finds no blocking issue.",
+    "Extension requirement (loop-20260719-050445-52108e): Continue with prompt_runbook \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-052919-0cf644): Complete from the prompt_runbook, the Wave 1 \u2014 Contracts, backend, and web foundation in parallel \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-055300-166f58): Review, finalized Wave 1 and then proceed with Wave 2 prompts \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-065525-403d03): Proceed with Wave 2 from prompt_runbook \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-071047-7592e7): Proceed on to Wave 3 \u2014 Completeness and intelligence execution. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-080950-755c05): Continue with Wave 1-3 validation and review for any issues or discrepancies.  Make updates where needed for optimal ops and UI. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-081420-ba53ab): Building on the completed pass for \u201cUsing this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then\u2026\u201d, take the next highest-leverage polish or adjacent capability (critic: Independently reproduced every documented gate: verify:wave3 exit 0 (55/55 desktop-cloud tests, 85/85 web tests, 12 routes / 11 static pages including the ne\u2026). Keep gates green and leave a crisp operator-facing summary. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-081455-c0b251): Proceed on to Wave 3 \u2014 Completeness and intelligence execution. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-085257-7690b4): Execute runbook prompts 11 and 12 sequentially, completing and validating each before moving on. Run the full Wave 4 verification gate, update PROMPT_RUNBOOK and BLUEPRINT with evidence and final task states, and document any environment-blocked live RLS proof without claiming it passed. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-092551-3a0e37): Close the remaining Wave 4 readiness gaps: triage and remediate npm audit without regressions, execute the live four-actor RLS checks and golden path twice, and capture reproducible evidence. Update the runbook, blueprint, taskboard, release report, and Devpost package with verified outcomes; keep any still-blocked claims explicitly hedged. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-093522-27cfe6): Skip doing demos. We need to keep building. Move on to part 17. Post-hackathon expansion roadmap in WEEKFORM_TEAM_CLAWFATHER_HACKATHON_BLUEPRINT.md.  Create a more detailed, phased plan and then execute it immediately with flawless and optimal high quality Weekform standardized with epic capability results. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-101318-ee04ec): Need to do a full analysis, comparing current state with Blueprint definition and mission. Then create a new  WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK_PT2 document that achieves a new level of highest quality Weekform user experience and capabilities that meet and exceed the missions and original definitions. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-102937-ac1403): Start the work & intense implementation with robustness on WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK_PT2 document \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-104758-a238a2): Continue \u201cUsing this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then\u2026\u201d from the last checkpoint with a tighter slice: finish the nearest incomplete deliverable, verify gates, and stop with a clear PASS. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-105239-1d2f48): Execute Prompts 13 and 14 from docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK_PT2.md in sequence, completing and verifying each before the next. Then stop, review the combined result, rerun all standing gates, and update PT2, the blueprint, and roadmap with accurate completion status, evidence, and remaining gaps. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-105517-b68b79): Execute Prompt 13 from docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK_PT2.md completely. Satisfy its reject-if conditions, run every required verification gate, update the runbooks, blueprint, roadmap, and task status with exact evidence, then stop and report completed work and any remaining gaps. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-105904-efe7b9): Execute Prompts 13 and 14 from docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK_PT2.md in sequence, completing and verifying each before starting the next. Run all prescribed gates, then update the Part 2 runbook, blueprint, and roadmap with completed tasks, evidence, remaining gaps, and any honestly environment-blocked proof. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-110144-a88976): Execute Prompts 13 and 14 from docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK_PT2.md in sequence. Complete each prompt fully, run its required checks plus all standing gates, then update the Part 2 runbook, blueprint, and roadmap with accurate completion status, evidence, and remaining gaps; stop after Prompt 14 for review. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-110721-911171): Execute Prompt 13 from docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK_PT2.md end-to-end. Implement and verify its full acceptance criteria, run all required gates, then update the Part 2 runbook, blueprint, and roadmap with exact evidence and task status; stop before Prompt 14 for review. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-111515-98ce7f): Execute Prompts 13 and 14 from docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK_PT2.md in sequence, completing and verifying each before starting the next. Run all prescribed gates, update the runbook, blueprint, roadmap, and task statuses with exact evidence, then stop for review. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-111613-cf7d72): Building on the completed pass for \u201cUsing this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then\u2026\u201d, take the next highest-leverage polish or adjacent capability (critic: The continuation intent is satisfied by new, inspectable work. docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK_PT2.md exists (433 lines) and contains the require\u2026). Keep gates green and leave a crisp operator-facing summary. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-122603-ea56cd): Harden team_actions by revoking direct table INSERT and exposing a validated manager-only RPC that accepts only clamped text and risk_key while server-setting identity, status, and timestamps; add boundary tests. Re-run every Prompt 16 gate, including audit:check when registry access works, then update RUNBOOK and BLUEPRINT evidence/status only if all gates exit 0. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.",
+    "Extension requirement (loop-20260719-124044-436388): Complete the rejected Prompt 16 repair without widening scope. The Codex repair already hardened team_actions and added RED/GREEN boundary tests. Independently inspect it, run the exact focused tests plus npm run verify:wave3, npm run build, and npm run audit:check. Host-side npm run audit:check passed on July 19 with 0 root and 0 web vulnerabilities after the prior Codex sandbox had DNS blocked. Update Prompt 16 RUNBOOK, BLUEPRINT, roadmap, privacy/provenance evidence only if your own exact gates exit 0. Stop at the human approval gate; do not start Prompt 17. \u2014 the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work."
+  ],
+  "thinking_ladder": [
+    {
+      "repeats": "0 (fresh evidence)",
+      "claude_keyword": "think",
+      "claude_thinking_tokens": 4000,
+      "codex_effort": "medium",
+      "budget_scale": 1.0,
+      "posture": "Plan briefly, act on the strongest hypothesis."
+    },
+    {
+      "repeats": "1 (first repeat)",
+      "claude_keyword": "think hard",
+      "claude_thinking_tokens": 10000,
+      "codex_effort": "high",
+      "budget_scale": 1.25,
+      "posture": "The obvious fix failed once \u2014 re-derive the failure from evidence before editing."
+    },
+    {
+      "repeats": "2 (second repeat)",
+      "claude_keyword": "think harder",
+      "claude_thinking_tokens": 16000,
+      "codex_effort": "high",
+      "budget_scale": 1.5,
+      "posture": "Two identical failures \u2014 your model of the problem is wrong. Enumerate at least three distinct hypotheses and test the most falsifiable one."
+    },
+    {
+      "repeats": "3+ (final window)",
+      "claude_keyword": "ultrathink",
+      "claude_thinking_tokens": 31999,
+      "codex_effort": "high",
+      "budget_scale": 2.0,
+      "posture": "Last chance before the loop blocks. Step back to first principles, question your assumptions about the mission, and consider whether it needs operator input."
+    }
+  ],
+  "goal_path": ".absoloop/goal.md",
+  "critic_prompt_path": ".absoloop/prompts/critic-final-review.md",
+  "delivery": {
+    "mode": "local",
+    "branch": "absoloop/loop-20260719-124044-436388",
+    "out_dir": "/Users/rohnspringfield/absoloop/out/loop-20260719-124044-436388"
+  },
+  "require_human_approval": true,
+  "max_iterations": 50,
+  "min_iterations": 1,
+  "no_progress_window": 3,
+  "max_wall_seconds": 10800,
+  "max_cost_usd": 50.0,
+  "claude": {
+    "builder": {
+      "permission_mode": "acceptEdits",
+      "max_turns": 60,
+      "max_budget_usd": 8.0,
+      "max_wall_seconds": 2400
+    },
+    "critic": {
+      "permission_mode": "plan",
+      "max_turns": 12,
+      "max_budget_usd": 2.0,
+      "max_wall_seconds": 600
+    }
+  },
+  "codex": {
+    "builder": {
+      "sandbox": "workspace-write",
+      "max_budget_usd": 5.0,
+      "max_wall_seconds": 1200,
+      "model_reasoning_effort": "medium"
+    },
+    "critic": {
+      "sandbox": "read-only",
+      "max_budget_usd": 2.0,
+      "max_wall_seconds": 600,
+      "model_reasoning_effort": "high"
+    }
+  },
+  "grok": {
+    "builder": {
+      "permission_profile": "edit",
+      "max_turns": 30,
+      "max_budget_usd": 5.0,
+      "max_wall_seconds": 1200
+    },
+    "critic": {
+      "permission_profile": "read",
+      "max_turns": 12,
+      "max_budget_usd": 2.0,
+      "max_wall_seconds": 600
+    }
+  },
+  "continuation": {
+    "previous_loop_id": "loop-20260719-122603-ea56cd",
+    "previous_status": "STOPPED",
+    "iterations": 3,
+    "cost_usd": 10.0,
+    "summary": "Prompt 16 creation hardening passes independent security and critic review. This iteration strengthened the regression test so direct INSERT cannot return through either missing explicit revocation or GRANT ALL. Teammates security_review, gate_runner, and independent_critic verified the implementation and gates. RUNBOOK, BLUEPRINT, and roadmap were intentionally not updated because audit:check did not exit 0; minimum iteration 3 also prevents a done claim now.",
+    "note": "Complete the rejected Prompt 16 repair without widening scope. The Codex repair already hardened team_actions and added RED/GREEN boundary tests. Independently inspect it, run the exact focused tests plus npm run verify:wave3, npm run build, and npm run audit:check. Host-side npm run audit:check passed on July 19 with 0 root and 0 web vulnerabilities after the prior Codex sandbox had DNS blocked. Update Prompt 16 RUNBOOK, BLUEPRINT, roadmap, privacy/provenance evidence only if your own exact gates exit 0. Stop at the human approval gate; do not start Prompt 17."
+  },
+  "engine": "codex"
+}

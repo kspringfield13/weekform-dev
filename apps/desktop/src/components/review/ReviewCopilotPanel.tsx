@@ -59,7 +59,8 @@ export function ReviewCopilotPanel({
       </div>
       {error && <InlineError message={error} onRetry={onGenerate} />}
       {isGenerating && suggestions.length === 0 ? (
-        <div className="copilot-skeleton">
+        <div className="copilot-skeleton" role="status">
+          <span className="sr-only">Generating suggestions…</span>
           {[0, 1, 2].map((i) => (
             <div className="copilot-skeleton-item" key={i}>
               <span className="skeleton-line" style={{ height: 14, width: "60%" }} />

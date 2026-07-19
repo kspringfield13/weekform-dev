@@ -1,0 +1,26 @@
+{
+  "agents": [
+    {
+      "id": "builder-01",
+      "name": "Builder (claude)",
+      "role": "Repair-loop builder — iterates toward the /goal contract",
+      "status": "idle",
+      "currentTask": null,
+      "metrics": {
+        "tasksCompleted": 15,
+        "errors": 0
+      }
+    },
+    {
+      "id": "critic-01",
+      "name": "Critic",
+      "role": "Independent adversarial reviewer — does not take the builder's word",
+      "status": "idle",
+      "currentTask": null,
+      "metrics": {
+        "tasksCompleted": 0,
+        "errors": 0
+      }
+    }
+  ]
+}

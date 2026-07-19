@@ -1,0 +1,22 @@
+
+> weekform@0.1.0 test:cloud
+> tsx --test packages/inference/src/*.test.ts
+
+✔ rejects disabled, teamless, and unconsented policies with typed reasons (0.773791ms)
+✔ summary output contains only enabled summary fields (0.514167ms)
+✔ categories output adds only category and work-mode allocation (5.883334ms)
+✔ projects output includes only allowed names from verified blocks (0.25975ms)
+✔ window-title, evidence, and note sentinels never appear in serialized output (0.174917ms)
+✔ disabled metrics are absent from the payload, not zero (0.103375ms)
+✔ non-finite values are omitted and out-of-range values are clamped (0.166792ms)
+✔ same approved content produces the same fingerprint and client snapshot id (0.296917ms)
+✔ policy changes change the fingerprint (0.2765ms)
+✔ preview payload is the identical object that will be uploaded (0.147959ms)
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 77.661125

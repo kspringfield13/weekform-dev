@@ -2,6 +2,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "@fontsource-variable/geist/wght.css";
 import { App } from "./App";
+import { AdminPortalRoot } from "./admin/AdminPortalApp";
+import { SpanSimulatorRoot } from "./admin/SpanSimulatorApp";
+import { CompactWindowHandoff } from "./components/compact/CompactWindowHandoff";
 import { readStoredThemeSync, readThemePreference } from "./services/localStore";
 import "./styles.css";
 
@@ -18,6 +21,12 @@ readThemePreference().then((theme) => {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    {window.location.pathname === "/admin"
+      ? <AdminPortalRoot />
+      : window.location.pathname === "/admin/span-simulator" || window.location.pathname.startsWith("/simulator-sandbox/")
+      ? <SpanSimulatorRoot />
+      : new URLSearchParams(window.location.search).get("window") === "compact-host"
+      ? <CompactWindowHandoff />
+      : <App />}
   </React.StrictMode>
 );
