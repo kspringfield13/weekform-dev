@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/weekform-logo-banner.png" width="720" alt="Weekform">
+  <img src="docs/assets/weekform-logo-banner.png" width="560" alt="Weekform">
 </p>
 
 <p align="center"><strong>Know what fits before you commit.</strong></p>
