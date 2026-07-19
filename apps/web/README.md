@@ -15,13 +15,15 @@ pattern, wired through the Next.js 16
   and the deterministic personal workload model stay in the Mac app's local
   storage. The website never receives or reconstructs that local state.
 - The website has no `localStorage`, `sessionStorage`, IndexedDB, browser
-  Supabase data client, or application-managed persistent browser workload cache. Authenticated pages and
-  actions call Supabase from the Next.js server under the signed-in user's RLS
-  session. Client components retain only short-lived React state while mounted.
-- Standard Supabase auth cookies are the sole necessary browser persistence.
-  They keep the account session across requests; signing out clears that
-  session. Do not describe all browser state as ephemeral while these cookies
-  exist.
+  Supabase data client, or application-managed persistent browser workload
+  cache. Authenticated pages and actions call Supabase from the Next.js server
+  under the signed-in user's RLS session. Client components retain only
+  short-lived React state while mounted.
+- Standard Supabase auth cookies keep the account session across requests;
+  signing out clears that session. The Admin Portal has one additional
+  HTTP-only, `/admin`-scoped cookie containing only allowlisted theme, accent,
+  density, and motion values. It contains no workload, simulator, identity, or
+  authorization data and can be reset from the portal.
 - Multi-user records necessarily persist in Supabase: accounts, profiles,
   teams, memberships, invites, manager actions, and the allowlisted aggregate
   workload snapshots members explicitly approve in the Mac app. Shared
@@ -66,6 +68,10 @@ Supabase dashboard configuration expected at runtime:
   `display_name text`) with RLS letting a user select/insert their own row.
   The app reads and bootstraps a profile best-effort and falls back to the
   account email when the table or row is absent.
+- Repository migrations applied through
+  `202607190006_simulator_admin_access.sql`. A trusted maintainer must grant a
+  real authenticated user in `private.simulator_admins`; team roles, profile
+  metadata, and the local demo login never satisfy this boundary.
 
 ## Behavior without configuration
 
@@ -74,10 +80,12 @@ with no Supabase project). At runtime without configuration:
 
 - middleware skips session handling,
 - auth forms render disabled with an honest "not configured" notice,
-- `/dashboard` and `/download` show a setup panel instead of user data.
+- `/dashboard` and `/download` show a setup panel instead of user data,
+- `/admin` renders its branded, fail-closed connection state without exposing
+  administration tools.
 
-Route protection for `/dashboard` and `/download` (redirect to `/login`
-with a `next` return path) only applies once Supabase is configured.
+Route protection for `/admin`, `/dashboard`, and `/download` (redirect to
+`/login` with a `next` return path) only applies once Supabase is configured.
 
 ## Routes
 
@@ -85,6 +93,11 @@ with a `next` return path) only applies once Supabase is configured.
 - `/login`, `/signup` — email/password auth (server actions)
 - `/auth/callback` — Supabase confirmation/PKCE callback
 - `/auth/error` — honest auth failure page
+- `/admin` — protected and request-fresh; verifies the signed-in user through
+  the argument-free `has_simulator_admin_access()` RPC, exposes tools only for
+  an explicit `private.simulator_admins` grant, and otherwise renders a
+  distinct unavailable or access-required state. The Span Simulator remains a
+  local desktop sandbox; this route does not claim production execution.
 - `/dashboard` — protected; profile greeting, the signed-in user's teams and
   role in each, a create-team form (calls the `create_team_with_owner` RPC),
   and an entry point to `/invite`; Personal use leads to `/download`

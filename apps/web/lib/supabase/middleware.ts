@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
+import { isProtectedWebPath } from "../protectedPaths";
 import { getSupabaseEnv } from "./config";
 
-const PROTECTED_PREFIXES = ["/dashboard", "/download", "/teams"];
 const AUTH_PAGES = ["/login", "/signup"];
 
 /**
@@ -48,9 +48,7 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  const isProtected = PROTECTED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
+  const isProtected = isProtectedWebPath(pathname);
   const isAuthPage = AUTH_PAGES.some(
     (page) => pathname === page || pathname.startsWith(`${page}/`),
   );
