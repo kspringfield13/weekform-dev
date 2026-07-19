@@ -31,8 +31,9 @@ import {
   writePersistedState,
   writeThemePreference
 } from "./services/localStore";
-import type { AppTheme, PersistedAccelerationRecord, PersistedAccelerationSnapshot, PersistedAppState, PersistedForecastRecord, PersistedNarrativeRecord, PersistedSnapshotRecord } from "./services/localStore";
+import type { AppTheme, GettingStartedStatus, PersistedAccelerationRecord, PersistedAccelerationSnapshot, PersistedAppState, PersistedForecastRecord, PersistedNarrativeRecord, PersistedSnapshotRecord } from "./services/localStore";
 import { createDemoState } from "./services/demoData";
+import { createDefaultAIConfig } from "./services/aiProviders";
 import {
   addDays,
   getLocalDateKey,
@@ -73,6 +74,8 @@ import { AppShell } from "./components/shell/AppShell";
 import { ScreenRouter } from "./components/shell/ScreenRouter";
 import { buildOnboardingSteps } from "./components/common/OnboardingCard";
 import { WalkthroughOverlay } from "./components/onboarding/WalkthroughOverlay";
+import { GettingStartedModal } from "./components/onboarding/GettingStartedModal";
+import { WelcomeOverlay } from "./components/onboarding/WelcomeOverlay";
 import type { Screen, SettingsTab, WindowMode } from "./lib/types";
 
 // Correction fields whose inverse can be replayed cleanly through the relabel path
@@ -155,6 +158,12 @@ export function App() {
         setRetentionDays(data.retentionDays ?? null);
         setOnboardingDismissed(data.onboardingDismissed ?? false);
         setWalkthroughCompleted(data.walkthroughCompleted ?? false);
+        setGettingStartedStatus(data.gettingStartedStatus ?? "unseen");
+        setDefaultWindowMode(data.defaultWindowMode ?? "large");
+        // The webview boots hidden in the (default) large layout; adopt the
+        // user's preferred open mode before the window is ever shown so a
+        // compact-preference user doesn't flash the full dashboard.
+        setWindowMode(data.defaultWindowMode ?? "large");
         setManagerSummaryText(data.managerSummaryText ?? null);
         setGeneratedNarrative(data.generatedNarrative ?? null);
         setLastNarrativeAutoRunDate(data.lastNarrativeAutoRunDate ?? null);
@@ -164,6 +173,11 @@ export function App() {
         setTokenUsageSettings(data.tokenUsageSettings ?? DEFAULT_TOKEN_USAGE_SETTINGS);
         setUsageCsvRowHashes(data.usageCsvRowHashes ?? []);
       }
+      // Every launch: bring the main window forward maximized in the full
+      // layout (first launch lands in welcome → walkthrough → setup; returning
+      // users land on their dashboard). The menu-bar icon stays available
+      // either way; closing the window returns the app to tray-only.
+      void invoke("present_main_window").catch(() => undefined);
     }).catch(() => {});
   }, [isDemoMode]);
 
@@ -217,6 +231,18 @@ export function App() {
   );
   const [walkthroughCompleted, setWalkthroughCompleted] = useState<boolean>(
     () => persistedSnapshot?.walkthroughCompleted ?? false
+  );
+  // Post-walkthrough "Getting started" (enable tracking) modal lifecycle:
+  // unseen → modal shows once the walkthrough finishes; skipped → the persistent
+  // enable-tracking reminder banner shows until tracking turns on; complete → done.
+  const [gettingStartedStatus, setGettingStartedStatus] = useState<GettingStartedStatus>(
+    () => persistedSnapshot?.gettingStartedStatus ?? "unseen"
+  );
+  // Preferred window size when Weekform opens (tray click / relaunch). Defaults
+  // to the full window so first-run users land in the walkthrough and
+  // getting-started flow, which only run there. Synced to the native tray below.
+  const [defaultWindowMode, setDefaultWindowMode] = useState<WindowMode>(
+    () => persistedSnapshot?.defaultWindowMode ?? "large"
   );
   const [visualContextInsights, setVisualContextInsights] = useState<VisualContextInsight[]>(
     () => persistedSnapshot?.visualContextInsights ?? []
@@ -361,6 +387,8 @@ export function App() {
     retentionDays,
     onboardingDismissed,
     walkthroughCompleted,
+    gettingStartedStatus,
+    defaultWindowMode,
     proactiveAlertSettings,
     proactiveAlertRuntime,
     tokenUsageDays,
@@ -862,6 +890,26 @@ export function App() {
     void invoke("set_activity_capture_paused", { paused }).catch(() => undefined);
   }, [isDemoMode, paused]);
 
+  // Whether an OPENAI_API_KEY is already available from the environment (.env /
+  // shell). The Rust AI commands fall back to that variable when no key is saved
+  // in Settings, so this is what lets the getting-started wizard truthfully show
+  // "already connected to OpenAI". Stays false in the browser preview (no Tauri).
+  const [envOpenAiKeyPresent, setEnvOpenAiKeyPresent] = useState(false);
+  useEffect(() => {
+    if (isDemoMode) return;
+    invoke<{ openaiKeyPresent: boolean }>("get_env_ai_key_status")
+      .then((status) => setEnvOpenAiKeyPresent(Boolean(status.openaiKeyPresent)))
+      .catch(() => undefined);
+  }, [isDemoMode]);
+
+  // Tell the native tray which window size to open on click. Runs on mount with
+  // the "large" default and again once hydration/preference changes land, so the
+  // Rust side always mirrors the persisted choice.
+  useEffect(() => {
+    if (isDemoMode) return;
+    void invoke("set_default_window_mode", { mode: defaultWindowMode }).catch(() => undefined);
+  }, [isDemoMode, defaultWindowMode]);
+
   useEffect(() => {
     if (windowMode === "compact") {
       setSidebarCollapsed(true);
@@ -1137,10 +1185,95 @@ export function App() {
     ].slice(-1000));
   }
 
-  // Let the user replay the guided tour from Settings.
+  // Branded first-launch welcome, acknowledged per session: it fronts the
+  // walkthrough on a genuine first run, and an interrupted onboarding greets
+  // the user again next launch (nothing persisted until the walkthrough ends).
+  const [welcomeAcknowledged, setWelcomeAcknowledged] = useState(false);
+
+  // Let the user replay the guided tour from Settings. Skips the branded
+  // welcome — replays go straight into the tour.
   function replayWalkthrough() {
+    setWelcomeAcknowledged(true);
     setWalkthroughCompleted(false);
   }
+
+  // Post-walkthrough "Getting started" modal closed. `outcome` records whether the
+  // user enabled tracking from it or deferred ("I'll do this later" — the reminder
+  // banner then persists until tracking turns on). The tracking toggle itself is
+  // separately audited by the privacy_pause/privacy_resume effect; this logs only
+  // the onboarding decision, mirroring endWalkthrough.
+  function finishGettingStarted(outcome: "enabled" | "skipped") {
+    if (gettingStartedStatus !== "unseen") return;
+    setGettingStartedStatus(outcome === "enabled" ? "complete" : "skipped");
+    // Land the user on Today — the home dashboard the modal points them at.
+    if (outcome === "enabled") setActive("daily");
+    if (isDemoMode) return;
+    setAuditEvents((current) => [
+      ...current,
+      createAuditEvent({
+        type: "onboarding",
+        source: "onboarding",
+        title:
+          outcome === "enabled"
+            ? "Getting-started setup completed"
+            : "Getting-started setup deferred",
+        summary:
+          outcome === "enabled"
+            ? "Activity tracking was enabled from the post-walkthrough getting-started screen."
+            : "The post-walkthrough getting-started screen was dismissed without enabling tracking.",
+        privacy_level: "local_only",
+        details: {
+          outcome,
+          stored_locally: true,
+          sent_to_cloud: false
+        }
+      })
+    ].slice(-1000));
+  }
+
+  // Connect OpenAI from the getting-started wizard with a pasted API key. Uses
+  // the same OpenAI defaults Settings would apply, so the saved config is
+  // identical to one entered under Settings → AI Assistance.
+  function connectOpenAiKeyFromWizard(apiKey: string) {
+    const trimmed = apiKey.trim();
+    if (!trimmed) return;
+    setAiConfig({ ...createDefaultAIConfig("openai"), apiKey: trimmed });
+  }
+
+  // Connect OpenAI by importing the API key from the Codex CLI's sign-in
+  // (~/.codex/auth.json). The Rust command rejects with user-facing copy when
+  // there's no sign-in or it's a subscription-only login without an API key.
+  async function connectViaCodexFromWizard(): Promise<string> {
+    // Mirrors SetupScreen's testConnection guard: the browser preview has no
+    // Tauri bridge, so fail with friendly copy instead of a raw invoke error.
+    if (!("__TAURI_INTERNALS__" in window)) {
+      throw new Error("Connecting via Codex needs the desktop app — paste an API key instead.");
+    }
+    const result = await invoke<{ apiKey: string }>("connect_openai_via_codex");
+    setAiConfig({ ...createDefaultAIConfig("openai"), apiKey: result.apiKey });
+    return "Connected with your Codex credentials.";
+  }
+
+  // "Play the simulated week" from the getting-started wizard: finish the wizard
+  // (recording the outcome the live tracking state implies), then reload into the
+  // seeded demo profile on the weekly screen. The short delay lets the persistence
+  // effect flush the finished status to disk before the reload tears the app down —
+  // otherwise the wizard would reappear when the user exits the demo.
+  function openDemoSimulation() {
+    finishGettingStarted(paused ? "skipped" : "enabled");
+    window.setTimeout(() => {
+      window.location.assign("?demo=1&screen=weekly");
+    }, 600);
+  }
+
+  // Once tracking gets enabled from ANYWHERE (reminder banner, toolbar, tray,
+  // Settings), a deferred getting-started flow is complete — retire the reminder
+  // banner permanently. Silent: the resume itself is already audited above.
+  useEffect(() => {
+    if (gettingStartedStatus === "skipped" && !paused) {
+      setGettingStartedStatus("complete");
+    }
+  }, [gettingStartedStatus, paused]);
 
   // User-initiated retention-window change. Logged once as a discrete privacy
   // action (the background per-sample expiry deliberately stays unlogged).
@@ -1432,6 +1565,8 @@ export function App() {
       retentionDays,
       onboardingDismissed,
       walkthroughCompleted,
+      gettingStartedStatus,
+      defaultWindowMode,
       proactiveAlertSettings,
       proactiveAlertRuntime,
       tokenUsageDays,
@@ -1522,6 +1657,8 @@ export function App() {
     // so it is intentionally untouched.
     setAiConfig(null);
     setWalkthroughCompleted(false);
+    setGettingStartedStatus("unseen");
+    setDefaultWindowMode("large");
     setManagerSummaryText(null);
     setGeneratedNarrative(null);
     setLastNarrativeAutoRunDate(null);
@@ -1832,7 +1969,24 @@ export function App() {
   const showOnboarding = !isDemoMode && !onboardingDismissed && blocks.length === 0;
   // The guided tour spotlights the sidebar nav, so it only runs in the full
   // window (the compact menu-bar widget has no nav) and never in demo mode.
-  const showWalkthrough = !isDemoMode && windowMode === "large" && !walkthroughCompleted;
+  // Whether AI-backed features can actually run: a key saved in Settings, or the
+  // OPENAI_API_KEY environment fallback the Rust commands use. Every AI-triggering
+  // button disables (with an explanatory tooltip) when this is false.
+  const aiAvailable = Boolean(aiConfig?.apiKey?.trim()) || envOpenAiKeyPresent;
+  // Onboarding sequence: branded welcome → walkthrough → getting-started wizard.
+  const showWelcome =
+    !isDemoMode && windowMode === "large" && !walkthroughCompleted && !welcomeAcknowledged;
+  const showWalkthrough =
+    !isDemoMode && windowMode === "large" && !walkthroughCompleted && welcomeAcknowledged;
+  // The "Getting started" (enable tracking) modal takes over the moment the
+  // walkthrough finishes: same large-window/demo gating, but keyed on the
+  // walkthrough being DONE so the two full-screen layers never stack.
+  const showGettingStarted =
+    !isDemoMode && windowMode === "large" && walkthroughCompleted && gettingStartedStatus === "unseen";
+  // Persistent nudge after "I'll do this later": stays until tracking is enabled
+  // (the skipped→complete effect above then retires it for good).
+  const showTrackingReminder =
+    !isDemoMode && windowMode === "large" && gettingStartedStatus === "skipped" && paused;
 
   return (
     <AppShell
@@ -1852,6 +2006,7 @@ export function App() {
       setTheme={setTheme}
       weekRangeLabel={currentWeekRangeLabel}
       demoMode={isDemoMode}
+      showTrackingReminder={showTrackingReminder}
       toasts={toasts}
       onDismissToast={dismissToast}
     >
@@ -1883,7 +2038,8 @@ export function App() {
         accelerationStatus={accelerationStatus}
         accelerationError={accelerationError}
         onGenerateAccelerationPlays={() => void generateAccelerationPlays()}
-        accelerationConfigured={Boolean(aiConfig?.apiKey?.trim())}
+        accelerationConfigured={aiAvailable}
+        aiAvailable={aiAvailable}
         accelerationGeneratedAt={generatedPlays?.generated_at ?? null}
         hasAuthoredPlays={(generatedPlays?.plays.length ?? 0) > 0}
         onConfirm={confirmBlock}
@@ -1959,12 +2115,29 @@ export function App() {
         todayKey={todayKey}
         currentWeekRangeLabel={currentWeekRangeLabel}
         onReplayWalkthrough={replayWalkthrough}
+        defaultWindowMode={defaultWindowMode}
+        onDefaultWindowModeChange={setDefaultWindowMode}
         pushToast={pushToast}
       />
+      {showWelcome && <WelcomeOverlay onBegin={() => setWelcomeAcknowledged(true)} />}
       {showWalkthrough && (
         <WalkthroughOverlay
           onComplete={() => endWalkthrough("completed")}
           onSkip={() => endWalkthrough("skipped")}
+        />
+      )}
+      {showGettingStarted && (
+        <GettingStartedModal
+          paused={paused}
+          retentionDays={retentionDays}
+          aiConfigured={Boolean(aiConfig?.apiKey?.trim())}
+          envOpenAiKeyPresent={envOpenAiKeyPresent}
+          onEnableTracking={() => setPaused(false)}
+          onRetentionDaysChange={changeRetentionDays}
+          onConnectOpenAiKey={connectOpenAiKeyFromWizard}
+          onConnectViaCodex={connectViaCodexFromWizard}
+          onOpenDemo={openDemoSimulation}
+          onDismiss={() => finishGettingStarted(paused ? "skipped" : "enabled")}
         />
       )}
     </AppShell>

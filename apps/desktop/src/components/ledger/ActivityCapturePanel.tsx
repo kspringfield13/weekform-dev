@@ -6,6 +6,7 @@ import type {
 } from "../../../../../packages/domain/src/models";
 import { InlineError } from "../common/InlineError";
 import { summarizeRecentSessions } from "../../lib/blocks";
+import { AI_UNAVAILABLE_HINT } from "../../lib/constants";
 import { formatCount, formatDurationMinutes } from "../../lib/format";
 
 export function ActivityCapturePanel({
@@ -19,6 +20,7 @@ export function ActivityCapturePanel({
   visualContextError,
   unclassifiedSessionCount,
   paused,
+  aiAvailable,
   onClassifySessions
 }: {
   activeWindowSamples: ActiveWindowSample[];
@@ -31,6 +33,7 @@ export function ActivityCapturePanel({
   visualContextError: string | null;
   unclassifiedSessionCount: number;
   paused: boolean;
+  aiAvailable: boolean;
   onClassifySessions: () => void;
 }) {
   const latestSample = activeWindowSamples[activeWindowSamples.length - 1];
@@ -40,11 +43,14 @@ export function ActivityCapturePanel({
   // Distinguish a true first run (nothing ever captured) from a fully-classified ledger:
   // "All sessions classified" would falsely assert a classification that never happened.
   const nothingToClassify = classificationStatus !== "classifying" && unclassifiedSessionCount === 0;
-  const classifyDisabledReason = nothingToClassify
-    ? activeWindowSessions.length === 0
-      ? "No sessions captured yet — resume tracking to collect activity"
-      : "All sessions classified"
-    : undefined;
+  // Missing AI access is the most actionable reason, so it takes precedence.
+  const classifyDisabledReason = !aiAvailable
+    ? AI_UNAVAILABLE_HINT
+    : nothingToClassify
+      ? activeWindowSessions.length === 0
+        ? "No sessions captured yet — resume tracking to collect activity"
+        : "All sessions classified"
+      : undefined;
   // Capture is a categorical state (active / paused / error), not a percentage —
   // surface it as a plain status pill rather than a classification-style confidence chip.
   const captureState = captureError
@@ -69,7 +75,7 @@ export function ActivityCapturePanel({
           <button
             className={`secondary-action classify-sessions-action${classificationStatus === "classifying" ? " is-classifying" : ""}`}
             type="button"
-            disabled={classificationStatus === "classifying" || unclassifiedSessionCount === 0}
+            disabled={classificationStatus === "classifying" || unclassifiedSessionCount === 0 || !aiAvailable}
             title={classifyDisabledReason}
             aria-label={classifyDisabledReason}
             aria-busy={classificationStatus === "classifying"}

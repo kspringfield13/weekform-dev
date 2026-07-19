@@ -26,6 +26,7 @@ export function LedgerScreen({
   visualContextStatus,
   visualContextError,
   paused,
+  aiAvailable,
   onClassifySessions,
   onConfirm,
   onExclude,
@@ -42,6 +43,7 @@ export function LedgerScreen({
   visualContextStatus: "idle" | "capturing" | "error";
   visualContextError: string | null;
   paused: boolean;
+  aiAvailable: boolean;
   onClassifySessions: () => void;
   onConfirm: (blockId: string) => void;
   onExclude: (blockId: string) => void;
@@ -220,6 +222,7 @@ export function LedgerScreen({
         visualContextError={visualContextError}
         unclassifiedSessionCount={unclassifiedSessionCount}
         paused={paused}
+        aiAvailable={aiAvailable}
         onClassifySessions={onClassifySessions}
       />
       <ActivityHeatmap sessions={activeWindowSessions} />

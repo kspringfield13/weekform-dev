@@ -37,10 +37,10 @@ import type {
   AIConfig,
   AIProvider
 } from "../../../../../packages/domain/src/models";
-import type { SettingsTab } from "../../lib/types";
+import type { SettingsTab, WindowMode } from "../../lib/types";
 import { getLocalDateKey } from "../../lib/date";
 import { formatAuditTime, formatCount } from "../../lib/format";
-import { MAX_PROACTIVE_ALERTS_PER_DAY, MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY } from "../../lib/constants";
+import { AI_UNAVAILABLE_HINT, MAX_PROACTIVE_ALERTS_PER_DAY, MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY } from "../../lib/constants";
 import type { ProactiveAlertSettings } from "../../lib/proactiveAlerts";
 import {
   downloadTextFile,
@@ -140,8 +140,11 @@ export function SetupScreen({
   proactiveAlertSettings,
   onProactiveAlertSettingsChange,
   onReplayWalkthrough,
+  defaultWindowMode,
+  onDefaultWindowModeChange,
   activeSettingsTab,
   onActiveSettingsTabChange,
+  aiAvailable,
 }: {
   paused: boolean;
   setPaused: (value: boolean) => void;
@@ -175,8 +178,12 @@ export function SetupScreen({
   proactiveAlertSettings: ProactiveAlertSettings;
   onProactiveAlertSettingsChange: (value: ProactiveAlertSettings) => void;
   onReplayWalkthrough: () => void;
+  defaultWindowMode: WindowMode;
+  onDefaultWindowModeChange: (mode: WindowMode) => void;
   activeSettingsTab: SettingsTab;
   onActiveSettingsTabChange: (tab: SettingsTab) => void;
+  /** AI access exists (saved key or env fallback) — false grays the AI-dependent toggles. */
+  aiAvailable: boolean;
 }) {
   const latestImport = calendarEvents.reduce<string | null>((latest, event) => {
     if (!latest || new Date(event.imported_at) > new Date(latest)) {
@@ -386,6 +393,26 @@ export function SetupScreen({
         </button>
       </div>
 
+      <div className="settings-walkthrough-replay">
+        <div>
+          <strong>Default window size</strong>
+          <span>How Weekform opens from the menu bar.</span>
+        </div>
+        <div className="data-export-options">
+          <label className="sr-only" htmlFor="default-window-mode">Default window size on open</label>
+          <select
+            id="default-window-mode"
+            value={defaultWindowMode}
+            onChange={(event) =>
+              onDefaultWindowModeChange(event.target.value === "compact" ? "compact" : "large")
+            }
+          >
+            <option value="large">Full window</option>
+            <option value="compact">Compact widget</option>
+          </select>
+        </div>
+      </div>
+
       <nav className="settings-tabs" role="tablist" aria-label="Settings sections">
         {SETTINGS_TABS.map((tab, index) => (
           <button
@@ -507,7 +534,16 @@ export function SetupScreen({
           <strong>{visualContextEnabled ? "On" : "Off"}</strong>
           <span>{visualCapturesToday}/{MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY} captures today</span>
         </div>
-        <button className={visualContextEnabled ? "settings-control is-on" : "settings-control"} type="button" aria-pressed={visualContextEnabled} onClick={() => setVisualContextEnabled(!visualContextEnabled)}>
+        {/* Turning visual context ON needs AI (captures are analyzed by the vision
+            model); turning it OFF must always stay possible. */}
+        <button
+          className={visualContextEnabled ? "settings-control is-on" : "settings-control"}
+          type="button"
+          aria-pressed={visualContextEnabled}
+          disabled={!visualContextEnabled && !aiAvailable}
+          title={!visualContextEnabled && !aiAvailable ? AI_UNAVAILABLE_HINT : undefined}
+          onClick={() => setVisualContextEnabled(!visualContextEnabled)}
+        >
           {visualContextEnabled ? "Disable Visual Context" : "Enable Visual Context"}
         </button>
       </section>

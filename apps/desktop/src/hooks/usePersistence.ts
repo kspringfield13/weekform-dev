@@ -66,6 +66,8 @@ export function usePersistence(
     persistData.retentionDays,
     persistData.onboardingDismissed,
     persistData.walkthroughCompleted,
+    persistData.gettingStartedStatus,
+    persistData.defaultWindowMode,
     persistData.proactiveAlertSettings,
     persistData.proactiveAlertRuntime,
     persistData.tokenUsageDays,

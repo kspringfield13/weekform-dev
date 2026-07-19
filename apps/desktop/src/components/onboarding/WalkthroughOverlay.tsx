@@ -28,7 +28,9 @@ export interface WalkthroughStep {
 // if a target is ever missing, e.g. on a narrow viewport).
 export const WALKTHROUGH_STEPS: WalkthroughStep[] = [
   {
-    title: "Welcome to Weekform",
+    // The branded WelcomeOverlay fronts this tour on a first launch, so this
+    // opening card introduces the tour itself rather than repeating "Welcome".
+    title: "Let's take a quick tour",
     body: "A quick tour of where things live. Weekform turns your calendar and app activity into reviewable work blocks, then an explainable estimate of your weekly capacity — all on this Mac.",
   },
   {

@@ -34,6 +34,14 @@ struct TrayHandle(TrayIcon<Wry>);
 struct ActivityCaptureState {
     paused: Arc<AtomicBool>,
 }
+
+// Whether opening Weekform from the tray shows the compact quick view instead of
+// the full dashboard. Mirrors the frontend's persisted "Default window size"
+// setting (set_default_window_mode); defaults to the full window so a first-run
+// user lands in the walkthrough and getting-started flow, which only run there.
+struct DefaultOpenState {
+    compact: AtomicBool,
+}
 #[derive(Clone, Serialize)]
 struct ActiveWindowPayload {
     timestamp_ms: u64,
@@ -490,6 +498,81 @@ fn set_tray_tooltip(tray: State<'_, TrayHandle>, tooltip: String) {
 #[tauri::command]
 fn set_activity_capture_paused(activity_state: State<'_, ActivityCaptureState>, paused: bool) {
     activity_state.paused.store(paused, Ordering::SeqCst);
+}
+
+#[tauri::command]
+fn set_default_window_mode(open_state: State<'_, DefaultOpenState>, mode: String) {
+    open_state.compact.store(mode == "compact", Ordering::SeqCst);
+}
+
+/// Bring the main window forward in the full dashboard layout. Called by the
+/// frontend on a first launch (walkthrough not yet completed) so onboarding
+/// starts immediately after install instead of hiding behind the menu-bar icon.
+#[tauri::command]
+fn present_main_window(app: AppHandle) {
+    show_large_dashboard(&app);
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct EnvAiKeyStatus {
+    openai_key_present: bool,
+}
+
+/// Whether an OpenAI key is already available from the environment (a local
+/// `.env` loaded by dotenvy at startup, or an exported shell variable). The
+/// AI commands' `get_ai_credentials` falls back to exactly this variable, so
+/// "present" here means AI calls will work without any key saved in Settings —
+/// the onboarding wizard uses it to show an honest "already connected" state.
+#[tauri::command]
+fn get_env_ai_key_status() -> EnvAiKeyStatus {
+    EnvAiKeyStatus {
+        openai_key_present: env::var("OPENAI_API_KEY")
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexConnectResult {
+    api_key: String,
+}
+
+/// Import an OpenAI API key from the Codex CLI's stored sign-in
+/// (`~/.codex/auth.json`). Errors are user-facing copy: each failure mode tells
+/// the user what to do instead (run `codex login`, or paste a key). A
+/// subscription-only sign-in (OAuth tokens, no API key) is rejected honestly —
+/// those tokens cannot call the OpenAI platform API that Weekform uses.
+#[tauri::command]
+fn connect_openai_via_codex() -> Result<CodexConnectResult, String> {
+    let home =
+        env::var("HOME").map_err(|_| "Could not resolve your home directory.".to_string())?;
+    let auth_path = std::path::Path::new(&home).join(".codex").join("auth.json");
+    if !auth_path.exists() {
+        return Err(
+            "No Codex sign-in found on this Mac. Run `codex login` in a terminal first, or paste an API key instead."
+                .to_string(),
+        );
+    }
+    let raw = fs::read_to_string(&auth_path)
+        .map_err(|error| format!("Could not read the Codex credentials: {error}"))?;
+    let parsed: Value = serde_json::from_str(&raw)
+        .map_err(|_| "The Codex credential file could not be parsed.".to_string())?;
+    let api_key = parsed
+        .get("OPENAI_API_KEY")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    match api_key {
+        Some(key) => Ok(CodexConnectResult {
+            api_key: key.to_string(),
+        }),
+        None => Err(
+            "Your Codex sign-in uses a ChatGPT subscription without an API key, and subscription tokens can't call the OpenAI API Weekform uses. Create a key at platform.openai.com and paste it instead."
+                .to_string(),
+        ),
+    }
 }
 
 fn get_ai_credentials(config: Option<&AIConfigRequest>) -> Result<(String, String), String> {
@@ -1465,7 +1548,12 @@ fn configure_tray(app: &tauri::App) -> tauri::Result<()> {
                 ..
             } = event
             {
-                show_quick_view(tray.app_handle());
+                let app = tray.app_handle();
+                if app.state::<DefaultOpenState>().compact.load(Ordering::SeqCst) {
+                    show_quick_view(app);
+                } else {
+                    show_large_dashboard(app);
+                }
             }
         })
         .on_menu_event(move |app, event| match event.id.as_ref() {
@@ -1526,6 +1614,9 @@ pub fn run() {
         .manage(ActivityCaptureState {
             paused: activity_capture_paused.clone(),
         })
+        .manage(DefaultOpenState {
+            compact: AtomicBool::new(false),
+        })
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -1539,6 +1630,10 @@ pub fn run() {
             generate_forecast_agent_with_openai,
             capture_visual_context_with_openai,
             set_clear_capacity_window_mode,
+            set_default_window_mode,
+            get_env_ai_key_status,
+            connect_openai_via_codex,
+            present_main_window,
             chat_with_agent,
             ai_complete,
             test_ai_connection

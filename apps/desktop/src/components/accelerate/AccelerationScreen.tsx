@@ -22,6 +22,7 @@ import type { RealizedSavingsEntry, RealizedSavingsSummary } from "../../../../.
 import { MIN_ACCELERATION_MINUTES_SAVED_PER_WEEK } from "../../../../../packages/inference/src/accelerate";
 import type { Screen, SettingsTab } from "../../lib/types";
 import { accelerationTypeGloss, accelerationTypeLabel, formatAuditTime, formatDurationMinutes } from "../../lib/format";
+import { AI_UNAVAILABLE_HINT } from "../../lib/constants";
 import type { PushToast } from "../../hooks/useToasts";
 import { EmptyState } from "../common/EmptyState";
 import { EvidenceDetails } from "../common/EvidenceDetails";
@@ -425,31 +426,33 @@ export function AccelerationScreen({
         </div>
       </div>
       <div className="acceleration-synth">
+        <button
+          type="button"
+          className="primary-action"
+          disabled={generateStatus === "generating" || !aiConfigured}
+          aria-busy={generateStatus === "generating"}
+          onClick={onGenerateSkills}
+          title={
+            aiConfigured
+              ? "Send the derived signals above (app-name flows and counts only — never window titles) to your configured AI to author step-by-step skill recipes and tool picks"
+              : AI_UNAVAILABLE_HINT
+          }
+        >
+          <AgentMark size={16} animated={generateStatus === "generating"} aria-hidden />
+          <span>
+            {generateStatus === "generating"
+              ? "Authoring Skills…"
+              : hasAuthoredPlays
+                ? "Regenerate Skills"
+                : "Generate Skills"}
+          </span>
+        </button>
         {aiConfigured ? (
-          <>
-            <button
-              type="button"
-              className="primary-action"
-              disabled={generateStatus === "generating"}
-              aria-busy={generateStatus === "generating"}
-              onClick={onGenerateSkills}
-              title="Send the derived signals above (app-name flows and counts only — never window titles) to your configured AI to author step-by-step skill recipes and tool picks"
-            >
-              <AgentMark size={16} animated={generateStatus === "generating"} aria-hidden />
-              <span>
-                {generateStatus === "generating"
-                  ? "Authoring Skills…"
-                  : hasAuthoredPlays
-                    ? "Regenerate Skills"
-                    : "Generate Skills"}
-              </span>
-            </button>
-            <p className="acceleration-synth-note">
-              {generatedAt
-                ? `AI skills generated ${formatAuditTime(generatedAt)}. Only derived signals are sent — never raw window titles.`
-                : "Optional: author runnable skill recipes and tool picks from the plays above. Only derived signals are sent — never raw window titles."}
-            </p>
-          </>
+          <p className="acceleration-synth-note">
+            {generatedAt
+              ? `AI skills generated ${formatAuditTime(generatedAt)}. Only derived signals are sent — never raw window titles.`
+              : "Optional: author runnable skill recipes and tool picks from the plays above. Only derived signals are sent — never raw window titles."}
+          </p>
         ) : (
           <div className="acceleration-synth-hint">
             <p>

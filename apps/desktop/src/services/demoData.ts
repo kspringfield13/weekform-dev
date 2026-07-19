@@ -601,6 +601,8 @@ export function createDemoState(reference = new Date()): PersistedAppState {
     retentionDays: 30,
     onboardingDismissed: false,
     walkthroughCompleted: true,
+    gettingStartedStatus: "complete",
+    defaultWindowMode: "large",
     proactiveAlertSettings: DEFAULT_PROACTIVE_ALERT_SETTINGS,
     proactiveAlertRuntime: EMPTY_PROACTIVE_ALERT_RUNTIME,
     // AI-usage showcase: a few exact OpenAI CSV days plus one row carrying an

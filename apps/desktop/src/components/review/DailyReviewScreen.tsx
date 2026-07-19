@@ -13,9 +13,11 @@ import { BlockCard } from "../ledger/BlockCard";
 import { EmptyState } from "../common/EmptyState";
 import { OnboardingCard, type OnboardingStep } from "../common/OnboardingCard";
 import { AgentMark } from "../common/AgentMark";
+import { AI_UNAVAILABLE_HINT } from "../../lib/constants";
 import { ReviewCopilotPanel } from "./ReviewCopilotPanel";
 
 export function DailyReviewScreen({
+  aiAvailable,
   blocks,
   onboardingSteps,
   showOnboarding,
@@ -35,6 +37,7 @@ export function DailyReviewScreen({
   corrections,
   pushToast
 }: {
+  aiAvailable: boolean;
   blocks: WorkBlock[];
   onboardingSteps: OnboardingStep[];
   showOnboarding: boolean;
@@ -128,10 +131,10 @@ export function DailyReviewScreen({
             <button
               className="secondary-action"
               type="button"
-              disabled={reviewCopilotStatus === "generating"}
+              disabled={reviewCopilotStatus === "generating" || !aiAvailable}
               aria-busy={reviewCopilotStatus === "generating"}
               onClick={onGenerateReviewSuggestions}
-              title="Ask AI to suggest cleanup actions for unconfirmed blocks"
+              title={aiAvailable ? "Ask AI to suggest cleanup actions for unconfirmed blocks" : AI_UNAVAILABLE_HINT}
             >
               <AgentMark size={16} animated={reviewCopilotStatus === "generating"} aria-hidden />
               <span>{reviewCopilotStatus === "generating" ? "Thinking…" : "Suggest cleanup"}</span>

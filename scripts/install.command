@@ -333,15 +333,16 @@ cat <<DONE
 
 ${BOLD}${GREEN}✓ All set!${RESET} Weekform is in your Applications folder.
 
-${BOLD}One more thing — the first launch:${RESET}
-  • Weekform lives in the ${BOLD}menu bar${RESET} (top-right), not the Dock.
-    Click its icon to open the main window.
+${BOLD}One more thing — launching the app:${RESET}
+  • Weekform opens its ${BOLD}full window${RESET} every time you launch it; the
+    first launch adds a short welcome, a tour, and a quick setup.
+  • Weekform also keeps its logo in the ${BOLD}menu bar${RESET} (top-right), not
+    the Dock. Close the window anytime — click the icon to reopen it.
   • macOS will ask for ${BOLD}Accessibility${RESET} permission. This lets the app
     see which app is in the foreground (never your keystrokes or screen).
     Approve it in System Settings → Privacy & Security → Accessibility.
   • Optional visual context may also request ${BOLD}Screen Recording${RESET}; menu-bar
     automation can prompt for permission to control System Events.
-  • A short ${BOLD}in-app walkthrough${RESET} will point out where everything is.
 
   Raw activity stays on this Mac. AI features are optional and opt-in.
 
