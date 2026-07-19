@@ -426,9 +426,12 @@ Phase A dependency is gate-green.
   manager-authorized creation RPC. Loop `loop-20260719-135748-556358` then
   removed direct UPDATE/DELETE too, moved resolution/deletion behind narrow
   manager RPCs, server-derived resolution time, and expanded the four-actor
-  pgTAP contract to 76 assertions, including direct member UPDATE/DELETE and
-  outsider resolve/delete attempts. Fresh gates: focused boundary tests 17/17;
-  `verify:wave3` exit 0 (128/128 desktop-cloud, 188/188 web, 12 routes); root
+  pgTAP contract to 80 assertions, including direct table/column privilege
+  checks, direct member UPDATE/DELETE, and outsider resolve/delete attempts. An
+  additive `202607190005_team_actions_rpc_hardening.sql` repairs databases that
+  applied the earlier direct-write boundary without relying on rewritten
+  migration history. Fresh gates: focused boundary tests 18/18;
+  `verify:wave3` exit 0 (133/133 desktop-cloud, 199/199 web); root
   `build`, `audit:check` (zero vulnerabilities in both workspaces), and diff
   check exit 0. Live migration/RLS execution remains environment-blocked and
   unclaimed.

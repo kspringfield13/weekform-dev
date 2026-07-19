@@ -258,7 +258,6 @@ export interface SimulationValidationResult {
 export type SimulatorRole = "member" | "manager" | "simulator_admin";
 
 export interface SimulationAccessContext {
-  featureEnabled: boolean;
   authenticated: boolean;
   roles: SimulatorRole[];
 }

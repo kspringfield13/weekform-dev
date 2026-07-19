@@ -28,7 +28,7 @@ Baseline at Part 2 authoring (July 19, 2026): `verify:wave3` exit 0 — 97/97 de
 | 13 | Team forecasting calibrated against outcomes (A7) | DONE (2026-07-19) | `apps/web/lib/forecast.ts` + `forecast.test.ts` (12 tests, tests-first); scorer cross-check `packages/inference/src/capacity.forecastScorer.test.ts`; Forecast panel in `apps/web/app/teams/[teamId]/page.tsx` (coverage n/n, "insufficient shared data" below threshold, medians/ranges only). Gates: verify:wave3 exit 0 (97/97 + 161/161), build exit 0, audit:check 0 vulns. Roadmap A7 row updated. |
 | 14 | Experience excellence pass — desktop + web coherence | DONE (2026-07-19; audit rerun env-blocked) | Audit-first artifact `docs/hackathon/TEAM_CLAWFATHER_UX_AUDIT.md`; all 20 FIX rows resolved across the desktop and web surfaces. Shared pending/confirmation controls, assertive errors, announced loading, destructive confirmations, canonical freshness and approved-snapshot provenance. Gate runner hardened from `tsx --test` to equivalent `node --import tsx --test` after IPC `EPERM`; final `verify:wave3` exit 0 (97/97 desktop-cloud, 162/162 web, 12 routes / 11 static pages) and root build exit 0. `audit:check` could not reach `registry.npmjs.org` (`ENOTFOUND`); no dependencies changed, and the last same-day audit evidence remains 0 vulnerabilities. |
 | 15 | Weekly review ritual (B1) | DONE (2026-07-19; audit rerun env-blocked) | Pure local checklist `apps/desktop/src/services/weeklyReview.ts` + 6 tests; routed `WeeklyReviewScreen`; current-week forecast comparison; cloud-disabled omission and matching sync-audit/consent-receipt proof; one idempotent ids/counts-only `weekly_review` audit event. Gates: `verify:wave3` exit 0 (103/103 desktop-cloud, 162/162 web, 12 routes / 11 static pages), root build exit 0, diff check clean. `audit:check` ran but registry DNS returned `ENOTFOUND`; no dependencies changed. |
-| 16 | Manager action follow-through — closed learning loop (B2) | DONE (2026-07-19; live migration proof env-blocked) | Create, resolve/drop, and delete are manager-authorized security-definer RPCs; the server derives `id`, `created_by`, `status`, `created_at`, and `resolved_at`. Direct INSERT/UPDATE/DELETE abuse is pinned by 7 migration-contract tests and a 76-assertion pgTAP contract. Final gates: focused 17/17, verify:wave3 exit 0 (128/128 desktop-cloud + 188/188 web, 12 routes), build and diff check exit 0, and `audit:check` exit 0 with zero vulnerabilities in both workspaces. The migration remains SQL-review-only and no live RLS claim is made. |
+| 16 | Manager action follow-through — closed learning loop (B2) | DONE (2026-07-19; live migration proof env-blocked) | Create, resolve/drop, and delete are manager-authorized security-definer RPCs; the server derives `id`, `created_by`, `status`, `created_at`, and `resolved_at`. The additive `202607190005_team_actions_rpc_hardening.sql` also repairs databases that applied the earlier direct-write boundary. Direct INSERT/UPDATE/DELETE abuse is pinned by 8 migration-contract tests and an 80-assertion pgTAP contract. Final gates: focused 18/18, verify:wave3 exit 0 (133/133 desktop-cloud + 199/199 web), build and diff check exit 0, and `audit:check` exit 0 with zero vulnerabilities in both workspaces. The migrations remain SQL-review-only and no live RLS claim is made. |
 | 17 | Demand mapping and capacity reservations (B4) | READY | Prompt 16 repository gates are complete; live migration proof remains separately environment-blocked. |
 | 18 | Connector contracts and role-based views (B3 + B5) | READY — live OAuth [env-blocked] | — |
 | 19 | Privacy thresholds and self-benchmarking (C2 + C3) | READY (after 17) | — |
@@ -56,7 +56,7 @@ Non-negotiables: sharing defaults off; null is never zero; medians/ranges, never
 
 **Web (`apps/web`):** Supabase SSR auth, teams/invites (hashed-token, copy-link), manager + member dashboards (medians/ranges, null-never-zero), weekly history + trends (A2), planning scenarios (A1), team forecasting calibrated against its own outcomes (A7), retention statement (A3), narrowing-only team share policy settings (A6, `lib/teamPolicy.ts`), manager-only AI team briefing with deterministic fallback, session-gated download with config-gated signed-URL artifact route.
 
-**Infrastructure:** 4 shared packages (`domain`, `inference`, `integrations`, `simulator`); 5 Supabase migrations (simulator, team cloud v1 + RLS, team share policy, manager actions, additive snapshot receipt clock); 32 repository-owned test files concentrated on cloud/policy/privacy and deterministic planning logic. On the hardened Prompt 16 tree, `verify:wave3`, `build`, and `audit:check` are green with zero vulnerabilities in both workspaces. Live Supabase execution remains environment-blocked.
+**Infrastructure:** 4 shared packages (`domain`, `inference`, `integrations`, `simulator`); 7 Supabase migrations (simulator, team cloud v1 + RLS, team share policy, manager actions, additive snapshot receipt clock, upgrade-safe manager-action hardening, and simulator-admin access); 34 repository-owned test files concentrated on cloud/policy/privacy and deterministic planning logic. On the hardened Prompt 16 tree, `verify:wave3`, `build`, and `audit:check` are green with zero vulnerabilities in both workspaces. Live Supabase execution remains environment-blocked.
 
 ### 1.3 Honest deltas — where current state falls short of the definition
 
@@ -309,23 +309,29 @@ Follow-through language implies causation or attributes change to individuals; t
   server derives `id`, `created_by`, `status`, `created_at`, and `resolved_at`.
   Resolution also derives `resolved_at = now()` server-side. It was not applied
   to a live stack here.
+- `202607190005_team_actions_rpc_hardening.sql` is an additive, upgrade-safe
+  repair for a database that applied the earlier `003`: it drops the legacy
+  manager write policies, revokes table-level writes plus the separately tracked
+  lifecycle-column UPDATE grant, and recreates the complete hardened RPCs. It
+  also remains unapplied and is not live proof.
 - The manager-only Actions panel records text plus an optional allowlisted
   briefing flag, shows open actions, resolves/drops with fresh server-side role
   checks, reports safe visible failures instead of false success, and renders
   either “Too early to tell” or “What changed after” with no individual
   attribution or causal claim.
 - Fresh lead and independent gates for loop `loop-20260719-135748-556358`:
-  focused boundary tests 17/17; `npm run verify:wave3` exit 0 (111/111
-  desktop-cloud, 179/179 web, 12 routes / 11 static pages); `npm run build` exit
+  focused boundary tests 18/18; `npm run verify:wave3` exit 0 (133/133
+  desktop-cloud, 199/199 web); `npm run build` exit
   0; and `git diff --check` exit 0. Two additional iteration-9 `npm run
   audit:check` retries exited 1 because `registry.npmjs.org` DNS resolution was
   blocked (`ENOTFOUND`), bringing the documented retry count to eighteen. The
   final clean integration reran the full command successfully: root and web
   audits both report zero vulnerabilities. On that same tree, `verify:wave3`
-  passes 128/128 desktop-cloud and 188/188 web tests with 12 routes, and the root
-  build and diff check pass. Live pgTAP/RLS execution remains unclaimed because
+  passes 133/133 desktop-cloud and 199/199 web tests, and the root build and diff
+  check pass. Live pgTAP/RLS execution remains unclaimed because
   neither Supabase CLI nor `psql` is available on this machine. The unapplied
-  contract contains 76 assertions with direct member UPDATE/DELETE and outsider
+  contract contains 80 assertions with direct table/column privilege checks,
+  direct member UPDATE/DELETE, and outsider
   resolve/delete attempts; its static guard remains green.
 
 ---

@@ -112,10 +112,12 @@ The privacy-critic, integration/release-gate, and submission-package prompts (ru
 - **Evidence:** `docs/hackathon/TEAM_CLAWFATHER_UX_AUDIT.md` maps each fix row
   to its source resolution. Loop `loop-20260719-135748-556358` tightened Prompt
   16 to RPC-only create/resolve/delete and server-derived lifecycle fields; its
-  focused boundary suite passes 17/17; its unapplied pgTAP specification now has
-  76 assertions, including direct member UPDATE/DELETE and outsider resolve/delete
-  abuse cases. `npm run verify:wave3` passes with
-  111/111 desktop tests, 179/179 web tests, and 12 routes / 11 static pages; the
+  focused boundary suite passes 18/18; its additive hardening migration repairs
+  already-applied databases without relying on rewritten history, and its
+  unapplied pgTAP specification now has 80 assertions, including direct
+  table/column privilege checks, direct member UPDATE/DELETE, and outsider
+  resolve/delete abuse cases. `npm run verify:wave3` passes with
+  133/133 desktop tests and 199/199 web tests; the
   root build passes. The final clean integration reran `npm run audit:check`
   successfully with zero vulnerabilities in both workspaces, after eighteen
   earlier attempts had been blocked by registry DNS. Prompt 16 is complete at
@@ -153,9 +155,79 @@ the product vocabulary and approval boundaries remained human-directed.
   `npm run verify:wave3` passes 128/128 desktop-cloud and 188/188 web tests with
   12 routes; root `npm run build`, `npm run audit:check` (zero vulnerabilities
   in both workspaces), and `git diff --check` pass.
+
+### Manager Access and Span Simulator access
+
+- **Date:** July 19, 2026
+- **Outcome:** the local Admin Portal no longer depends on the primary Span
+  Simulator feature flag. Vite development exposes one Admin Portal entry in
+  Account & Sharing; valid synthetic demo credentials establish a tab-scoped
+  local session, and Span Simulator appears inside the signed-in portal as an
+  administration tool. The former query-role shortcut and duplicate Settings
+  simulator row were removed. Sign-out clears the local session, and a direct
+  simulator URL fails closed until the user signs in again. The separate
+  `VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK` safety gate remains unchanged. A later
+  presentation pass rebuilt the signed-in landing as a responsive synthetic
+  operations desk and added portal-scoped theme, accent, density, and motion
+  preferences. Those display preferences remain local to the browser and do
+  not change workload evidence or the main Weekform theme. The separate Next.js
+  production web app now owns a request-fresh, non-indexed `/admin` route with
+  the same synthetic-operations direction. It rechecks the cookie-bound user
+  through an argument-free current-user RPC, distinguishes unavailable from
+  ungranted access, and authorizes only an explicit simulator-admin row. Its
+  appearance settings persist through a narrow HTTP-only `/admin` cookie rather
+  than browser workload storage.
+- **Evidence:** the tests-first access-contract change produced four expected
+  simulator-test failures before implementation. The final tree passes 15/15
+  simulator tests, 130/130 desktop service tests, and the root TypeScript/Vite
+  build. Browser verification on `http://127.0.0.1:5173/admin` confirmed the
+  no-flag login, invalid-credential alert, signed-in Span Simulator card,
+  portal-to-simulator navigation, session-preserving return, sign-out, and
+  direct-route denial with no Vite overlay or captured console error.
+  The presentation pass added preference parsing and recovery coverage; the
+  desktop service suite passes 133/133 and the root build passes. Browser proof
+  at `http://127.0.0.1:5175/admin` covered the authenticated desktop landing,
+  settings focus loop, persisted light/Ember/compact/no-motion combination,
+  reset behavior, and a 390-pixel layout with no horizontal overflow. The
+  production-route pass adds focused access/preference/migration contracts;
+  `npm run test:web` passes 199/199 and `npm run web:build` emits `/admin` as
+  one of 13 application routes. Browser proof against the optimized Next.js
+  build covered the honest unconfigured state, settings focus return,
+  HTTP-only preference persistence across reload, reset, dark/light themes,
+  reduced motion, and 390-pixel rendering without horizontal overflow or
+  captured console errors.
+- **Boundary:** the local credentials and session marker are development-only.
+  The production route does not make the Span Simulator executable on the web.
+  Live authorization remains unconnected in this checkout and still requires
+  Supabase environment configuration, applied migrations, a real authenticated
+  user, an explicit simulator-admin grant, and verified RLS before any
+  live-access claim may be made.
   Supabase CLI/psql and a disposable project remain unavailable, so live
   migration/pgTAP and four-actor desktop-write/web-read/delete proof are not
   claimed.
+
+#### Manager Access Weekform-shell expansion
+
+- **Date:** July 19, 2026
+- **Outcome:** the user-facing Admin Portal entry is now **Manager Access**. Its
+  authenticated local workspace reuses Weekform's Today, Week, Agent, History,
+  and Settings information architecture. Every page exposes an Individual / Manager
+  mode control; Individual mode preserves the personal workload perspective,
+  while Manager Mode adds approved-summary filters, collapsible and scrollable
+  roster triage, team medians and ranges, briefings, coordination history, and a
+  persistent comparison rail capped at six ICs. Existing administration
+  capabilities remain available under Manager Settings, including the isolated
+  Span Simulator. The demo is visibly synthetic and does not widen the production
+  sharing contract or read personal desktop state.
+- **Evidence:** tests were written first for comparison selection order, the
+  six-IC hard cap, and combined query/team/category/risk filtering. The final
+  tree passes 15/15 simulator tests, 136/136 desktop service tests, 199/199 web
+  tests, the root TypeScript/Vite build, and the optimized Next.js build with 13
+  routes. Browser verification on `http://127.0.0.1:5175/admin` covered local
+  sign-in, Manager / Individual mode switching, Today and Week navigation,
+  six-person comparison with remaining ICs disabled, and rendered desktop,
+  760-pixel, and 390-pixel layouts. Both narrow widths reported no page-level
+  horizontal overflow, and no browser console error was captured.
 
 The work used separate desktop and web implementers plus an independent critic;
 the maintainer supplied the local-first/cloud-complexity boundary and requested

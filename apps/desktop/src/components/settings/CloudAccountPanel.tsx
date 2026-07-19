@@ -10,7 +10,6 @@ import {
   Cloud,
   CloudUpload,
   ExternalLink,
-  FlaskConical,
   LoaderCircle,
   LogIn,
   LogOut,
@@ -30,10 +29,6 @@ import {
   getConfiguredAdminPortalSignInUrl,
   openAdminPortalSignIn
 } from "../../services/adminPortal";
-import {
-  getLocalSimulatorPortalNavigation,
-  type SimulatorAdminNavigation
-} from "../../../../../packages/simulator/src/authorization";
 
 const SHARE_LEVEL_OPTIONS: Array<{ value: CloudShareLevel; label: string; hint: string }> = [
   { value: "summary", label: "Summary", hint: "Capacity metrics and review coverage only" },
@@ -67,7 +62,7 @@ function AdminPortalSettingsRow() {
     try {
       await openAdminPortalSignIn(destination);
     } catch (error) {
-      setOpenError(error instanceof Error ? error.message : "Admin Portal could not be opened.");
+      setOpenError(error instanceof Error ? error.message : "Manager Access could not be opened.");
     }
   };
 
@@ -75,11 +70,11 @@ function AdminPortalSettingsRow() {
     <section className="settings-row">
       <div className="settings-row-icon"><ShieldCheck size={18} aria-hidden /></div>
       <div>
-        <h3>Admin Portal</h3>
+        <h3>Manager Access</h3>
         <p>
           {isLocalPortal
-            ? "Open the local Weekform Admin Portal for development and testing."
-            : "Sign in on the Weekform web app to manage your team and its approved workload sharing."}
+            ? "Open the local Weekform Manager Access workspace for development and testing."
+            : "Open Weekform Manager Access to use your individual workspace and manage approved team signals."}
         </p>
       </div>
       <div className="settings-row-status">
@@ -93,34 +88,7 @@ function AdminPortalSettingsRow() {
         onClick={() => void openPortal()}
       >
         <ExternalLink size={15} aria-hidden />
-        <span>Open Admin Portal</span>
-      </button>
-    </section>
-  );
-}
-
-function SimulatorPortalSettingsRow({ navigation }: { navigation: SimulatorAdminNavigation }) {
-  return (
-    <section className="settings-row">
-      <div className="settings-row-icon"><FlaskConical size={18} aria-hidden /></div>
-      <div>
-        <h3>Span Simulator lab</h3>
-        <p>
-          Open the local administrator sign-in for synthetic simulator runs. Its published demo
-          credentials grant no Weekform Cloud or production access.
-        </p>
-      </div>
-      <div className="settings-row-status">
-        <strong>Development only</strong>
-        <span>{navigation.description}</span>
-      </div>
-      <button
-        className="settings-control"
-        type="button"
-        onClick={() => window.location.assign(navigation.href)}
-      >
-        <FlaskConical size={15} aria-hidden />
-        <span>Open Simulator</span>
+        <span>Open Manager Access</span>
       </button>
     </section>
   );
@@ -145,16 +113,12 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
   const [confirmingFirstSync, setConfirmingFirstSync] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
-  const simulatorNavigation = getLocalSimulatorPortalNavigation(
-    import.meta.env.DEV && import.meta.env.VITE_ENABLE_SPAN_SIMULATOR === "true"
-  );
 
   if (!ctrl.configured) {
     return (
       <>
         <AccountSharingHeading />
         <AdminPortalSettingsRow />
-        {simulatorNavigation && <SimulatorPortalSettingsRow navigation={simulatorNavigation} />}
         <section className="settings-row">
           <div className="settings-row-icon"><Cloud size={18} aria-hidden /></div>
           <div>
@@ -214,7 +178,6 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
     <>
       <AccountSharingHeading />
       <AdminPortalSettingsRow />
-      {simulatorNavigation && <SimulatorPortalSettingsRow navigation={simulatorNavigation} />}
 
       {!signedIn && (
         <section className="settings-row">

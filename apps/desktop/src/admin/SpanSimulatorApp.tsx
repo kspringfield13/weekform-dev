@@ -59,6 +59,10 @@ import type {
 import { validateSimulationDataset } from "../../../../packages/simulator/src/validate";
 import { WeekformMark } from "../components/common/WeekformMark";
 import {
+  getBrowserAdminPortalSessionStorage,
+  readLocalAdminPortalSession,
+} from "../services/adminPortal";
+import {
   readSimulationRuns,
   writeSimulationRuns,
   type StoredSimulationRun,
@@ -69,8 +73,9 @@ type AdminView = "new" | "history" | "personas" | "run" | "results";
 type ResultTab = "overview" | "timeline" | "evidence" | "forecast" | "shared" | "quality" | "audit";
 
 const STEPS = ["Persona & Team", "Span", "Scenario", "Sharing", "Preflight"] as const;
-const SIMULATOR_FEATURE_ENABLED = import.meta.env.DEV && import.meta.env.VITE_ENABLE_SPAN_SIMULATOR === "true";
-const PLAYBACK_FEATURE_ENABLED = SIMULATOR_FEATURE_ENABLED && import.meta.env.VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK === "true";
+const LOCAL_SIMULATOR_AVAILABLE = import.meta.env.DEV;
+const PLAYBACK_FEATURE_ENABLED = LOCAL_SIMULATOR_AVAILABLE
+  && import.meta.env.VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK === "true";
 const SCENARIOS: Array<{ id: ScenarioKind; label: string }> = [
   { id: "normal", label: "Normal" },
   { id: "quiet", label: "Quiet" },
@@ -183,8 +188,10 @@ function Weekline({ total, current, status }: { total: number; current: number; 
 }
 
 function AccessBoundary({ children }: { children: ReactNode }) {
+  const hasLocalAdminSession = LOCAL_SIMULATOR_AVAILABLE
+    && readLocalAdminPortalSession(getBrowserAdminPortalSessionStorage());
   const decision = authorizeSimulatorAccess(
-    getLocalSimulatorAccessContext(SIMULATOR_FEATURE_ENABLED, window.location.search)
+    getLocalSimulatorAccessContext(hasLocalAdminSession)
   );
 
   if (decision.allowed) return <>{children}</>;
@@ -195,18 +202,25 @@ function AccessBoundary({ children }: { children: ReactNode }) {
         <div className="sim-access-mark"><WeekformMark /></div>
         <span className="sim-kicker">Weekform admin lab</span>
         <h1 id="sim-access-title">Span Simulator is locked.</h1>
-        <p>{decision.reason}</p>
+        <p>
+          {LOCAL_SIMULATOR_AVAILABLE
+            ? decision.reason
+            : "The local Span Simulator is available only in development."}
+        </p>
         <div className="sim-gate-note">
           <LockKeyhole size={17} aria-hidden />
           <div>
-            <strong>Local development gate</strong>
+            <strong>{LOCAL_SIMULATOR_AVAILABLE ? "Manager Access session required" : "Production access remains separate"}</strong>
             <span>
-              This prototype opens only when <code>VITE_ENABLE_SPAN_SIMULATOR=true</code> and the URL carries
-              <code> role=simulator_admin</code>. Production authorization remains enforced by Supabase RLS.
+              {LOCAL_SIMULATOR_AVAILABLE
+                ? "Sign in through local Manager Access before opening this synthetic tool."
+                : "Production simulator administration requires Supabase authentication, an explicit simulator-admin grant, and RLS."}
             </span>
           </div>
         </div>
-        <a className="sim-button secondary" href="/">Return to Weekform</a>
+        <a className="sim-button secondary" href={LOCAL_SIMULATOR_AVAILABLE ? "/admin" : "/"}>
+          {LOCAL_SIMULATOR_AVAILABLE ? "Go to Manager Access" : "Return to Weekform"}
+        </a>
       </section>
     </main>
   );
@@ -410,11 +424,14 @@ function SpanSimulatorApp() {
           <WeekformMark />
           <strong>Weekform</strong>
           <span>/</span>
+          <a href="/admin">Manager Access</a>
+          <span>/</span>
           <b>Span Simulator</b>
           <span className="admin-lab-badge">Admin lab</span>
         </div>
         <div className="sim-titlebar-actions">
-          <span className="local-gate-chip"><ShieldCheck size={13} aria-hidden /> Local development gate</span>
+          <span className="local-gate-chip"><ShieldCheck size={13} aria-hidden /> Local admin session</span>
+          <a href="/admin">Back to Manager Access</a>
           <a href="/">Exit to Weekform</a>
         </div>
       </header>
@@ -631,27 +648,42 @@ function PersonaStep({ draft, setDraft }: { draft: SimulationConfig; setDraft: R
 
   return (
     <fieldset className="sim-fieldset">
-      <legend>Persona &amp; team</legend>
-      <div className="sim-search">
-        <Search size={16} aria-hidden />
-        <input aria-label="Search persona catalog" placeholder="Search roles" value={query} onChange={(event) => setQuery(event.target.value)} />
+      <legend>Build the synthetic team</legend>
+      <div className="persona-toolbar">
+        <div className="sim-search">
+          <Search size={17} aria-hidden />
+          <input aria-label="Search persona catalog" placeholder="Search by role" value={query} onChange={(event) => setQuery(event.target.value)} />
+        </div>
+        <span className="persona-selection-count" aria-live="polite">
+          <Users size={14} aria-hidden />
+          {memberCount(draft)} member{memberCount(draft) === 1 ? "" : "s"} selected
+        </span>
       </div>
-      <p className="sim-field-help">Select one or more versioned roles. Member names and workplace details are synthetic.</p>
+      <p className="sim-field-help">Choose one or more roles, then set how many synthetic members each role represents.</p>
       <div className="persona-grid">
         {visible.map((persona) => {
           const count = selected.get(persona.id);
           return (
             <article className={`persona-card${count ? " is-selected" : ""}`} key={persona.id}>
-              <button className="persona-select" type="button" aria-pressed={Boolean(count)} onClick={() => togglePersona(persona)}>
+              <button
+                className="persona-select"
+                type="button"
+                aria-label={`${count ? "Remove" : "Add"} ${persona.displayName} ${count ? "from" : "to"} the synthetic team`}
+                aria-pressed={Boolean(count)}
+                onClick={() => togglePersona(persona)}
+              >
                 <span className="persona-icon"><UserRoundCog size={17} aria-hidden /></span>
-                <span><strong>{persona.displayName}</strong><small>{persona.role} · v{persona.version}</small></span>
-                <span className="persona-check" aria-hidden>{count ? <Check size={13} /> : null}</span>
+                <span className="persona-copy"><strong>{persona.displayName}</strong><small>{persona.role} · persona v{persona.version}</small></span>
+                <span className="persona-check" aria-hidden>{count ? <Check size={14} /> : <Plus size={14} />}</span>
               </button>
-              <div className="persona-meta"><span>{persona.deepWorkCadence.blockMinutes.typical}m focus</span><span>{persona.meetingBehavior.weeklyMinutes.typical}m meetings/wk</span></div>
+              <div className="persona-meta">
+                <span><strong>{persona.deepWorkCadence.blockMinutes.typical} min</strong> focus block</span>
+                <span><strong>{persona.meetingBehavior.weeklyMinutes.typical} min</strong> meetings / week</span>
+              </div>
               <div className="persona-card-actions">
-                <button type="button" onClick={() => setInspected(persona)}>Inspect</button>
+                <button type="button" onClick={() => setInspected(persona)}>View details</button>
                 {count && (
-                  <label>Members<input aria-label={`${persona.displayName} simulated member count`} type="number" min={1} max={20} value={count} onChange={(event) => {
+                  <label className="persona-count"><span>Members</span><input aria-label={`${persona.displayName} simulated member count`} type="number" min={1} max={20} value={count} onChange={(event) => {
                     const next = Math.max(1, Math.min(20, Number(event.target.value) || 1));
                     setDraft((current) => ({ ...current, members: current.members.map((member) => member.personaId === persona.id ? { ...member, count: next } : member) }));
                   }} /></label>
@@ -955,5 +987,5 @@ function SimulatorSandbox({ surface }: { surface: string }) {
 }
 
 function SimulatorSandboxLocked() {
-  return <main className="sim-access-shell"><section className="sim-access-card" aria-labelledby="sandbox-locked-title"><div className="sim-access-mark"><LockKeyhole /></div><span className="sim-kicker">Weekform controlled playback</span><h1 id="sandbox-locked-title">Sandbox playback is locked.</h1><p>This localhost-only surface requires both simulator feature flags and an allowlisted mock application route.</p><div className="sim-gate-note"><ShieldCheck size={17} aria-hidden /><div><strong>Dedicated playback gate</strong><span>Set <code>VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true</code> only for explicit local sandbox sessions.</span></div></div><a className="sim-button secondary" href="/">Return to Weekform</a></section></main>;
+  return <main className="sim-access-shell"><section className="sim-access-card" aria-labelledby="sandbox-locked-title"><div className="sim-access-mark"><LockKeyhole /></div><span className="sim-kicker">Weekform controlled playback</span><h1 id="sandbox-locked-title">Sandbox playback is locked.</h1><p>This localhost-only surface requires the dedicated playback flag and an allowlisted mock application route.</p><div className="sim-gate-note"><ShieldCheck size={17} aria-hidden /><div><strong>Dedicated playback gate</strong><span>Set <code>VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true</code> only for explicit local sandbox sessions.</span></div></div><a className="sim-button secondary" href="/admin/span-simulator">Return to Span Simulator</a></section></main>;
 }

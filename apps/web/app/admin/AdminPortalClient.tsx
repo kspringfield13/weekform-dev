@@ -262,7 +262,7 @@ function SettingsDialog({
       <div className={styles.settingsInner}>
         <header className={styles.settingsHeader}>
           <div>
-            <p className={styles.eyebrow}>Portal preferences</p>
+            <p className={styles.eyebrow}>Workspace preferences</p>
             <h2 id="admin-settings-title">Make this workspace yours.</h2>
           </div>
           <button
@@ -432,7 +432,7 @@ export function AdminPortalClient({
           <span className={styles.brandGlyph}><BrandMark /></span>
           <span>
             <strong>Weekform</strong>
-            <small>Administration</small>
+            <small>Manager Access</small>
           </span>
         </Link>
 
@@ -441,10 +441,10 @@ export function AdminPortalClient({
             <i aria-hidden="true" /> Production boundary
           </span>
           <button
-            aria-label="Customize Admin Portal"
+            aria-label="Customize Manager Access"
             className={styles.iconButton}
             onClick={() => dialogRef.current?.showModal()}
-            title="Customize portal"
+            title="Customize Manager Access"
             type="button"
           >
             <SettingsIcon />
@@ -461,7 +461,7 @@ export function AdminPortalClient({
         <section className={styles.hero} aria-labelledby="admin-portal-title">
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}>
-              <span aria-hidden="true" /> Weekform admin portal
+              <span aria-hidden="true" /> Weekform Manager Access
             </p>
             <h1 id="admin-portal-title">{title}</h1>
             <p className={styles.heroDescription}>
@@ -505,7 +505,7 @@ export function AdminPortalClient({
       </main>
 
       <footer className={styles.portalFooter}>
-        <span>Weekform administration</span>
+        <span>Weekform Manager Access</span>
         <span>Know what fits before you commit.</span>
       </footer>
 

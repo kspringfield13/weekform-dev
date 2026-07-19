@@ -523,7 +523,7 @@ Task IDs match `docs/WEEKFORM_HACKATHON_EXECUTION_BOARD.md`. The blueprint §12 
 | PT2 prompt | Outcome | Status | Evidence |
 |---|---|---|---|
 | 15 / B1 | Optional local weekly-review ritual | DONE | 6/6 focused tests; `verify:wave3` 103/103 desktop-cloud + 162/162 web at closeout |
-| 16 / B2 | Manager action follow-through and measured team outcome | DONE (live migration proof env-blocked) | RPC-only create/resolve/delete; 17/17 focused boundary tests; 76-assertion pgTAP contract with direct member UPDATE/DELETE and outsider resolve/delete abuse; `verify:wave3` 128/128 desktop-cloud + 188/188 web; root build and diff PASS; audit PASS with zero vulnerabilities in both workspaces |
+| 16 / B2 | Manager action follow-through and measured team outcome | DONE (live migration proof env-blocked) | RPC-only create/resolve/delete plus an additive upgrade-safe hardening migration; 18/18 focused boundary tests; 80-assertion pgTAP contract with direct table/column privilege checks, direct member UPDATE/DELETE, and outsider resolve/delete abuse; `verify:wave3` 133/133 desktop-cloud + 199/199 web; root build and diff PASS; audit PASS with zero vulnerabilities in both workspaces |
 | 17 / B4 | Demand mapping and capacity reservations | READY | Prompt 16 repository gates are complete; no implementation claim yet |
 | QA-1 | Desktop/web alignment and browser-storage boundary | REPOSITORY GATES DONE; LIVE PROOF BLOCKED | Fresh write boundary, durable deletion guard, additive server receipt clock, bounded request refresh, persistent-cache and client-import guards, and credential-free reset tombstone; `verify:wave3` 128/128 + 188/188; build/diff/audit pass; live Supabase/pgTAP blocked |
 

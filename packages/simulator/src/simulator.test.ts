@@ -15,7 +15,7 @@ import {
   authenticateLocalSimulatorAdmin,
   authorizeSimulatorAccess,
   getLocalAdminPortalView,
-  getLocalSimulatorPortalNavigation,
+  getLocalSimulatorAccessContext,
   LOCAL_SIMULATOR_ADMIN_EMAIL,
   LOCAL_SIMULATOR_ADMIN_PASSWORD
 } from "./authorization";
@@ -154,41 +154,41 @@ test("validator rejects real PII, arbitrary window titles, and filesystem paths"
   assert.ok(invalid.violations.some((item) => item.code === "forbidden-path"));
 });
 
-test("simulator access denies regular users and allows an enabled simulator admin", () => {
-  assert.equal(authorizeSimulatorAccess({ featureEnabled: true, authenticated: true, roles: ["member"] }).allowed, false);
-  assert.equal(authorizeSimulatorAccess({ featureEnabled: true, authenticated: true, roles: ["manager"] }).allowed, false);
-  assert.equal(authorizeSimulatorAccess({ featureEnabled: false, authenticated: true, roles: ["simulator_admin"] }).allowed, false);
-  assert.equal(authorizeSimulatorAccess({ featureEnabled: true, authenticated: true, roles: ["simulator_admin"] }).allowed, true);
+test("simulator access denies signed-out and regular users, then allows a simulator admin", () => {
+  assert.equal(authorizeSimulatorAccess({ authenticated: false, roles: [] }).allowed, false);
+  assert.equal(authorizeSimulatorAccess({ authenticated: true, roles: ["member"] }).allowed, false);
+  assert.equal(authorizeSimulatorAccess({ authenticated: true, roles: ["manager"] }).allowed, false);
+  assert.equal(authorizeSimulatorAccess({ authenticated: true, roles: ["simulator_admin"] }).allowed, true);
 });
 
-test("the local Admin Portal is discoverable only when the simulator feature is enabled", () => {
-  const navigation = getLocalSimulatorPortalNavigation(true);
-  assert.equal(navigation?.href, "/admin");
-  assert.equal(navigation?.settingsTab, "account");
-  assert.equal(getLocalSimulatorPortalNavigation(false), null);
+test("local simulator authorization derives from the signed-in admin role without a feature flag", () => {
+  assert.deepEqual(getLocalSimulatorAccessContext(false), {
+    authenticated: false,
+    roles: ["member"]
+  });
+  assert.deepEqual(getLocalSimulatorAccessContext(true), {
+    authenticated: true,
+    roles: ["simulator_admin"]
+  });
 });
 
-test("the local Admin Portal accepts only its synthetic demo credentials", () => {
+test("local Manager Access accepts only its synthetic demo credentials without a feature flag", () => {
   assert.equal(
-    authenticateLocalSimulatorAdmin(true, LOCAL_SIMULATOR_ADMIN_EMAIL, LOCAL_SIMULATOR_ADMIN_PASSWORD).allowed,
+    authenticateLocalSimulatorAdmin(LOCAL_SIMULATOR_ADMIN_EMAIL, LOCAL_SIMULATOR_ADMIN_PASSWORD).allowed,
     true
   );
-  assert.equal(authenticateLocalSimulatorAdmin(true, LOCAL_SIMULATOR_ADMIN_EMAIL, "wrong-password").allowed, false);
-  assert.equal(
-    authenticateLocalSimulatorAdmin(false, LOCAL_SIMULATOR_ADMIN_EMAIL, LOCAL_SIMULATOR_ADMIN_PASSWORD).allowed,
-    false
-  );
+  assert.equal(authenticateLocalSimulatorAdmin(LOCAL_SIMULATOR_ADMIN_EMAIL, "wrong-password").allowed, false);
 });
 
-test("the local Admin Portal welcomes admins before presenting Span Simulator as a tool", () => {
+test("local Manager Access welcomes authorized users before presenting Span Simulator as a tool", () => {
   const signedOutView = getLocalAdminPortalView(false);
-  assert.equal(signedOutView.heading, "Welcome to the Admin Portal");
+  assert.equal(signedOutView.heading, "Welcome to Manager Access");
   assert.deepEqual(signedOutView.tools, []);
 
   const signedInView = getLocalAdminPortalView(true);
-  assert.equal(signedInView.heading, "Welcome to the Admin Portal");
+  assert.equal(signedInView.heading, "Welcome to Manager Access");
   assert.deepEqual(signedInView.tools.map((tool) => tool.label), ["Span Simulator"]);
-  assert.equal(signedInView.tools[0]?.href, "/admin/span-simulator?role=simulator_admin");
+  assert.equal(signedInView.tools[0]?.href, "/admin/span-simulator");
 });
 
 test("exports preserve synthetic identity and spreadsheet-safe CSV", () => {

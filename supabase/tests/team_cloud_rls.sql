@@ -1,7 +1,8 @@
 -- pgTAP policy contract for Weekform Team Cloud v1.
 -- Intended for `supabase test db` after applying the Team Cloud migrations,
 -- including 202607190001_team_cloud_v1.sql and
--- 202607190003_team_actions.sql.
+-- 202607190003_team_actions.sql and its upgrade-safe hardening migration
+-- 202607190005_team_actions_rpc_hardening.sql.
 -- NOT EXECUTED IN THIS REPOSITORY: no Supabase CLI/local Postgres stack was
 -- available when this file was authored. Every expectation below is EXPECTED,
 -- not VERIFIED, until this file runs against a local stack.
@@ -19,7 +20,7 @@
 
 begin;
 create extension if not exists pgtap;
-select plan(76);
+select plan(80);
 
 -- ---------------------------------------------------------------------------
 -- Schema contract
@@ -67,6 +68,26 @@ select is(
   has_table_privilege('authenticated', 'public.team_actions', 'DELETE'),
   false,
   'authenticated clients have no direct team_actions DELETE privilege'
+);
+select is(
+  has_column_privilege('anon', 'public.team_actions', 'status', 'UPDATE'),
+  false,
+  'anonymous clients have no direct team_actions.status UPDATE privilege'
+);
+select is(
+  has_column_privilege('anon', 'public.team_actions', 'resolved_at', 'UPDATE'),
+  false,
+  'anonymous clients have no direct team_actions.resolved_at UPDATE privilege'
+);
+select is(
+  has_column_privilege('authenticated', 'public.team_actions', 'status', 'UPDATE'),
+  false,
+  'authenticated clients have no direct team_actions.status UPDATE privilege'
+);
+select is(
+  has_column_privilege('authenticated', 'public.team_actions', 'resolved_at', 'UPDATE'),
+  false,
+  'authenticated clients have no direct team_actions.resolved_at UPDATE privilege'
 );
 
 -- ---------------------------------------------------------------------------

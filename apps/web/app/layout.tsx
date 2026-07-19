@@ -6,11 +6,11 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Weekform — team capacity without surveillance",
+    default: "Weekform — See what shaped your week",
     template: "%s · Weekform",
   },
   description:
-    "Weekform gives each teammate private workload intelligence on their Mac and lets them share only approved capacity signals with the people coordinating the work.",
+    "Local workload intelligence for individual analysts. Review what shaped your week, understand reliable capacity, and decide what fits next.",
 };
 
 export const viewport: Viewport = {

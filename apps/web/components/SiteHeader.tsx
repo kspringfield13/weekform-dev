@@ -2,13 +2,14 @@ import Link from "next/link";
 
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/auth/actions";
+import { WeekformMark } from "@/components/WeekformMark";
 
 /**
  * Shared site header. Server component: reads the session (when Supabase is
  * configured) to swap the auth controls, and renders a plain marketing
  * header otherwise.
  */
-export async function SiteHeader() {
+export async function SiteHeader({ variant = "default" }: { variant?: "default" | "immersive" }) {
   const supabase = await createClient();
   let signedIn = false;
 
@@ -20,12 +21,11 @@ export async function SiteHeader() {
   }
 
   return (
-    <header className="site-header">
+    <header className={variant === "immersive" ? "site-header site-header-immersive" : "site-header"}>
       <div className="container site-header-inner">
-        <Link href="/" className="wordmark">
-          <span className="wordmark-dot" aria-hidden="true" />
-          Weekform
-          <span className="wordmark-tag">prototype</span>
+        <Link href="/" className="wordmark" aria-label="Weekform home">
+          <WeekformMark className="wordmark-mark" />
+          <span className="wordmark-text">Weekform</span>
         </Link>
         <nav className="nav-links" aria-label="Primary">
           {signedIn ? (
@@ -44,14 +44,17 @@ export async function SiteHeader() {
             </>
           ) : (
             <>
-              <Link href="/#privacy" className="button button-ghost">
+              <Link href="/#product" className="button button-ghost nav-product">
+                Product
+              </Link>
+              <Link href="/#privacy" className="button button-ghost nav-privacy">
                 Privacy
               </Link>
               <Link href="/login" className="button button-ghost">
                 Sign in
               </Link>
-              <Link href="/signup" className="button button-primary">
-                Create account
+              <Link href="/signup" className="button button-primary header-cta">
+                Get Weekform
               </Link>
             </>
           )}

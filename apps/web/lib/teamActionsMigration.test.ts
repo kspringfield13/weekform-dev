@@ -9,6 +9,10 @@ const MIGRATION_URL = new URL(
   "../../../supabase/migrations/202607190003_team_actions.sql",
   import.meta.url,
 );
+const HARDENING_MIGRATION_URL = new URL(
+  "../../../supabase/migrations/202607190005_team_actions_rpc_hardening.sql",
+  import.meta.url,
+);
 const RLS_TEST_URL = new URL(
   "../../../supabase/tests/team_cloud_rls.sql",
   import.meta.url,
@@ -16,6 +20,14 @@ const RLS_TEST_URL = new URL(
 
 function executableSql(): string {
   return readFileSync(MIGRATION_URL, "utf8")
+    .replace(/--[^\n]*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function hardeningSql(): string {
+  return readFileSync(HARDENING_MIGRATION_URL, "utf8")
     .replace(/--[^\n]*/g, " ")
     .replace(/\s+/g, " ")
     .trim()
@@ -77,6 +89,94 @@ test("team action writes are RPC-only and authenticated-only", () => {
   }
 });
 
+test("an additive migration hardens databases that already applied the original 003", () => {
+  const sql = hardeningSql();
+
+  assert.match(sql, /drop policy if exists team_actions_insert_managers on public\.team_actions\s*;/);
+  assert.match(sql, /drop policy if exists team_actions_update_managers on public\.team_actions\s*;/);
+  assert.match(sql, /drop policy if exists team_actions_delete_managers on public\.team_actions\s*;/);
+  assert.match(
+    sql,
+    /revoke all on table public\.team_actions from public, anon, authenticated\s*;/,
+    "the upgrade must remove legacy table-level write grants",
+  );
+  assert.match(
+    sql,
+    /revoke update \(status, resolved_at\) on table public\.team_actions from public, anon, authenticated\s*;/,
+    "the upgrade must separately remove the legacy column-level UPDATE grant",
+  );
+  assert.match(sql, /grant select on table public\.team_actions to authenticated\s*;/);
+  assert.doesNotMatch(
+    sql,
+    /grant\s+(?:all|insert|update|delete|[^;]*\b(?:insert|update|delete)\b)[^;]*on table public\.team_actions/,
+    "the upgrade must not restore a direct write grant",
+  );
+
+  for (const boundary of [
+    {
+      definition: /create or replace function public\.create_team_action\s*\(\s*p_team_id uuid\s*,\s*p_action_text text\s*,\s*p_risk_flag_key text default null\s*\)\s*returns public\.team_actions language plpgsql security definer set search_path\s*=\s*''/,
+      signature: "create_team_action\\(uuid, text, text\\)",
+    },
+    {
+      definition: /create or replace function public\.resolve_team_action\s*\(\s*p_team_id uuid\s*,\s*p_action_id uuid\s*,\s*p_status text\s*\)\s*returns public\.team_actions language plpgsql security definer set search_path\s*=\s*''/,
+      signature: "resolve_team_action\\(uuid, uuid, text\\)",
+    },
+    {
+      definition: /create or replace function public\.delete_team_action\s*\(\s*p_team_id uuid\s*,\s*p_action_id uuid\s*\)\s*returns void language plpgsql security definer set search_path\s*=\s*''/,
+      signature: "delete_team_action\\(uuid, uuid\\)",
+    },
+  ]) {
+    assert.match(sql, boundary.definition, "the upgrade must replace the complete hardened RPC body");
+    assert.match(
+      sql,
+      new RegExp(`revoke all on function public\\.${boundary.signature} from public, anon, authenticated\\s*;`),
+    );
+    assert.match(
+      sql,
+      new RegExp(`grant execute on function public\\.${boundary.signature} to authenticated\\s*;`),
+    );
+  }
+
+  const creation = creationFunction(sql).body;
+  assert.match(creation, /caller uuid\s*:=\s*auth\.uid\(\)/);
+  assert.match(creation, /if caller is null then raise exception/);
+  assert.match(
+    creation,
+    /if p_team_id is null or not private\.is_team_manager\(p_team_id, caller\) then raise exception/,
+  );
+  assert.match(creation, /normalized_action_text := btrim\(p_action_text, e' \\t\\n\\r\\f\\013'\)/);
+  assert.match(creation, /normalized_action_text := left\(normalized_action_text, 500\)/);
+  assert.match(creation, /p_risk_flag_key not in\s*\(\s*'low-headroom', 'high-reactive', 'high-meetings', 'high-fragmentation', 'low-review-coverage', 'stale-data'\s*\)/);
+  assert.match(
+    creation,
+    /insert into public\.team_actions\s*\(\s*team_id, created_by, action_text, risk_flag_key, status, created_at, resolved_at\s*\)\s*values\s*\(\s*p_team_id, caller, normalized_action_text, p_risk_flag_key, 'open', now\(\), null\s*\)/,
+    "the upgrade create RPC must server-set every identity and chronology field",
+  );
+
+  const resolution = sql.match(
+    /create or replace function public\.resolve_team_action\s*\([^$]+?\)\s*returns public\.team_actions language plpgsql security definer set search_path\s*=\s*''\s*as\s*\$\$(.*?)\$\$\s*;/,
+  );
+  assert.ok(resolution, "the upgrade must contain the complete resolution RPC");
+  assert.match(resolution[1]!, /caller uuid\s*:=\s*auth\.uid\(\)/);
+  assert.match(resolution[1]!, /private\.is_team_manager\(p_team_id, caller\)/);
+  assert.match(resolution[1]!, /p_status not in \('done', 'dropped'\)/);
+  assert.match(
+    resolution[1]!,
+    /update public\.team_actions set status = p_status, resolved_at = now\(\) where team_id = p_team_id and id = p_action_id/,
+  );
+
+  const deletion = sql.match(
+    /create or replace function public\.delete_team_action\s*\([^$]+?\)\s*returns void language plpgsql security definer set search_path\s*=\s*''\s*as\s*\$\$(.*?)\$\$\s*;/,
+  );
+  assert.ok(deletion, "the upgrade must contain the complete deletion RPC");
+  assert.match(deletion[1]!, /caller uuid\s*:=\s*auth\.uid\(\)/);
+  assert.match(deletion[1]!, /private\.is_team_manager\(p_team_id, caller\)/);
+  assert.match(
+    deletion[1]!,
+    /delete from public\.team_actions where team_id = p_team_id and id = p_action_id/,
+  );
+});
+
 test("resolution and deletion reauthorize managers and keep lifecycle values server-owned", () => {
   const sql = executableSql();
   const resolve = sql.match(
@@ -117,6 +217,15 @@ test("live RLS contract checks both client roles have no direct write privilege"
           `has_table_privilege\\('${role}', 'public\\.team_actions', '${operation}'\\)\\s*,\\s*false`,
         ),
         `pgTAP must prove ${role} has no direct team_actions ${operation.toUpperCase()} privilege`,
+      );
+    }
+    for (const column of ["status", "resolved_at"]) {
+      assert.match(
+        rlsContract,
+        new RegExp(
+          `has_column_privilege\\('${role}', 'public\\.team_actions', '${column}', 'update'\\)\\s*,\\s*false`,
+        ),
+        `pgTAP must prove ${role} has no direct UPDATE privilege on team_actions.${column}`,
       );
     }
   }

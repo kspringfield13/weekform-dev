@@ -11,9 +11,9 @@ import {
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Admin Portal",
+  title: "Manager Access",
   description:
-    "Weekform's access-controlled administration surface for synthetic workload tools.",
+    "Weekform's access-controlled manager workspace and synthetic administration surface.",
   robots: { index: false, follow: false },
 };
 
