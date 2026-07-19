@@ -289,11 +289,23 @@ export function WalkthroughOverlay({
         >
           <X size={15} aria-hidden="true" />
         </button>
-        <strong className="walkthrough-title" id={titleId}>{step.title}</strong>
-        <p className="walkthrough-body" id={bodyId}>{step.body}</p>
+        {/* Keyed by step so the text re-mounts and plays its enter transition. */}
+        <div className="walkthrough-step-content" key={stepIndex}>
+          <strong className="walkthrough-title" id={titleId}>{step.title}</strong>
+          <p className="walkthrough-body" id={bodyId}>{step.body}</p>
+        </div>
         <div className="walkthrough-progress" aria-hidden="true">
           {WALKTHROUGH_STEPS.map((_, i) => (
-            <span key={i} className={i === stepIndex ? "walkthrough-dot is-active" : "walkthrough-dot"} />
+            <span
+              key={i}
+              className={
+                i === stepIndex
+                  ? "walkthrough-dot is-active"
+                  : i < stepIndex
+                    ? "walkthrough-dot is-done"
+                    : "walkthrough-dot"
+              }
+            />
           ))}
         </div>
         <span className="sr-only">

@@ -11,6 +11,7 @@ import {
   Check,
   Compass,
   Lock,
+  LogIn,
   MonitorPlay,
   Radio,
   Sparkles,
@@ -44,6 +45,7 @@ export function GettingStartedModal({
   onEnableTracking,
   onRetentionDaysChange,
   onConnectOpenAiKey,
+  onConnectViaChatGpt,
   onConnectViaCodex,
   onOpenDemo,
   onDismiss,
@@ -62,6 +64,8 @@ export function GettingStartedModal({
   onRetentionDaysChange: (value: number | null) => void;
   /** Save a pasted OpenAI API key as the provider config (OpenAI defaults). */
   onConnectOpenAiKey: (apiKey: string) => void;
+  /** Sign in with ChatGPT in the browser (OAuth); resolves a success message. */
+  onConnectViaChatGpt: () => Promise<string>;
   /** Import an API key from the Codex CLI sign-in; resolves a success message. */
   onConnectViaCodex: () => Promise<string>;
   /** Open the simulated-week demo (finishes the wizard first). */
@@ -72,7 +76,9 @@ export function GettingStartedModal({
   const [stepIndex, setStepIndex] = useState(0);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [codexBusy, setCodexBusy] = useState(false);
+  const [chatGptBusy, setChatGptBusy] = useState(false);
   const [aiConnectError, setAiConnectError] = useState<string | null>(null);
+  const connectBusy = codexBusy || chatGptBusy;
 
   const connectPastedKey = () => {
     const key = apiKeyDraft.trim();
@@ -80,6 +86,18 @@ export function GettingStartedModal({
     setAiConnectError(null);
     onConnectOpenAiKey(key);
     setApiKeyDraft("");
+  };
+
+  const connectViaChatGpt = async () => {
+    setChatGptBusy(true);
+    setAiConnectError(null);
+    try {
+      await onConnectViaChatGpt();
+    } catch (error) {
+      setAiConnectError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setChatGptBusy(false);
+    }
   };
 
   const connectViaCodex = async () => {
@@ -169,7 +187,8 @@ export function GettingStartedModal({
           </p>
         </header>
 
-        <div className="getting-started-step">
+        {/* Keyed by step so each pane re-mounts and plays its enter transition. */}
+        <div className="getting-started-step" key={step}>
           {step === "privacy" && (
             <section className="getting-started-section">
               <span className="getting-started-icon" aria-hidden="true">
@@ -327,16 +346,28 @@ export function GettingStartedModal({
                         Connect
                       </button>
                     </form>
-                    <button
-                      className="getting-started-btn getting-started-step-action"
-                      type="button"
-                      onClick={() => void connectViaCodex()}
-                      disabled={codexBusy}
-                      aria-busy={codexBusy}
-                    >
-                      <Sparkles size={14} aria-hidden="true" />
-                      {codexBusy ? "Checking your Codex sign-in…" : "Use my Codex subscription"}
-                    </button>
+                    <div className="getting-started-alt-connects">
+                      <button
+                        className="getting-started-btn"
+                        type="button"
+                        onClick={() => void connectViaChatGpt()}
+                        disabled={connectBusy}
+                        aria-busy={chatGptBusy}
+                      >
+                        <LogIn size={14} aria-hidden="true" />
+                        {chatGptBusy ? "Finish signing in your browser…" : "Sign in with ChatGPT"}
+                      </button>
+                      <button
+                        className="getting-started-btn"
+                        type="button"
+                        onClick={() => void connectViaCodex()}
+                        disabled={connectBusy}
+                        aria-busy={codexBusy}
+                      >
+                        <Sparkles size={14} aria-hidden="true" />
+                        {codexBusy ? "Checking your Codex sign-in…" : "Use my Codex subscription"}
+                      </button>
+                    </div>
                     {aiConnectError && (
                       <p className="getting-started-connect-error" role="alert">
                         {aiConnectError}
@@ -390,7 +421,16 @@ export function GettingStartedModal({
 
         <div className="getting-started-progress" aria-hidden="true">
           {STEP_IDS.map((id, i) => (
-            <span key={id} className={i === stepIndex ? "getting-started-dot is-active" : "getting-started-dot"} />
+            <span
+              key={id}
+              className={
+                i === stepIndex
+                  ? "getting-started-dot is-active"
+                  : i < stepIndex
+                    ? "getting-started-dot is-done"
+                    : "getting-started-dot"
+              }
+            />
           ))}
         </div>
         <span className="sr-only">

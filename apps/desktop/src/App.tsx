@@ -1354,6 +1354,18 @@ export function App() {
     setAiConfig({ ...createDefaultAIConfig("openai"), apiKey: trimmed });
   }
 
+  // Connect OpenAI by signing in with a ChatGPT account in the browser. The
+  // Rust command runs the OAuth/PKCE flow (localhost callback, token exchange)
+  // and resolves to a plain platform API key, saved exactly like a pasted one.
+  async function connectViaChatGptFromWizard(): Promise<string> {
+    if (!("__TAURI_INTERNALS__" in window)) {
+      throw new Error("Signing in with ChatGPT needs the desktop app — paste an API key instead.");
+    }
+    const result = await invoke<{ apiKey: string }>("connect_openai_via_chatgpt");
+    setAiConfig({ ...createDefaultAIConfig("openai"), apiKey: result.apiKey });
+    return "Connected with your ChatGPT sign-in.";
+  }
+
   // Connect OpenAI by importing the API key from the Codex CLI's sign-in
   // (~/.codex/auth.json). The Rust command rejects with user-facing copy when
   // there's no sign-in or it's a subscription-only login without an API key.
@@ -2314,6 +2326,7 @@ export function App() {
           onEnableTracking={() => setPaused(false)}
           onRetentionDaysChange={changeRetentionDays}
           onConnectOpenAiKey={connectOpenAiKeyFromWizard}
+          onConnectViaChatGpt={connectViaChatGptFromWizard}
           onConnectViaCodex={connectViaCodexFromWizard}
           onOpenDemo={openDemoSimulation}
           onDismiss={() => finishGettingStarted(paused ? "skipped" : "enabled")}

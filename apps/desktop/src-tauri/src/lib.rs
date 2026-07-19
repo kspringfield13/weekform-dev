@@ -575,6 +575,247 @@ fn connect_openai_via_codex() -> Result<CodexConnectResult, String> {
     }
 }
 
+// --- ChatGPT browser sign-in (OAuth + PKCE) -------------------------------
+//
+// Mirrors the Codex CLI login flow: open auth.openai.com in the browser with a
+// PKCE challenge, catch the redirect on a short-lived localhost listener, then
+// exchange the resulting id_token for a platform API key. The end product is a
+// plain OpenAI API key — the same thing the paste-a-key path saves — so every
+// downstream AI call works unchanged.
+
+const CHATGPT_OAUTH_ISSUER: &str = "https://auth.openai.com";
+// The Codex CLI's public OAuth client id; its localhost redirect below is the
+// registered callback for this client.
+const CHATGPT_OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+const CHATGPT_OAUTH_PORT: u16 = 1455;
+const CHATGPT_OAUTH_REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
+const CHATGPT_OAUTH_TIMEOUT_SECS: u64 = 300;
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChatGptConnectResult {
+    api_key: String,
+}
+
+fn random_urlsafe(byte_len: usize) -> String {
+    use rand::RngCore;
+    let mut buf = vec![0u8; byte_len];
+    rand::rngs::OsRng.fill_bytes(&mut buf);
+    general_purpose::URL_SAFE_NO_PAD.encode(buf)
+}
+
+fn oauth_html_response(stream: &mut std::net::TcpStream, status: u16, message: &str) {
+    use std::io::Write;
+    let body = format!(
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>Weekform</title></head>\
+         <body style=\"display:grid;place-items:center;height:100vh;margin:0;\
+         font-family:-apple-system,system-ui,sans-serif;background:#141413;color:#f2f1ed\">\
+         <p style=\"max-width:420px;text-align:center;line-height:1.6\">{message}</p></body></html>"
+    );
+    let status_line = if status == 200 { "200 OK" } else { "404 Not Found" };
+    let _ = stream.write_all(
+        format!(
+            "HTTP/1.1 {status_line}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .as_bytes(),
+    );
+}
+
+/// Blocks until the browser hits the localhost callback with an authorization
+/// code (or the deadline passes). Non-callback requests (favicon probes and the
+/// like) get a 404 and the wait continues.
+fn wait_for_oauth_callback(
+    listener: std::net::TcpListener,
+    expected_state: &str,
+) -> Result<String, String> {
+    use std::io::Read;
+    listener
+        .set_nonblocking(true)
+        .map_err(|error| format!("Could not prepare the sign-in listener: {error}"))?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(CHATGPT_OAUTH_TIMEOUT_SECS);
+
+    loop {
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                let _ = stream.set_nonblocking(false);
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                let mut buf = [0u8; 4096];
+                let read = stream.read(&mut buf).unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..read]);
+                let path = request
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .unwrap_or("");
+
+                let Some(query) = path.strip_prefix("/auth/callback?") else {
+                    oauth_html_response(&mut stream, 404, "Not found.");
+                    continue;
+                };
+
+                let mut code = None;
+                let mut callback_state = None;
+                let mut callback_error = None;
+                for pair in query.split('&') {
+                    let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+                    match key {
+                        "code" => code = Some(value.to_string()),
+                        "state" => callback_state = Some(value.to_string()),
+                        "error" => callback_error = Some(value.to_string()),
+                        _ => {}
+                    }
+                }
+
+                if let Some(error) = callback_error {
+                    oauth_html_response(
+                        &mut stream,
+                        200,
+                        "Sign-in was not completed. You can close this tab and try again from Weekform.",
+                    );
+                    return Err(format!("ChatGPT sign-in was not completed ({error})."));
+                }
+
+                match (code, callback_state) {
+                    (Some(code), Some(state)) if state == expected_state => {
+                        oauth_html_response(
+                            &mut stream,
+                            200,
+                            "You're signed in. Close this tab and return to Weekform.",
+                        );
+                        return Ok(code);
+                    }
+                    _ => {
+                        oauth_html_response(
+                            &mut stream,
+                            200,
+                            "This sign-in response could not be verified. Return to Weekform and try again.",
+                        );
+                        return Err(
+                            "The sign-in response could not be verified. Please try again."
+                                .to_string(),
+                        );
+                    }
+                }
+            }
+            Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if std::time::Instant::now() > deadline {
+                    return Err(
+                        "Timed out waiting for the browser sign-in. Try again, or paste an API key instead."
+                            .to_string(),
+                    );
+                }
+                thread::sleep(Duration::from_millis(120));
+            }
+            Err(error) => return Err(format!("The sign-in listener failed: {error}")),
+        }
+    }
+}
+
+/// Sign in with a ChatGPT account in the browser and come back with an OpenAI
+/// API key. Fails with user-facing copy at every step — port in use, cancelled
+/// sign-in, timeout, or an account whose sign-in can't mint a platform key.
+#[tauri::command]
+async fn connect_openai_via_chatgpt() -> Result<ChatGptConnectResult, String> {
+    use sha2::{Digest, Sha256};
+
+    let verifier = random_urlsafe(64);
+    let challenge = general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    let state = random_urlsafe(32);
+
+    // Bind before opening the browser so a dead click can't race the listener.
+    let listener = std::net::TcpListener::bind(("127.0.0.1", CHATGPT_OAUTH_PORT)).map_err(|_| {
+        format!(
+            "Port {CHATGPT_OAUTH_PORT} is busy — close any other OpenAI sign-in window (or Codex login) and try again."
+        )
+    })?;
+
+    let authorize_url = format!(
+        "{CHATGPT_OAUTH_ISSUER}/oauth/authorize\
+         ?response_type=code\
+         &client_id={CHATGPT_OAUTH_CLIENT_ID}\
+         &redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback\
+         &scope=openid%20profile%20email%20offline_access\
+         &code_challenge={challenge}\
+         &code_challenge_method=S256\
+         &id_token_add_organizations=true\
+         &codex_cli_simplified_flow=true\
+         &state={state}"
+    );
+    tauri_plugin_opener::open_url(&authorize_url, None::<&str>)
+        .map_err(|error| format!("Could not open your browser for sign-in: {error}"))?;
+
+    let expected_state = state.clone();
+    let code = tauri::async_runtime::spawn_blocking(move || {
+        wait_for_oauth_callback(listener, &expected_state)
+    })
+    .await
+    .map_err(|error| format!("The sign-in listener failed: {error}"))??;
+
+    let client = reqwest::Client::new();
+    let token_response = client
+        .post(format!("{CHATGPT_OAUTH_ISSUER}/oauth/token"))
+        .form(&[
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("redirect_uri", CHATGPT_OAUTH_REDIRECT_URI),
+            ("client_id", CHATGPT_OAUTH_CLIENT_ID),
+            ("code_verifier", verifier.as_str()),
+        ])
+        .send()
+        .await
+        .map_err(|error| format!("The sign-in token request failed: {error}"))?;
+    let token_value = token_response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("The sign-in token response could not be read: {error}"))?;
+    let id_token = token_value
+        .get("id_token")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            extract_provider_error(&token_value)
+                .map(str::to_string)
+                .unwrap_or_else(|| "The sign-in did not return the expected credentials.".to_string())
+        })?;
+
+    // Exchange the identity token for a platform API key (the same exchange
+    // `codex login` performs). Subscription-only accounts without platform
+    // access are rejected here with honest copy.
+    let exchange_response = client
+        .post(format!("{CHATGPT_OAUTH_ISSUER}/oauth/token"))
+        .form(&[
+            ("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange"),
+            ("client_id", CHATGPT_OAUTH_CLIENT_ID),
+            ("requested_token", "openai-api-key"),
+            ("subject_token", id_token),
+            ("subject_token_type", "urn:ietf:params:oauth:token-type:id_token"),
+        ])
+        .send()
+        .await
+        .map_err(|error| format!("The API-key exchange failed: {error}"))?;
+    let exchange_status = exchange_response.status();
+    let exchange_value = exchange_response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("The API-key exchange response could not be read: {error}"))?;
+
+    let api_key = exchange_value
+        .get("access_token")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+
+    match api_key {
+        Some(key) if exchange_status.is_success() => Ok(ChatGptConnectResult {
+            api_key: key.to_string(),
+        }),
+        _ => Err(
+            "Signed in, but this ChatGPT account can't mint an OpenAI platform API key — that usually means a subscription without API access. Create a key at platform.openai.com and paste it instead."
+                .to_string(),
+        ),
+    }
+}
+
 fn get_ai_credentials(config: Option<&AIConfigRequest>) -> Result<(String, String), String> {
     let provider = config
         .and_then(|c| c.provider.as_deref())
@@ -1633,6 +1874,7 @@ pub fn run() {
             set_default_window_mode,
             get_env_ai_key_status,
             connect_openai_via_codex,
+            connect_openai_via_chatgpt,
             present_main_window,
             chat_with_agent,
             ai_complete,
