@@ -24,6 +24,7 @@ export function ForecastScreen({
   forecastError,
   onGenerateForecast,
   hasWorkBlocks,
+  aiAvailable,
   onOpenScreen,
 }: {
   snapshot: ReturnType<typeof computeWeeklyCapacitySnapshot>;
@@ -39,6 +40,7 @@ export function ForecastScreen({
   forecastError: string | null;
   onGenerateForecast: () => void;
   hasWorkBlocks: boolean;
+  aiAvailable: boolean;
 }) {
   // Close the correction feedback loop: surface systematic mislabels the user keeps fixing so
   // the forecast can be read with the model's known blind spots in mind. No retraining.
@@ -119,6 +121,7 @@ export function ForecastScreen({
         status={forecastStatus}
         error={forecastError}
         deterministicReliableCapacity={snapshot.reliable_new_work_capacity_pct}
+        aiAvailable={aiAvailable}
         onGenerate={onGenerateForecast}
       />
       {/* Week-over-week context lives with the forecast: the trajectory behind

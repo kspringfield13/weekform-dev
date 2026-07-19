@@ -73,6 +73,8 @@ interface ScreenRouterProps {
   accelerationError: string | null;
   onGenerateAccelerationPlays: () => void;
   accelerationConfigured: boolean;
+  /** AI access exists (saved key or env fallback) — false grays every AI-trigger button. */
+  aiAvailable: boolean;
   accelerationGeneratedAt: string | null;
   hasAuthoredPlays: boolean;
   onConfirm: (blockId: string) => void;
@@ -89,6 +91,8 @@ interface ScreenRouterProps {
   // setup screen
   activeSettingsTab: SettingsTab;
   onActiveSettingsTabChange: (tab: SettingsTab) => void;
+  defaultWindowMode: WindowMode;
+  onDefaultWindowModeChange: (mode: WindowMode) => void;
   visualContextEnabled: boolean;
   setVisualContextEnabled: (value: boolean) => void;
   visualContextInsights: VisualContextInsight[];
@@ -202,6 +206,7 @@ export function ScreenRouter({
   accelerationError,
   onGenerateAccelerationPlays,
   accelerationConfigured,
+  aiAvailable,
   accelerationGeneratedAt,
   hasAuthoredPlays,
   onConfirm,
@@ -216,6 +221,8 @@ export function ScreenRouter({
   onReplayWalkthrough,
   activeSettingsTab,
   onActiveSettingsTabChange,
+  defaultWindowMode,
+  onDefaultWindowModeChange,
   visualContextEnabled,
   setVisualContextEnabled,
   visualContextInsights,
@@ -320,6 +327,7 @@ export function ScreenRouter({
     <>
       {active === "setup" && (
         <SetupScreen
+          aiAvailable={aiAvailable}
           paused={paused}
           setPaused={setPaused}
           visualContextEnabled={visualContextEnabled}
@@ -354,6 +362,8 @@ export function ScreenRouter({
           proactiveAlertSettings={proactiveAlertSettings}
           onProactiveAlertSettingsChange={onProactiveAlertSettingsChange}
           onReplayWalkthrough={onReplayWalkthrough}
+          defaultWindowMode={defaultWindowMode}
+          onDefaultWindowModeChange={onDefaultWindowModeChange}
           activeSettingsTab={activeSettingsTab}
           onActiveSettingsTabChange={onActiveSettingsTabChange}
           cloud={cloud}
@@ -361,6 +371,7 @@ export function ScreenRouter({
       )}
       {active === "ledger" && (
         <LedgerScreen
+          aiAvailable={aiAvailable}
           blocks={blocks}
           activeWindowSamples={activeWindowSamples}
           activeWindowSessions={activeWindowSessions}
@@ -380,6 +391,7 @@ export function ScreenRouter({
       )}
       {active === "daily" && (
         <DailyReviewScreen
+          aiAvailable={aiAvailable}
           blocks={blocks}
           onboardingSteps={onboardingSteps}
           showOnboarding={showOnboarding}
@@ -414,6 +426,7 @@ export function ScreenRouter({
       )}
       {active === "forecast" && (
         <ForecastScreen
+          aiAvailable={aiAvailable}
           snapshot={snapshot}
           snapshotHistory={snapshotHistory}
           nextWeekRangeLabel={nextWeekRangeLabel}
@@ -440,6 +453,7 @@ export function ScreenRouter({
       )}
       {active === "narrative" && (
         <NarrativeScreen
+          aiAvailable={aiAvailable}
           narrative={narrative}
           generatedNarrative={generatedNarrative}
           weekRangeLabel={weekRangeLabel}
@@ -507,6 +521,7 @@ export function ScreenRouter({
       )}
       {active === "agent" && (
         <AgentScreen
+          aiAvailable={aiAvailable}
           blocks={blocks}
           snapshot={snapshot}
           activeWindowSessions={activeWindowSessions}

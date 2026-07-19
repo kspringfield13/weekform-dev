@@ -34,6 +34,7 @@ import { normalizeWeekId } from "../../../../../packages/inference/src/capacity"
 import { getCurrentIsoWeekId, getLocalDateKey } from "../../lib/date";
 import { formatClockTime, formatCount } from "../../lib/format";
 import { withAiTimeout } from "../../lib/aiTimeout";
+import { AI_UNAVAILABLE_HINT } from "../../lib/constants";
 import { scrollBehavior } from "../../lib/motion";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { AgentMark } from "../common/AgentMark";
@@ -130,6 +131,8 @@ interface AgentScreenProps {
   todayKey: string;
   currentWeekRangeLabel: string;
   aiConfig: AIConfig | null;
+  /** AI access exists (saved key or env fallback) — false grays the send control. */
+  aiAvailable: boolean;
   hasNarrativeEvidence: boolean;
   onOpenScreen: (screen: Screen) => void;
   onClassifySessions: () => Promise<AppActionResult>;
@@ -224,6 +227,7 @@ export function AgentScreen({
   todayKey,
   currentWeekRangeLabel,
   aiConfig,
+  aiAvailable,
   hasNarrativeEvidence,
   onOpenScreen,
   onClassifySessions,
@@ -936,7 +940,7 @@ ${latestUserQuestion}`;
   }
 
   function handleSuggested(question: string) {
-    if (isSending) return;
+    if (isSending || !aiAvailable) return;
     void sendMessage(question);
   }
 
@@ -1098,8 +1102,8 @@ ${latestUserQuestion}`;
           </p>
           {hasSignal ? (
             <div className="briefing-actions">
-              <button type="button" onClick={() => handleSuggested("Explain why my reliable capacity is at its current level.")}>Explain forecast <ArrowRight size={14} aria-hidden /></button>
-              <button type="button" onClick={() => handleSuggested("Help me plan my week around my current reliable capacity.")}>Plan my week <ArrowRight size={14} aria-hidden /></button>
+              <button type="button" disabled={!aiAvailable} title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT} onClick={() => handleSuggested("Explain why my reliable capacity is at its current level.")}>Explain forecast <ArrowRight size={14} aria-hidden /></button>
+              <button type="button" disabled={!aiAvailable} title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT} onClick={() => handleSuggested("Help me plan my week around my current reliable capacity.")}>Plan my week <ArrowRight size={14} aria-hidden /></button>
             </div>
           ) : hasRawSessions && (
             <div className="briefing-actions">
@@ -1117,7 +1121,7 @@ ${latestUserQuestion}`;
               {starterActions.map((action) => {
                 const Icon = action.icon;
                 return (
-                  <button key={action.title} type="button" onClick={() => handleSuggested(action.prompt)}>
+                  <button key={action.title} type="button" disabled={!aiAvailable} title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT} onClick={() => handleSuggested(action.prompt)}>
                     <span className={`starter-icon starter-icon--${action.iconClass}`}>
                       <Icon size={17} strokeWidth={1.9} aria-hidden />
                     </span>
@@ -1240,6 +1244,8 @@ ${latestUserQuestion}`;
                             key={question}
                             type="button"
                             className="agent-followup-chip"
+                            disabled={!aiAvailable}
+                            title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT}
                             onClick={() => handleSuggested(question)}
                           >
                             {question} <ArrowRight size={12} aria-hidden />
@@ -1367,8 +1373,8 @@ ${latestUserQuestion}`;
               type="button"
               className="agent-send"
               onClick={handleSend}
-              disabled={!input.trim() || isSending}
-              title="Send"
+              disabled={!input.trim() || isSending || !aiAvailable}
+              title={aiAvailable ? "Send" : AI_UNAVAILABLE_HINT}
               aria-label="Send message"
             >
               {isSending ? <AgentMark size={16} animated aria-hidden /> : <Send size={16} aria-hidden />}

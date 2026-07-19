@@ -419,6 +419,15 @@ input {
   text-transform: none;
 }
 
+/* The badge doubles as the demo's exit control. */
+button.demo-badge {
+  cursor: pointer;
+}
+
+button.demo-badge:hover {
+  border-color: var(--info);
+}
+
 .toolbar-tabs {
   position: relative;
   justify-self: center;
@@ -1094,9 +1103,22 @@ h3 {
 }
 
 .primary-action:disabled,
-.secondary-action:disabled {
+.secondary-action:disabled,
+.settings-control:disabled,
+.briefing-actions button:disabled,
+.starter-grid button:disabled,
+.agent-followup-chip:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+/* Keep grayed AI buttons hover-inert (no lift/tint) so the disabled state reads
+   clearly while the title tooltip still explains why. */
+.settings-control:disabled:hover,
+.briefing-actions button:disabled:hover,
+.starter-grid button:disabled:hover,
+.agent-followup-chip:disabled:hover {
+  transform: none;
 }
 
 .primary-action,
@@ -11371,6 +11393,7 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
   position: fixed;
   inset: 0;
   z-index: 2000;
+  animation: overlay-fade-in 0.3s ease both;
 }
 
 /* Full-screen dim for centered (welcome/finish) steps that have no anchor. */
@@ -11378,6 +11401,11 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
   position: absolute;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
+}
+
+@keyframes overlay-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .walkthrough-settings-escape {
@@ -11396,9 +11424,16 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
   position: fixed;
   border-radius: 12px;
   border: 2px solid var(--accent);
-  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  box-shadow:
+    0 0 0 9999px rgba(0, 0, 0, 0.55),
+    0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent),
+    0 0 24px color-mix(in srgb, var(--accent) 25%, transparent);
   pointer-events: none;
-  transition: top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease;
+  transition:
+    top 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    left 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    width 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    height 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .walkthrough-card {
@@ -11413,6 +11448,9 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
   background: var(--surface-elevated);
   box-shadow: var(--shadow);
   color: var(--text);
+  /* Opacity-only entrance: the card centers via transform when unanchored, so
+     animating transform here would fight .is-centered and lurch. */
+  animation: overlay-fade-in 0.35s ease both;
 }
 
 .walkthrough-card.is-centered {
@@ -11423,12 +11461,37 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
 }
 
 .walkthrough-card.is-gliding {
-  transition: top 0.2s ease, left 0.2s ease;
+  transition:
+    top 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    left 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Step text re-mounts on every step change (keyed wrapper) and slides in. */
+.walkthrough-step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: step-content-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes step-content-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .walkthrough,
+  .walkthrough-card,
   .walkthrough-card.is-gliding,
-  .walkthrough-spotlight {
+  .walkthrough-spotlight,
+  .walkthrough-step-content {
+    animation: none;
     transition: none;
   }
 }
@@ -11447,11 +11510,17 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
   color: var(--text-subtle);
   background: transparent;
   cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
 }
 
 .walkthrough-close:hover {
   color: var(--text);
   background: var(--surface-muted);
+}
+
+.walkthrough-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .walkthrough-title {
@@ -11477,13 +11546,18 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
 .walkthrough-dot {
   width: 6px;
   height: 6px;
-  border-radius: 50%;
+  border-radius: 999px;
   background: var(--border-strong);
-  transition: background 0.2s ease;
+  transition: background 0.25s ease, width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .walkthrough-dot.is-active {
+  width: 18px;
   background: var(--accent);
+}
+
+.walkthrough-dot.is-done {
+  background: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
 }
 
 .walkthrough-actions {
@@ -11505,10 +11579,17 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
+  transition: color 0.15s ease;
 }
 
 .walkthrough-skip:hover {
   color: var(--text-muted);
+}
+
+.walkthrough-skip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .walkthrough-btn {
@@ -11523,10 +11604,20 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
   font-size: 12px;
   font-weight: 560;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
 .walkthrough-btn:hover {
   border-color: var(--border-strong);
+}
+
+.walkthrough-btn:active {
+  transform: scale(0.97);
+}
+
+.walkthrough-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .walkthrough-btn.is-primary {
@@ -11568,6 +11659,514 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
 .settings-walkthrough-replay span {
   font-size: 12px;
   color: var(--text-subtle);
+}
+
+/* ---------------------------------------------------------------------------
+   First-launch branded welcome (WelcomeOverlay.tsx)
+   --------------------------------------------------------------------------- */
+.welcome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2001; /* above the walkthrough layer so the sequence reads welcome-first */
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.welcome-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  animation: overlay-fade-in 0.4s ease both;
+}
+
+.welcome-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(440px, 100%);
+  padding: 48px 40px 36px;
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  text-align: center;
+  animation: welcome-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Staggered reveal: each element rises in slightly after the card itself, so
+   the launch moment reads as composed rather than a single popped-in block. */
+.welcome-mark,
+.welcome-title,
+.welcome-tagline,
+.welcome-begin,
+.welcome-footnote {
+  animation: welcome-item-rise 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.welcome-mark { animation-delay: 0.08s; }
+.welcome-title { animation-delay: 0.16s; }
+.welcome-tagline { animation-delay: 0.24s; }
+.welcome-begin { animation-delay: 0.32s; }
+.welcome-footnote { animation-delay: 0.4s; }
+
+.welcome-mark {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface-muted);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.welcome-mark-svg {
+  width: 40px;
+  height: 30px;
+}
+
+.welcome-title {
+  margin: 6px 0 0;
+  font-size: 24px;
+  font-weight: 660;
+  letter-spacing: -0.015em;
+}
+
+.welcome-tagline {
+  margin: 0;
+  max-width: 320px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.welcome-begin {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 10px 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--background);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.welcome-begin:hover {
+  background: var(--accent-muted);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+}
+
+.welcome-begin:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: none;
+}
+
+.welcome-begin:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.welcome-begin svg {
+  transition: transform 0.15s ease;
+}
+
+.welcome-begin:hover svg {
+  transform: translateX(2px);
+}
+
+.welcome-footnote {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  color: var(--text-subtle);
+}
+
+@keyframes welcome-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes welcome-item-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .welcome-backdrop,
+  .welcome-card,
+  .welcome-mark,
+  .welcome-title,
+  .welcome-tagline,
+  .welcome-begin,
+  .welcome-footnote {
+    animation: none;
+  }
+
+  .welcome-begin,
+  .welcome-begin svg {
+    transition: none;
+  }
+
+  .welcome-begin:hover {
+    transform: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Post-walkthrough "Getting started" modal (GettingStartedModal.tsx)
+   --------------------------------------------------------------------------- */
+.getting-started {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.getting-started-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  animation: overlay-fade-in 0.35s ease both;
+}
+
+.getting-started-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: min(600px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 30px 32px 26px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  animation: welcome-rise 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.getting-started-header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.getting-started-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.getting-started-intro {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-subtle);
+}
+
+.getting-started-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.getting-started-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  margin-top: 1px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  color: var(--text-muted);
+  transition: border-color 0.25s ease, color 0.25s ease;
+}
+
+/* Section 2's icon flips to a confirming check once tracking is on. */
+.getting-started-icon.is-on {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.getting-started-icon.is-on svg {
+  animation: getting-started-check-pop 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes getting-started-check-pop {
+  from { transform: scale(0.5); }
+  60% { transform: scale(1.15); }
+  to { transform: scale(1); }
+}
+
+.getting-started-section h2 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 620;
+  color: var(--text);
+}
+
+.getting-started-section p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.getting-started-section ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* Wizard step area. The min-height keeps the card from resizing (and the nav
+   from jumping under the pointer) as steps of different length swap in. */
+.getting-started-step {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 216px;
+  /* Re-mounts on step change (keyed in GettingStartedModal) and slides in. */
+  animation: step-content-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.getting-started-progress {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+}
+
+.getting-started-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background 0.25s ease, width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.getting-started-dot.is-active {
+  width: 18px;
+  background: var(--accent);
+}
+
+.getting-started-dot.is-done {
+  background: color-mix(in srgb, var(--accent) 45%, var(--border-strong));
+}
+
+.getting-started-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.getting-started-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.getting-started-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 580;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.getting-started-btn:hover {
+  border-color: var(--border-strong);
+}
+
+.getting-started-btn:active {
+  transform: scale(0.98);
+}
+
+.getting-started-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.getting-started-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+  transform: none;
+}
+
+/* An action that lives inside a step body (enable tracking, play the demo). */
+.getting-started-step-action {
+  margin-top: 12px;
+}
+
+.getting-started-select {
+  margin-top: 12px;
+}
+
+/* Alternative sign-in row under the key input: ChatGPT OAuth + Codex import. */
+.getting-started-alt-connects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* AI connect row: key input + Connect button, with the sign-in row below. */
+.getting-started-connect {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.getting-started-connect input {
+  flex: 1;
+  min-width: 0;
+}
+
+.getting-started-connect-error {
+  margin-top: 10px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--danger);
+}
+
+.getting-started-section code {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.getting-started-btn.is-primary {
+  border-color: var(--border-strong);
+  background: var(--accent);
+  color: var(--background);
+}
+
+.getting-started-btn.is-primary:hover {
+  background: var(--accent-muted);
+}
+
+.getting-started-later {
+  border: 0;
+  background: transparent;
+  color: var(--text-subtle);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.getting-started-later:hover {
+  color: var(--text-muted);
+}
+
+.getting-started-later:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .getting-started-backdrop,
+  .getting-started-card,
+  .getting-started-step,
+  .getting-started-icon.is-on svg {
+    animation: none;
+  }
+
+  .getting-started-icon,
+  .getting-started-dot {
+    transition: none;
+  }
+}
+
+/* Persistent "tracking is still off" reminder (AppShell) — shows after the
+   getting-started modal was deferred, until tracking is enabled. */
+.tracking-reminder {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 16px 0;
+  padding: 9px 14px;
+  border: 1px solid var(--warning);
+  border-radius: var(--radius);
+  background: var(--amber-soft);
+}
+
+.tracking-reminder svg {
+  flex-shrink: 0;
+  color: var(--warning);
+}
+
+.tracking-reminder p {
+  flex: 1;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.tracking-reminder p strong {
+  font-weight: 620;
+  color: var(--text);
+}
+
+.tracking-reminder-enable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--background);
+  font-size: 12px;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.tracking-reminder-enable:hover {
+  background: var(--accent-muted);
 }
 
 .settings-tabs {
@@ -13728,6 +14327,20 @@ html[data-theme="dark"] .week-dashboard-hero-copy h1 {
   color: var(--text-muted);
   font-size: 14px;
   line-height: 1.55;
+}
+
+/* Empty-week hero CTA: takes the comparison chip's slot below the copy. */
+.week-dashboard-hero-action {
+  margin-top: 16px;
+}
+
+/* Inline placeholder copy inside panels whose visuals have no data yet — the
+   layout stays, the note explains what will appear. */
+.week-dashboard-empty-note {
+  margin: 10px 0 0;
+  color: var(--text-subtle);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
 
 .week-dashboard-comparison {

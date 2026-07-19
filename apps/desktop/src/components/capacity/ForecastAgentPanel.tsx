@@ -6,6 +6,7 @@ import { formatAuditTime } from "../../lib/format";
 import { ForecastList } from "../common/ForecastList";
 import { EmptyState } from "../common/EmptyState";
 import { InlineError } from "../common/InlineError";
+import { AI_UNAVAILABLE_HINT } from "../../lib/constants";
 
 export function ForecastAgentPanel({
   generatedForecast,
@@ -14,6 +15,7 @@ export function ForecastAgentPanel({
   status,
   error,
   deterministicReliableCapacity,
+  aiAvailable,
   onGenerate
 }: {
   generatedForecast: PersistedForecastRecord | null;
@@ -22,6 +24,7 @@ export function ForecastAgentPanel({
   status: "idle" | "generating" | "error";
   error: string | null;
   deterministicReliableCapacity: number;
+  aiAvailable: boolean;
   onGenerate: () => void;
 }) {
   const [isRevealingForecast, setIsRevealingForecast] = useState(false);
@@ -98,9 +101,10 @@ export function ForecastAgentPanel({
         <button
           className={`secondary-action forecast-generate-action${status === "generating" ? " is-generating" : ""}`}
           type="button"
-          disabled={status === "generating"}
+          disabled={status === "generating" || !aiAvailable}
           aria-busy={status === "generating"}
           onClick={onGenerate}
+          title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT}
         >
           <RefreshCw
             key={status === "generating" ? "generating" : "idle"}
@@ -159,7 +163,13 @@ export function ForecastAgentPanel({
           title="No AI forecast yet."
           description={`The deterministic estimate is ${pct(deterministicReliableCapacity)}. Generate a forecast to add assumptions, constraints, scenarios, and planning recommendations.`}
         >
-          <button className="secondary-action forecast-generate-action" type="button" onClick={onGenerate}>
+          <button
+            className="secondary-action forecast-generate-action"
+            type="button"
+            onClick={onGenerate}
+            disabled={!aiAvailable}
+            title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT}
+          >
             <RefreshCw className="forecast-generate-icon" size={14} aria-hidden />
             <span>Generate Forecast</span>
           </button>

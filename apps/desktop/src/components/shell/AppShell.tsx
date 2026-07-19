@@ -7,6 +7,7 @@ import {
   Gauge,
   ChevronLeft,
   UsersRound,
+  Play,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { WeeklyCapacitySnapshot } from "../../../../../packages/domain/src/models";
@@ -37,6 +38,7 @@ export function AppShell({
   setTheme,
   weekRangeLabel,
   demoMode,
+  showTrackingReminder,
   toasts,
   onDismissToast,
   managerAccessAvailable,
@@ -59,6 +61,8 @@ export function AppShell({
   setTheme: (value: "light" | "dark") => void;
   weekRangeLabel: string;
   demoMode: boolean;
+  /** Persistent "tracking is still off" nudge after the getting-started modal was deferred. */
+  showTrackingReminder: boolean;
   toasts: Toast[];
   onDismissToast: (id: string) => void;
   managerAccessAvailable: boolean;
@@ -191,11 +195,33 @@ export function AppShell({
         </>
       )}
       <main className="main-panel">
+        {showTrackingReminder && (
+          <div className="tracking-reminder" role="status">
+            <Radio size={14} aria-hidden="true" />
+            <p>
+              <strong>Tracking is off.</strong> Weekform can&rsquo;t build your weekly picture until
+              activity tracking is on.
+            </p>
+            <button className="tracking-reminder-enable" type="button" onClick={() => setPaused(false)}>
+              <Play size={13} aria-hidden="true" />
+              <span>Enable tracking</span>
+            </button>
+          </div>
+        )}
         {showContextNav ? (
           <>
             <div className="page-context-navigation">
               <ContextNavigation active={active} setActive={setActive} showFlaggedTab={showFlaggedTab} />
-              {demoMode && <b className="demo-badge">Demo</b>}
+              {demoMode && (
+                <button
+                  className="demo-badge"
+                  type="button"
+                  title="Leave the simulated demo and return to your own data"
+                  onClick={() => window.location.assign(window.location.pathname)}
+                >
+                  Demo — exit
+                </button>
+              )}
               {showWeekContext && (
                 <p className="page-week-context">
                   {/* A <p> is role="generic", where aria-label is name-prohibited and dropped by AT

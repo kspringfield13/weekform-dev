@@ -8,8 +8,10 @@ import { downloadTextFile } from "../../lib/dataExport";
 import type { PushToast } from "../../hooks/useToasts";
 import { EmptyState } from "../common/EmptyState";
 import { InlineError } from "../common/InlineError";
+import { AI_UNAVAILABLE_HINT } from "../../lib/constants";
 
 export function NarrativeScreen({
+  aiAvailable,
   narrative,
   generatedNarrative,
   weekRangeLabel,
@@ -21,6 +23,7 @@ export function NarrativeScreen({
   onRegenerate,
   pushToast
 }: {
+  aiAvailable: boolean;
   narrative: ReturnType<typeof generateWeeklyNarrative>;
   generatedNarrative: PersistedNarrativeRecord | null;
   weekRangeLabel: string;
@@ -131,9 +134,10 @@ export function NarrativeScreen({
           <button
             className={`primary-action narrative-generate-action${generationStatus === "generating" ? " is-generating" : ""}`}
             type="button"
-            disabled={generationStatus === "generating"}
+            disabled={generationStatus === "generating" || !aiAvailable}
             aria-busy={generationStatus === "generating"}
             onClick={onRegenerate}
+            title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT}
           >
             <RefreshCw
               key={generationStatus === "generating" ? "generating" : "idle"}
@@ -178,6 +182,8 @@ export function NarrativeScreen({
                 type="button"
                 className="primary-action narrative-generate-action"
                 onClick={onRegenerate}
+                disabled={!aiAvailable}
+                title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT}
               >
                 <RefreshCw className="narrative-generate-icon" size={18} aria-hidden />
                 <span>Generate Narrative</span>
@@ -208,9 +214,10 @@ export function NarrativeScreen({
               <button
                 className={`secondary-action narrative-generate-action${generationStatus === "generating" ? " is-generating" : ""}`}
                 type="button"
-                disabled={generationStatus === "generating"}
+                disabled={generationStatus === "generating" || !aiAvailable}
                 aria-busy={generationStatus === "generating"}
                 onClick={onRegenerate}
+                title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT}
               >
                 <RefreshCw
                   key={generationStatus === "generating" ? "generating" : "idle"}

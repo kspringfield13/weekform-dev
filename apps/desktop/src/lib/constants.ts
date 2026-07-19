@@ -14,3 +14,9 @@ export const MIN_PROACTIVE_ALERT_GAP_MS = 90 * 60 * 1000;
 // (lib/aiTimeout.ts) races each invoke against this ceiling and rejects with a
 // clear message instead. See STATUS.md for the native follow-up (reqwest timeouts).
 export const AI_CALL_TIMEOUT_MS = 60 * 1000;
+
+// Hover explanation for every AI-triggering button that is grayed out because no
+// AI access exists (no key saved in Settings and no OPENAI_API_KEY in the
+// environment). One shared string so the guidance reads identically everywhere.
+export const AI_UNAVAILABLE_HINT =
+  "Needs an AI connection — connect OpenAI under Settings → AI Assistance to use this";

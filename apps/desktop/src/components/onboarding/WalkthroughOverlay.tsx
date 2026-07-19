@@ -28,7 +28,9 @@ export interface WalkthroughStep {
 // if a target is ever missing, e.g. on a narrow viewport).
 export const WALKTHROUGH_STEPS: WalkthroughStep[] = [
   {
-    title: "Welcome to Weekform",
+    // The branded WelcomeOverlay fronts this tour on a first launch, so this
+    // opening card introduces the tour itself rather than repeating "Welcome".
+    title: "Let's take a quick tour",
     body: "A quick tour of where things live. Weekform turns your calendar and app activity into reviewable work blocks, then an explainable estimate of your weekly capacity — all on this Mac.",
   },
   {
@@ -287,11 +289,23 @@ export function WalkthroughOverlay({
         >
           <X size={15} aria-hidden="true" />
         </button>
-        <strong className="walkthrough-title" id={titleId}>{step.title}</strong>
-        <p className="walkthrough-body" id={bodyId}>{step.body}</p>
+        {/* Keyed by step so the text re-mounts and plays its enter transition. */}
+        <div className="walkthrough-step-content" key={stepIndex}>
+          <strong className="walkthrough-title" id={titleId}>{step.title}</strong>
+          <p className="walkthrough-body" id={bodyId}>{step.body}</p>
+        </div>
         <div className="walkthrough-progress" aria-hidden="true">
           {WALKTHROUGH_STEPS.map((_, i) => (
-            <span key={i} className={i === stepIndex ? "walkthrough-dot is-active" : "walkthrough-dot"} />
+            <span
+              key={i}
+              className={
+                i === stepIndex
+                  ? "walkthrough-dot is-active"
+                  : i < stepIndex
+                    ? "walkthrough-dot is-done"
+                    : "walkthrough-dot"
+              }
+            />
           ))}
         </div>
         <span className="sr-only">

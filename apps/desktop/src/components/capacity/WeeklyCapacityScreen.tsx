@@ -3,7 +3,6 @@ import type { CSSProperties } from "react";
 import {
   ArrowDown,
   ArrowUp,
-  BarChart3,
   CalendarDays,
   ChevronDown,
   Focus,
@@ -34,7 +33,6 @@ import type {
 import { categoryColors } from "../../../../../packages/domain/src/taxonomy";
 import { WEEKLY_BASELINE_HOURS } from "../../../../../packages/integrations/src/internal/normalize";
 import { formatCount, formatHourOfDay, pct } from "../../lib/format";
-import { EmptyState } from "../common/EmptyState";
 import { RiskRow } from "../common/RiskRow";
 import { CapacitySignalGraphic } from "./CapacitySignalGraphic";
 
@@ -471,7 +469,12 @@ export function WeeklyCapacityScreen({
     clampPct(snapshot.reliable_new_work_capacity_pct),
     Math.max(0, 100 - committedWidth)
   );
-  const protectedWidth = Math.max(0, 100 - committedWidth - availableWidth);
+  // An untracked week renders an empty coverage track rather than a full
+  // "protected buffer", which would misread as a real allocation.
+  const protectedWidth =
+    !hasWorkBlocks || viewedBlocks.length === 0
+      ? 0
+      : Math.max(0, 100 - committedWidth - availableWidth);
   const coverageParts: Array<{
     key: CoveragePartKey;
     label: string;
@@ -522,6 +525,12 @@ export function WeeklyCapacityScreen({
   };
 
   const focusTip = useMemo(() => {
+    if (!hasWorkBlocks || viewedBlocks.length === 0) {
+      return {
+        title: "Add your first workload signal",
+        detail: "Enable tracking or import a calendar, then review the resulting work blocks to build this week's picture.",
+      };
+    }
     if (blockerCount > 0) {
       return {
         title: blockerCount === 1 ? "Clear the active blocker" : "Clear active blockers",
@@ -544,44 +553,14 @@ export function WeeklyCapacityScreen({
       title: "Keep the delivery buffer intact",
       detail: "Use available capacity for one focused commitment instead of several small ones.",
     };
-  }, [blockerCount, snapshot.context_switch_score, snapshot.reactive_pct]);
+  }, [hasWorkBlocks, viewedBlocks.length, blockerCount, snapshot.context_switch_score, snapshot.reactive_pct]);
 
-  if (!hasWorkBlocks || !hasCurrentWeekSignal) {
-    const hasHistoricalSignal = hasWorkBlocks && !hasCurrentWeekSignal;
-    return (
-      <section className="screen capacity-screen capacity-dashboard">
-        <div className="screen-header capacity-dashboard-header">
-          <div>
-            <p className="eyebrow">Weekly capacity</p>
-            <h1>{hasHistoricalSignal ? "No tracked work this week." : "Waiting for workload signal."}</h1>
-            <p className="screen-intro">
-              {hasHistoricalSignal
-                ? `${weekRangeLabel} will fill in as current sessions become reviewed work blocks.`
-                : "See what is already committed and how much dependable room remains for new planned work."}
-            </p>
-          </div>
-        </div>
-        <EmptyState
-          icon={BarChart3}
-          title={hasHistoricalSignal ? "This week has no reviewed work blocks yet." : "No weekly capacity model yet."}
-          description={
-            hasHistoricalSignal
-              ? "Classify current activity into work blocks, or import this week’s calendar events."
-              : "Import calendar events or review captured activity to create the first capacity estimate."
-          }
-        >
-          <button
-            className="primary-action"
-            type="button"
-            onClick={() => onOpenScreen(hasHistoricalSignal ? "ledger" : "setup")}
-          >
-            {hasHistoricalSignal ? <Focus size={16} aria-hidden /> : <Upload size={16} aria-hidden />}
-            <span>{hasHistoricalSignal ? "Classify current activity" : "Import calendar in Settings"}</span>
-          </button>
-        </EmptyState>
-      </section>
-    );
-  }
+  // With no reviewed work blocks this week the dashboard still renders its full
+  // layout — gauge, metrics, coverage, and time breakdown all at zero — so the
+  // user always sees what the screen will become. Copy and the primary action
+  // adapt instead of swapping the layout out for a bare empty state.
+  const isEmptyWeek = !hasWorkBlocks || !hasCurrentWeekSignal;
+  const hasHistoricalSignal = hasWorkBlocks && !hasCurrentWeekSignal;
 
   return (
     <section className="screen capacity-screen capacity-dashboard">
@@ -590,18 +569,43 @@ export function WeeklyCapacityScreen({
       </div>
 
       <section className="week-dashboard-hero" aria-labelledby="week-capacity-headline">
-        <AvailabilityGauge value={snapshot.reliable_new_work_capacity_pct} />
+        <AvailabilityGauge value={isEmptyWeek ? 0 : snapshot.reliable_new_work_capacity_pct} />
         <div className="week-dashboard-hero-copy">
-          <h1 id="week-capacity-headline">
-            You have {pct(snapshot.reliable_new_work_capacity_pct)} capacity for new planned work.
-          </h1>
-          <p>
-            {pct(snapshot.committed_utilization_pct)} of the week is already committed. {guidance}
-          </p>
-          {recentComparison && (
-            <span className="week-dashboard-comparison" data-tone={reliableBaseline?.tone}>
-              {recentComparison}
-            </span>
+          {isEmptyWeek ? (
+            <>
+              <h1 id="week-capacity-headline">
+                {hasHistoricalSignal
+                  ? "No tracked work this week yet."
+                  : "Your weekly capacity picture builds here."}
+              </h1>
+              <p>
+                {hasHistoricalSignal
+                  ? `${weekRangeLabel} fills in as current sessions become reviewed work blocks — the gauge, commitments, and time breakdown below update with every review.`
+                  : "Once activity is tracked or a calendar is imported and reviewed into work blocks, this dashboard shows what's committed, how much dependable room remains, and where the week's time went."}
+              </p>
+              <button
+                className="primary-action week-dashboard-hero-action"
+                type="button"
+                onClick={() => onOpenScreen(hasHistoricalSignal ? "ledger" : "setup")}
+              >
+                {hasHistoricalSignal ? <Focus size={16} aria-hidden /> : <Upload size={16} aria-hidden />}
+                <span>{hasHistoricalSignal ? "Classify current activity" : "Import calendar in Settings"}</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <h1 id="week-capacity-headline">
+                You have {pct(snapshot.reliable_new_work_capacity_pct)} capacity for new planned work.
+              </h1>
+              <p>
+                {pct(snapshot.committed_utilization_pct)} of the week is already committed. {guidance}
+              </p>
+              {recentComparison && (
+                <span className="week-dashboard-comparison" data-tone={reliableBaseline?.tone}>
+                  {recentComparison}
+                </span>
+              )}
+            </>
           )}
         </div>
         <CapacitySignalGraphic
@@ -742,6 +746,11 @@ export function WeeklyCapacityScreen({
                 </button>
               )}
             </div>
+            {categoryItems.length === 0 && (
+              <p className="week-dashboard-empty-note">
+                Top categories appear here once this week has reviewed work blocks.
+              </p>
+            )}
             <ul className="week-dashboard-category-list" id="week-category-list">
               {visibleCategories.map((item, index) => {
                 const allocatedShare = Math.round((item.value / Math.max(allocatedCategoryTotal, 1)) * 100);
@@ -806,6 +815,12 @@ export function WeeklyCapacityScreen({
             </div>
           </div>
           <TimeSpentDonut items={modeItems} />
+          {modeItems.length === 0 && (
+            <p className="week-dashboard-empty-note">
+              The work-mode breakdown fills in as tracked time accumulates — deep work, meetings,
+              reactive requests, and more.
+            </p>
+          )}
           <div className="week-dashboard-tip">
             <span><Lightbulb size={17} aria-hidden="true" /></span>
             <div>
@@ -853,6 +868,12 @@ export function WeeklyCapacityScreen({
                 <h3 id="week-committed-heading">What makes up the {pct(snapshot.committed_utilization_pct)} committed load</h3>
                 <span>These parts add up to the committed estimate</span>
               </div>
+              {committedBreakdown.parts.length === 0 && (
+                <p className="week-dashboard-empty-note">
+                  Nothing is committed yet — recurring work, reactive demand, and delivery-risk
+                  adjustments appear here as the week is tracked.
+                </p>
+              )}
               <ul className="week-dashboard-detail-list">
                 {committedBreakdown.parts.map((part) => (
                   <li key={part.key}>

@@ -17,3 +17,6 @@ packages/integrations/src/usage/*.candidate.json
 .absoloop/
 absoloop/
 .vercel
+
+# Claude Code workspace (local tooling, not project source)
+.claude/

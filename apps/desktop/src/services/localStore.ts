@@ -26,6 +26,7 @@ import {
   type ProactiveAlertRuntime,
   type ProactiveAlertSettings,
 } from "../lib/proactiveAlerts";
+import type { WindowMode } from "../lib/types";
 import type { AuthoredAccelerationPlay } from "./accelerationSchema";
 import { parseConsentReceipts, type ConsentReceiptV1 } from "./consentReceipt";
 
@@ -36,6 +37,15 @@ const STORAGE_KEY = "clear-capacity:v1"; // fallback for non-Tauri
 const THEME_STORAGE_KEY = "clear-capacity:theme";
 
 export type AppTheme = "light" | "dark";
+
+/**
+ * Lifecycle of the post-walkthrough "Getting started" modal. `unseen` shows the
+ * modal once the first-run walkthrough finishes; `skipped` means the user chose
+ * "I'll do this later" (the persistent enable-tracking reminder banner shows
+ * until tracking is turned on); `complete` means tracking was enabled (from the
+ * modal or anywhere else) and the flow never resurfaces.
+ */
+export type GettingStartedStatus = "unseen" | "skipped" | "complete";
 
 export interface PersistedNarrativeRecord {
   narrative: WeeklyNarrative;
@@ -160,6 +170,14 @@ export interface PersistedAppState {
   onboardingDismissed: boolean;
   /** Whether the user has finished (or skipped) the first-run app walkthrough. */
   walkthroughCompleted: boolean;
+  /** Lifecycle of the post-walkthrough "Getting started" (enable tracking) modal. */
+  gettingStartedStatus: GettingStartedStatus;
+  /**
+   * How the Weekform window opens (tray click / relaunch): the full dashboard or
+   * the compact menu-bar widget. Defaults to the full window so a first-time user
+   * lands in the walkthrough and getting-started flow, which only run there.
+   */
+  defaultWindowMode: WindowMode;
   /** Opt-in configuration for proactive menu-bar alerts. */
   proactiveAlertSettings: ProactiveAlertSettings;
   /** Throttle/dedup bookkeeping for proactive OS notifications. */
@@ -306,6 +324,23 @@ function parseAIConfig(value: unknown): AIConfig | null {
     ...(typeof value.baseUrl === "string" ? { baseUrl: value.baseUrl } : {}),
     ...(typeof value.visionModel === "string" ? { visionModel: value.visionModel } : {})
   };
+}
+
+/**
+ * Validate the persisted getting-started status. Legacy blobs predate the field:
+ * anyone who already finished the first-run walkthrough must NOT retroactively
+ * get the "Getting started" modal on their next launch, so a missing/malformed
+ * value degrades to "complete" when the walkthrough flag is set and "unseen"
+ * otherwise (a genuinely new profile still gets the flow).
+ */
+function parseGettingStartedStatus(value: unknown, walkthroughCompleted: boolean): GettingStartedStatus {
+  if (value === "unseen" || value === "skipped" || value === "complete") return value;
+  return walkthroughCompleted ? "complete" : "unseen";
+}
+
+/** Malformed/legacy values fall back to the full window — the mode onboarding needs. */
+function parseDefaultWindowMode(value: unknown): WindowMode {
+  return value === "compact" ? "compact" : "large";
 }
 
 function parseRetentionDays(value: unknown): number | null {
@@ -849,6 +884,11 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
         retentionDays: parseRetentionDays(parsed.retentionDays),
         onboardingDismissed: typeof parsed.onboardingDismissed === "boolean" ? parsed.onboardingDismissed : false,
         walkthroughCompleted: typeof parsed.walkthroughCompleted === "boolean" ? parsed.walkthroughCompleted : false,
+        gettingStartedStatus: parseGettingStartedStatus(
+          parsed.gettingStartedStatus,
+          parsed.walkthroughCompleted === true
+        ),
+        defaultWindowMode: parseDefaultWindowMode(parsed.defaultWindowMode),
         proactiveAlertSettings: parseProactiveAlertSettings(parsed.proactiveAlertSettings),
         proactiveAlertRuntime: parseProactiveAlertRuntime(parsed.proactiveAlertRuntime),
         tokenUsageDays: parseTokenUsageDays(parsed.tokenUsageDays),
@@ -901,6 +941,11 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
       retentionDays: parseRetentionDays(parsed.retentionDays),
       onboardingDismissed: typeof parsed.onboardingDismissed === "boolean" ? parsed.onboardingDismissed : false,
       walkthroughCompleted: typeof parsed.walkthroughCompleted === "boolean" ? parsed.walkthroughCompleted : false,
+      gettingStartedStatus: parseGettingStartedStatus(
+        parsed.gettingStartedStatus,
+        parsed.walkthroughCompleted === true
+      ),
+      defaultWindowMode: parseDefaultWindowMode(parsed.defaultWindowMode),
       proactiveAlertSettings: parseProactiveAlertSettings(parsed.proactiveAlertSettings),
       proactiveAlertRuntime: parseProactiveAlertRuntime(parsed.proactiveAlertRuntime),
       tokenUsageDays: parseTokenUsageDays(parsed.tokenUsageDays),
