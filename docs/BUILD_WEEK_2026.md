@@ -90,6 +90,15 @@ The public product-presentation refresh is recorded in a separate in-period task
 
 This task is supporting evidence for the public presentation only. It does not replace the primary Project-thread value used for `/feedback`.
 
+### Week dashboard redesign
+
+The Week dashboard simplification is recorded in a separate in-period task:
+
+- **Codex Session ID:** `019f772b-35f4-72f3-a82e-07762259cbd0`
+- **Date:** July 18, 2026
+- **Outcome:** Codex rebuilt the weekly-capacity content below the breadcrumb around clearer labels, stronger visual hierarchy, and a simpler container layout while preserving the existing capacity data, app context, and Weekform palette. The model breakdown, personal baselines, delivery-risk inputs, and privacy-safe interruption evidence remain available in a collapsed explanation layer. Follow-ups aligned the two primary panels, added reduced-motion-aware chart entrances and keyboard-accessible detail, and replaced the pastoral hero artwork with a lazy-loaded Three.js capacity signal. Its segmented surface uses the live committed-load and reliable-capacity values, updates with the app theme, pauses offscreen or while hidden, respects reduced motion, and retains a polished static fallback when WebGL is unavailable.
+- **Human design direction:** Kyle supplied the visual reference, limited the redesign to the Week dashboard below “Weekly capacity,” required reuse of the app’s existing data and context, and prioritized immediate comprehension over the prior dense presentation. His follow-up direction called for equal-height panels, restrained chart motion, detail available to both pointer and keyboard users, and a higher-quality animated hero graphic with a modern technical character.
+
 Only the session IDs and concise evidence summaries are intended for publication. Raw Codex rollout/session files can contain prompts, local paths, tool output, or other private context and are not part of the repository.
 
 ## Required `/feedback` submission field

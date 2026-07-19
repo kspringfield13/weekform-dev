@@ -1,65 +1,100 @@
-import { useState, useMemo } from "react";
-import { ArrowDown, ArrowUp, BarChart3, ChevronDown, ChevronUp, Info, Minus, Upload, Zap } from "lucide-react";
-import type { WorkBlock } from "../../../../../packages/domain/src/models";
+import { useId, useMemo, useState } from "react";
+import type { CSSProperties } from "react";
+import {
+  ArrowDown,
+  ArrowUp,
+  BarChart3,
+  CalendarDays,
+  ChevronDown,
+  Focus,
+  Info,
+  Lightbulb,
+  MessageSquareText,
+  Minus,
+  Plus,
+  Upload,
+  Zap,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import type { WorkBlock, WorkCategory, WorkMode } from "../../../../../packages/domain/src/models";
 import type { Screen } from "../../lib/types";
 import type { PersistedSnapshotRecord } from "../../services/localStore";
-import { computeWeeklyCapacitySnapshot, computeCapacityBaselines, normalizeWeekId, CORE_HOURS_START, CORE_HOURS_END, TARGET_UTILIZATION_PCT, REACTIVE_DISCOUNT_FACTOR } from "../../../../../packages/inference/src/capacity";
-import type { ChatStakeholderSummary, InterruptionLoadAnalysis } from "../../../../../packages/inference/src/capacity";
-import { categoryColors, modeColors } from "../../../../../packages/domain/src/taxonomy";
-import { DEFAULT_SESSION_GAP_MINUTES } from "../../../../../packages/integrations/src/chat/chatExport";
+import {
+  computeCapacityBaselines,
+  computeWeeklyCapacitySnapshot,
+  CORE_HOURS_END,
+  CORE_HOURS_START,
+  normalizeWeekId,
+  REACTIVE_DISCOUNT_FACTOR,
+} from "../../../../../packages/inference/src/capacity";
+import type {
+  ChatStakeholderSummary,
+  InterruptionLoadAnalysis,
+} from "../../../../../packages/inference/src/capacity";
+import { categoryColors } from "../../../../../packages/domain/src/taxonomy";
 import { WEEKLY_BASELINE_HOURS } from "../../../../../packages/integrations/src/internal/normalize";
-import { pct, formatCount, formatHourOfDay } from "../../lib/format";
-import { addDays, getCurrentIsoWeekId, getBusinessWeekRangeLabel } from "../../lib/date";
+import { formatCount, formatHourOfDay, pct } from "../../lib/format";
 import { EmptyState } from "../common/EmptyState";
-import { MetricCard } from "../common/MetricCard";
 import { RiskRow } from "../common/RiskRow";
+import { CapacitySignalGraphic } from "./CapacitySignalGraphic";
 
-// The headline metrics shown against the user's own rolling baseline. `scale` lifts the
-// 0–1 context-switch index onto the same /100 scale the RiskRow uses so its delta reads
-// in points like the percentages; `betterWhen` only drives the chip's color/arrow tone.
 const BASELINE_METRICS: Array<{
   key: "reliable_new_work_capacity_pct" | "reactive_pct" | "meeting_pct" | "context_switch_score";
   label: string;
   scale: number;
   betterWhen: "higher" | "lower";
 }> = [
-  { key: "reliable_new_work_capacity_pct", label: "Reliable capacity", scale: 1, betterWhen: "higher" },
-  { key: "reactive_pct", label: "Reactive load", scale: 1, betterWhen: "lower" },
-  { key: "meeting_pct", label: "Meeting density", scale: 1, betterWhen: "lower" },
-  { key: "context_switch_score", label: "Context switch burden", scale: 100, betterWhen: "lower" },
+  { key: "reliable_new_work_capacity_pct", label: "New work capacity", scale: 1, betterWhen: "higher" },
+  { key: "reactive_pct", label: "Reactive work", scale: 1, betterWhen: "lower" },
+  { key: "meeting_pct", label: "Meeting time", scale: 1, betterWhen: "lower" },
+  { key: "context_switch_score", label: "Context switching", scale: 100, betterWhen: "lower" },
 ];
 
-// Plain-language gloss for each part of the committed-load breakdown, keyed on the part.key
-// computed in the `committedBreakdown` memo below. Mirrors the per-chip `title` the sibling
-// vs-median chips already carry, so a new analyst can hover "Reactive (×0.72)" / "WIP load"
-// and read what it means rather than parsing the jargon from the general note alone.
 const COMMITTED_PART_GLOSS: Record<string, string> = {
-  recurring: "Recurring and fixed commitments — standing meetings and blocks that repeat every week.",
-  reactive: `Unplanned support and interruptions, counted at ${Math.round(REACTIVE_DISCOUNT_FACTOR * 100)}% of face value since interrupted work delivers less sustainable throughput.`,
-  carryover: "Unfinished work likely to spill over from earlier weeks into this one.",
-  fragmentation: "Capacity lost to context-switching across many short, scattered blocks rather than sustained focus.",
-  wip: "Extra load from carrying too many projects in progress at once.",
+  recurring: "Standing meetings, recurring reports, and other fixed work.",
+  reactive: `Unplanned work, counted at ${Math.round(REACTIVE_DISCOUNT_FACTOR * 100)}% because interruptions reduce sustainable throughput.`,
+  carryover: "Unfinished work likely to spill into next week.",
+  fragmentation: "Capacity lost to short, scattered work blocks and context switching.",
+  wip: "Extra load from keeping too many projects moving at once.",
 };
 
-const CAPACITY_PRESSURE_LABELS: Record<string, string> = {
-  recurring: "recurring commitments",
-  reactive: "reactive work",
-  carryover: "carryover risk",
-  fragmentation: "context switching",
-  wip: "parallel work",
+const CATEGORY_LABELS: Partial<Record<WorkCategory, string>> = {
+  "Planned analysis / project work": "Analysis & project work",
+  "Ad hoc stakeholder requests": "Stakeholder requests",
+  "Dashboard development / edits": "Dashboards & edits",
+  "SQL / data modeling / query work": "SQL & data modeling",
+  "QA / data validation": "QA & data validation",
+  "Debugging / issue investigation": "Debugging & investigation",
+  "Documentation / requirement clarification": "Docs & requirements",
+  "Meetings / stakeholder syncs": "Meetings & stakeholder syncs",
+  "Admin / coordination": "Admin & coordination",
+  "Blocked / waiting / dependency delay": "Blocked & waiting",
 };
 
-const GENERAL_CAPACITY_DESCRIPTION =
-  "See how much of your standard 40-hour week is already committed and how much dependable room remains for new planned work.";
+const MODE_VISUALS: Record<WorkMode, { label: string; color: string }> = {
+  "Deep work": { label: "Deep work", color: "var(--week-blue)" },
+  Reactive: { label: "Reactive", color: "var(--week-orange)" },
+  Collaborative: { label: "Collaborative", color: "var(--week-green)" },
+  Fragmented: { label: "Fragmented", color: "var(--week-purple)" },
+  Blocked: { label: "Blocked / other", color: "var(--week-gray)" },
+};
 
-// Delivery-risk bar saturation points (%): the Carryover / Meeting-density RiskRow bars fill to
-// 100% at these shares of the week. Single-sourced because each value is stated verbatim in its
-// RiskRow tooltip copy ("the bar saturates at N% of the week") AND reused by the collapsed summary
-// chip's `elevated` gate — a bare literal in any one site would silently make the tooltip lie (or
-// the chip and bar disagree on "elevated") the moment the divisor moved. Keep the divisor, the chip
-// gate, and the tooltip all reading from the same const.
+const MODE_DESCRIPTIONS: Record<WorkMode, string> = {
+  "Deep work": "Longer focus blocks with fewer interruptions.",
+  Reactive: "Unplanned support and requests handled as they arrived.",
+  Collaborative: "Meetings and work completed with other people.",
+  Fragmented: "Shorter work blocks split by task switching.",
+  Blocked: "Time delayed by dependencies, waiting, or other constraints.",
+};
+
+type CoveragePartKey = "committed" | "available" | "protected";
+
 const CARRYOVER_SATURATION_PCT = 40;
 const MEETING_SATURATION_PCT = 35;
+
+function clampPct(value: number) {
+  return Math.max(0, Math.min(100, value));
+}
 
 function formatCapacityHours(value: number) {
   const hours = (value / 100) * WEEKLY_BASELINE_HOURS;
@@ -67,100 +102,261 @@ function formatCapacityHours(value: number) {
   return `${Number(hours.toFixed(1))}h`;
 }
 
-function AllocationBreakdown<T extends string>({
-  title,
-  items,
-  colors,
-}: {
-  title: string;
-  items: Array<{ label: T; value: number }>;
-  colors: Record<T, string>;
-}) {
-  const [hoveredLabel, setHoveredLabel] = useState<T | null>(null);
-  const allocatedTotal = items.reduce((total, item) => total + item.value, 0);
+function displayCategory(category: WorkCategory) {
+  return CATEGORY_LABELS[category] ?? category;
+}
 
-  if (allocatedTotal <= 0) {
-    return (
-      <section className="allocation-breakdown" aria-label={`${title}: no allocated work`}>
-        <div className="allocation-breakdown-heading">
-          <h3>{title}</h3>
-          <span>within allocated work</span>
-        </div>
-        <p className="allocation-breakdown-empty">No allocated work to break down.</p>
-      </section>
-    );
-  }
+function WeekVisualTooltip({
+  id,
+  visible,
+  title,
+  value,
+  detail,
+  className = "",
+  style,
+}: {
+  id: string;
+  visible: boolean;
+  title: string;
+  value: string;
+  detail: string;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <div
+      className={`week-dashboard-visual-tooltip ${visible ? "is-visible" : ""} ${className}`.trim()}
+      id={id}
+      role="tooltip"
+      aria-hidden={!visible}
+      style={style}
+    >
+      <div>
+        <strong>{title}</strong>
+        <span>{value}</span>
+      </div>
+      <p>{detail}</p>
+    </div>
+  );
+}
+
+function AvailabilityGauge({ value }: { value: number }) {
+  const size = 154;
+  const center = size / 2;
+  const radius = 61;
+  const circumference = 2 * Math.PI * radius;
+  const normalized = clampPct(value);
 
   return (
-    <section className="allocation-breakdown" aria-label={`${title} within allocated work`}>
-      <div className="allocation-breakdown-heading">
-        <h3>{title}</h3>
-        <span>within allocated work</span>
+    <div
+      className="week-dashboard-gauge"
+      role="img"
+      aria-label={`${pct(normalized)} capacity available for new planned work`}
+    >
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+        <defs>
+          <linearGradient id="week-capacity-gauge-gradient" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" className="week-gauge-gradient-start" />
+            <stop offset="1" className="week-gauge-gradient-end" />
+          </linearGradient>
+        </defs>
+        <circle
+          className="week-dashboard-gauge-track"
+          cx={center}
+          cy={center}
+          r={radius}
+          fill="none"
+          strokeWidth="13"
+        />
+        <circle
+          className="week-dashboard-gauge-fill"
+          cx={center}
+          cy={center}
+          r={radius}
+          fill="none"
+          stroke="url(#week-capacity-gauge-gradient)"
+          strokeWidth="13"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - normalized / 100)}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${center} ${center})`}
+        />
+      </svg>
+      <div className="week-dashboard-gauge-label" aria-hidden="true">
+        <strong>{pct(normalized)}</strong>
+        <span>available</span>
       </div>
-      <div
-        className="allocation-mix-bar"
-        role="img"
-        aria-label={`${title}: ${items
-          .map((item) => `${item.label}, ${Math.round((item.value / allocatedTotal) * 100)}% of allocated work`)
-          .join("; ")}`}
-      >
-        {items.map((item) => {
-          const share = (item.value / allocatedTotal) * 100;
-          const isMuted = hoveredLabel !== null && hoveredLabel !== item.label;
-          return (
-            <span
-              key={item.label}
-              className="allocation-mix-segment"
-              style={{
-                width: `${share}%`,
-                background: colors[item.label],
-                opacity: isMuted ? 0.3 : 1,
-              }}
-              onMouseEnter={() => setHoveredLabel(item.label)}
-              onMouseLeave={() => setHoveredLabel(null)}
-              title={`${item.label}: ${formatCapacityHours(item.value)} · ${pct(item.value)} of week · ${Math.round(share)}% of allocated work`}
-            >
-              {share >= 22 && <span>{Math.round(share)}%</span>}
-            </span>
-          );
-        })}
+    </div>
+  );
+}
+
+function WeekMetricCard({
+  icon: Icon,
+  label,
+  value,
+  helper,
+  tone,
+  title,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: number;
+  helper: string;
+  tone: "blue" | "purple" | "orange" | "green";
+  title: string;
+}) {
+  return (
+    <article className="week-dashboard-metric" data-tone={tone} title={title}>
+      <div className="week-dashboard-metric-heading">
+        <span className="week-dashboard-metric-icon">
+          <Icon size={19} aria-hidden="true" />
+        </span>
+        <div>
+          <span>{label}</span>
+          <strong>{pct(value)}</strong>
+        </div>
       </div>
-      <ul className="allocation-breakdown-list">
-        {items.map((item) => {
-          const share = (item.value / allocatedTotal) * 100;
-          const isMuted = hoveredLabel !== null && hoveredLabel !== item.label;
+      <div className="week-dashboard-metric-track" aria-hidden="true">
+        <span style={{ width: `${clampPct(value)}%` }} />
+      </div>
+      <p>{helper}</p>
+      <span className="sr-only">{title}</span>
+    </article>
+  );
+}
+
+function TimeSpentDonut({ items }: { items: Array<{ label: WorkMode; value: number }> }) {
+  const [hoveredMode, setHoveredMode] = useState<WorkMode | null>(null);
+  const [focusedMode, setFocusedMode] = useState<WorkMode | null>(null);
+  const tooltipId = `week-time-tooltip-${useId().replace(/:/g, "")}`;
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  let cursor = 0;
+  const segments = items.map((item) => {
+    const share = total > 0 ? (item.value / total) * 100 : 0;
+    const segment = { ...item, share, start: cursor };
+    cursor += share;
+    return segment;
+  });
+  const activeMode = hoveredMode ?? focusedMode;
+  const activeItem = segments.find((item) => item.label === activeMode) ?? null;
+  const chartLabel = segments
+    .map((item) => `${MODE_VISUALS[item.label].label}, ${Math.round(item.share)}%`)
+    .join("; ");
+
+  const clearMode = (mode: WorkMode, source: "hover" | "focus") => {
+    if (source === "hover") {
+      setHoveredMode((current) => (current === mode ? null : current));
+    } else {
+      setFocusedMode((current) => (current === mode ? null : current));
+    }
+  };
+
+  return (
+    <div className={`week-dashboard-time-layout ${activeMode ? "has-active" : ""}`}>
+      <div className="week-dashboard-donut-shell">
+        <div className="week-dashboard-donut">
+          <svg
+            className="week-dashboard-donut-svg"
+            viewBox="0 0 160 160"
+            role="group"
+            aria-label={`Tracked time by work mode: ${chartLabel || "no tracked time"}`}
+          >
+            <circle className="week-dashboard-donut-track" cx="80" cy="80" r="58" pathLength="100" aria-hidden="true" />
+            {segments.map((item, index) => {
+              const gap = segments.length > 1 ? Math.min(1.2, item.share * 0.16) : 0;
+              const visibleShare = Math.min(item.share, Math.max(0.35, item.share - gap));
+              const isActive = activeMode === item.label;
+              const isMuted = activeMode !== null && !isActive;
+              return (
+                <circle
+                  key={item.label}
+                  className={`week-dashboard-donut-segment ${isActive ? "is-active" : ""} ${isMuted ? "is-muted" : ""}`.trim()}
+                  cx="80"
+                  cy="80"
+                  r="58"
+                  pathLength="100"
+                  stroke={MODE_VISUALS[item.label].color}
+                  strokeDasharray={`${visibleShare} ${100 - visibleShare}`}
+                  strokeDashoffset={-item.start}
+                  style={{ animationDelay: `${70 + index * 45}ms` }}
+                  role="img"
+                  tabIndex={0}
+                  aria-label={`${MODE_VISUALS[item.label].label}: ${formatCapacityHours(item.value)}, ${Math.round(item.share)}% of tracked time. ${MODE_DESCRIPTIONS[item.label]}`}
+                  aria-describedby={isActive ? tooltipId : undefined}
+                  transform="rotate(-90 80 80)"
+                  onMouseEnter={() => setHoveredMode(item.label)}
+                  onMouseLeave={() => clearMode(item.label, "hover")}
+                  onFocus={() => setFocusedMode(item.label)}
+                  onBlur={() => clearMode(item.label, "focus")}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      setHoveredMode(null);
+                      setFocusedMode(null);
+                      event.currentTarget.blur();
+                    }
+                  }}
+                />
+              );
+            })}
+          </svg>
+          <div className="week-dashboard-donut-center" aria-hidden="true">
+            <strong>{activeItem ? formatCapacityHours(activeItem.value) : formatCapacityHours(total)}</strong>
+            <span>{activeItem ? MODE_VISUALS[activeItem.label].label : "tracked"}</span>
+          </div>
+        </div>
+      </div>
+
+      <ul className="week-dashboard-time-legend">
+        {segments.map((item) => {
+          const share = Math.round(item.share);
+          const visual = MODE_VISUALS[item.label];
+          const isActive = activeMode === item.label;
+          const isMuted = activeMode !== null && !isActive;
           return (
-            <li
-              key={item.label}
-              tabIndex={0}
-              style={{ opacity: isMuted ? 0.38 : 1 }}
-              onMouseEnter={() => setHoveredLabel(item.label)}
-              onMouseLeave={() => setHoveredLabel(null)}
-              onFocus={() => setHoveredLabel(item.label)}
-              onBlur={() => setHoveredLabel(null)}
-              aria-label={`${item.label}: ${formatCapacityHours(item.value)}, ${pct(item.value)} of week, ${Math.round(share)}% of allocated work`}
-            >
-              <span className="allocation-breakdown-label">
-                <span className="dot" style={{ background: colors[item.label] }} />
-                <span>
-                  <strong title={item.label}>{item.label}</strong>
-                  <small>{Math.round(share)}% of allocated work</small>
+            <li key={item.label}>
+              <button
+                type="button"
+                className={`${isActive ? "is-active" : ""} ${isMuted ? "is-muted" : ""}`.trim()}
+                aria-label={`${visual.label}: ${formatCapacityHours(item.value)}, ${share}% of tracked time. ${MODE_DESCRIPTIONS[item.label]}`}
+                aria-describedby={isActive ? tooltipId : undefined}
+                onMouseEnter={() => setHoveredMode(item.label)}
+                onMouseLeave={() => clearMode(item.label, "hover")}
+                onFocus={() => setFocusedMode(item.label)}
+                onBlur={() => clearMode(item.label, "focus")}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setHoveredMode(null);
+                    setFocusedMode(null);
+                    event.currentTarget.blur();
+                  }
+                }}
+              >
+                <span className="week-dashboard-time-label">
+                  <span className="dot" style={{ background: visual.color }} />
+                  {visual.label}
                 </span>
-              </span>
-              <span className="allocation-breakdown-values">
                 <strong>{formatCapacityHours(item.value)}</strong>
-                <small>{pct(item.value)} of week</small>
-              </span>
+                <span>{share}%</span>
+              </button>
             </li>
           );
         })}
       </ul>
-    </section>
+
+      <WeekVisualTooltip
+        id={tooltipId}
+        visible={activeItem !== null}
+        title={activeItem ? MODE_VISUALS[activeItem.label].label : "Tracked time"}
+        value={activeItem ? `${formatCapacityHours(activeItem.value)} · ${Math.round(activeItem.share)}%` : ""}
+        detail={activeItem ? MODE_DESCRIPTIONS[activeItem.label] : "How tracked work was distributed."}
+        className="week-dashboard-time-tooltip"
+      />
+    </div>
   );
 }
 
 export function WeeklyCapacityScreen({
-  snapshot: currentSnapshot,
+  snapshot,
   snapshotHistory,
   interruptionLoad,
   chatStakeholders,
@@ -178,123 +374,23 @@ export function WeeklyCapacityScreen({
   blocks: WorkBlock[];
   onOpenScreen: (screen: Screen) => void;
 }) {
-  const weekOffset = 0;
-  const [riskExpanded, setRiskExpanded] = useState(false);
-
-  const viewedMonday = useMemo(() => {
-    const now = new Date();
-    const day = now.getDay() || 7;
-    const monday = new Date(now);
-    monday.setDate(now.getDate() + 1 - day);
-    monday.setHours(0, 0, 0, 0);
-    return addDays(monday, weekOffset * 7);
-  }, [weekOffset]);
-
-  const viewedWeekId = useMemo(() => getCurrentIsoWeekId(viewedMonday), [viewedMonday]);
-  const viewedWeekRangeLabel = useMemo(() => getBusinessWeekRangeLabel(viewedMonday), [viewedMonday]);
-
-  const viewedBlocks = useMemo(() => {
-    // Current week: scope by week_id so this matches the exact block set the (week-scoped) live
-    // snapshot is computed from in useDerived — otherwise blockerCount (whose tooltip says "this
-    // week") would count every accumulated week's blockers. Key off the LIVE `currentSnapshot.week_id`
-    // (which useDerived recomputes at a midnight/Monday rollover) rather than the locally-derived
-    // `viewedWeekId` (frozen at mount by its `[weekOffset]`-only memo), so a tray app left open across
-    // a week boundary keeps blockerCount in step with the snapshot instead of showing last week's.
-    // Prior weeks recompute from a start_time range, since their snapshot is derived here rather than
-    // read from the live one.
-    if (weekOffset === 0) return blocks.filter((b) => normalizeWeekId(b.week_id) === currentSnapshot.week_id);
-    const start = viewedMonday.getTime();
-    const end = addDays(viewedMonday, 7).getTime();
-    return blocks.filter((b) => {
-      const t = new Date(b.start_time).getTime();
-      return t >= start && t < end;
-    });
-  }, [blocks, weekOffset, viewedMonday, currentSnapshot.week_id]);
-
-  const snapshot = useMemo(
-    () => (weekOffset === 0 ? currentSnapshot : computeWeeklyCapacitySnapshot(viewedWeekId, viewedBlocks)),
-    [currentSnapshot, weekOffset, viewedWeekId, viewedBlocks]
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const [hoveredCoverage, setHoveredCoverage] = useState<CoveragePartKey | null>(null);
+  const [focusedCoverage, setFocusedCoverage] = useState<CoveragePartKey | null>(null);
+  const [hoveredCategory, setHoveredCategory] = useState<WorkCategory | null>(null);
+  const [focusedCategory, setFocusedCategory] = useState<WorkCategory | null>(null);
+  const coverageTooltipId = `week-coverage-tooltip-${useId().replace(/:/g, "")}`;
+  const categoryTooltipId = `week-category-tooltip-${useId().replace(/:/g, "")}`;
+  const viewedBlocks = useMemo(
+    () => blocks.filter((block) => normalizeWeekId(block.week_id) === normalizeWeekId(snapshot.week_id)),
+    [blocks, snapshot.week_id]
+  );
+  const hasCurrentWeekSignal = viewedBlocks.length > 0;
+  const blockerCount = useMemo(
+    () => viewedBlocks.filter((block) => block.blocker_flag).length,
+    [viewedBlocks]
   );
 
-  const isCurrentWeek = weekOffset === 0;
-  // For the current week, use the LIVE range-label prop (useDateContext rolls `currentWeekRangeLabel`
-  // over at a midnight/Monday boundary) rather than the locally-derived `viewedWeekRangeLabel` — which
-  // is frozen at mount by `viewedMonday`'s `[weekOffset]`-only memo. On a tray app left mounted on this
-  // screen across a week rollover, `currentSnapshot` (and thus the headline % + `viewedBlocks`) advance
-  // to the new week while the frozen label kept showing the PREVIOUS week's range, so the header would
-  // read e.g. "Jun 30 – Jul 4: 25% …" over numbers that are actually for Jul 7–11. Mirrors how
-  // `viewedBlocks` (line above) keys off the live `currentSnapshot.week_id` for offset 0, and how the
-  // no-workload empty state (early return) already renders the live `weekRangeLabel` prop. Byte-identical
-  // at mount: `getBusinessWeekRangeLabel(now)` and `getBusinessWeekRangeLabel(viewedMonday)` both
-  // normalize to the same Monday-of-week. Navigated PAST weeks keep the frozen label (correct — they're
-  // read against `viewedMonday`, not the live snapshot).
-  const headlineWeekRangeLabel = isCurrentWeek ? weekRangeLabel : viewedWeekRangeLabel;
-  const blockerCount = useMemo(() => viewedBlocks.filter((b) => b.blocker_flag).length, [viewedBlocks]);
-
-  // Compact one-line summary of the five delivery risk modifiers, shown while the section is
-  // collapsed. Each chip mirrors its RiskRow's normalized value and tooltip; `elevated` reuses
-  // the RiskRow "high" severity threshold (≥0.67 of the bar) so a chip only turns red when the
-  // expanded bar would too.
-  const riskSummaryChips = useMemo(() => {
-    const clamp = (v: number) => Math.max(0, Math.min(1, v));
-    return [
-      {
-        key: "switching",
-        label: "Context switch burden",
-        display: `${Math.round(clamp(snapshot.context_switch_score) * 100)}/100`,
-        elevated: clamp(snapshot.context_switch_score) >= 0.67,
-        tooltip: "Task-switching cost index: 0 = minimal, 100 = very high burden",
-      },
-      {
-        key: "wip",
-        label: "WIP overload",
-        display: `${Math.round(clamp(snapshot.wip_load_score) * 100)}/100`,
-        elevated: clamp(snapshot.wip_load_score) >= 0.67,
-        tooltip: "Parallel work-in-progress pressure: 0 = manageable, 100 = critical",
-      },
-      {
-        key: "carryover",
-        label: "Carryover risk",
-        display: `${Math.round(snapshot.carryover_risk_pct)}%`,
-        elevated: clamp(snapshot.carryover_risk_pct / CARRYOVER_SATURATION_PCT) >= 0.67,
-        tooltip: isCurrentWeek
-          ? "Share of this week's load at risk of slipping into next week"
-          : "Share of that week's load at risk of slipping into the following week",
-      },
-      {
-        key: "meetings",
-        label: "Meeting density",
-        display: `${Math.round(snapshot.meeting_pct)}%`,
-        elevated: clamp(snapshot.meeting_pct / MEETING_SATURATION_PCT) >= 0.67,
-        tooltip: "Share of your tracked week filled by meetings",
-      },
-      {
-        key: "blockers",
-        label: "Active blockers",
-        display: `${blockerCount}`,
-        elevated: blockerCount > 0,
-        tooltip: isCurrentWeek
-          ? "Number of work blocks flagged as a blocker this week"
-          : "Number of work blocks flagged as a blocker that week",
-      },
-    ];
-  }, [snapshot, blockerCount, isCurrentWeek]);
-  const allocatedPct = Math.max(0, Math.min(100, snapshot.allocated_pct));
-  const unallocatedPct = Math.max(0, 100 - allocatedPct);
-
-  // Reliable-new-work helper: when committed utilization is already at/over the knee, the model
-  // clamps reliable headroom to 0, so "room to the 80% knee" would contradict the 0% value shown.
-  const reliableHelper =
-    snapshot.committed_utilization_pct >= TARGET_UTILIZATION_PCT
-      ? `${pct(snapshot.committed_utilization_pct)} already committed · at or past the ${TARGET_UTILIZATION_PCT}% knee`
-      : `${pct(snapshot.committed_utilization_pct)} already committed · room to the ${TARGET_UTILIZATION_PCT}% knee`;
-
-  // Explain what the committed-utilization number (the center of the target-utilization model) is
-  // made of. capacity.ts computes it as round(recurring + carryover + reactive*0.72 + frag + wip),
-  // where every term EXCEPT reactive is already an integer — so the reactive contribution derived as
-  // the remainder equals round(reactive_pct * 0.72) exactly, and the five parts sum to the displayed
-  // committed_utilization_pct with zero rounding drift (no capacity.ts change needed). The 0.72
-  // reactive discount is the model's least-obvious input, so it gets a plain-language note.
   const committedBreakdown = useMemo(() => {
     const reactiveContribution =
       snapshot.committed_utilization_pct -
@@ -304,20 +400,14 @@ export function WeeklyCapacityScreen({
       snapshot.wip_penalty_pct;
     const parts = [
       { key: "recurring", label: "Recurring & fixed", value: snapshot.recurring_pct },
-      { key: "reactive", label: `Reactive (×${REACTIVE_DISCOUNT_FACTOR})`, value: reactiveContribution },
+      { key: "reactive", label: "Reactive work", value: reactiveContribution },
       { key: "carryover", label: "Carryover risk", value: snapshot.carryover_risk_pct },
-      { key: "fragmentation", label: "Fragmentation", value: snapshot.fragmentation_penalty_pct },
-      { key: "wip", label: "WIP load", value: snapshot.wip_penalty_pct },
+      { key: "fragmentation", label: "Context switching", value: snapshot.fragmentation_penalty_pct },
+      { key: "wip", label: "Too much parallel work", value: snapshot.wip_penalty_pct },
     ].filter((part) => part.value > 0);
-    const note =
-      reactiveContribution > 0
-        ? `Reactive load counts at ${Math.round(REACTIVE_DISCOUNT_FACTOR * 100)}% of face value — interrupted work delivers less sustainable throughput (Mark et al., CHI 2008). The parts add up to your committed utilization.`
-        : "The parts add up to your committed utilization.";
-    return { parts, note };
+    return { parts, reactiveContribution };
   }, [snapshot]);
 
-  // Rolling personal baselines from the weeks strictly before the one in view, so each
-  // headline number reads against the user's own norm rather than an absolute scale.
   const baselines = useMemo(() => {
     const prior = snapshotHistory
       .filter((record) => normalizeWeekId(record.week_id) < normalizeWeekId(snapshot.week_id))
@@ -344,75 +434,149 @@ export function WeeklyCapacityScreen({
     });
   }, [baselines, snapshot]);
 
-  const capacityDescription = useMemo(() => {
-    if (!hasWorkBlocks || (!isCurrentWeek && viewedBlocks.length === 0)) {
-      return GENERAL_CAPACITY_DESCRIPTION;
+  const reliableBaseline = baselineChips.find(
+    (chip) => chip.key === "reliable_new_work_capacity_pct"
+  );
+  const reliableCapacity = Math.round(snapshot.reliable_new_work_capacity_pct);
+  const committed = Math.round(snapshot.committed_utilization_pct);
+  const guidance =
+    reliableCapacity >= 30
+      ? "There is room for another focused commitment while keeping a healthy delivery buffer."
+      : reliableCapacity >= 15
+        ? "You’re in a good range—keep new commitments focused to protect delivery."
+        : reliableCapacity > 0
+          ? "Capacity is tight—keep additional commitments small until some load clears."
+          : "Let existing work clear before committing to more planned work.";
+
+  const recentComparison = reliableBaseline
+    ? reliableBaseline.delta === 0
+      ? `In line with your recent ${baselines.week_count}-week median`
+      : `${Math.abs(reliableBaseline.delta)} pts ${reliableBaseline.delta > 0 ? "above" : "below"} your recent ${baselines.week_count}-week median`
+    : null;
+
+  const categoryItems = useMemo(
+    () => [...snapshot.category_allocation].sort((left, right) => right.value - left.value),
+    [snapshot.category_allocation]
+  );
+  const visibleCategories = showAllCategories ? categoryItems : categoryItems.slice(0, 5);
+  const maxCategoryValue = Math.max(...categoryItems.map((item) => item.value), 1);
+  const allocatedCategoryTotal = categoryItems.reduce((sum, item) => sum + item.value, 0);
+  const modeItems = useMemo(
+    () => snapshot.work_mode_allocation.filter((item) => item.value > 0),
+    [snapshot.work_mode_allocation]
+  );
+
+  const committedWidth = clampPct(snapshot.committed_utilization_pct);
+  const availableWidth = Math.min(
+    clampPct(snapshot.reliable_new_work_capacity_pct),
+    Math.max(0, 100 - committedWidth)
+  );
+  const protectedWidth = Math.max(0, 100 - committedWidth - availableWidth);
+  const coverageParts: Array<{
+    key: CoveragePartKey;
+    label: string;
+    width: number;
+    center: number;
+    detail: string;
+  }> = [
+    {
+      key: "committed",
+      label: "Committed",
+      width: committedWidth,
+      center: committedWidth / 2,
+      detail: "Work and delivery risk already carried by this week.",
+    },
+    {
+      key: "available",
+      label: "Available",
+      width: availableWidth,
+      center: committedWidth + availableWidth / 2,
+      detail: "Dependable room remaining for new planned work.",
+    },
+    {
+      key: "protected",
+      label: "Protected buffer",
+      width: protectedWidth,
+      center: committedWidth + availableWidth + protectedWidth / 2,
+      detail: "Room held back to absorb delivery risk and keep plans realistic.",
+    },
+  ];
+  const activeCoverage = hoveredCoverage ?? focusedCoverage;
+  const activeCoveragePart = coverageParts.find((part) => part.key === activeCoverage) ?? null;
+  const activeCategory = hoveredCategory ?? focusedCategory;
+
+  const clearCoveragePart = (key: CoveragePartKey, source: "hover" | "focus") => {
+    if (source === "hover") {
+      setHoveredCoverage((current) => (current === key ? null : current));
+    } else {
+      setFocusedCoverage((current) => (current === key ? null : current));
     }
+  };
 
-    const committed = Math.round(snapshot.committed_utilization_pct);
-    const allocated = Math.round(snapshot.allocated_pct);
-    const reliable = Math.round(snapshot.reliable_new_work_capacity_pct);
-    const primaryPressure = committedBreakdown.parts.reduce<(typeof committedBreakdown.parts)[number] | null>(
-      (largest, part) => (!largest || part.value > largest.value ? part : largest),
-      null
-    );
-    const pressureLabel = primaryPressure ? CAPACITY_PRESSURE_LABELS[primaryPressure.key] : null;
-    const opening = committed > 0
-      ? `${committed}% of the week is already committed${pressureLabel ? `, led by ${pressureLabel}` : ""}.`
-      : allocated > 0
-        ? `${allocated}% of the standard week is currently allocated, with little forward-committed load.`
-        : GENERAL_CAPACITY_DESCRIPTION;
-
-    if (opening === GENERAL_CAPACITY_DESCRIPTION) return opening;
-
-    const guidance = reliable >= 30
-      ? "there is room for another focused commitment while preserving delivery buffer."
-      : reliable >= 15
-        ? "keep new commitments focused to preserve delivery buffer."
-        : reliable > 0
-          ? "keep additional commitments small until some load clears."
-          : "let existing load clear before committing more planned work.";
-    const reliableBaseline = baselineChips.find((chip) => chip.key === "reliable_new_work_capacity_pct");
-
-    if (!reliableBaseline) {
-      return `${opening} ${guidance.charAt(0).toUpperCase()}${guidance.slice(1)}`;
+  const clearCategory = (category: WorkCategory, source: "hover" | "focus") => {
+    if (source === "hover") {
+      setHoveredCategory((current) => (current === category ? null : current));
+    } else {
+      setFocusedCategory((current) => (current === category ? null : current));
     }
+  };
 
-    const comparison = reliableBaseline.delta === 0
-      ? `is in line with your ${baselines.week_count}-week median`
-      : `is ${Math.abs(reliableBaseline.delta)} point${Math.abs(reliableBaseline.delta) === 1 ? "" : "s"} ${reliableBaseline.delta > 0 ? "above" : "below"} your ${baselines.week_count}-week median`;
+  const focusTip = useMemo(() => {
+    if (blockerCount > 0) {
+      return {
+        title: blockerCount === 1 ? "Clear the active blocker" : "Clear active blockers",
+        detail: "Resolving blocked work is the fastest way to reduce carryover risk.",
+      };
+    }
+    if (snapshot.context_switch_score >= 0.3) {
+      return {
+        title: "Protect more deep-work time",
+        detail: "Batch meetings and reactive requests to preserve longer focus blocks.",
+      };
+    }
+    if (snapshot.reactive_pct >= 25) {
+      return {
+        title: "Batch reactive requests",
+        detail: "Create set response windows so unplanned work interrupts less of the week.",
+      };
+    }
+    return {
+      title: "Keep the delivery buffer intact",
+      detail: "Use available capacity for one focused commitment instead of several small ones.",
+    };
+  }, [blockerCount, snapshot.context_switch_score, snapshot.reactive_pct]);
 
-    return `${opening} Reliable capacity ${comparison}; ${guidance}`;
-  }, [
-    baselineChips,
-    baselines.week_count,
-    committedBreakdown.parts,
-    hasWorkBlocks,
-    isCurrentWeek,
-    snapshot.allocated_pct,
-    snapshot.committed_utilization_pct,
-    snapshot.reliable_new_work_capacity_pct,
-    viewedBlocks.length,
-  ]);
-
-  if (!hasWorkBlocks) {
+  if (!hasWorkBlocks || !hasCurrentWeekSignal) {
+    const hasHistoricalSignal = hasWorkBlocks && !hasCurrentWeekSignal;
     return (
-      <section className="screen capacity-screen">
-        <div className="screen-header">
+      <section className="screen capacity-screen capacity-dashboard">
+        <div className="screen-header capacity-dashboard-header">
           <div>
             <p className="eyebrow">Weekly capacity</p>
-            <h1>Waiting for real workload signal.</h1>
-            <p className="screen-intro">{capacityDescription}</p>
+            <h1>{hasHistoricalSignal ? "No tracked work this week." : "Waiting for workload signal."}</h1>
+            <p className="screen-intro">
+              {hasHistoricalSignal
+                ? `${weekRangeLabel} will fill in as current sessions become reviewed work blocks.`
+                : "See what is already committed and how much dependable room remains for new planned work."}
+            </p>
           </div>
         </div>
         <EmptyState
           icon={BarChart3}
-          title="No weekly capacity model yet."
-          description="The percentage breakdown will stay blank until local sources create work blocks. Import Outlook calendar events now, then let active-window sessions become the next inference source."
+          title={hasHistoricalSignal ? "This week has no reviewed work blocks yet." : "No weekly capacity model yet."}
+          description={
+            hasHistoricalSignal
+              ? "Classify current activity into work blocks, or import this week’s calendar events."
+              : "Import calendar events or review captured activity to create the first capacity estimate."
+          }
         >
-          <button className="primary-action" type="button" onClick={() => onOpenScreen("setup")}>
-            <Upload size={16} aria-hidden />
-            <span>Import calendar in Settings</span>
+          <button
+            className="primary-action"
+            type="button"
+            onClick={() => onOpenScreen(hasHistoricalSignal ? "ledger" : "setup")}
+          >
+            {hasHistoricalSignal ? <Focus size={16} aria-hidden /> : <Upload size={16} aria-hidden />}
+            <span>{hasHistoricalSignal ? "Classify current activity" : "Import calendar in Settings"}</span>
           </button>
         </EmptyState>
       </section>
@@ -420,345 +584,386 @@ export function WeeklyCapacityScreen({
   }
 
   return (
-    <section className="screen capacity-screen">
-      <div className="screen-header">
-        <div>
-          <p className="eyebrow">Weekly capacity</p>
-          {!isCurrentWeek && viewedBlocks.length === 0 ? (
-            <h1>No tracked work.</h1>
-          ) : (
-            <h1>{pct(snapshot.reliable_new_work_capacity_pct)} reliable capacity {isCurrentWeek ? "for new planned work" : "was open for new planned work"}.</h1>
-          )}
-          <p className="screen-intro">{capacityDescription}</p>
-        </div>
+    <section className="screen capacity-screen capacity-dashboard">
+      <div className="screen-header capacity-dashboard-header">
+        <p className="eyebrow">Weekly capacity</p>
       </div>
 
-      {(isCurrentWeek || viewedBlocks.length > 0) && (
-        <div className="hero-metrics">
-          <h2 className="sr-only">Capacity summary</h2>
-          <MetricCard label="Allocated capacity" value={snapshot.allocated_pct} helper={isCurrentWeek ? "Estimated distribution this week" : "Estimated distribution that week"} title="The share of your working week already taken up by tracked work — meetings, planned tasks, and reactive load combined." />
-          <MetricCard label="Effective planned work" value={snapshot.planned_pct} helper="Capacity spent on planned work" title="The share of your week spent on work you scheduled ahead of time, rather than reacting to interruptions." />
-          <MetricCard label="Reactive load" value={snapshot.reactive_pct} helper="Unplanned support and interruption work" title="The share of your week absorbed by unplanned support, interruptions, and ad-hoc requests you didn't schedule." />
-          <MetricCard label="Reliable new work" value={snapshot.reliable_new_work_capacity_pct} helper={reliableHelper} showRing title={`Past ~${TARGET_UTILIZATION_PCT}% utilization, delays grow sharply — we hold back the last ~${100 - TARGET_UTILIZATION_PCT}% as buffer`} />
-        </div>
-      )}
-
-      {committedBreakdown.parts.length > 0 && (isCurrentWeek || viewedBlocks.length > 0) && (
-        <section className="committed-breakdown" aria-label="What makes up your committed load">
-          <span className="baseline-chips-label">
-            Committed load {pct(snapshot.committed_utilization_pct)} · what it&rsquo;s made of
-          </span>
-          <div className="baseline-chip-row">
-            {committedBreakdown.parts.map((part) => (
-              <span key={part.key} className="baseline-chip" title={COMMITTED_PART_GLOSS[part.key]}>
-                <span className="baseline-chip-metric">{part.label}</span>
-                <span className="baseline-chip-delta">{pct(part.value)}</span>
-              </span>
-            ))}
-          </div>
-          <p className="committed-breakdown-note">{committedBreakdown.note}</p>
-        </section>
-      )}
-
-      {baselineChips.length > 0 && (isCurrentWeek || viewedBlocks.length > 0) && (
-        <section className="baseline-chips" aria-label={`Selected week versus your ${baselines.week_count}-week baseline`}>
-          <span className="baseline-chips-label">vs your {baselines.week_count}-wk median</span>
-          <div className="baseline-chip-row">
-            {baselineChips.map((chip) => {
-              const Icon = chip.direction === "up" ? ArrowUp : chip.direction === "down" ? ArrowDown : Minus;
-              const signed = `${chip.delta > 0 ? "+" : ""}${chip.delta}`;
-              return (
-                <span
-                  key={chip.key}
-                  className="baseline-chip"
-                  data-tone={chip.tone}
-                  title={`${chip.label}: ${chip.current} ${isCurrentWeek ? "this week" : "that week"} vs your ${baselines.week_count}-week median of ${chip.median}`}
-                >
-                  <span className="baseline-chip-metric">{chip.label}</span>
-                  <span className="baseline-chip-delta">
-                    <Icon size={12} aria-hidden />
-                    {chip.direction === "flat" ? "0" : signed}
-                  </span>
-                  <span className="sr-only">
-                    {chip.direction === "flat"
-                      ? `matches your ${baselines.week_count}-week median of ${chip.median}`
-                      : `${Math.abs(chip.delta)} ${chip.direction === "up" ? "above" : "below"} your ${baselines.week_count}-week median of ${chip.median} — ${chip.tone === "good" ? "an improvement" : "a regression"}`}
-                  </span>
-                </span>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {!isCurrentWeek && viewedBlocks.length === 0 && (
-        <EmptyState
-          icon={BarChart3}
-          title={`No work blocks for ${viewedWeekRangeLabel}.`}
-          description="Work blocks are tagged to the week they were classified. Earlier weeks will show data if Outlook imports or classifications were run during that week."
-        />
-      )}
-
-      {(isCurrentWeek || viewedBlocks.length > 0) && (
-      <section className="capacity-section capacity-model">
-        <div className="section-title">
-          <h2>Weekly baseline coverage</h2>
-          <span>standard {WEEKLY_BASELINE_HOURS}-hour baseline</span>
-        </div>
-        <div className="capacity-coverage-summary">
-          <div>
-            <strong>{pct(allocatedPct)}</strong>
-            <span>allocated · {formatCapacityHours(allocatedPct)} of {WEEKLY_BASELINE_HOURS}h</span>
-          </div>
-          <div>
-            <strong>{pct(unallocatedPct)}</strong>
-            <span>not allocated in tracked work</span>
-          </div>
-        </div>
-        <div
-          className="capacity-coverage-bar"
-          role="img"
-          aria-label={`${pct(allocatedPct)} of the standard ${WEEKLY_BASELINE_HOURS}-hour week is allocated; ${pct(unallocatedPct)} is not allocated in tracked work`}
-        >
-          {allocatedPct > 0 && <span style={{ width: `${allocatedPct}%` }} />}
-        </div>
-        <p className="capacity-coverage-note">
-          <Info size={14} aria-hidden />
-          <span>
-            <strong>{pct(snapshot.reliable_new_work_capacity_pct)} reliable new-work capacity</strong> after recurring load, carryover, reactive work, and delivery-risk adjustments. Unallocated time is not automatically bookable.
-          </span>
-        </p>
-        <div className="allocation-breakdown-grid">
-          <AllocationBreakdown title="Category mix" items={snapshot.category_allocation} colors={categoryColors} />
-          <AllocationBreakdown title="Work mode mix" items={snapshot.work_mode_allocation} colors={modeColors} />
-        </div>
-      </section>
-      )}
-
-      {(isCurrentWeek || viewedBlocks.length > 0) && (
-      <section className="capacity-section">
-        <div className="section-title">
-          <h2>Delivery risk modifiers</h2>
-          <div className="section-title-side">
-            <span>forecast inputs</span>
-            <button
-              className="risk-toggle"
-              type="button"
-              aria-expanded={riskExpanded}
-              onClick={() => setRiskExpanded((v) => !v)}
-            >
-              {riskExpanded ? "Hide details" : "Show details"}
-              {riskExpanded ? <ChevronUp size={13} aria-hidden /> : <ChevronDown size={13} aria-hidden />}
-            </button>
-          </div>
-        </div>
-        {!riskExpanded && (
-          <div className="baseline-chip-row risk-summary-row" role="group" aria-label="Delivery risk modifiers summary">
-            {riskSummaryChips.map((chip) => (
-              <span
-                key={chip.key}
-                className="baseline-chip"
-                data-tone={chip.elevated ? "bad" : undefined}
-                title={chip.tooltip}
-              >
-                <span className="baseline-chip-metric">{chip.label}</span>
-                <span className="baseline-chip-delta">{chip.display}</span>
-                {chip.elevated && <span className="sr-only"> — elevated</span>}
-              </span>
-            ))}
-          </div>
-        )}
-        {riskExpanded && (
-          <>
-            <p className="risk-scale-note">
-              Higher values add more delivery risk to next week — lower is better.
-            </p>
-            <div className="risk-list">
-              <RiskRow
-                label="Context switch burden"
-                value={snapshot.context_switch_score}
-                tooltip="Task-switching cost index: 0 = minimal, 100 = very high burden"
-                hint="/100"
-                caption={
-                  snapshot.fragmentation_penalty_pct > 0
-                    ? `Costs ~${pct(snapshot.fragmentation_penalty_pct)} of your committed week`
-                    : undefined
-                }
-              />
-              <RiskRow
-                label="WIP overload"
-                value={snapshot.wip_load_score}
-                tooltip="Parallel work-in-progress pressure: 0 = manageable, 100 = critical"
-                hint="/100"
-                caption={
-                  snapshot.wip_penalty_pct > 0
-                    ? `Costs ~${pct(snapshot.wip_penalty_pct)} of your committed week`
-                    : undefined
-                }
-              />
-              <RiskRow
-                label="Carryover risk"
-                value={snapshot.carryover_risk_pct / CARRYOVER_SATURATION_PCT}
-                displayValue={Math.round(snapshot.carryover_risk_pct)}
-                hint="%"
-                tooltip={
-                  isCurrentWeek
-                    ? `Share of this week's load at risk of slipping into next week — the bar saturates at ${CARRYOVER_SATURATION_PCT}% of the week`
-                    : `Share of that week's load at risk of slipping into the following week — the bar saturates at ${CARRYOVER_SATURATION_PCT}% of the week`
-                }
-              />
-              <RiskRow
-                label="Meeting density"
-                value={snapshot.meeting_pct / MEETING_SATURATION_PCT}
-                displayValue={Math.round(snapshot.meeting_pct)}
-                hint="%"
-                tooltip={`Share of your tracked week filled by meetings — the bar saturates at ${MEETING_SATURATION_PCT}% of the week`}
-              />
-              <RiskRow
-                label="Active blockers"
-                value={Math.min(blockerCount / 5, 1)}
-                displayValue={blockerCount}
-                tooltip={isCurrentWeek ? "Number of work blocks flagged as a blocker this week" : "Number of work blocks flagged as a blocker that week"}
-                dangerActive={blockerCount > 0}
-                caption={
-                  snapshot.blocked_pct > 0
-                    ? `~${pct(snapshot.blocked_pct)} of the tracked week is sitting in blocked work`
-                    : undefined
-                }
-              />
-            </div>
-          </>
-        )}
-      </section>
-      )}
-
-      {isCurrentWeek && interruptionLoad && (
-        <section className="interruption-note" aria-label="Chat interruption load">
-          <div className="interruption-header">
-            <Zap size={16} aria-hidden className="interruption-icon" />
-            <div>
-              <strong>Chat interruption load</strong>
-              <p>
-                Workplace chat is the reactive signal calendar and git can't see. These
-                metadata-only counts (no message text) show how much it fragmented your focus —
-                feeding the context-switch burden above.
-              </p>
-            </div>
-          </div>
-          <ul className="interruption-stats">
-            <li
-              className="interruption-stat"
-              title={`A reactive burst is a cluster of chat messages within ~${DEFAULT_SESSION_GAP_MINUTES} minutes — counted once per imported chat session`}
-            >
-              <strong>{interruptionLoad.burst_count}</strong>
-              <span>reactive {interruptionLoad.burst_count === 1 ? "burst" : "bursts"}</span>
-              <span className="sr-only">
-                A reactive burst is a cluster of chat messages within about {DEFAULT_SESSION_GAP_MINUTES} minutes.
-              </span>
-            </li>
-            <li
-              className="interruption-stat"
-              title="Messages per hour spent in chat bursts this week — interruption intensity while engaged"
-            >
-              <strong>{interruptionLoad.messages_per_active_hour}/hr</strong>
-              <span>messages while active</span>
-              <span className="sr-only">
-                Messages per hour spent in chat bursts — interruption intensity while engaged.
-              </span>
-            </li>
-            <li
-              className="interruption-stat"
-              title={
-                interruptionLoad.mention_pct > 0
-                  ? `${formatCount(interruptionLoad.mention_count)} of ${formatCount(interruptionLoad.message_count)} message${interruptionLoad.message_count === 1 ? "" : "s"} @-mentioned you directly (${interruptionLoad.mention_pct}%) — the sharpest interruption signal`
-                  : "Messages that @-mentioned you directly — the sharpest interruption signal"
-              }
-            >
-              <strong>{formatCount(interruptionLoad.mention_count)}</strong>
-              <span>direct @-mentions</span>
-              <span className="sr-only">
-                {interruptionLoad.mention_pct > 0
-                  ? `${interruptionLoad.mention_pct}% of this week's ${formatCount(interruptionLoad.message_count)} reactive message${interruptionLoad.message_count === 1 ? "" : "s"} pulled you in by name — the sharpest interruption signal, hardest to batch or defer.`
-                  : "Messages that pulled you in by name — the sharpest interruption signal."}
-              </span>
-            </li>
-            <li
-              className="interruption-stat"
-              title={`${interruptionLoad.interrupted_deep_work_count} of ${interruptionLoad.deep_work_block_count} deep-work block${interruptionLoad.deep_work_block_count === 1 ? "" : "s"} overlapped a chat burst`}
-            >
-              <strong>{interruptionLoad.interrupted_deep_work_pct}%</strong>
-              <span>deep work interrupted</span>
-              <span className="sr-only">
-                {interruptionLoad.interrupted_deep_work_count} of {interruptionLoad.deep_work_block_count} deep-work block{interruptionLoad.deep_work_block_count === 1 ? "" : "s"} overlapped a chat burst.
-              </span>
-            </li>
-          </ul>
-          {interruptionLoad.peak_day && interruptionLoad.active_day_count >= 2 && (
-            <p className="interruption-peak-note">
-              Reactive load peaked on <strong>{interruptionLoad.peak_day}</strong>
-              {interruptionLoad.peak_hour !== null && (
-                <> around <strong>{formatHourOfDay(interruptionLoad.peak_hour)}</strong></>
-              )}{" "}
-              —{" "}
-              {formatCount(interruptionLoad.peak_day_message_count)}{" "}
-              {interruptionLoad.peak_day_message_count === 1 ? "message" : "messages"} that day, the
-              busiest of {interruptionLoad.active_day_count} active days.{" "}
-              {interruptionLoad.calm_day && interruptionLoad.calm_day !== interruptionLoad.peak_day ? (
-                <>
-                  Your quietest active day was <strong>{interruptionLoad.calm_day}</strong> —
-                  consider protecting it for deep work.
-                </>
-              ) : (
-                "Consider protecting the quieter days for deep work."
-              )}
-            </p>
-          )}
-          {interruptionLoad.concentration_is_clustered && (
-            <p className="interruption-peak-note">
-              <strong>{interruptionLoad.concentration_pct}%</strong> of your reactive load clustered
-              into your busiest {interruptionLoad.concentration_day_count} days — batching it into
-              set windows could reclaim focus.
-            </p>
-          )}
-          {interruptionLoad.after_hours_message_count > 0 && (
-            <p className="interruption-peak-note">
-              <strong>{interruptionLoad.after_hours_pct}%</strong> of reactive messages
-              ({formatCount(interruptionLoad.after_hours_message_count)} of {formatCount(interruptionLoad.message_count)})
-              arrived outside core hours ({formatHourOfDay(CORE_HOURS_START)}–{formatHourOfDay(CORE_HOURS_END)}) — chat bleeding into personal time.
-            </p>
-          )}
-        </section>
-      )}
-
-      {isCurrentWeek && chatStakeholders && chatStakeholders.groups.length > 0 && (
-        <section
-          className="baseline-chips stakeholder-chips"
-          aria-label="Who your reactive chat time served this week"
-        >
-          <span className="baseline-chips-label">Who your reactive time served</span>
-          <div className="baseline-chip-row">
-            {chatStakeholders.groups.map((group) => (
-              <span
-                key={group.label}
-                className="baseline-chip"
-                title={`${group.label}: ${group.share_pct}% of this week's reactive chat volume, across ${group.burst_count} ${group.burst_count === 1 ? "burst" : "bursts"}`}
-              >
-                <span className="baseline-chip-metric">{group.label}</span>
-                <span className="baseline-chip-delta">{group.share_pct}%</span>
-                <span className="sr-only">
-                  {group.share_pct}% of this week's reactive chat volume, across {group.burst_count} {group.burst_count === 1 ? "burst" : "bursts"}
-                </span>
-              </span>
-            ))}
-          </div>
-          {chatStakeholders.group_count > chatStakeholders.groups.length && (
-            <span className="stakeholder-chips-note">
-              Top {chatStakeholders.groups.length} of {chatStakeholders.group_count} groups by reactive
-              volume — {chatStakeholders.group_count - chatStakeholders.groups.length} more not shown.
+      <section className="week-dashboard-hero" aria-labelledby="week-capacity-headline">
+        <AvailabilityGauge value={snapshot.reliable_new_work_capacity_pct} />
+        <div className="week-dashboard-hero-copy">
+          <h1 id="week-capacity-headline">
+            You have {pct(snapshot.reliable_new_work_capacity_pct)} capacity for new planned work.
+          </h1>
+          <p>
+            {pct(snapshot.committed_utilization_pct)} of the week is already committed. {guidance}
+          </p>
+          {recentComparison && (
+            <span className="week-dashboard-comparison" data-tone={reliableBaseline?.tone}>
+              {recentComparison}
             </span>
           )}
+        </div>
+        <CapacitySignalGraphic
+          available={snapshot.reliable_new_work_capacity_pct}
+          committed={snapshot.committed_utilization_pct}
+        />
+      </section>
+
+      <section className="week-dashboard-metrics" aria-labelledby="week-summary-heading">
+        <h2 id="week-summary-heading" className="sr-only">Capacity summary</h2>
+        <WeekMetricCard
+          icon={CalendarDays}
+          label="Committed"
+          value={snapshot.committed_utilization_pct}
+          helper="Work and risk already carried by the week"
+          tone="blue"
+          title="Recurring work, carryover, reactive demand, and delivery-risk adjustments already committed this week."
+        />
+        <WeekMetricCard
+          icon={Focus}
+          label="Planned work"
+          value={snapshot.planned_pct}
+          helper="Work scheduled ahead of time"
+          tone="purple"
+          title="The share of the week spent on work scheduled ahead of time. Planned work may still be collaborative or fragmented."
+        />
+        <WeekMetricCard
+          icon={MessageSquareText}
+          label="Reactive work"
+          value={snapshot.reactive_pct}
+          helper="Unplanned requests and interruption time"
+          tone="orange"
+          title="The share of the week absorbed by unplanned support, interruptions, and ad-hoc requests."
+        />
+        <WeekMetricCard
+          icon={Plus}
+          label="New work capacity"
+          value={snapshot.reliable_new_work_capacity_pct}
+          helper="Dependable room for new planned work"
+          tone="green"
+          title="Capacity that can absorb new planned work while preserving the model’s delivery buffer."
+        />
+      </section>
+
+      <div className="week-dashboard-main-grid">
+        <section className="week-dashboard-panel week-dashboard-coverage" aria-labelledby="week-coverage-heading">
+          <div className="week-dashboard-panel-heading">
+            <div>
+              <h2 id="week-coverage-heading">Commitment and headroom</h2>
+              <span>Committed load and dependable room within a standard {WEEKLY_BASELINE_HOURS}-hour week</span>
+            </div>
+          </div>
+
+          <div className="week-dashboard-coverage-labels">
+            <strong>{pct(committedWidth)} committed</strong>
+            <strong>{pct(availableWidth)} available</strong>
+          </div>
+          <div
+            className="week-dashboard-coverage-visual"
+            role="group"
+            aria-label={`${pct(committedWidth)} committed, ${pct(availableWidth)} available for new planned work, and ${pct(protectedWidth)} protected as delivery buffer`}
+          >
+            <div className={`week-dashboard-coverage-bar ${activeCoverage ? "has-active" : ""}`}>
+              {coverageParts.map((part, index) => {
+                if (part.width <= 0) return null;
+                const isActive = activeCoverage === part.key;
+                const isMuted = activeCoverage !== null && !isActive;
+                return (
+                  <span
+                    key={part.key}
+                    className={`is-${part.key} ${isActive ? "is-active" : ""} ${isMuted ? "is-muted" : ""}`.trim()}
+                    style={{ width: `${part.width}%`, animationDelay: `${45 + index * 45}ms` }}
+                    role="img"
+                    tabIndex={0}
+                    aria-label={`${part.label}: ${pct(part.width)} of the standard work week. ${part.detail}`}
+                    aria-describedby={isActive ? coverageTooltipId : undefined}
+                    onMouseEnter={() => setHoveredCoverage(part.key)}
+                    onMouseLeave={() => clearCoveragePart(part.key, "hover")}
+                    onFocus={() => setFocusedCoverage(part.key)}
+                    onBlur={() => clearCoveragePart(part.key, "focus")}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        setHoveredCoverage(null);
+                        setFocusedCoverage(null);
+                        event.currentTarget.blur();
+                      }
+                    }}
+                  />
+                );
+              })}
+            </div>
+            <WeekVisualTooltip
+              id={coverageTooltipId}
+              visible={activeCoveragePart !== null}
+              title={activeCoveragePart?.label ?? "Weekly capacity"}
+              value={activeCoveragePart ? `${pct(activeCoveragePart.width)} · ${formatCapacityHours(activeCoveragePart.width)}` : ""}
+              detail={activeCoveragePart?.detail ?? "How the standard work week is allocated."}
+              className="week-dashboard-coverage-tooltip"
+              style={{
+                left: `clamp(112px, ${activeCoveragePart?.center ?? 50}%, calc(100% - 112px))`,
+              }}
+            />
+          </div>
+          <div className="week-dashboard-coverage-legend" aria-hidden="true">
+            {coverageParts.map((part) => (
+              <span
+                key={part.key}
+                className={activeCoverage === part.key ? "is-active" : ""}
+                onMouseEnter={() => setHoveredCoverage(part.key)}
+                onMouseLeave={() => clearCoveragePart(part.key, "hover")}
+              >
+                <i className={`is-${part.key}`} />{part.label}
+              </span>
+            ))}
+          </div>
+          <p className="week-dashboard-coverage-note">
+            Available capacity already accounts for recurring work, interruptions, carryover, and delivery risk.
+          </p>
+
+          <div className="week-dashboard-category-section">
+            <div className="week-dashboard-category-heading">
+              <div>
+                <h3>Top categories</h3>
+                <span>Share of tracked work</span>
+              </div>
+              {categoryItems.length > 5 && (
+                <button
+                  type="button"
+                  aria-expanded={showAllCategories}
+                  aria-controls="week-category-list"
+                  onClick={() => {
+                    setHoveredCategory(null);
+                    setFocusedCategory(null);
+                    setShowAllCategories((current) => !current);
+                  }}
+                >
+                  {showAllCategories ? "Show top 5" : "View all"}
+                </button>
+              )}
+            </div>
+            <ul className="week-dashboard-category-list" id="week-category-list">
+              {visibleCategories.map((item, index) => {
+                const allocatedShare = Math.round((item.value / Math.max(allocatedCategoryTotal, 1)) * 100);
+                const isActive = activeCategory === item.label;
+                const tooltipId = `${categoryTooltipId}-${index}`;
+                return (
+                  <li key={item.label}>
+                    <div
+                      className={`week-dashboard-category-item ${isActive ? "is-active" : ""}`}
+                      role="img"
+                      tabIndex={0}
+                      aria-label={`${displayCategory(item.label)}: ${formatCapacityHours(item.value)}, ${allocatedShare}% of tracked work`}
+                      aria-describedby={isActive ? tooltipId : undefined}
+                      onMouseEnter={() => setHoveredCategory(item.label)}
+                      onMouseLeave={() => clearCategory(item.label, "hover")}
+                      onFocus={() => setFocusedCategory(item.label)}
+                      onBlur={() => clearCategory(item.label, "focus")}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") {
+                          setHoveredCategory(null);
+                          setFocusedCategory(null);
+                          event.currentTarget.blur();
+                        }
+                      }}
+                    >
+                      <span className="week-dashboard-category-label">
+                        <span className="dot" style={{ background: categoryColors[item.label] }} />
+                        <span>{displayCategory(item.label)}</span>
+                      </span>
+                      <span className="week-dashboard-category-track" aria-hidden="true">
+                        <span
+                          style={{
+                            width: `${(item.value / maxCategoryValue) * 100}%`,
+                            background: categoryColors[item.label],
+                            animationDelay: `${110 + index * 45}ms`,
+                          }}
+                        />
+                      </span>
+                      <strong>{formatCapacityHours(item.value)}</strong>
+                      <span>{allocatedShare}%</span>
+                    </div>
+                    <WeekVisualTooltip
+                      id={tooltipId}
+                      visible={isActive}
+                      title={displayCategory(item.label)}
+                      value={`${formatCapacityHours(item.value)} · ${allocatedShare}%`}
+                      detail="Share of the work already tracked this week."
+                      className="week-dashboard-category-tooltip"
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </section>
-      )}
+
+        <section className="week-dashboard-panel week-dashboard-time" aria-labelledby="week-time-heading">
+          <div className="week-dashboard-panel-heading">
+            <div>
+              <h2 id="week-time-heading">How tracked time is spent</h2>
+              <span>Work modes within the time already allocated</span>
+            </div>
+          </div>
+          <TimeSpentDonut items={modeItems} />
+          <div className="week-dashboard-tip">
+            <span><Lightbulb size={17} aria-hidden="true" /></span>
+            <div>
+              <strong>Tip: {focusTip.title}</strong>
+              <p>{focusTip.detail}</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <details className="week-dashboard-explainability">
+        <summary>
+          <span className="week-dashboard-explainability-icon"><Info size={17} aria-hidden="true" /></span>
+          <span>
+            <strong>How this estimate is built</strong>
+            <small>Review commitments, recent comparisons, and delivery-risk signals</small>
+          </span>
+          <ChevronDown className="week-dashboard-explainability-chevron" size={17} aria-hidden="true" />
+        </summary>
+        <div className="week-dashboard-explainability-body">
+          {baselineChips.length > 0 && (
+            <section className="week-dashboard-baselines" aria-labelledby="week-baselines-heading">
+              <div className="week-dashboard-detail-heading">
+                <h3 id="week-baselines-heading">Compared with your recent {baselines.week_count}-week median</h3>
+                <span>Personal context, not a generic benchmark</span>
+              </div>
+              <div className="week-dashboard-baseline-list">
+                {baselineChips.map((chip) => {
+                  const Icon = chip.direction === "up" ? ArrowUp : chip.direction === "down" ? ArrowDown : Minus;
+                  return (
+                    <span key={chip.key} data-tone={chip.tone}>
+                      <span>{chip.label}</span>
+                      <strong><Icon size={12} aria-hidden="true" />{chip.delta > 0 ? "+" : ""}{chip.delta}</strong>
+                      <small>median {chip.median}</small>
+                    </span>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          <div className="week-dashboard-detail-grid">
+            <section className="week-dashboard-detail-group" aria-labelledby="week-committed-heading">
+              <div className="week-dashboard-detail-heading">
+                <h3 id="week-committed-heading">What makes up the {pct(snapshot.committed_utilization_pct)} committed load</h3>
+                <span>These parts add up to the committed estimate</span>
+              </div>
+              <ul className="week-dashboard-detail-list">
+                {committedBreakdown.parts.map((part) => (
+                  <li key={part.key}>
+                    <span>
+                      <span>{part.label}</span>
+                      <small>{COMMITTED_PART_GLOSS[part.key]}</small>
+                    </span>
+                    <strong>{pct(part.value)}</strong>
+                  </li>
+                ))}
+              </ul>
+              {committedBreakdown.reactiveContribution > 0 && (
+                <p>
+                  Reactive work counts at {Math.round(REACTIVE_DISCOUNT_FACTOR * 100)}% of face value because interrupted work delivers less sustainable throughput.
+                </p>
+              )}
+            </section>
+
+            <section className="week-dashboard-detail-group" aria-labelledby="week-risk-heading">
+              <div className="week-dashboard-detail-heading">
+                <h3 id="week-risk-heading">Delivery-risk signals</h3>
+                <span>Lower is better</span>
+              </div>
+              <div className="risk-list">
+                <RiskRow
+                  label="Context switching"
+                  value={snapshot.context_switch_score}
+                  tooltip="Task-switching cost index: 0 = minimal, 100 = very high burden"
+                  hint="/100"
+                  caption={snapshot.fragmentation_penalty_pct > 0 ? `Costs about ${pct(snapshot.fragmentation_penalty_pct)} of the committed week` : undefined}
+                />
+                <RiskRow
+                  label="Too much parallel work"
+                  value={snapshot.wip_load_score}
+                  tooltip="Pressure from keeping several projects in progress at once"
+                  hint="/100"
+                  caption={snapshot.wip_penalty_pct > 0 ? `Costs about ${pct(snapshot.wip_penalty_pct)} of the committed week` : undefined}
+                />
+                <RiskRow
+                  label="Carryover risk"
+                  value={snapshot.carryover_risk_pct / CARRYOVER_SATURATION_PCT}
+                  displayValue={Math.round(snapshot.carryover_risk_pct)}
+                  hint="%"
+                  tooltip="Share of this week’s load at risk of slipping into next week"
+                />
+                <RiskRow
+                  label="Meeting time"
+                  value={snapshot.meeting_pct / MEETING_SATURATION_PCT}
+                  displayValue={Math.round(snapshot.meeting_pct)}
+                  hint="%"
+                  tooltip="Share of the tracked week filled by meetings"
+                />
+                <RiskRow
+                  label="Active blockers"
+                  value={Math.min(blockerCount / 5, 1)}
+                  displayValue={blockerCount}
+                  tooltip="Number of work blocks flagged as blocked this week"
+                  dangerActive={blockerCount > 0}
+                  caption={snapshot.blocked_pct > 0 ? `${pct(snapshot.blocked_pct)} of the week is in blocked work` : undefined}
+                />
+              </div>
+            </section>
+          </div>
+
+          {interruptionLoad && (
+            <section className="week-dashboard-interruptions" aria-labelledby="week-interruptions-heading">
+              <div className="week-dashboard-detail-heading">
+                <h3 id="week-interruptions-heading"><Zap size={15} aria-hidden="true" />Chat interruption signals</h3>
+                <span>Metadata only—never message text</span>
+              </div>
+              <ul>
+                <li><strong>{interruptionLoad.burst_count}</strong><span>reactive bursts</span></li>
+                <li><strong>{interruptionLoad.messages_per_active_hour}/hr</strong><span>messages while active</span></li>
+                <li><strong>{formatCount(interruptionLoad.mention_count)}</strong><span>direct @-mentions</span></li>
+                <li><strong>{interruptionLoad.interrupted_deep_work_pct}%</strong><span>deep work interrupted</span></li>
+              </ul>
+              {interruptionLoad.peak_day && interruptionLoad.active_day_count >= 2 && (
+                <p>
+                  Reactive load peaked on <strong>{interruptionLoad.peak_day}</strong>
+                  {interruptionLoad.peak_hour !== null && <> around <strong>{formatHourOfDay(interruptionLoad.peak_hour)}</strong></>}.
+                  {interruptionLoad.calm_day && interruptionLoad.calm_day !== interruptionLoad.peak_day && (
+                    <> Your quietest active day was <strong>{interruptionLoad.calm_day}</strong>—a good candidate for protected focus time.</>
+                  )}
+                </p>
+              )}
+              {interruptionLoad.after_hours_message_count > 0 && (
+                <p>
+                  <strong>{interruptionLoad.after_hours_pct}%</strong> of reactive messages arrived outside core hours ({formatHourOfDay(CORE_HOURS_START)}–{formatHourOfDay(CORE_HOURS_END)}).
+                </p>
+              )}
+              {chatStakeholders && chatStakeholders.groups.length > 0 && (
+                <div className="week-dashboard-stakeholders">
+                  <span>Reactive time served</span>
+                  <div>
+                    {chatStakeholders.groups.map((group) => (
+                      <span key={group.label} title={`${group.burst_count} ${group.burst_count === 1 ? "burst" : "bursts"}`}>
+                        {group.label} <strong>{group.share_pct}%</strong>
+                      </span>
+                    ))}
+                  </div>
+                  {chatStakeholders.group_count > chatStakeholders.groups.length && (
+                    <small>
+                      Top {chatStakeholders.groups.length} of {chatStakeholders.group_count} groups · {chatStakeholders.group_count - chatStakeholders.groups.length} more not shown
+                    </small>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+        </div>
+      </details>
     </section>
   );
 }
