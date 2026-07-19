@@ -31,6 +31,6 @@ export async function writePersistedCloudState(state: PersistedCloudStateV1): Pr
   await writeCloudStateThrough(resolveSessionStorageAdapter(), state);
 }
 
-export async function clearPersistedCloudState(): Promise<void> {
-  await deleteCloudStateThrough(resolveSessionStorageAdapter());
+export async function clearPersistedCloudState(): Promise<boolean> {
+  return deleteCloudStateThrough(resolveSessionStorageAdapter());
 }

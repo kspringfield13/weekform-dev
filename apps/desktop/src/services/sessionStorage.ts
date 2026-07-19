@@ -46,9 +46,75 @@ export interface SessionStorageAdapter {
   delete(): Promise<void>;
 }
 
+export interface SessionRevocationMarker {
+  isSet(): Promise<boolean>;
+  set(): Promise<void>;
+  clear(): Promise<void>;
+}
+
+/**
+ * A credential-free tombstone wins over a stale primary envelope. Deletion is
+ * considered durable when either the primary delete succeeds or the marker is
+ * written; only a later successful replacement write clears the marker.
+ */
+export function createRevocationGuardedAdapter(
+  primary: SessionStorageAdapter,
+  marker: SessionRevocationMarker
+): SessionStorageAdapter {
+  return {
+    async read() {
+      if (await marker.isSet()) return null;
+      return primary.read();
+    },
+    async write(state) {
+      await primary.write(state);
+      await marker.clear();
+    },
+    async delete() {
+      let markerWritten = false;
+      let primaryDeleted = false;
+      let failure: unknown = null;
+      try {
+        await marker.set();
+        markerWritten = true;
+      } catch (error) {
+        failure = error;
+      }
+      try {
+        await primary.delete();
+        primaryDeleted = true;
+      } catch (error) {
+        failure ??= error;
+      }
+      if (!markerWritten && !primaryDeleted) throw failure;
+    }
+  };
+}
+
+/** Preserve call order so an older async write can never finish after a later reset. */
+export function createSerializedSessionStorageAdapter(
+  adapter: SessionStorageAdapter
+): SessionStorageAdapter {
+  let tail: Promise<void> = Promise.resolve();
+  function enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    const result = tail.then(operation, operation);
+    tail = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  }
+  return {
+    read: () => enqueue(() => adapter.read()),
+    write: (state) => enqueue(() => adapter.write(state)),
+    delete: () => enqueue(() => adapter.delete())
+  };
+}
+
 // ---------------------------------------------------------------------------
-// Default adapter — the exact behavior cloudStore.ts had before this seam:
-// Tauri Store in the desktop app, localStorage fallback in web/demo builds.
+// Default adapter: Tauri Store in the desktop app, localStorage only in a
+// browser/demo runtime. A native Store failure must fail closed instead of
+// silently creating a second token store in localStorage.
 // ---------------------------------------------------------------------------
 
 // Same store file as localStore.ts (legacy name kept for state compatibility), a
@@ -56,20 +122,36 @@ export interface SessionStorageAdapter {
 const STORE_FILE = "clear-capacity.store";
 const CLOUD_STATE_KEY = "cloudState";
 const CLOUD_STORAGE_KEY = "clear-capacity:cloud:v1"; // fallback for non-Tauri
+const CLOUD_REVOCATION_KEY = "clear-capacity:cloud-revoked:v1";
 
-async function getStore(): Promise<Store | null> {
-  try {
-    if (!("__TAURI_INTERNALS__" in window)) {
-      return null;
-    }
-    return await Store.load(STORE_FILE);
-  } catch {
-    return null;
+const browserRevocationMarker: SessionRevocationMarker = {
+  async isSet() {
+    return window.localStorage.getItem(CLOUD_REVOCATION_KEY) === "1";
+  },
+  async set() {
+    window.localStorage.setItem(CLOUD_REVOCATION_KEY, "1");
+  },
+  async clear() {
+    window.localStorage.removeItem(CLOUD_REVOCATION_KEY);
   }
+};
+
+export function browserFallbackAllowed(runtime: Record<string, unknown>): boolean {
+  return !("__TAURI_INTERNALS__" in runtime);
 }
 
-/** Tauri Store when available, localStorage otherwise — unchanged legacy behavior. */
-export const defaultSessionStorageAdapter: SessionStorageAdapter = {
+async function getStore(): Promise<Store | null> {
+  if (browserFallbackAllowed(window as unknown as Record<string, unknown>)) {
+    return null;
+  }
+  // Deliberately allow Store.load failures to propagate. Falling through to
+  // localStorage in a native runtime can strand a second credential envelope
+  // that a later Store-backed reset would not clear.
+  return Store.load(STORE_FILE);
+}
+
+/** Tauri Store in native builds; localStorage only in browser/demo builds. */
+const primarySessionStorageAdapter: SessionStorageAdapter = {
   async read(): Promise<unknown> {
     const store = await getStore();
     if (!store) {
@@ -100,6 +182,10 @@ export const defaultSessionStorageAdapter: SessionStorageAdapter = {
     await store.save();
   }
 };
+
+export const defaultSessionStorageAdapter = createSerializedSessionStorageAdapter(
+  createRevocationGuardedAdapter(primarySessionStorageAdapter, browserRevocationMarker)
+);
 
 // ---------------------------------------------------------------------------
 // Keychain adapter — capability-gated STUB (env-blocked for live proof).
@@ -155,7 +241,7 @@ export function keychainAvailable(): boolean {
  * bridge it throws — never a fake success — and the `*Through` helpers turn
  * that throw into the same safe degradation every backend gets.
  */
-export const keychainSessionStorageAdapter: SessionStorageAdapter = {
+const primaryKeychainSessionStorageAdapter: SessionStorageAdapter = {
   async read(): Promise<unknown> {
     const bridge = getKeychainBridge();
     if (!bridge) throw new Error("keychain bridge not installed (env-blocked stub)");
@@ -174,6 +260,10 @@ export const keychainSessionStorageAdapter: SessionStorageAdapter = {
     await bridge.deleteSecret(KEYCHAIN_SECRET_KEY);
   }
 };
+
+export const keychainSessionStorageAdapter = createSerializedSessionStorageAdapter(
+  createRevocationGuardedAdapter(primaryKeychainSessionStorageAdapter, browserRevocationMarker)
+);
 
 // ---------------------------------------------------------------------------
 // Adapter selection — capability check with an unconditional fallback.
@@ -234,11 +324,12 @@ export async function writeCloudStateThrough(
   }
 }
 
-/** Best-effort delete via `adapter`; a failed delete leaves only local state behind. */
-export async function deleteCloudStateThrough(adapter: SessionStorageAdapter): Promise<void> {
+/** True only when the adapter confirms deletion or a durable revocation tombstone. */
+export async function deleteCloudStateThrough(adapter: SessionStorageAdapter): Promise<boolean> {
   try {
     await adapter.delete();
+    return true;
   } catch {
-    // ignore — a failed delete leaves only local state behind, never an upload path.
+    return false;
   }
 }

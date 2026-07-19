@@ -14,6 +14,7 @@ import { validateSimulationDataset } from "./validate";
 import {
   authenticateLocalSimulatorAdmin,
   authorizeSimulatorAccess,
+  getLocalAdminPortalView,
   getLocalSimulatorPortalNavigation,
   LOCAL_SIMULATOR_ADMIN_EMAIL,
   LOCAL_SIMULATOR_ADMIN_PASSWORD
@@ -177,6 +178,17 @@ test("the local Admin Portal accepts only its synthetic demo credentials", () =>
     authenticateLocalSimulatorAdmin(false, LOCAL_SIMULATOR_ADMIN_EMAIL, LOCAL_SIMULATOR_ADMIN_PASSWORD).allowed,
     false
   );
+});
+
+test("the local Admin Portal welcomes admins before presenting Span Simulator as a tool", () => {
+  const signedOutView = getLocalAdminPortalView(false);
+  assert.equal(signedOutView.heading, "Welcome to the Admin Portal");
+  assert.deepEqual(signedOutView.tools, []);
+
+  const signedInView = getLocalAdminPortalView(true);
+  assert.equal(signedInView.heading, "Welcome to the Admin Portal");
+  assert.deepEqual(signedInView.tools.map((tool) => tool.label), ["Span Simulator"]);
+  assert.equal(signedInView.tools[0]?.href, "/admin/span-simulator?role=simulator_admin");
 });
 
 test("exports preserve synthetic identity and spreadsheet-safe CSV", () => {

@@ -264,6 +264,35 @@ export async function upsertWorkloadSnapshot(
   }
 }
 
+/** Authenticated/RLS-scoped existence check used to reconcile an unchanged local sync marker. */
+export async function workloadSnapshotExists(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  clientSnapshotId: string
+): Promise<CloudResult<boolean>> {
+  const query =
+    "select=client_snapshot_id" +
+    `&user_id=eq.${encodeURIComponent(session.userId)}` +
+    `&client_snapshot_id=eq.${encodeURIComponent(clientSnapshotId)}` +
+    "&limit=1";
+  try {
+    const response = await fetch(`${env.url}/rest/v1/workload_snapshots?${query}`, {
+      headers: authHeaders(env, session.accessToken)
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: await failureMessage(response, "Could not confirm the synced snapshot"),
+        status: response.status
+      };
+    }
+    const rows: unknown = await response.json();
+    return { ok: true, value: Array.isArray(rows) && rows.length > 0 };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
 /**
  * Delete every snapshot row THIS user previously synced to the given team. RLS's
  * delete policy already restricts deletes to the caller's own rows; the explicit

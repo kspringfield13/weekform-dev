@@ -4,10 +4,35 @@ The web surface for Weekform: marketing landing page, email/password auth,
 an authenticated dashboard shell, and the account-gated Mac download page.
 
 Built with Next.js (App Router, TypeScript strict) and `@supabase/ssr`
-(`createServerClient` / `createBrowserClient` plus the official
-`updateSession` session-refresh pattern, wired through the Next.js 16
+(`createServerClient` plus the official `updateSession` session-refresh
+pattern, wired through the Next.js 16
 `proxy.ts` convention — the successor to `middleware.ts`). This workspace is self-contained: it has its own
 `package.json` and lockfile and does not participate in the root build.
+
+## Data and browser-storage boundary
+
+- Raw activity, window titles, sessions, work blocks, corrections, screenshots,
+  and the deterministic personal workload model stay in the Mac app's local
+  storage. The website never receives or reconstructs that local state.
+- The website has no `localStorage`, `sessionStorage`, IndexedDB, browser
+  Supabase data client, or application-managed persistent browser workload cache. Authenticated pages and
+  actions call Supabase from the Next.js server under the signed-in user's RLS
+  session. Client components retain only short-lived React state while mounted.
+- Standard Supabase auth cookies are the sole necessary browser persistence.
+  They keep the account session across requests; signing out clears that
+  session. Do not describe all browser state as ephemeral while these cookies
+  exist.
+- Multi-user records necessarily persist in Supabase: accounts, profiles,
+  teams, memberships, invites, manager actions, and the allowlisted aggregate
+  workload snapshots members explicitly approve in the Mac app. Shared
+  snapshots currently remain until the member uses **Delete my cloud history**;
+  there is no automatic expiry.
+- `/dashboard` and `/teams/[teamId]` are explicitly request-fresh dynamic
+  routes. While either page is visible and online, a client coordinator asks
+  Next.js for a fresh server render every 15 seconds and on bounded
+  online/visibility resume events. This is near-real-time polling, **not** a
+  Supabase Realtime subscription; an open page can lag a successful desktop
+  sync by up to the polling interval plus network time.
 
 ## Setup
 

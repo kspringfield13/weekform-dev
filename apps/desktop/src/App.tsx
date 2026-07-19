@@ -1588,7 +1588,7 @@ export function App() {
     ].slice(-1000));
   }
 
-  function resetLocalData() {
+  async function resetLocalData() {
     if (isDemoMode) {
       window.location.reload();
       return;
@@ -1596,7 +1596,7 @@ export function App() {
     clearPersistedState().catch(() => {});
     // Cloud session, sharing policy, sync bookkeeping, and the reserved snapshot id
     // are wiped too — a reset must leave no active upload path behind.
-    void cloudAccount.clearAll();
+    const cloudCredentialsCleared = await cloudAccount.clearAll();
     setBlocks([]);
     setCalendarEvents([]);
     setActiveWindowSamples([]);
@@ -1607,16 +1607,18 @@ export function App() {
         type: "data_reset",
         source: "privacy_control",
         title: "Prototype data reset",
-        summary:
-          "All local activity, imports, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and your Weekform Cloud session and sharing policy. Screenshot capture was turned off and tracking paused.",
+        summary: cloudCredentialsCleared
+          ? "All local activity, imports, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and your Weekform Cloud session and sharing policy. Screenshot capture was turned off and tracking paused."
+          : "Local activity and app state were reset, but durable Weekform Cloud credential removal could not be confirmed. Retry Reset Local Data before closing the app.",
         privacy_level: "local_only",
         details: {
           visual_context_enabled: false,
           tracking_paused: true,
           retention_days: null,
           ai_credentials_cleared: true,
-          cloud_session_cleared: true,
-          cloud_sharing_policy_cleared: true,
+          cloud_session_cleared: cloudCredentialsCleared,
+          cloud_sharing_policy_cleared: cloudCredentialsCleared,
+          cloud_clear_requires_retry: !cloudCredentialsCleared,
           stored_locally: true,
           sent_to_cloud: false
         }

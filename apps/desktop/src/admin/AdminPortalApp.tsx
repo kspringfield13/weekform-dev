@@ -1,10 +1,10 @@
 import { type FormEvent, useState } from "react";
-import { ArrowRight, FlaskConical, LockKeyhole, ShieldCheck } from "lucide-react";
+import { ArrowRight, FlaskConical, ShieldCheck } from "lucide-react";
 import {
   authenticateLocalSimulatorAdmin,
+  getLocalAdminPortalView,
   LOCAL_SIMULATOR_ADMIN_EMAIL,
-  LOCAL_SIMULATOR_ADMIN_PASSWORD,
-  SPAN_SIMULATOR_ADMIN_HREF
+  LOCAL_SIMULATOR_ADMIN_PASSWORD
 } from "../../../../packages/simulator/src/authorization";
 import { WeekformMark } from "../components/common/WeekformMark";
 import "./span-simulator.css";
@@ -16,6 +16,8 @@ export function AdminPortalRoot() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [authenticated, setAuthenticated] = useState(false);
+  const portalView = getLocalAdminPortalView(authenticated);
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -24,14 +26,19 @@ export function AdminPortalRoot() {
       setError(decision.reason);
       return;
     }
-    window.location.assign(SPAN_SIMULATOR_ADMIN_HREF);
+    setError(null);
+    setPassword("");
+    setAuthenticated(true);
   };
 
   if (!LOCAL_ADMIN_PORTAL_ENABLED) {
     return (
       <main className="sim-access-shell">
         <section className="sim-access-card" aria-labelledby="admin-portal-locked-title">
-          <div className="sim-access-mark"><LockKeyhole /></div>
+          <div className="admin-portal-brand" aria-label="Weekform">
+            <WeekformMark />
+            <strong>Weekform</strong>
+          </div>
           <span className="sim-kicker">Weekform admin portal</span>
           <h1 id="admin-portal-locked-title">Admin Portal is locked.</h1>
           <p>This local-only portal is available in development when the Span Simulator feature flag is enabled.</p>
@@ -48,13 +55,47 @@ export function AdminPortalRoot() {
     );
   }
 
+  if (authenticated) {
+    return (
+      <main className="sim-access-shell">
+        <section className="sim-access-card admin-portal-card" aria-labelledby="admin-portal-title">
+          <div className="admin-portal-brand" aria-label="Weekform">
+            <WeekformMark />
+            <strong>Weekform</strong>
+          </div>
+          <span className="sim-kicker">Weekform admin portal</span>
+          <h1 id="admin-portal-title">{portalView.heading}</h1>
+          <p>{portalView.description}</p>
+
+          <div className="admin-portal-tools" aria-label="Administration tools">
+            {portalView.tools.map((tool) => (
+              <a className="admin-portal-tool" href={tool.href} key={tool.href}>
+                <FlaskConical size={18} aria-hidden />
+                <span>
+                  <strong>{tool.label}</strong>
+                  <small>{tool.description}</small>
+                </span>
+                <ArrowRight size={16} aria-hidden />
+              </a>
+            ))}
+          </div>
+
+          <a className="admin-portal-return" href="/">Return to Weekform</a>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="sim-access-shell">
       <section className="sim-access-card admin-portal-card" aria-labelledby="admin-portal-title">
-        <div className="sim-access-mark"><WeekformMark /></div>
+        <div className="admin-portal-brand" aria-label="Weekform">
+          <WeekformMark />
+          <strong>Weekform</strong>
+        </div>
         <span className="sim-kicker">Weekform admin portal</span>
-        <h1 id="admin-portal-title">Open Span Simulator</h1>
-        <p>Sign in with the synthetic local demo account. These credentials have no production or cloud access.</p>
+        <h1 id="admin-portal-title">{portalView.heading}</h1>
+        <p>{portalView.description}</p>
 
         <form className="sim-form-grid admin-portal-form" onSubmit={submit}>
           <label>

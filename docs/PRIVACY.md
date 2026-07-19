@@ -16,6 +16,9 @@ The desktop app can collect:
 
 The desktop app persists this data locally with the Tauri Store plugin. Web and demo builds fall back to browser local storage. Weekform does not currently encrypt either store; data remains on the local macOS user account until the user resets prototype data or clears the corresponding application storage.
 
+That browser fallback describes the desktop React app when it is run in web/demo
+mode. It is not the `apps/web` account and team site described below.
+
 ## AI and OpenAI API Data
 
 OpenAI is Weekform's default and recommended AI provider. A key can be configured in the app's local Settings, or through `OPENAI_API_KEY` in the repository's ignored `.env` file during development. Credentials are never compiled into the Vite bundle. Native classification, review, forecast, narrative, and visual-context requests are sent through the Tauri process. The conversational Agent may use its configured provider directly from the webview so its tools can access current in-memory workload state; in that path, the configured key is available to the running webview and remains stored only in local prototype state.
@@ -57,6 +60,41 @@ To share anything, the user must, in order: sign in with the account created on 
 The shared payload can contain only: team and ISO week identifiers, timestamps, the share level, the selected capacity metrics, sanitized category/work-mode allocation, allowlisted project-name allocation from user-verified blocks, and review-coverage counts. It never contains raw activity samples, sessions, app names, window titles, evidence, notes, stakeholder names, calendar or chat details, screenshots, Visual Context insights, audit details, or AI keys.
 
 An optional hourly auto-sync preference is stored but off by default, and scheduled sync can only run while the app is open. The Supabase session (auth tokens) lives in local prototype storage (unencrypted), is never written to `PersistedAppState`, and is excluded from every JSON export; the full backup includes only the sharing policy and sync bookkeeping. Users can delete their previously synced snapshots for the selected team from the cloud, and disconnecting (or "Reset all local data") clears the session, policy, and sync state so no upload path remains. Every connect, policy change, sync success/failure, snapshot deletion, pause, and disconnect emits a local audit event.
+
+Immediately before either a manual or automatic upload, the desktop app
+re-fetches the selected membership and current team narrowing policy. A failed
+refresh, revoked membership, or changed effective policy stops before the
+request body is constructed; a policy change clears prior consent and requires the on-screen preview to
+rebuild before another attempt. Unchanged scheduled state is reconciled against
+the authenticated snapshot row. If that row was deleted on the website, the
+desktop stops automatic recreation and requires an explicit Sync Now (or a
+fresh sharing re-arm). A native Tauri Store failure does not fall through to a
+second localStorage token copy. Browser localStorage remains a web/demo-only
+credential-envelope fallback; native builds may store a credential-free
+revocation marker there so a failed Store deletion cannot resurrect an old
+session. Only a later successful replacement write clears that marker. Durable
+clear failure is surfaced instead of recording a false successful reset. Local
+storage is still unencrypted.
+
+## Weekform.com browser and persistence boundary
+
+The account/team website uses server-side Supabase API calls under the signed-in
+user's row-level-security session. It has no browser `localStorage`,
+`sessionStorage`, IndexedDB, browser Supabase data client, or
+application-managed persistent workload cache.
+Client components keep only mounted React state. Standard Supabase auth cookies
+are the necessary persistent browser exception and are cleared by sign-out.
+
+Raw Mac activity never reaches the website. Approved workload snapshots and
+explicit multi-user coordination records (accounts, teams, memberships,
+invites, and manager actions) persist in Supabase because other authorized
+users need them. Dashboard and team pages are request-fresh dynamic routes;
+while visible and online they request a fresh server render every 15 seconds.
+This is bounded near-real-time polling, not a Realtime subscription, and can lag
+a successful desktop sync by the interval plus network time. Snapshot latest
+selection and web freshness use a server-owned `synced_at` receipt timestamp;
+client `observed_at` and `source_updated_at` remain provenance and cannot win
+latest ordering through clock skew.
 
 ## Team Briefing (weekform.com, server-side AI)
 

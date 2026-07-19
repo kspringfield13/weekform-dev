@@ -22,7 +22,7 @@ Email: span.admin@example.test
 Password: Weekform-Span-2026!
 ```
 
-The portal entry is available in Settings → Account & Sharing only in Vite development mode with the simulator feature flag enabled. These published demo credentials have no production or cloud access; they only replace the former need to type the local `role=simulator_admin` query parameter manually. The optional mock playback surfaces additionally require `VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true`. The query parameter behind the portal remains only a local-development stand-in and must not be carried into a production authorization design.
+The portal entry is available in Settings → Account & Sharing only in Vite development mode with the simulator feature flag enabled. In local development, **Open Admin Portal** stays on the current Vite origin; after sign-in, Span Simulator appears as a tool within the portal. These published demo credentials have no production or cloud access; they only replace the former need to type the local `role=simulator_admin` query parameter manually. The optional mock playback surfaces additionally require `VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true`. The query parameter behind the simulator tool remains only a local-development stand-in and must not be carried into a production authorization design.
 
 ## Canonical pipeline
 

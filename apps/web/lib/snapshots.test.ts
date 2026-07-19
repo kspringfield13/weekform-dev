@@ -89,6 +89,7 @@ function row(overrides: Partial<SnapshotRow> = {}): SnapshotRow {
     team_id: "team-1",
     week_id: "2026-W29",
     observed_at: "2026-07-19T10:00:00.000Z",
+    synced_at: "2026-07-19T10:00:05.000Z",
     source_updated_at: "2026-07-19T09:00:00.000Z",
     share_level: "summary",
     reliable_new_work_capacity_pct: 40,
@@ -134,7 +135,7 @@ test("mapRow maps every snake_case column to its camelCase field", () => {
     userId: "user-1",
     teamId: "team-1",
     weekId: "2026-W29",
-    observedAt: "2026-07-19T10:00:00.000Z",
+    observedAt: "2026-07-19T10:00:05.000Z",
     sourceUpdatedAt: "2026-07-19T09:00:00.000Z",
     shareLevel: "summary",
     reliableCapacityPct: 40,
@@ -221,7 +222,7 @@ test("listLatestTeamSnapshots maps rows and filters by team_id", async () => {
   assert.ok(call);
   assert.equal(call.table, "latest_team_snapshots");
   assert.deepEqual(call.eq, [["team_id", "team-1"]]);
-  assert.deepEqual(call.order, ["observed_at", { ascending: false }]);
+  assert.deepEqual(call.order, ["synced_at", { ascending: false }]);
 });
 
 test("listLatestTeamSnapshots returns the error message and no rows on failure", async () => {
@@ -253,7 +254,7 @@ test("listTeamSnapshotHistory queries the base table with team filter, order, an
   // latest_team_snapshots view keeps only each member's newest row.
   assert.equal(call.table, "workload_snapshots");
   assert.deepEqual(call.eq, [["team_id", "team-1"]]);
-  assert.deepEqual(call.order, ["observed_at", { ascending: false }]);
+  assert.deepEqual(call.order, ["synced_at", { ascending: false }]);
   assert.equal(call.limit, HISTORY_ROW_LIMIT);
 });
 
@@ -302,7 +303,7 @@ test("listOwnLatestSnapshots filters by user_id and maps rows", async () => {
   assert.ok(call);
   assert.equal(call.table, "latest_team_snapshots");
   assert.deepEqual(call.eq, [["user_id", "user-1"]]);
-  assert.deepEqual(call.order, ["observed_at", { ascending: false }]);
+  assert.deepEqual(call.order, ["synced_at", { ascending: false }]);
 });
 
 test("listOwnLatestSnapshots returns the error message and no rows on failure", async () => {

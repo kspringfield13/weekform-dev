@@ -32,6 +32,11 @@ import {
   signOutSession,
   type CloudTeamMembership
 } from "../services/cloudClient";
+import {
+  boundaryRequiresConsentReset,
+  checkFreshUploadBoundary,
+  type FreshUploadBoundaryResult
+} from "../services/cloudSyncGuard";
 import { createCloudSharingAuditEvent, type CloudSharingAuditAction } from "../lib/audit";
 
 export interface CloudAccountController {
@@ -57,9 +62,14 @@ export interface CloudAccountController {
   setPendingSnapshot: (value: CloudPendingSnapshot | null) => void;
   /** Session for an authenticated call, refreshed when near expiry; null = signed out. */
   getFreshSession: () => Promise<PersistedCloudSession | null>;
+  /** Fail-closed recipient/policy refresh immediately before a snapshot upload. */
+  checkFreshUpload: (
+    session: PersistedCloudSession,
+    cachedEffectivePolicy: CloudSharePolicyV1
+  ) => Promise<FreshUploadBoundaryResult>;
   emitAudit: (action: CloudSharingAuditAction, summary: string, details?: Record<string, unknown>) => void;
   /** Reset Local Data: clears session, policy, sync state, and reserved ids. */
-  clearAll: () => Promise<void>;
+  clearAll: () => Promise<boolean>;
   /** Export projection for the full backup — policy + sync metadata, never tokens. */
   backupMetadata: () => CloudBackupMetadata;
 }
@@ -182,6 +192,12 @@ export function useCloudAccount({
     }));
     setSyncStateRaw((current) => ({ ...current, status: "idle", nextScheduledAt: null }));
     emitAudit("disconnect", "Signed out of Weekform Cloud; sharing disabled and future syncs stopped");
+    const cleared = await clearPersistedCloudState();
+    if (!cleared) {
+      setAuthError(
+        "Signed out for this session, but Weekform could not confirm durable credential removal. Retry Reset Local Data before closing the app."
+      );
+    }
     if (env && active) await signOutSession(env, active.accessToken);
   }, [session, emitAudit]);
 
@@ -261,6 +277,42 @@ export function useCloudAccount({
     return refreshInFlight.current;
   }, [session]);
 
+  const checkFreshUpload = useCallback(
+    async (
+      activeSession: PersistedCloudSession,
+      cachedEffectivePolicy: CloudSharePolicyV1
+    ): Promise<FreshUploadBoundaryResult> => {
+      const env = getCloudEnv();
+      if (!env) {
+        return {
+          ok: false,
+          reason: "refresh_failed",
+          message: "Cloud sharing is not configured in this build."
+        };
+      }
+      const result = await checkFreshUploadBoundary({
+        session: activeSession,
+        memberPolicy: policy,
+        cachedEffectivePolicy,
+        fetchMemberships: (freshSession) => fetchTeamMemberships(env, freshSession)
+      });
+      if (result.teams) {
+        setTeams(result.teams);
+      }
+      if (boundaryRequiresConsentReset(result)) {
+        setPolicy((current) => ({ ...current, consentedAt: null }));
+        emitAudit(
+          "policy_change",
+          "Team sharing policy changed; review the refreshed preview before syncing",
+          { changed_fields: ["consentedAt"], consent_reset: true, team_id: policy.teamId }
+        );
+      }
+      setTeamsError(result.ok ? null : result.message);
+      return result;
+    },
+    [emitAudit, policy]
+  );
+
   const clearAll = useCallback(async () => {
     setSession(null);
     setTeams([]);
@@ -269,7 +321,13 @@ export function useCloudAccount({
     setPolicy(createDefaultCloudSharePolicy());
     setSyncStateRaw(createEmptyCloudSyncState());
     setPendingSnapshot(null);
-    await clearPersistedCloudState();
+    const cleared = await clearPersistedCloudState();
+    if (!cleared) {
+      setAuthError(
+        "Local state was cleared in this session, but durable credential removal could not be confirmed. Retry Reset Local Data before closing the app."
+      );
+    }
+    return cleared;
   }, []);
 
   const account = useMemo<CloudAccountSummary | null>(() => {
@@ -321,6 +379,7 @@ export function useCloudAccount({
       setSyncState,
       setPendingSnapshot,
       getFreshSession,
+      checkFreshUpload,
       emitAudit,
       clearAll,
       backupMetadata
@@ -344,6 +403,7 @@ export function useCloudAccount({
       setSyncState,
       setPendingSnapshot,
       getFreshSession,
+      checkFreshUpload,
       emitAudit,
       clearAll,
       backupMetadata

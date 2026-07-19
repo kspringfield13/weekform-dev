@@ -523,8 +523,9 @@ Task IDs match `docs/WEEKFORM_HACKATHON_EXECUTION_BOARD.md`. The blueprint §12 
 | PT2 prompt | Outcome | Status | Evidence |
 |---|---|---|---|
 | 15 / B1 | Optional local weekly-review ritual | DONE | 6/6 focused tests; `verify:wave3` 103/103 desktop-cloud + 162/162 web at closeout |
-| 16 / B2 | Manager action follow-through and measured team outcome | REVIEW (fresh audit and live migration proof env-blocked) | RPC-only create/resolve/delete; 17/17 focused boundary tests; 76-assertion pgTAP contract with direct member UPDATE/DELETE and outsider resolve/delete abuse; `verify:wave3` 111/111 desktop-cloud + 179/179 web; root build PASS; seventeen fresh audit attempts DNS-blocked, with the two iteration-9 attempts stopping before the web audit |
-| 17 / B4 | Demand mapping and capacity reservations | BLOCKED | Depends on Prompt 16 reaching DONE; no implementation claim yet |
+| 16 / B2 | Manager action follow-through and measured team outcome | DONE (live migration proof env-blocked) | RPC-only create/resolve/delete; 17/17 focused boundary tests; 76-assertion pgTAP contract with direct member UPDATE/DELETE and outsider resolve/delete abuse; `verify:wave3` 128/128 desktop-cloud + 188/188 web; root build and diff PASS; audit PASS with zero vulnerabilities in both workspaces |
+| 17 / B4 | Demand mapping and capacity reservations | READY | Prompt 16 repository gates are complete; no implementation claim yet |
+| QA-1 | Desktop/web alignment and browser-storage boundary | REPOSITORY GATES DONE; LIVE PROOF BLOCKED | Fresh write boundary, durable deletion guard, additive server receipt clock, bounded request refresh, persistent-cache and client-import guards, and credential-free reset tombstone; `verify:wave3` 128/128 + 188/188; build/diff/audit pass; live Supabase/pgTAP blocked |
 
 Prompt 16 accepts only clamped action text plus an optional closed risk key.
 The web wrappers deny non-managers before a client call; the RPCs independently
@@ -532,9 +533,8 @@ reauthorize every caller server-side. Every read and mutation is team-scoped and
 waits for two distinct later weeks before showing correlation-only team medians.
 The committed migration has not been applied to a live Supabase project here,
 so live RLS/RPC execution is not claimed. The repository contracts and all
-runnable code/build gates are green. The fresh audit gate is DNS-blocked, so
-Prompt 16 remains REVIEW; prior same-day audit evidence is not claimed for this
-hardened tree.
+runnable code/build/audit gates are green, so Prompt 16 is complete at the
+repository level and Prompt 17 is ready.
 
 Per the parallelization boundary in `docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md` ("How to run this pack") and blueprint sections 10/13.2.
 

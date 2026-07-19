@@ -16,6 +16,7 @@ import {
   createEmptyCloudSyncState,
   narrowerShareLevel,
   parseCloudSession,
+  parseCloudPendingSnapshot,
   parseCloudSharePolicy,
   parseCloudSyncState,
   parsePersistedCloudState,
@@ -140,6 +141,23 @@ test("parseCloudSession rejects a blob missing any required credential field", (
 // ---------------------------------------------------------------------------
 // Stable clientSnapshotId across retries
 // ---------------------------------------------------------------------------
+
+test("parseCloudPendingSnapshot rejects a non-UUID id so corrupt retries can recover", () => {
+  assert.equal(
+    parseCloudPendingSnapshot({ fingerprint: "fp-1", clientSnapshotId: "not-a-uuid" }),
+    null
+  );
+  assert.deepEqual(
+    parseCloudPendingSnapshot({
+      fingerprint: "fp-1",
+      clientSnapshotId: "11111111-2222-4333-8444-555555555555"
+    }),
+    {
+      fingerprint: "fp-1",
+      clientSnapshotId: "11111111-2222-4333-8444-555555555555"
+    }
+  );
+});
 
 test("resolveClientSnapshotId reuses the reserved id for an unchanged fingerprint", () => {
   let counter = 0;

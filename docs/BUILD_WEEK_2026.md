@@ -116,14 +116,50 @@ The privacy-critic, integration/release-gate, and submission-package prompts (ru
   76 assertions, including direct member UPDATE/DELETE and outsider resolve/delete
   abuse cases. `npm run verify:wave3` passes with
   111/111 desktop tests, 179/179 web tests, and 12 routes / 11 static pages; the
-  root build passes. Seventeen fresh `npm run audit:check` attempts across the lead
-  and independent runner exited 1 because registry DNS returned `ENOTFOUND`;
-  the two iteration-9 attempts stopped at the root audit before the web audit could run,
-  so Prompt 16 remains REVIEW. No live
+  root build passes. The final clean integration reran `npm run audit:check`
+  successfully with zero vulnerabilities in both workspaces, after eighteen
+  earlier attempts had been blocked by registry DNS. Prompt 16 is complete at
+  the repository level; live Supabase/RLS execution remains unclaimed. No live
   Supabase, OpenAI, Keychain, or release proof is implied by these local gates.
 
 This pass used Codex teammates for independent desktop, web, and critic slices;
 the product vocabulary and approval boundaries remained human-directed.
+
+### Desktop/web alignment and local-data boundary hardening
+
+- **Date:** July 19, 2026
+- **Absoloop loop:** `loop-20260719-144536-63efe8`
+- **Outcome:** parallel desktop, web, and independent security reviews repaired
+  the request-consistency seams between the local Mac model, approved Supabase
+  snapshots, and the server-rendered team site. Desktop writes now revalidate
+  membership and the current narrowing policy immediately before upload;
+  unchanged state reconciles the authenticated row so website deletion cannot
+  remain falsely "Up to date" or be automatically recreated without an
+  explicit re-arm/manual sync. Retry exhaustion resets on changed reviewed
+  content. Native Store failure no longer creates a second browser-storage
+  credential envelope, and corrupt pending snapshot IDs are discarded.
+- **Web/data boundary:** dashboard and team pages are force-dynamic and request
+  fresh server/RLS data every 15 seconds while visible and online. The website
+  has no application-managed persistent browser workload cache or browser Supabase client; Supabase auth
+  cookies are the documented persistent exception. Supabase now server-stamps
+  `synced_at`, and latest/freshness ordering uses it rather than a client clock.
+- **Evidence:** tests-first focused failures were observed for UUID parsing,
+  native fallback selection, server-clock mapping, refresh mounts, fresh-policy
+  upload guarding, retry reset, and remote reconciliation. A credential-free
+  revocation tombstone also prevents stale cloud credentials
+  from rehydrating when primary deletion fails. A failed explicit re-sync cannot
+  erase the guard and allow automatic recreation, and an additive migration
+  applies the server receipt clock to already-provisioned databases.
+  `npm run verify:wave3` passes 128/128 desktop-cloud and 188/188 web tests with
+  12 routes; root `npm run build`, `npm run audit:check` (zero vulnerabilities
+  in both workspaces), and `git diff --check` pass.
+  Supabase CLI/psql and a disposable project remain unavailable, so live
+  migration/pgTAP and four-actor desktop-write/web-read/delete proof are not
+  claimed.
+
+The work used separate desktop and web implementers plus an independent critic;
+the maintainer supplied the local-first/cloud-complexity boundary and requested
+the alignment QA.
 
 The hackathon-readiness and provenance task is supplemental evidence:
 

@@ -15,6 +15,9 @@ import {
 } from "./cloudPolicy";
 import {
   deleteCloudStateThrough,
+  browserFallbackAllowed,
+  createRevocationGuardedAdapter,
+  createSerializedSessionStorageAdapter,
   keychainAvailable,
   keychainSessionStorageAdapter,
   readCloudStateThrough,
@@ -83,7 +86,10 @@ function makeSignedInState(): PersistedCloudStateV1 {
       teamId: "team-1",
       consentedAt: "2026-07-19T10:00:00.000Z"
     },
-    pendingSnapshot: { fingerprint: "fp-1", clientSnapshotId: "uuid-1" }
+    pendingSnapshot: {
+      fingerprint: "fp-1",
+      clientSnapshotId: "11111111-2222-4333-8444-555555555555"
+    }
   };
 }
 
@@ -151,7 +157,7 @@ test("a throwing adapter degrades every operation gracefully", async () => {
   };
   assert.equal(await readCloudStateThrough(hostile), null);
   await assert.doesNotReject(writeCloudStateThrough(hostile, createDefaultCloudState()));
-  await assert.doesNotReject(deleteCloudStateThrough(hostile));
+  assert.equal(await deleteCloudStateThrough(hostile), false);
 });
 
 // ---------------------------------------------------------------------------
@@ -174,6 +180,62 @@ test("capability absent → the fallback adapter is selected", () => {
     fallback
   });
   assert.equal(selected, fallback);
+});
+
+test("browser fallback is forbidden inside a native Tauri runtime", () => {
+  assert.equal(browserFallbackAllowed({ __TAURI_INTERNALS__: {} }), false);
+  assert.equal(browserFallbackAllowed({}), true);
+});
+
+test("a revocation tombstone blocks stale credentials when primary deletion fails", async () => {
+  const primary = makeFakeAdapter(makeSignedInState());
+  primary.delete = async () => {
+    primary.deletes += 1;
+    throw new Error("store temporarily unavailable");
+  };
+  let revoked = false;
+  const guarded = createRevocationGuardedAdapter(primary, {
+    isSet: async () => revoked,
+    set: async () => {
+      revoked = true;
+    },
+    clear: async () => {
+      revoked = false;
+    }
+  });
+
+  await guarded.delete();
+  assert.equal(revoked, true);
+  assert.equal(await readCloudStateThrough(guarded), null, "restart read must fail closed");
+
+  const replacement = makeSignedInState();
+  replacement.session = { ...replacement.session!, userId: "user-2" };
+  await guarded.write(replacement);
+  assert.equal(revoked, false, "only a successful replacement clears revocation");
+  assert.deepEqual(await readCloudStateThrough(guarded), replacement);
+});
+
+test("serialized storage prevents an older in-flight credential write from winning after delete", async () => {
+  const primary = makeFakeAdapter();
+  let releaseWrite!: () => void;
+  const writeGate = new Promise<void>((resolve) => {
+    releaseWrite = resolve;
+  });
+  const originalWrite = primary.write;
+  primary.write = async (state) => {
+    await writeGate;
+    await originalWrite(state);
+  };
+  const serialized = createSerializedSessionStorageAdapter(primary);
+
+  const staleWrite = serialized.write(makeSignedInState());
+  const laterDelete = serialized.delete();
+  releaseWrite();
+  await Promise.all([staleWrite, laterDelete]);
+
+  assert.equal(await serialized.read(), null);
+  assert.equal(primary.writes, 1);
+  assert.equal(primary.deletes, 1);
 });
 
 test("a throwing capability probe falls back instead of stranding session access", () => {

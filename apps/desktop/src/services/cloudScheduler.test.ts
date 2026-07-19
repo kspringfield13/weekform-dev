@@ -17,6 +17,7 @@ import {
   planToNextScheduledIso,
   shouldCatchUpNow,
   shouldPerformSyncAttempt,
+  shouldResetRetryLadder,
   type SchedulerEligibility
 } from "./cloudScheduler";
 import { resolveClientSnapshotId, type CloudPendingSnapshot } from "./cloudPolicy";
@@ -48,6 +49,12 @@ test("shouldPerformSyncAttempt is false for an unchanged fingerprint (no redunda
 test("shouldPerformSyncAttempt is true when the approved content changed", () => {
   assert.equal(shouldPerformSyncAttempt("fp-2", "fp-1"), true);
   assert.equal(shouldPerformSyncAttempt("fp-1", null), true);
+});
+
+test("a changed approved fingerprint resets an exhausted transient retry ladder", () => {
+  assert.equal(shouldResetRetryLadder("fp-old", "fp-new"), true);
+  assert.equal(shouldResetRetryLadder("fp-same", "fp-same"), false);
+  assert.equal(shouldResetRetryLadder(null, "fp-first"), false);
 });
 
 test("an unchanged fingerprint still schedules the next hourly check, not a catch-up", () => {

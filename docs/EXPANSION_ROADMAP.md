@@ -149,14 +149,14 @@ metadata-minimal: titles/ids only where consented, never message bodies.
   forecast-vs-actual evidence, narrative availability, and optional approved-share
   proof. It hands off to existing review surfaces and records one privacy-minimal,
   idempotent completion audit event; no streaks, score, nag, or network path.
-- **B2. Manager action follow-through — IMPLEMENTED; REVIEW July 19, 2026:** managers can
+- **B2. Manager action follow-through — DONE July 19, 2026; live proof env-blocked:** managers can
   record a clamped action against an allowlisted briefing risk signal, resolve
   or drop it, and revisit a team-level “what changed after” median only after
   two distinct later weeks exist. The result is explicitly correlation, never
   cause or individual attribution. The RLS migration is committed for SQL
-  review but remains unapplied/live-unverified in this environment. The
-  mandatory fresh audit is registry-DNS-blocked, so B2 is not yet gate-green
-  or shipped.
+  review but remains unapplied/live-unverified in this environment. The final
+  repository gates pass, including a zero-vulnerability audit in both
+  workspaces; live RLS/RPC execution remains unclaimed.
 - **B3. Slack/Teams/Jira/Linear connectors [env-blocked]:** contract-first —
   a `ConnectorSignalV1` schema (counts and time-shape only), per-connector
   allowlist preview identical in UX to the share preview, fixture-tested
@@ -217,6 +217,18 @@ Every phase is independently shippable; nothing in B/C is started before its
 Phase A dependency is gate-green.
 
 ## Status log
+
+- **July 19, 2026 — DESKTOP/WEB ALIGNMENT QA REPOSITORY GATES DONE; LIVE PROOF
+  [env-blocked].** A parallel desktop/web/security pass added fresh
+  membership/team-policy upload preflight, remote-delete reconciliation,
+  exhausted-retry recovery, UUID/native-storage boundary hardening, a
+  additive server-owned snapshot receipt clock, and bounded request-fresh web polling
+  with no application-managed persistent browser workload cache/client. The
+  deletion guard survives failed explicit retries and auto-sync toggles.
+  `verify:wave3` passes 128/128 desktop-cloud and 188/188 web tests with 12 routes; root build, diff check,
+  and audit (zero vulnerabilities in both workspaces) pass. No Supabase CLI/psql or live
+  disposable project is available, so migration/pgTAP and the four-actor
+  desktop-write/web-read/delete path are not claimed live.
 
 - **July 19, 2026 — A1 DONE.** Pure `apps/web/lib/scenario.ts` absorption
   planner: `assessAbsorption(memberCount, snapshots, ask, nowIso)` (roster
@@ -386,8 +398,8 @@ Phase A dependency is gate-green.
   web, 12 routes / 11 static pages) and root `build` exit 0. The
   `audit:check` rerun was registry-DNS-blocked (`ENOTFOUND`); no dependency
   changed, and the last same-day successful audit remains 0 vulnerabilities.
-  Prompt 15 (B1) shipped and Prompt 16 (B2) is implemented at REVIEW; Prompt 17
-  remains blocked behind Prompt 16's fresh audit gate rather than starting next.
+  Prompt 15 (B1) and Prompt 16 (B2) shipped at the repository level; Prompt 17
+  is ready, while live Prompt 16 migration proof remains separately blocked.
   Phase B slice.
 - **July 19, 2026 — Prompt 15 WEEKLY REVIEW RITUAL DONE.** A pure
   `apps/desktop/src/services/weeklyReview.ts` module derives a normalized,
@@ -402,7 +414,7 @@ Phase A dependency is gate-green.
   registry; no dependency changed. Browser QA was attempted but the managed
   sandbox could not write agent-browser's socket directory, so no screenshot is
   claimed.
-- **July 19, 2026 — Prompt 16 MANAGER ACTION FOLLOW-THROUGH REVIEW.** The new
+- **July 19, 2026 — Prompt 16 MANAGER ACTION FOLLOW-THROUGH DONE; LIVE PROOF ENV-BLOCKED.** The new
   `team_actions` migration is explicitly SQL-review-only, forces RLS, and limits
   authenticated access to owners/managers of the scoped team. Pure
   `apps/web/lib/actions.ts` wrappers deny member roles before querying, clamp
@@ -416,8 +428,7 @@ Phase A dependency is gate-green.
   manager RPCs, server-derived resolution time, and expanded the four-actor
   pgTAP contract to 76 assertions, including direct member UPDATE/DELETE and
   outsider resolve/delete attempts. Fresh gates: focused boundary tests 17/17;
-  `verify:wave3` exit 0 (111/111 desktop-cloud, 179/179 web, 12 routes / 11
-  static pages); root `build` exit 0. Seventeen fresh `audit:check` attempts exited
-  1 with registry DNS `ENOTFOUND`; the two iteration-9 attempts stopped at the root audit
-  before the web audit could run, so Prompt 16 is REVIEW, not DONE. Live migration/RLS execution
-  remains environment-blocked.
+  `verify:wave3` exit 0 (128/128 desktop-cloud, 188/188 web, 12 routes); root
+  `build`, `audit:check` (zero vulnerabilities in both workspaces), and diff
+  check exit 0. Live migration/RLS execution remains environment-blocked and
+  unclaimed.

@@ -12,6 +12,34 @@ export interface SimulatorAdminNavigation {
   settingsTab: "account";
 }
 
+export interface LocalAdminPortalTool {
+  href: string;
+  label: string;
+  description: string;
+}
+
+export interface LocalAdminPortalView {
+  heading: "Welcome to the Admin Portal";
+  description: string;
+  tools: LocalAdminPortalTool[];
+}
+
+export function getLocalAdminPortalView(authenticated: boolean): LocalAdminPortalView {
+  return {
+    heading: "Welcome to the Admin Portal",
+    description: authenticated
+      ? "Choose a Weekform administration tool to continue."
+      : "Sign in to continue.",
+    tools: authenticated
+      ? [{
+          href: SPAN_SIMULATOR_ADMIN_HREF,
+          label: "Span Simulator",
+          description: "Create and review synthetic workload scenarios."
+        }]
+      : []
+  };
+}
+
 export function authorizeSimulatorAccess(context: SimulationAccessContext): SimulationAccessDecision {
   if (!context.featureEnabled) {
     return { allowed: false, reason: "Span Simulator is disabled for this build." };

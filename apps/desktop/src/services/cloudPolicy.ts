@@ -322,11 +322,14 @@ export interface CloudPendingSnapshot {
   clientSnapshotId: string;
 }
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export function parseCloudPendingSnapshot(value: unknown): CloudPendingSnapshot | null {
   if (!isRecord(value)) return null;
   const fingerprint = stringOrNull(value.fingerprint);
   const clientSnapshotId = stringOrNull(value.clientSnapshotId);
-  if (!fingerprint || !clientSnapshotId) return null;
+  if (!fingerprint || !clientSnapshotId || !UUID_PATTERN.test(clientSnapshotId)) return null;
   return { fingerprint, clientSnapshotId };
 }
 

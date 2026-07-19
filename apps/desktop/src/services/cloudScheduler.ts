@@ -119,6 +119,14 @@ export function shouldPerformSyncAttempt(
   return currentFingerprint !== lastSyncedFingerprint;
 }
 
+/** A first fingerprint seeds the watcher; only a later content change resets transient failures. */
+export function shouldResetRetryLadder(
+  previousFingerprint: string | null,
+  currentFingerprint: string
+): boolean {
+  return previousFingerprint !== null && previousFingerprint !== currentFingerprint;
+}
+
 // ---------------------------------------------------------------------------
 // Startup/resume catch-up
 // ---------------------------------------------------------------------------

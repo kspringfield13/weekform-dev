@@ -66,6 +66,7 @@ import {
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
+import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
 import { leaveTeam, updateTeamSharePolicy } from "@/app/teams/actions";
 import { InviteForm } from "./InviteForm";
 import {
@@ -74,6 +75,7 @@ import {
 } from "./ManagerActionsPanel";
 
 export const metadata: Metadata = { title: "Team" };
+export const dynamic = "force-dynamic";
 
 interface TeamPageProps {
   params: Promise<{ teamId: string }>;
@@ -327,6 +329,8 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
             of this team.
           </p>
         </div>
+
+        <RequestFreshnessRefresh />
 
         {notice ? (
           <div className="form-notice" role="status">

@@ -16,7 +16,7 @@ import type { MemberWorkloadInput } from "./workload";
  */
 
 const SNAPSHOT_COLUMNS =
-  "user_id, team_id, week_id, observed_at, source_updated_at, share_level, " +
+  "user_id, team_id, week_id, observed_at, source_updated_at, synced_at, share_level, " +
   "reliable_new_work_capacity_pct, reactive_pct, meeting_pct, " +
   "fragmented_work_pct, summary_confidence, reviewed_blocks, eligible_blocks";
 
@@ -31,6 +31,7 @@ export interface SnapshotRow {
   week_id: string;
   observed_at: string;
   source_updated_at: string;
+  synced_at: string;
   share_level: string;
   reliable_new_work_capacity_pct: number | string | null;
   reactive_pct: number | string | null;
@@ -55,7 +56,9 @@ export function mapRow(row: SnapshotRow): LatestSnapshot {
     userId: row.user_id,
     teamId: row.team_id,
     weekId: row.week_id,
-    observedAt: row.observed_at,
+    // Downstream freshness/dedupe code consumes `observedAt`; bind it to the
+    // server receipt clock so a skewed Mac clock cannot poison latest state.
+    observedAt: row.synced_at,
     sourceUpdatedAt: row.source_updated_at,
     shareLevel: row.share_level,
     reliableCapacityPct: asMetric(row.reliable_new_work_capacity_pct),
@@ -81,7 +84,7 @@ export async function listLatestTeamSnapshots(
     .from("latest_team_snapshots")
     .select(SNAPSHOT_COLUMNS)
     .eq("team_id", teamId)
-    .order("observed_at", { ascending: false });
+    .order("synced_at", { ascending: false });
 
   if (error) {
     return { snapshots: [], error: error.message };
@@ -121,7 +124,7 @@ export async function listTeamSnapshotHistory(
     .from("workload_snapshots")
     .select(SNAPSHOT_COLUMNS)
     .eq("team_id", teamId)
-    .order("observed_at", { ascending: false })
+    .order("synced_at", { ascending: false })
     .limit(cappedLimit);
 
   if (error) {
@@ -146,7 +149,7 @@ export async function listOwnLatestSnapshots(
     .from("latest_team_snapshots")
     .select(SNAPSHOT_COLUMNS)
     .eq("user_id", userId)
-    .order("observed_at", { ascending: false });
+    .order("synced_at", { ascending: false });
 
   if (error) {
     return { snapshots: [], error: error.message };

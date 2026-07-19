@@ -2,12 +2,31 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 
 export const DEFAULT_WEEKFORM_WEB_APP_URL = "https://weekform.com";
 
+export interface AdminPortalUrlContext {
+  isDevelopment?: boolean;
+  currentOrigin?: string;
+}
+
 /**
- * Build the browser destination for the team administration surface. The web
- * app owns authentication, so signed-out users land on its sign-in page while
- * an existing web session is forwarded to the dashboard by web middleware.
+ * Build the browser destination for the administration surface. Development
+ * stays on the current Vite origin; packaged builds use the configured web app,
+ * where authentication returns signed-in users to the team dashboard.
  */
-export function getAdminPortalSignInUrl(configuredOrigin?: string): string {
+export function getAdminPortalSignInUrl(
+  configuredOrigin?: string,
+  context: AdminPortalUrlContext = {}
+): string {
+  if (context.isDevelopment && context.currentOrigin) {
+    try {
+      const localOrigin = new URL(context.currentOrigin);
+      if (localOrigin.protocol === "http:" || localOrigin.protocol === "https:") {
+        return new URL("/admin", localOrigin.origin).toString();
+      }
+    } catch {
+      // Continue to the configured web destination when no valid local origin exists.
+    }
+  }
+
   let origin = DEFAULT_WEEKFORM_WEB_APP_URL;
 
   if (configuredOrigin?.trim()) {
@@ -28,8 +47,11 @@ export function getAdminPortalSignInUrl(configuredOrigin?: string): string {
 
 export function getConfiguredAdminPortalSignInUrl(): string {
   try {
-    const env = import.meta.env as Record<string, string | undefined> | undefined;
-    return getAdminPortalSignInUrl(env?.VITE_WEEKFORM_WEB_URL);
+    const env = import.meta.env;
+    return getAdminPortalSignInUrl(env.VITE_WEEKFORM_WEB_URL, {
+      isDevelopment: env.DEV,
+      currentOrigin: typeof window === "undefined" ? undefined : window.location.origin
+    });
   } catch {
     return getAdminPortalSignInUrl();
   }

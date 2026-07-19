@@ -18,8 +18,10 @@ import { describeCloudRetention } from "@/lib/retention";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
+import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
 
 export const metadata: Metadata = { title: "Dashboard" };
+export const dynamic = "force-dynamic";
 
 interface DashboardPageProps {
   searchParams: Promise<{ team_error?: string; notice?: string }>;
@@ -107,6 +109,8 @@ export default async function DashboardPage({
             )}
           </div>
         </div>
+
+        <RequestFreshnessRefresh />
 
         {params.notice ? (
           <div className="form-notice" role="status">

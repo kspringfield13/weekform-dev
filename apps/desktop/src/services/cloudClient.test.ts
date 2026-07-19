@@ -21,6 +21,7 @@ import {
   signInWithPassword,
   signOutSession,
   upsertWorkloadSnapshot,
+  workloadSnapshotExists,
   type CloudEnv
 } from "./cloudClient";
 
@@ -427,6 +428,24 @@ test("upsertWorkloadSnapshot posts exactly the given row with merge-duplicates u
       assert.deepEqual(JSON.parse(requests[0].body ?? ""), row);
     }
   );
+});
+
+test("workloadSnapshotExists performs an authenticated, user-scoped, body-free read", async () => {
+  for (const [rows, expected] of [[[{ client_snapshot_id: "snapshot/1" }], true], [[], false]] as const) {
+    await withFetch(
+      () => jsonResponse(rows),
+      async (requests) => {
+        const session = makeSession();
+        const result = await workloadSnapshotExists(env, session, "snapshot/1");
+        assert.deepEqual(result, { ok: true, value: expected });
+        assert.equal(requests[0].method, "GET");
+        assert.equal(requests[0].body, null);
+        assert.equal(requests[0].headers.Authorization, `Bearer ${session.accessToken}`);
+        assert.ok(requests[0].url.includes(`user_id=eq.${encodeURIComponent(session.userId)}`));
+        assert.ok(requests[0].url.includes(`client_snapshot_id=eq.${encodeURIComponent("snapshot/1")}`));
+      }
+    );
+  }
 });
 
 test("deleteMySnapshotsForTeam parses the exact count from content-range", async () => {

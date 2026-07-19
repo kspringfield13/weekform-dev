@@ -60,6 +60,7 @@ function AccountSharingHeading() {
 function AdminPortalSettingsRow() {
   const [openError, setOpenError] = useState<string | null>(null);
   const destination = getConfiguredAdminPortalSignInUrl();
+  const isLocalPortal = destination.endsWith("/admin");
 
   const openPortal = async () => {
     setOpenError(null);
@@ -76,11 +77,13 @@ function AdminPortalSettingsRow() {
       <div>
         <h3>Admin Portal</h3>
         <p>
-          Sign in on the Weekform web app to manage your team and its approved workload sharing.
+          {isLocalPortal
+            ? "Open the local Weekform Admin Portal for development and testing."
+            : "Sign in on the Weekform web app to manage your team and its approved workload sharing."}
         </p>
       </div>
       <div className="settings-row-status">
-        <strong>Web app</strong>
+        <strong>{isLocalPortal ? "Local development" : "Web app"}</strong>
         <span>Opens in your browser</span>
         {openError && <small className="import-error" role="alert">{openError}</small>}
       </div>

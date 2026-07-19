@@ -22,7 +22,8 @@ import {
 import {
   deleteMySnapshotsForTeam,
   getCloudEnv,
-  upsertWorkloadSnapshot
+  upsertWorkloadSnapshot,
+  workloadSnapshotExists
 } from "../services/cloudClient";
 import {
   armAutoSyncTimer,
@@ -33,9 +34,17 @@ import {
   planNextAutoSyncAttempt,
   planToNextScheduledIso,
   shouldPerformSyncAttempt,
+  shouldResetRetryLadder,
   type SchedulerEligibility
 } from "../services/cloudScheduler";
 import { buildConsentReceipt, type ConsentReceiptV1 } from "../services/consentReceipt";
+import { runFreshGuardedUpload } from "../services/cloudSyncGuard";
+import {
+  REMOTE_SNAPSHOT_MISSING_MESSAGE,
+  isManualResyncRequired,
+  preserveManualResyncRequirement,
+  reconcileRemoteSnapshot
+} from "../services/cloudReconciliation";
 import type { CloudAccountController } from "./useCloudAccount";
 
 export interface CloudSyncController {
@@ -70,6 +79,7 @@ export function useCloudSync({
   const { policy, pendingSnapshot, setPendingSnapshot, setSyncState, emitAudit } = account;
   const [syncBusy, setSyncBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const remoteDeleteBlocked = isManualResyncRequired(account.syncState.lastError);
 
   // A6 clamp, applied BEFORE any payload is built: the effective allowlist is member
   // consent ∩ the selected team's share policy (`applyTeamSharePolicy` can only narrow,
@@ -128,15 +138,42 @@ export function useCloudSync({
         setSyncState((current) => ({
           ...current,
           status: "error",
-          lastError: "You are signed out. Sign in again to sync."
+          lastError: preserveManualResyncRequirement(
+            current.lastError,
+            "You are signed out. Sign in again to sync."
+          )
         }));
         return false;
       }
       const payload = buildResult.snapshot;
-      const row = sharedSnapshotToRow(payload, buildResult.fingerprint, session.userId);
-      const result = await upsertWorkloadSnapshot(env, session, row);
+      const guardedUpload = await runFreshGuardedUpload(
+        () => account.checkFreshUpload(session, effectivePolicy),
+        () => {
+          const row = sharedSnapshotToRow(payload, buildResult.fingerprint, session.userId);
+          return upsertWorkloadSnapshot(env, session, row);
+        }
+      );
+      if (!guardedUpload.ok) {
+        const freshBoundary = guardedUpload.boundary;
+        setSyncState((current) => ({
+          ...current,
+          status: "error",
+          lastError: preserveManualResyncRequirement(current.lastError, freshBoundary.message)
+        }));
+        emitAudit("sync_failure", `Sync stopped before upload: ${freshBoundary.message}`, {
+          team_id: policy.teamId,
+          failure_kind: freshBoundary.reason,
+          request_body_sent: false
+        });
+        return false;
+      }
+      const result = guardedUpload.value;
       if (!result.ok) {
-        setSyncState((current) => ({ ...current, status: "error", lastError: result.message }));
+        setSyncState((current) => ({
+          ...current,
+          status: "error",
+          lastError: preserveManualResyncRequirement(current.lastError, result.message)
+        }));
         emitAudit("sync_failure", `Sync to team ${payload.teamId} failed: ${result.message}`, {
           team_id: payload.teamId,
           week_id: payload.weekId,
@@ -180,7 +217,7 @@ export function useCloudSync({
     } finally {
       setSyncBusy(false);
     }
-  }, [account, buildResult, emitAudit, onConsentReceipt, setSyncState, syncBusy]);
+  }, [account, buildResult, effectivePolicy, emitAudit, onConsentReceipt, policy.teamId, setSyncState, syncBusy]);
 
   const deleteMySnapshots = useCallback(async (): Promise<boolean> => {
     const env = getCloudEnv();
@@ -206,10 +243,11 @@ export function useCloudSync({
       // fingerprint so the next Sync Now re-uploads the current approved content.
       setSyncState((current) => ({
         ...current,
-        status: "idle",
-        lastError: null,
+        status: "error",
+        lastError: REMOTE_SNAPSHOT_MISSING_MESSAGE,
         lastSyncedFingerprint: null,
-        lastSyncedClientSnapshotId: null
+        lastSyncedClientSnapshotId: null,
+        nextScheduledAt: null
       }));
       emitAudit(
         "delete",
@@ -234,6 +272,16 @@ export function useCloudSync({
   const [retryFailureCount, setRetryFailureCount] = useState(0);
   const [authBlocked, setAuthBlocked] = useState(false);
   const autoAttemptInFlightRef = useRef(false);
+  const currentFingerprint = buildResult.ok ? buildResult.fingerprint : null;
+  const previousFingerprintRef = useRef<string | null>(currentFingerprint);
+
+  useEffect(() => {
+    if (currentFingerprint === null) return;
+    if (shouldResetRetryLadder(previousFingerprintRef.current, currentFingerprint)) {
+      setRetryFailureCount(0);
+    }
+    previousFingerprintRef.current = currentFingerprint;
+  }, [currentFingerprint]);
 
   const hasTeamMembership = useMemo(
     () => policy.teamId !== null && account.teams.some((team) => team.teamId === policy.teamId),
@@ -252,16 +300,28 @@ export function useCloudSync({
     setAuthBlocked(false);
   }, [autoSyncArmKey]);
 
+  // A deletion guard belongs to its recipient. Switching accounts or teams starts a
+  // different remote boundary, but merely toggling auto-sync must never erase the
+  // requirement for a successful explicit Sync Now on the same recipient.
+  const recipientKey = `${account.account?.userId ?? ""}|${policy.teamId ?? ""}`;
+  const previousRecipientKeyRef = useRef(recipientKey);
+  useEffect(() => {
+    if (previousRecipientKeyRef.current === recipientKey) return;
+    previousRecipientKeyRef.current = recipientKey;
+    if (remoteDeleteBlocked) {
+      setSyncState((current) => ({ ...current, status: "idle", lastError: null }));
+    }
+  }, [recipientKey, remoteDeleteBlocked, setSyncState]);
+
   const runAutoAttempt = useCallback(async () => {
     if (autoAttemptInFlightRef.current) return;
     const env = getCloudEnv();
     if (!env || !buildResult.ok || account.isDemoMode) return;
     if (!(policy.enabled && policy.autoSyncEnabled)) return;
-    if (!shouldPerformSyncAttempt(buildResult.fingerprint, account.syncState.lastSyncedFingerprint)) {
-      // Unchanged approved content: no network call, no redundant row. The scheduling
-      // effect below still re-arms the next hourly check.
-      return;
-    }
+    const contentChanged = shouldPerformSyncAttempt(
+      buildResult.fingerprint,
+      account.syncState.lastSyncedFingerprint
+    );
     autoAttemptInFlightRef.current = true;
     const attemptedAt = new Date().toISOString();
     setSyncState((current) => ({ ...current, status: "syncing", lastAttemptAt: attemptedAt }));
@@ -275,9 +335,90 @@ export function useCloudSync({
         }));
         return;
       }
+      if (!contentChanged) {
+        const freshBoundary = await account.checkFreshUpload(session, effectivePolicy);
+        if (!freshBoundary.ok) {
+          const attemptNumber = retryFailureCount + 1;
+          const retryDelayMs = nextRetryDelayMs(attemptNumber);
+          setRetryFailureCount(attemptNumber);
+          setSyncState((current) => ({
+            ...current,
+            status: "error",
+            lastError:
+              retryDelayMs === null
+                ? describeRetriesExhausted(freshBoundary.message)
+                : describeSchedulerFailure("transient", freshBoundary.message)
+          }));
+          return;
+        }
+        const clientSnapshotId = account.syncState.lastSyncedClientSnapshotId;
+        const reconciliation = await reconcileRemoteSnapshot(() =>
+          clientSnapshotId
+            ? workloadSnapshotExists(env, session, clientSnapshotId)
+            : Promise.resolve({ ok: true as const, value: false })
+        );
+        if (!reconciliation.ok) {
+          const attemptNumber = retryFailureCount + 1;
+          const retryDelayMs = nextRetryDelayMs(attemptNumber);
+          setRetryFailureCount(attemptNumber);
+          setSyncState((current) => ({
+            ...current,
+            status: "error",
+            lastError:
+              retryDelayMs === null
+                ? describeRetriesExhausted(reconciliation.message)
+                : describeSchedulerFailure("transient", reconciliation.message)
+          }));
+          return;
+        }
+        if (!reconciliation.exists) {
+          setSyncState((current) => ({
+            ...current,
+            status: "error",
+            lastError: REMOTE_SNAPSHOT_MISSING_MESSAGE,
+            lastSyncedFingerprint: null,
+            lastSyncedClientSnapshotId: null,
+            nextScheduledAt: null
+          }));
+          emitAudit("sync_failure", "Remote snapshot deletion detected; automatic re-upload stopped", {
+            team_id: policy.teamId,
+            trigger: "auto",
+            failure_kind: "remote_snapshot_missing",
+            automatic_reupload: false
+          });
+          return;
+        }
+        setRetryFailureCount(0);
+        setSyncState((current) => ({ ...current, status: "success", lastError: null }));
+        return;
+      }
       const payload = buildResult.snapshot;
-      const row = sharedSnapshotToRow(payload, buildResult.fingerprint, session.userId);
-      const result = await upsertWorkloadSnapshot(env, session, row);
+      const guardedUpload = await runFreshGuardedUpload(
+        () => account.checkFreshUpload(session, effectivePolicy),
+        () => {
+          const row = sharedSnapshotToRow(payload, buildResult.fingerprint, session.userId);
+          return upsertWorkloadSnapshot(env, session, row);
+        }
+      );
+      if (!guardedUpload.ok) {
+        const freshBoundary = guardedUpload.boundary;
+        const attemptNumber = retryFailureCount + 1;
+        setRetryFailureCount(attemptNumber);
+        setSyncState((current) => ({
+          ...current,
+          status: "error",
+          lastError: describeSchedulerFailure("transient", freshBoundary.message)
+        }));
+        emitAudit("sync_failure", `Auto-sync stopped before upload: ${freshBoundary.message}`, {
+          team_id: policy.teamId,
+          trigger: "auto",
+          failure_kind: freshBoundary.reason,
+          retry_attempt: attemptNumber,
+          request_body_sent: false
+        });
+        return;
+      }
+      const result = guardedUpload.value;
       if (!result.ok) {
         const kind = classifySyncFailure(result.status);
         if (kind === "auth") {
@@ -358,7 +499,7 @@ export function useCloudSync({
     } finally {
       autoAttemptInFlightRef.current = false;
     }
-  }, [account, buildResult, emitAudit, onConsentReceipt, policy.autoSyncEnabled, policy.enabled, retryFailureCount, setSyncState]);
+  }, [account, buildResult, effectivePolicy, emitAudit, onConsentReceipt, policy.autoSyncEnabled, policy.enabled, policy.teamId, retryFailureCount, setSyncState]);
 
   // Re-plan on every change that could affect eligibility or timing, and own the ONE
   // real timer for the whole controller. Any stop condition (sign-out, membership
@@ -384,7 +525,7 @@ export function useCloudSync({
       lastSyncedFingerprint: account.syncState.lastSyncedFingerprint,
       currentFingerprint: buildResult.ok ? buildResult.fingerprint : null,
       transientFailureCount: retryFailureCount,
-      authBlocked
+      authBlocked: authBlocked || remoteDeleteBlocked
     });
 
     const nextScheduledAt = planToNextScheduledIso(plan);
@@ -410,6 +551,7 @@ export function useCloudSync({
     policy.consentedAt,
     retryFailureCount,
     authBlocked,
+    remoteDeleteBlocked,
     runAutoAttempt,
     setSyncState
   ]);

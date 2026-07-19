@@ -79,7 +79,10 @@ function makeSignedInState(): PersistedCloudStateV1 {
       teamId: "team-1",
       consentedAt: "2026-07-19T10:00:00.000Z"
     },
-    pendingSnapshot: { fingerprint: "fp-1", clientSnapshotId: "uuid-1" }
+    pendingSnapshot: {
+      fingerprint: "fp-1",
+      clientSnapshotId: "11111111-2222-4333-8444-555555555555"
+    }
   };
 }
 
@@ -113,9 +116,11 @@ test("clear removes the stored state; a later read is null and write works again
     await writePersistedCloudState(makeSignedInState());
     assert.equal(backing.size, 1);
     await clearPersistedCloudState();
-    assert.equal(backing.size, 0);
+    assert.equal(backing.size, 1, "credential-free revocation marker remains durable");
+    assert.equal([...backing.values()].some((value) => value.includes("access-token")), false);
     assert.equal(await readPersistedCloudState(), null);
     await writePersistedCloudState(createDefaultCloudState());
+    assert.equal(backing.size, 1, "successful replacement clears the marker");
     assert.equal((await readPersistedCloudState())?.session, null);
   });
 });

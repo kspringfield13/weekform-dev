@@ -129,6 +129,9 @@ create table if not exists public.workload_snapshots (
   eligible_blocks integer not null default 0,
   content_fingerprint text not null,
   created_at timestamptz not null default now(),
+  -- Server-owned receipt clock. Client timestamps remain provenance only and
+  -- never decide which row is latest or whether a dashboard value is fresh.
+  synced_at timestamptz not null default now(),
 
   -- Retry idempotency key, scoped per user so no client can squat another
   -- user's identifier space.
@@ -215,14 +218,33 @@ create index if not exists team_invites_email_open_idx
   on public.team_invites (email, expires_at)
   where accepted_at is null;
 
-create index if not exists workload_snapshots_team_user_observed_idx
-  on public.workload_snapshots (team_id, user_id, observed_at desc);
+create index if not exists workload_snapshots_team_user_synced_idx
+  on public.workload_snapshots (team_id, user_id, synced_at desc);
 
-create index if not exists workload_snapshots_user_team_observed_idx
-  on public.workload_snapshots (user_id, team_id, observed_at desc);
+create index if not exists workload_snapshots_user_team_synced_idx
+  on public.workload_snapshots (user_id, team_id, synced_at desc);
 
 create index if not exists workload_snapshots_team_week_idx
-  on public.workload_snapshots (team_id, week_id, observed_at desc);
+  on public.workload_snapshots (team_id, week_id, synced_at desc);
+
+create or replace function private.stamp_snapshot_sync_time()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  new.synced_at := statement_timestamp();
+  return new;
+end;
+$$;
+
+drop trigger if exists workload_snapshots_stamp_sync_time on public.workload_snapshots;
+create trigger workload_snapshots_stamp_sync_time
+before insert or update on public.workload_snapshots
+for each row execute function private.stamp_snapshot_sync_time();
+
+revoke all on function private.stamp_snapshot_sync_time() from public, anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Authorization helpers. SECURITY DEFINER prevents recursive policy evaluation
@@ -690,7 +712,7 @@ as
 select distinct on (snapshot.team_id, snapshot.user_id)
   snapshot.*
 from public.workload_snapshots snapshot
-order by snapshot.team_id, snapshot.user_id, snapshot.observed_at desc, snapshot.created_at desc;
+order by snapshot.team_id, snapshot.user_id, snapshot.synced_at desc, snapshot.created_at desc;
 
 -- ---------------------------------------------------------------------------
 -- Privileges. RLS still decides row visibility; grants only bound the verbs.
