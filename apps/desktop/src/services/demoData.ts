@@ -636,6 +636,8 @@ export function createDemoState(reference = new Date()): PersistedAppState {
       include_in_manager_summary: false,
       price_map: {}
     },
-    usageCsvRowHashes: []
+    usageCsvRowHashes: [],
+    // The demo never uploads anything, so it honestly has no consent receipts.
+    consentReceipts: []
   };
 }

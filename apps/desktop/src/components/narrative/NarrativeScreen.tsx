@@ -145,7 +145,8 @@ export function NarrativeScreen({
           </button>
         </div>
         {generationStatus === "generating" ? (
-          <div className="narrative-skeleton">
+          <div className="narrative-skeleton" role="status">
+            <span className="sr-only">Generating weekly narrative…</span>
             <div className="narrative-skeleton-panel">
               <span className="skeleton-line" style={{ height: 11, width: "35%" }} />
               <span className="skeleton-line" style={{ height: 20, width: "55%" }} />

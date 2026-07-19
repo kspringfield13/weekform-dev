@@ -12,10 +12,17 @@ Run the isolated local UI with:
 
 ```bash
 VITE_ENABLE_SPAN_SIMULATOR=true npm run dev
-# open http://127.0.0.1:5173/admin/span-simulator?role=simulator_admin
+# open http://127.0.0.1:5173/, then choose Settings → Account & Sharing → Admin Portal
 ```
 
-The optional mock playback surfaces additionally require `VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true`. The query parameter is deliberately only a local-development stand-in; it must not be carried into a production authorization design.
+The local Admin Portal uses a visibly synthetic demo account:
+
+```text
+Email: span.admin@example.test
+Password: Weekform-Span-2026!
+```
+
+The portal entry is available in Settings → Account & Sharing only in Vite development mode with the simulator feature flag enabled. These published demo credentials have no production or cloud access; they only replace the former need to type the local `role=simulator_admin` query parameter manually. The optional mock playback surfaces additionally require `VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true`. The query parameter behind the portal remains only a local-development stand-in and must not be carried into a production authorization design.
 
 ## Canonical pipeline
 

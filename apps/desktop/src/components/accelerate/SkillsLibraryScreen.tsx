@@ -24,6 +24,7 @@ import {
 } from "../../lib/dataExport";
 import type { PushToast } from "../../hooks/useToasts";
 import { EmptyState } from "../common/EmptyState";
+import { ConfirmDialog } from "../common/ConfirmDialog";
 
 const TYPE_ICONS: Record<AccelerationPlayType, LucideIcon> = {
   automate: Workflow,
@@ -47,6 +48,7 @@ function SavedSkillCard({
   const Icon = TYPE_ICONS[skill.play_type] ?? Lightbulb;
   const [copied, setCopied] = useState(false);
   const [copiedSkillMd, setCopiedSkillMd] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
 
   async function copyRecipe() {
     try {
@@ -73,6 +75,7 @@ function SavedSkillCard({
   }
 
   function remove() {
+    setConfirmingRemove(false);
     onRemove(skill.signal_id);
     pushToast({ tone: "info", message: `Removed "${skill.title}" from your Skills library` });
   }
@@ -131,12 +134,21 @@ function SavedSkillCard({
           className="play-recipe-action"
           title="Remove this skill from your library"
           aria-label={`Remove ${skill.title} from your library`}
-          onClick={remove}
+          onClick={() => setConfirmingRemove(true)}
         >
           <Trash2 size={13} aria-hidden />
           <span>Remove</span>
         </button>
       </div>
+      {confirmingRemove && (
+        <ConfirmDialog
+          title="Remove this saved skill?"
+          description={`This removes “${skill.title}” from your Skills library. The saved recipe cannot be restored if its source play has changed.`}
+          confirmLabel="Remove skill"
+          onConfirm={remove}
+          onCancel={() => setConfirmingRemove(false)}
+        />
+      )}
     </article>
   );
 }

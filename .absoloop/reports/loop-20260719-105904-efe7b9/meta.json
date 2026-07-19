@@ -1,0 +1,12 @@
+{
+  "loopId": "loop-20260719-105904-efe7b9",
+  "missionId": "ABS-MINIMAL-001",
+  "status": "BUDGET_EXHAUSTED",
+  "stopReason": "iteration_budget",
+  "iteration": 50,
+  "costUsd": 0.0,
+  "objective": "Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what\u2019s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence.",
+  "archivedAt": 1784473250.0697322,
+  "hasMarkdown": true,
+  "hasHtml": false
+}

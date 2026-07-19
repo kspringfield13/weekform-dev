@@ -12,6 +12,33 @@ export function createAuditEvent(
 }
 
 /**
+ * Record the explicit close of a weekly review ritual. The event deliberately
+ * contains only the week/item identifiers and aggregate counts: the underlying
+ * work labels, narrative, sensitive insight text, and share payload stay out of
+ * the audit trail.
+ */
+export function createWeeklyReviewAuditEvent(input: {
+  weekId: string;
+  itemIds: string[];
+  doneCount: number;
+  pendingCount: number;
+}): AuditEvent {
+  return createAuditEvent({
+    type: "weekly_review",
+    source: "weekly_review",
+    title: "Weekly review completed",
+    summary: `Closed ${input.doneCount} of ${input.itemIds.length} review checks.`,
+    privacy_level: "local_only",
+    details: {
+      week_id: input.weekId,
+      item_ids: input.itemIds,
+      done_count: input.doneCount,
+      pending_count: input.pendingCount
+    }
+  });
+}
+
+/**
  * Build the audit event for a workplace-chat import (mirrors the inline
  * `calendar_import` event). Chat imports are METADATA ONLY — the parser whitelists
  * timestamps, channel/participant labels, and counts and has no message-text
@@ -145,6 +172,59 @@ export function createUsageSettingsAuditEvent(input: {
       price_map_entry_count: priceMapEntryCount,
       stored_locally: true,
       sent_to_cloud: false
+    }
+  });
+}
+
+/** The discrete Account & Sharing actions the local audit trail records. */
+export type CloudSharingAuditAction =
+  | "connect"
+  | "policy_change"
+  | "sync_success"
+  | "sync_failure"
+  | "delete"
+  | "pause"
+  | "disconnect";
+
+const CLOUD_SHARING_TITLES: Record<CloudSharingAuditAction, string> = {
+  connect: "Weekform Cloud account connected",
+  policy_change: "Cloud sharing policy changed",
+  sync_success: "Workload snapshot synced to team",
+  sync_failure: "Workload snapshot sync failed",
+  delete: "Synced snapshots deleted from team",
+  pause: "Cloud sharing paused",
+  disconnect: "Weekform Cloud account disconnected"
+};
+
+/**
+ * Build the audit event for a discrete Account & Sharing action (connect, policy
+ * change, sync success/failure, delete-my-snapshots, pause, disconnect). Only sync
+ * success/failure and delete are network mutations that involve derived workload
+ * data, so they carry `privacy_level: "derived_only"` and `sent_to_cloud: true`;
+ * account/policy actions are local decisions (`local_only`). Details may name the
+ * recipient team id, week, share level, and metric COUNTS — never metric values,
+ * raw payloads, auth tokens, or anything outside the shared-snapshot allowlist.
+ */
+export function createCloudSharingAuditEvent(input: {
+  action: CloudSharingAuditAction;
+  summary: string;
+  details?: Record<string, unknown>;
+}): AuditEvent {
+  const { action, summary, details = {} } = input;
+  const networkAction = action === "sync_success" || action === "sync_failure" || action === "delete";
+  return createAuditEvent({
+    type: "cloud_sharing",
+    source: "cloud_sync",
+    title: CLOUD_SHARING_TITLES[action],
+    summary,
+    privacy_level: networkAction ? "derived_only" : "local_only",
+    details: {
+      action,
+      ...details,
+      stored_locally: true,
+      sent_to_cloud: action === "sync_success" || action === "delete",
+      auth_tokens: false,
+      raw_activity: false
     }
   });
 }

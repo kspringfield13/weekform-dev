@@ -11,7 +11,13 @@ import {
   validateSimulationConfig,
 } from "./engine";
 import { validateSimulationDataset } from "./validate";
-import { authorizeSimulatorAccess } from "./authorization";
+import {
+  authenticateLocalSimulatorAdmin,
+  authorizeSimulatorAccess,
+  getLocalSimulatorPortalNavigation,
+  LOCAL_SIMULATOR_ADMIN_EMAIL,
+  LOCAL_SIMULATOR_ADMIN_PASSWORD
+} from "./authorization";
 import { buildLocalPlaybackPlan, isAllowedPlaybackUrl } from "./playback";
 import { serializeSimulationJson, serializeWeeklySnapshotsCsv } from "./export";
 import { simulationEndDate, zonedDateTimeToIso } from "./clock";
@@ -152,6 +158,25 @@ test("simulator access denies regular users and allows an enabled simulator admi
   assert.equal(authorizeSimulatorAccess({ featureEnabled: true, authenticated: true, roles: ["manager"] }).allowed, false);
   assert.equal(authorizeSimulatorAccess({ featureEnabled: false, authenticated: true, roles: ["simulator_admin"] }).allowed, false);
   assert.equal(authorizeSimulatorAccess({ featureEnabled: true, authenticated: true, roles: ["simulator_admin"] }).allowed, true);
+});
+
+test("the local Admin Portal is discoverable only when the simulator feature is enabled", () => {
+  const navigation = getLocalSimulatorPortalNavigation(true);
+  assert.equal(navigation?.href, "/admin");
+  assert.equal(navigation?.settingsTab, "account");
+  assert.equal(getLocalSimulatorPortalNavigation(false), null);
+});
+
+test("the local Admin Portal accepts only its synthetic demo credentials", () => {
+  assert.equal(
+    authenticateLocalSimulatorAdmin(true, LOCAL_SIMULATOR_ADMIN_EMAIL, LOCAL_SIMULATOR_ADMIN_PASSWORD).allowed,
+    true
+  );
+  assert.equal(authenticateLocalSimulatorAdmin(true, LOCAL_SIMULATOR_ADMIN_EMAIL, "wrong-password").allowed, false);
+  assert.equal(
+    authenticateLocalSimulatorAdmin(false, LOCAL_SIMULATOR_ADMIN_EMAIL, LOCAL_SIMULATOR_ADMIN_PASSWORD).allowed,
+    false
+  );
 });
 
 test("exports preserve synthetic identity and spreadsheet-safe CSV", () => {

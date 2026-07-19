@@ -90,6 +90,7 @@ export function BlockCard({
                 type="time"
                 value={draftStart}
                 aria-label="Start time"
+                aria-invalid={timeError}
                 autoFocus
                 onChange={(e) => { setDraftStart(e.target.value); setTimeError(false); }}
               />
@@ -98,6 +99,7 @@ export function BlockCard({
                 type="time"
                 value={draftEnd}
                 aria-label="End time"
+                aria-invalid={timeError}
                 onChange={(e) => { setDraftEnd(e.target.value); setTimeError(false); }}
               />
               <button

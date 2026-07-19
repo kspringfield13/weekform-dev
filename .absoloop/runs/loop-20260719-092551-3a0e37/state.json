@@ -1,0 +1,16 @@
+{
+  "cost_usd": 3.324564,
+  "human_feedback": null,
+  "inexact_cost_events": 0,
+  "iteration": 2,
+  "last_failure_fingerprint": "3f12ca38e1ad1048",
+  "latest_agent_result": ".absoloop/tmp/iteration-0001-agent-result.json",
+  "latest_checkpoint": ".absoloop/checkpoints/0002-human-abort.json",
+  "latest_critic_findings": null,
+  "mission_id": "ABS-MINIMAL-001",
+  "repeated_failure_count": 0,
+  "started_at": 1784467551.989642,
+  "status": "STOPPED",
+  "stop_reason": "human_aborted",
+  "tokens_total": 1818807
+}

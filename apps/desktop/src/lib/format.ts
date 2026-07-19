@@ -328,12 +328,14 @@ const AUDIT_SOURCE_LABELS: Record<string, string> = {
   chat_export: "Chat export",
   usage_csv: "Usage CSV",
   settings: "AI usage settings",
+  weekly_review: "Weekly review",
   proactive_alerts: "Proactive alerts",
   acceleration_engine: "Acceleration engine",
   privacy_control: "Privacy control",
   sessionizer: "Sessionizer",
   onboarding: "Onboarding",
   walkthrough: "Walkthrough",
+  cloud_sync: "Weekform Cloud",
 };
 
 // Humanize an `AuditEvent.source` for display (never render the raw snake_case id).
@@ -369,7 +371,9 @@ export function auditTypeLabel(type: AuditEventType) {
     acceleration_engine: "Acceleration",
     onboarding: "Onboarding",
     usage_import: "AI Usage",
-    usage_settings: "AI Usage"
+    usage_settings: "AI Usage",
+    cloud_sharing: "Cloud",
+    weekly_review: "Weekly Review"
   };
 
   return labels[type];

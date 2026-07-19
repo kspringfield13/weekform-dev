@@ -36,7 +36,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
-import { authorizeSimulatorAccess } from "../../../../packages/simulator/src/authorization";
+import { authorizeSimulatorAccess, getLocalSimulatorAccessContext } from "../../../../packages/simulator/src/authorization";
 import {
   advanceSimulation,
   createSimulationCheckpoint,
@@ -69,7 +69,7 @@ type AdminView = "new" | "history" | "personas" | "run" | "results";
 type ResultTab = "overview" | "timeline" | "evidence" | "forecast" | "shared" | "quality" | "audit";
 
 const STEPS = ["Persona & Team", "Span", "Scenario", "Sharing", "Preflight"] as const;
-const SIMULATOR_FEATURE_ENABLED = import.meta.env.VITE_ENABLE_SPAN_SIMULATOR === "true";
+const SIMULATOR_FEATURE_ENABLED = import.meta.env.DEV && import.meta.env.VITE_ENABLE_SPAN_SIMULATOR === "true";
 const PLAYBACK_FEATURE_ENABLED = SIMULATOR_FEATURE_ENABLED && import.meta.env.VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK === "true";
 const SCENARIOS: Array<{ id: ScenarioKind; label: string }> = [
   { id: "normal", label: "Normal" },
@@ -183,13 +183,9 @@ function Weekline({ total, current, status }: { total: number; current: number; 
 }
 
 function AccessBoundary({ children }: { children: ReactNode }) {
-  const query = new URLSearchParams(window.location.search);
-  const role = query.get("role");
-  const decision = authorizeSimulatorAccess({
-    featureEnabled: SIMULATOR_FEATURE_ENABLED,
-    authenticated: role !== null,
-    roles: role === "simulator_admin" ? ["simulator_admin"] : role === "manager" ? ["manager"] : ["member"],
-  });
+  const decision = authorizeSimulatorAccess(
+    getLocalSimulatorAccessContext(SIMULATOR_FEATURE_ENABLED, window.location.search)
+  );
 
   if (decision.allowed) return <>{children}</>;
 

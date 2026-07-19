@@ -20,6 +20,8 @@
 .sim-app input,
 .sim-app select,
 .sim-app textarea,
+.sim-access-shell button,
+.sim-access-shell input,
 .sim-access-shell a,
 .sandbox-app button {
   font: inherit;
@@ -30,6 +32,8 @@
 .sim-app select:focus-visible,
 .sim-app textarea:focus-visible,
 .sim-app a:focus-visible,
+.sim-access-shell button:focus-visible,
+.sim-access-shell input:focus-visible,
 .sim-access-shell a:focus-visible,
 .sandbox-app button:focus-visible {
   outline: 2px solid var(--blue-700, #006bff);
@@ -619,6 +623,13 @@
 .sim-gate-note > div { display: grid; gap: 3px; }
 .sim-gate-note strong { font-size: 11px; }
 .sim-gate-note span { color: var(--text-subtle); font-size: 10px; line-height: 1.5; }
+.admin-portal-form { margin-top: 20px; }
+.admin-portal-form .sim-button { width: 100%; }
+.admin-portal-error { margin: 0; color: var(--danger); font-size: 11px; }
+.admin-demo-credentials { margin-bottom: 12px; }
+.admin-demo-credentials code { color: var(--text); user-select: all; }
+.admin-portal-return { display: block; width: fit-content; margin: 0 auto; color: var(--text-muted); font-size: 11px; text-decoration: none; }
+.admin-portal-return:hover { color: var(--text); }
 
 .sandbox-app { min-height: 100vh; padding: 18px; background: var(--background); }
 .sandbox-app > header,

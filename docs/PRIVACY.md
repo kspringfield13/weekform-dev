@@ -48,6 +48,49 @@ When enabled, the app may:
 
 Filesystem errors can prevent temporary-file cleanup. The screenshot can also include content outside the active application because the prototype captures the current screen. Do not enable this feature around confidential, regulated, personal, or otherwise sensitive material.
 
+## Weekform Cloud Sharing (Account & Sharing)
+
+Cloud sharing is **off by default** and exists only in builds configured with a publishable Supabase URL and anon key (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`). Without that configuration the Account & Sharing tab states that no upload path exists and the app remains fully local. There is no secret or service key in the desktop app; row access is governed entirely by Supabase row-level security under the signed-in user's own session.
+
+To share anything, the user must, in order: sign in with the account created on weekform.com; select exactly one recipient team they belong to; turn sharing on; choose a share level and individual metric toggles (and, at the "projects" level, an explicit project-name allowlist); review the **exact JSON payload** that will be uploaded; and record consent. Only then does a manually approved "Sync Now" upload one `SharedWorkloadSnapshotV1` row — a versioned, allowlist-built weekly summary produced by `packages/inference/src/sharedSnapshot.ts`. The preview and the upload are the same object; a disabled metric is omitted, never sent as zero. Changing the recipient team or the shared fields clears the recorded consent and requires a new review.
+
+The shared payload can contain only: team and ISO week identifiers, timestamps, the share level, the selected capacity metrics, sanitized category/work-mode allocation, allowlisted project-name allocation from user-verified blocks, and review-coverage counts. It never contains raw activity samples, sessions, app names, window titles, evidence, notes, stakeholder names, calendar or chat details, screenshots, Visual Context insights, audit details, or AI keys.
+
+An optional hourly auto-sync preference is stored but off by default, and scheduled sync can only run while the app is open. The Supabase session (auth tokens) lives in local prototype storage (unencrypted), is never written to `PersistedAppState`, and is excluded from every JSON export; the full backup includes only the sharing policy and sync bookkeeping. Users can delete their previously synced snapshots for the selected team from the cloud, and disconnecting (or "Reset all local data") clears the session, policy, and sync state so no upload path remains. Every connect, policy change, sync success/failure, snapshot deletion, pause, and disconnect emits a local audit event.
+
+## Team Briefing (weekform.com, server-side AI)
+
+The weekform.com manager dashboard includes an optional Team Briefing that summarizes already-shared team workload signals. It is a server-side feature of the web app (`apps/web/lib/briefing.ts`); the desktop app is not involved and no new data is collected for it.
+
+The briefing can call OpenAI only when the site operator configures **both** `OPENAI_API_KEY` and `OPENAI_TEAM_BRIEFING_MODEL` as server-only environment variables. Without both, the feature runs in a deterministic fallback mode computed locally on the server from the same shared metrics, and makes no network call to any AI provider. The API key is read only inside that server-only module; it is never sent to the browser, included in a response, or exposed to team members.
+
+When the model path is configured, a manager-triggered briefing sends only an allowlisted input: the team name, member display names (or neutral labels such as "Member 2" — never account identifiers), each member's share level, snapshot freshness, review-coverage percentage, the capacity and allocation percentages that member already chose to share, and the deterministic risk flags derived from them. Metrics a member disabled are omitted, never sent as zero. Raw activity samples, window titles, evidence, notes, calendar or chat details, screenshots, and credentials never enter the briefing input — the briefing sees strictly less than the manager dashboard already displays.
+
+Requests set `store: false`. The model's response is validated against a fixed schema before display; any risk or opportunity that cites evidence outside the allowlisted catalog is stripped rather than trusted. The briefing UI labels its output as AI-generated from shared workload signals, and both the prompt and the fallback are constrained to avoid ranking members, productivity or performance scoring, and burnout/HR/medical/legal language.
+
+## Manager Actions (weekform.com)
+
+Team owners and managers can record one coordination action of up to 500
+characters and optionally link it to one allowlisted deterministic briefing risk
+key. This is team-scoped cloud data in `team_actions`, protected by the same
+manager-membership RLS boundary as the manager dashboard. The action record does
+not contain briefing prose, raw activity, member evidence, notes, screenshots, or
+per-member outcomes. Managers should still avoid putting names, customer details,
+or other sensitive information in the action text.
+
+Creation is RPC-only. Authenticated clients do not have direct table INSERT
+privilege; the RPC accepts only the team id, action text, and optional allowlisted
+risk key, then derives the authenticated actor and server-sets open status plus
+creation/resolution timestamps. The repository pins this boundary with static
+contract tests and an unapplied four-actor pgTAP specification.
+
+Weekform may compare the linked metric's team median across later approved weekly
+snapshots. It shows no result until two distinct later weeks share that metric,
+excludes dropped actions, and labels the readout as “What changed after”: a
+correlation, never evidence that the action caused the change or that any person
+contributed to it. The migration in this repository is a SQL-review artifact and
+has not been applied or verified against a live Supabase project here.
+
 ## Controls
 
 - **Private mode / Pause Tracking** stops new active-window and visual-context capture.
@@ -80,7 +123,7 @@ Fast Forward performs no workplace-app automation. The optional Controlled Local
 
 Simulation JSON/CSV exports are prepared locally and repeat the synthetic provenance markers. An audit receipt records that an export was prepared; it does not claim the operating system completed the save. Archiving hides a run from the active simulation view without deleting it. Permanent run deletion cascades through generated members, artifacts, and week snapshots; a minimal deletion receipt remains without preserving the deleted payload. Personal backup/reset and simulation export/delete are separate controls and do not imply one another.
 
-The simulator migration and RLS tests in this repository are review artifacts. They have not been applied to or verified against a live Supabase project here, and the Team Cloud application is not deployed from this checkout. Any local admin gate remains development-only until authenticated database authorization is connected. Browser-development runs use a simulator-only IndexedDB database rather than personal Weekform state; local prototype storage remains unencrypted.
+The simulator migration and RLS tests in this repository are review artifacts. They have not been applied to or verified against a live Supabase project here, and the Team Cloud application is not deployed from this checkout. The local Admin Portal and its published synthetic demo credentials are compiled out unless Vite development mode and the simulator feature flag are both active; they grant no production or cloud access. Any local admin gate remains development-only until authenticated database authorization is connected. Browser-development runs use a simulator-only IndexedDB database rather than personal Weekform state; local prototype storage remains unencrypted.
 
 Current modeling limitations also matter to privacy and interpretation: capacity still uses a fixed 40-hour denominator, PTO does not redefine that denominator, and some time-of-day inference uses the host machine timezone rather than the configured scenario timezone. Simulation results are prototype planning evidence, not observed facts or organizational benchmarks.
 
