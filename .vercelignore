@@ -1,0 +1,14 @@
+.git/
+.vercel/
+.absoloop/
+absoloop/
+node_modules/
+dist/
+artifacts/
+apps/desktop/
+apps/marketing-video/
+apps/web/.next/
+apps/web/.vercel/
+apps/web/node_modules/
+apps/web/.env*
+!apps/web/.env.example

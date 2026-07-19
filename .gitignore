@@ -16,3 +16,4 @@ public/weekform-video/*.wav
 packages/integrations/src/usage/*.candidate.json
 .absoloop/
 absoloop/
+.vercel
