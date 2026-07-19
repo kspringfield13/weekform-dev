@@ -1,7 +1,7 @@
 {
-  "summary": "Mission ABS-MINIMAL-001 · status STOPPED · phase stopped",
-  "iteration": 15,
+  "summary": "Mission ABS-MINIMAL-001 · status EXECUTING · phase building",
+  "iteration": 10,
   "maxIterations": 50,
-  "costUsd": 0.0,
-  "tokensTotal": 0
+  "costUsd": 45.0,
+  "tokensTotal": 13661765
 }

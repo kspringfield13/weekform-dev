@@ -1,7 +1,7 @@
 {
   "project": "weekform-dev",
-  "generatedAt": 1784483748.816706,
-  "displayedText": "Complete the rejected Prompt 16 repair without widening scope. The Codex repair already hardened team_actions and added RED/GREEN boundary tests. Independently inspect it, run the exact focused tests plus npm run verify:wave3, npm run build, and npm run audit:check. Host-side npm run audit:check passed on July 19 with 0 root and 0 web vulnerabilities after the prior Codex sandbox had DNS blocked. Update Prompt 16 RUNBOOK, BLUEPRINT, roadmap, privacy/provenance evidence only if your own exact gates exit 0. Stop at the human approval gate; do not start Prompt 17.",
+  "generatedAt": 1784486429.8338509,
+  "displayedText": "Harden Prompt 16 first: revoke direct team_actions INSERT, expose only a security-definer write path that clamps permitted text and derives id, status, created_by, created_at, and resolved_at server-side, then add direct-boundary abuse tests. Retry npm run audit:check with registry access and mark Prompt 16 DONE only after every standing gate exits 0; update the runbook and blueprint with exact evidence.\nThis closes the evidence-integrity vulnerability before any further feature work and prevents premature completion claims. It also converts the remaining audit uncertainty into a verifiable gate result.",
   "history": [
     {
       "kind": "objective",
@@ -240,8 +240,18 @@
       "previousLoopId": "loop-20260719-122603-ea56cd",
       "ts": 1784479244.794173,
       "startedAt": 1784479244.837024,
-      "endedAt": 1784479274.513823,
-      "elapsedSeconds": 29.676799058914185
+      "endedAt": 1784483828.909769,
+      "elapsedSeconds": 4584.072745084763
+    },
+    {
+      "kind": "continuation",
+      "text": "Harden Prompt 16 first: revoke direct team_actions INSERT, expose only a security-definer write path that clamps permitted text and derives id, status, created_by, created_at, and resolved_at server-side, then add direct-boundary abuse tests. Retry npm run audit:check with registry access and mark Prompt 16 DONE only after every standing gate exits 0; update the runbook and blueprint with exact evidence.\nThis closes the evidence-integrity vulnerability before any further feature work and prevents premature completion claims. It also converts the remaining audit uncertainty into a verifiable gate result.",
+      "loopId": "loop-20260719-135748-556358",
+      "previousLoopId": "loop-20260719-135708-c35666",
+      "ts": 1784483868.0649579,
+      "startedAt": 1784483868.10722,
+      "endedAt": null,
+      "elapsedSeconds": 2561.6958169937134
     }
   ]
 }

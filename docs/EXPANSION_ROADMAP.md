@@ -149,12 +149,14 @@ metadata-minimal: titles/ids only where consented, never message bodies.
   forecast-vs-actual evidence, narrative availability, and optional approved-share
   proof. It hands off to existing review surfaces and records one privacy-minimal,
   idempotent completion audit event; no streaks, score, nag, or network path.
-- **B2. Manager action follow-through — SHIPPED July 19, 2026:** managers can
+- **B2. Manager action follow-through — IMPLEMENTED; REVIEW July 19, 2026:** managers can
   record a clamped action against an allowlisted briefing risk signal, resolve
   or drop it, and revisit a team-level “what changed after” median only after
   two distinct later weeks exist. The result is explicitly correlation, never
   cause or individual attribution. The RLS migration is committed for SQL
-  review but remains unapplied/live-unverified in this environment.
+  review but remains unapplied/live-unverified in this environment. The
+  mandatory fresh audit is registry-DNS-blocked, so B2 is not yet gate-green
+  or shipped.
 - **B3. Slack/Teams/Jira/Linear connectors [env-blocked]:** contract-first —
   a `ConnectorSignalV1` schema (counts and time-shape only), per-connector
   allowlist preview identical in UX to the share preview, fixture-tested
@@ -384,7 +386,8 @@ Phase A dependency is gate-green.
   web, 12 routes / 11 static pages) and root `build` exit 0. The
   `audit:check` rerun was registry-DNS-blocked (`ENOTFOUND`); no dependency
   changed, and the last same-day successful audit remains 0 vulnerabilities.
-  Prompt 15 (B1) and Prompt 16 (B2) subsequently shipped; Prompt 17 is the next
+  Prompt 15 (B1) shipped and Prompt 16 (B2) is implemented at REVIEW; Prompt 17
+  remains blocked behind Prompt 16's fresh audit gate rather than starting next.
   Phase B slice.
 - **July 19, 2026 — Prompt 15 WEEKLY REVIEW RITUAL DONE.** A pure
   `apps/desktop/src/services/weeklyReview.ts` module derives a normalized,
@@ -399,7 +402,7 @@ Phase A dependency is gate-green.
   registry; no dependency changed. Browser QA was attempted but the managed
   sandbox could not write agent-browser's socket directory, so no screenshot is
   claimed.
-- **July 19, 2026 — Prompt 16 MANAGER ACTION FOLLOW-THROUGH DONE.** The new
+- **July 19, 2026 — Prompt 16 MANAGER ACTION FOLLOW-THROUGH REVIEW.** The new
   `team_actions` migration is explicitly SQL-review-only, forces RLS, and limits
   authenticated access to owners/managers of the scoped team. Pure
   `apps/web/lib/actions.ts` wrappers deny member roles before querying, clamp
@@ -408,9 +411,13 @@ Phase A dependency is gate-green.
   excluded. The manager Actions panel reports safe write failures, open/resolve/
   drop state, “Too early to tell,” and correlation-only “What changed after”
   copy. A follow-up security pass removed direct table INSERT, added the narrow
-  manager-authorized creation RPC, and pinned the boundary with behavior,
-  migration-contract, and four-actor pgTAP assertions. Final runnable gates:
-  focused boundary tests 15/15; `verify:wave3` exit 0 (103/103 desktop-cloud,
-  177/177 web, 12 routes / 11 static pages); root `build` exit 0; diff check exit
-  0; and `audit:check` exit 0 with 0 vulnerabilities in both workspaces. Live
-  migration/RLS execution remains environment-blocked.
+  manager-authorized creation RPC. Loop `loop-20260719-135748-556358` then
+  removed direct UPDATE/DELETE too, moved resolution/deletion behind narrow
+  manager RPCs, server-derived resolution time, and expanded the four-actor
+  pgTAP contract to 76 assertions, including direct member UPDATE/DELETE and
+  outsider resolve/delete attempts. Fresh gates: focused boundary tests 17/17;
+  `verify:wave3` exit 0 (111/111 desktop-cloud, 179/179 web, 12 routes / 11
+  static pages); root `build` exit 0. Seventeen fresh `audit:check` attempts exited
+  1 with registry DNS `ENOTFOUND`; the two iteration-9 attempts stopped at the root audit
+  before the web audit could run, so Prompt 16 is REVIEW, not DONE. Live migration/RLS execution
+  remains environment-blocked.

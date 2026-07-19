@@ -91,7 +91,6 @@ export async function updateManagerActionStatus(formData: FormData): Promise<voi
     teamId,
     actionId,
     rawStatus,
-    new Date().toISOString(),
   );
   if (result.error) {
     redirect(

@@ -1,13 +1,14 @@
 # /goal — Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence.
 
-mission: ABS-MINIMAL-001 · loop: loop-20260719-135748-556358 · type: docs
+mission: ABS-MINIMAL-001 · loop: loop-20260719-124044-436388 · type: docs
 
 ## Continuation of previous run (context — the mission above is still ground truth)
 
-This run extends loop-20260719-135708-c35666 (ended STOPPED after 1 iteration(s), $0.00).
+This run extends loop-20260719-122603-ea56cd (ended STOPPED after 3 iteration(s), $10.00).
 
-Operator's continuation intent: Harden Prompt 16 first: revoke direct team_actions INSERT, expose only a security-definer write path that clamps permitted text and derives id, status, created_by, created_at, and resolved_at server-side, then add direct-boundary abuse tests. Retry npm run audit:check with registry access and mark Prompt 16 DONE only after every standing gate exits 0; update the runbook and blueprint with exact evidence.
-This closes the evidence-integrity vulnerability before any further feature work and prevents premature completion claims. It also converts the remaining audit uncertainty into a verifiable gate result.
+Where the previous run left off: Prompt 16 creation hardening passes independent security and critic review. This iteration strengthened the regression test so direct INSERT cannot return through either missing explicit revocation or GRANT ALL. Teammates security_review, gate_runner, and independent_critic verified the implementation and gates. RUNBOOK, BLUEPRINT, and roadmap were intentionally not updated because audit:check did not exit 0; minimum iteration 3 also prevents a done claim now.
+
+Operator's continuation intent: Complete the rejected Prompt 16 repair without widening scope. The Codex repair already hardened team_actions and added RED/GREEN boundary tests. Independently inspect it, run the exact focused tests plus npm run verify:wave3, npm run build, and npm run audit:check. Host-side npm run audit:check passed on July 19 with 0 root and 0 web vulnerabilities after the prior Codex sandbox had DNS blocked. Update Prompt 16 RUNBOOK, BLUEPRINT, roadmap, privacy/provenance evidence only if your own exact gates exit 0. Stop at the human approval gate; do not start Prompt 17.
 
 The previous run's work is already in the working tree. Build on it — inspect what exists before editing, and do not redo or revert it.
 
@@ -47,8 +48,6 @@ the working tree itself and rejects unearned claims.
 - Extension requirement (loop-20260719-111613-cf7d72): Building on the completed pass for “Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then…”, take the next highest-leverage polish or adjacent capability (critic: The continuation intent is satisfied by new, inspectable work. docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK_PT2.md exists (433 lines) and contains the require…). Keep gates green and leave a crisp operator-facing summary. — the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.
 - Extension requirement (loop-20260719-122603-ea56cd): Harden team_actions by revoking direct table INSERT and exposing a validated manager-only RPC that accepts only clamped text and risk_key while server-setting identity, status, and timestamps; add boundary tests. Re-run every Prompt 16 gate, including audit:check when registry access works, then update RUNBOOK and BLUEPRINT evidence/status only if all gates exit 0. — the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.
 - Extension requirement (loop-20260719-124044-436388): Complete the rejected Prompt 16 repair without widening scope. The Codex repair already hardened team_actions and added RED/GREEN boundary tests. Independently inspect it, run the exact focused tests plus npm run verify:wave3, npm run build, and npm run audit:check. Host-side npm run audit:check passed on July 19 with 0 root and 0 web vulnerabilities after the prior Codex sandbox had DNS blocked. Update Prompt 16 RUNBOOK, BLUEPRINT, roadmap, privacy/provenance evidence only if your own exact gates exit 0. Stop at the human approval gate; do not start Prompt 17. — the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.
-- Extension requirement (loop-20260719-135748-556358): Harden Prompt 16 first: revoke direct team_actions INSERT, expose only a security-definer write path that clamps permitted text and derives id, status, created_by, created_at, and resolved_at server-side, then add direct-boundary abuse tests. Retry npm run audit:check with registry access and mark Prompt 16 DONE only after every standing gate exits 0; update the runbook and blueprint with exact evidence.
-This closes the evidence-integrity vulnerability before any further feature work and prevents premature completion claims. It also converts the remaining audit uncertainty into a verifiable gate result. — the previous run's existing result does not satisfy this by itself; this run must demonstrably advance it with new, inspectable work.
 - Every documented command and example actually runs as written.
 
 ## Strategy ladder (one bounded strategy per iteration)

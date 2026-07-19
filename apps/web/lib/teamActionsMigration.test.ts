@@ -30,18 +30,18 @@ function creationFunction(sql: string): { header: string; body: string } {
   return { header: match[1]!, body: match[2]! };
 }
 
-test("team action creation is RPC-only and authenticated-only", () => {
+test("team action writes are RPC-only and authenticated-only", () => {
   const sql = executableSql();
   assert.doesNotMatch(
     sql,
-    /create policy [^;]+ on public\.team_actions [^;]* for insert\b/,
-    "no INSERT RLS policy may create a direct table write path",
+    /create policy [^;]+ on public\.team_actions [^;]* for (?:insert|update|delete)\b/,
+    "no write RLS policy may create a direct table write path",
   );
 
   assert.match(
     sql,
     /revoke all on table public\.team_actions from public, anon, authenticated\s*;/,
-    "the migration must explicitly clear every direct table privilege before adding the narrow read/update grants",
+    "the migration must explicitly clear every direct table privilege before adding the narrow read grant",
   );
 
   const tableGrants = [...sql.matchAll(/grant\s+([^;]+?)\s+on table public\.team_actions\s+to\s+([^;]+);/g)];
@@ -49,8 +49,8 @@ test("team action creation is RPC-only and authenticated-only", () => {
   for (const grant of tableGrants) {
     assert.doesNotMatch(
       grant[1]!,
-      /\b(?:all|insert)\b/,
-      "no role may receive INSERT directly or through GRANT ALL",
+      /\b(?:all|insert|update|delete)\b/,
+      "no role may receive a direct write privilege or GRANT ALL",
     );
   }
 
@@ -62,9 +62,47 @@ test("team action creation is RPC-only and authenticated-only", () => {
     sql,
     /grant execute on function public\.create_team_action\(uuid, text, text\) to authenticated\s*;/,
   );
+  for (const signature of [
+    "resolve_team_action\\(uuid, uuid, text\\)",
+    "delete_team_action\\(uuid, uuid\\)",
+  ]) {
+    assert.match(
+      sql,
+      new RegExp(`revoke all on function public\\.${signature} from public, anon, authenticated\\s*;`),
+    );
+    assert.match(
+      sql,
+      new RegExp(`grant execute on function public\\.${signature} to authenticated\\s*;`),
+    );
+  }
 });
 
-test("live RLS contract checks both client roles have no direct INSERT privilege", () => {
+test("resolution and deletion reauthorize managers and keep lifecycle values server-owned", () => {
+  const sql = executableSql();
+  const resolve = sql.match(
+    /create or replace function public\.resolve_team_action\s*\(\s*p_team_id uuid\s*,\s*p_action_id uuid\s*,\s*p_status text\s*\)\s*returns public\.team_actions language plpgsql security definer set search_path\s*=\s*''\s*as\s*\$\$(.*?)\$\$\s*;/,
+  );
+  assert.ok(resolve, "resolve_team_action must keep its narrow hardened boundary");
+  assert.match(resolve[1]!, /caller uuid\s*:=\s*auth\.uid\(\)/);
+  assert.match(resolve[1]!, /if caller is null then raise exception/);
+  assert.match(
+    resolve[1]!,
+    /private\.is_team_manager\(p_team_id, caller\).*p_status not in \('done', 'dropped'\).*update public\.team_actions set status = p_status, resolved_at = now\(\)/,
+  );
+  const deletion = sql.match(
+    /create or replace function public\.delete_team_action\s*\(\s*p_team_id uuid\s*,\s*p_action_id uuid\s*\)\s*returns void language plpgsql security definer set search_path\s*=\s*''\s*as\s*\$\$(.*?)\$\$\s*;/,
+  );
+  assert.ok(deletion, "delete_team_action must keep its narrow hardened boundary");
+  assert.match(deletion[1]!, /caller uuid\s*:=\s*auth\.uid\(\)/);
+  assert.match(deletion[1]!, /if caller is null then raise exception/);
+  assert.match(deletion[1]!, /private\.is_team_manager\(p_team_id, caller\)/);
+  assert.match(
+    deletion[1]!,
+    /delete from public\.team_actions where team_id = p_team_id and id = p_action_id/,
+  );
+});
+
+test("live RLS contract checks both client roles have no direct write privilege", () => {
   const rlsContract = readFileSync(RLS_TEST_URL, "utf8")
     .replace(/--[^\n]*/g, " ")
     .replace(/\s+/g, " ")
@@ -72,12 +110,47 @@ test("live RLS contract checks both client roles have no direct INSERT privilege
     .toLowerCase();
 
   for (const role of ["anon", "authenticated"]) {
+    for (const operation of ["insert", "update", "delete"]) {
+      assert.match(
+        rlsContract,
+        new RegExp(
+          `has_table_privilege\\('${role}', 'public\\.team_actions', '${operation}'\\)\\s*,\\s*false`,
+        ),
+        `pgTAP must prove ${role} has no direct team_actions ${operation.toUpperCase()} privilege`,
+      );
+    }
+  }
+});
+
+test("live RLS contract exercises direct and RPC abuse as untrusted actors", () => {
+  const rlsContract = readFileSync(RLS_TEST_URL, "utf8").toLowerCase();
+
+  assert.match(
+    rlsContract,
+    /b cannot insert a team action directly even when forging server-owned fields/,
+    "a plain authenticated member must exercise the direct-table denial",
+  );
+  assert.match(
+    rlsContract,
+    /d cannot create a manager action as an outsider/,
+    "an authenticated outsider must exercise the SECURITY DEFINER authorization denial",
+  );
+  assert.match(
+    rlsContract,
+    /anonymous callers cannot execute the manager action rpc/,
+    "the anonymous role must exercise the function privilege boundary",
+  );
+  for (const expectedBoundary of [
+    "a cannot bypass the rpc by inserting identity or lifecycle fields directly",
+    "b cannot update a team action directly",
+    "b cannot delete a team action directly",
+    "d cannot resolve a manager action as an outsider",
+    "d cannot delete a manager action as an outsider",
+  ]) {
     assert.match(
       rlsContract,
-      new RegExp(
-        `has_table_privilege\\('${role}', 'public\\.team_actions', 'insert'\\)\\s*,\\s*false`,
-      ),
-      `pgTAP must prove ${role} has no direct team_actions INSERT privilege`,
+      new RegExp(expectedBoundary),
+      `pgTAP must exercise: ${expectedBoundary}`,
     );
   }
 });

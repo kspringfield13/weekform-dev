@@ -523,15 +523,18 @@ Task IDs match `docs/WEEKFORM_HACKATHON_EXECUTION_BOARD.md`. The blueprint §12 
 | PT2 prompt | Outcome | Status | Evidence |
 |---|---|---|---|
 | 15 / B1 | Optional local weekly-review ritual | DONE | 6/6 focused tests; `verify:wave3` 103/103 desktop-cloud + 162/162 web at closeout |
-| 16 / B2 | Manager action follow-through and measured team outcome | DONE (live migration proof env-blocked) | 15/15 focused boundary tests; RPC-only creation + SQL-review-only RLS migration; manager Actions panel; `verify:wave3` 103/103 desktop-cloud + 177/177 web; root build and audit PASS |
-| 17 / B4 | Demand mapping and capacity reservations | READY | Depends on Prompt 16; no implementation claim yet |
+| 16 / B2 | Manager action follow-through and measured team outcome | REVIEW (fresh audit and live migration proof env-blocked) | RPC-only create/resolve/delete; 17/17 focused boundary tests; 76-assertion pgTAP contract with direct member UPDATE/DELETE and outsider resolve/delete abuse; `verify:wave3` 111/111 desktop-cloud + 179/179 web; root build PASS; seventeen fresh audit attempts DNS-blocked, with the two iteration-9 attempts stopping before the web audit |
+| 17 / B4 | Demand mapping and capacity reservations | BLOCKED | Depends on Prompt 16 reaching DONE; no implementation claim yet |
 
-Prompt 16 accepts only clamped action text plus an optional closed risk key,
-denies non-managers before database access, scopes every query to a team, and
+Prompt 16 accepts only clamped action text plus an optional closed risk key.
+The web wrappers deny non-managers before a client call; the RPCs independently
+reauthorize every caller server-side. Every read and mutation is team-scoped and
 waits for two distinct later weeks before showing correlation-only team medians.
 The committed migration has not been applied to a live Supabase project here,
 so live RLS/RPC execution is not claimed. The repository contracts and all
-runnable gates are green, including 0 audit vulnerabilities in both workspaces.
+runnable code/build gates are green. The fresh audit gate is DNS-blocked, so
+Prompt 16 remains REVIEW; prior same-day audit evidence is not claimed for this
+hardened tree.
 
 Per the parallelization boundary in `docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md` ("How to run this pack") and blueprint sections 10/13.2.
 

@@ -2,12 +2,12 @@
   "agents": [
     {
       "id": "builder-01",
-      "name": "Builder (claude)",
+      "name": "Builder (codex)",
       "role": "Repair-loop builder — iterates toward the /goal contract",
-      "status": "idle",
-      "currentTask": null,
+      "status": "active",
+      "currentTask": "ran: /bin/zsh -lc \"ps -axo pid,etime,command | rg 'next build|npm run verify:wave3|npm run web:build|npm run build|npm r",
       "metrics": {
-        "tasksCompleted": 15,
+        "tasksCompleted": 9,
         "errors": 0
       }
     },

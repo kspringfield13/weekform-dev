@@ -172,7 +172,7 @@ test("every CRUD wrapper denies members before touching Supabase", async () => {
     /manager/i,
   );
   assert.match(
-    (await updateTeamActionStatus(client, "member", "team-1", "action-1", "done", "2026-07-20T00:00:00Z")).error ?? "",
+    (await updateTeamActionStatus(client, "member", "team-1", "action-1", "done")).error ?? "",
     /manager/i,
   );
   assert.match((await deleteTeamAction(client, "member", "team-1", "action-1")).error ?? "", /manager/i);
@@ -205,20 +205,31 @@ test("create rejects whitespace-only text before invoking the RPC", async () => 
   assert.equal(rpcCalls.length, 0);
 });
 
-test("list, status update, and delete use explicit columns and team plus action scoping", async () => {
+test("list reads explicit columns while status update and delete use narrow manager RPCs", async () => {
   const listed = mockSupabase({ data: [ROW], error: null });
   assert.equal((await listTeamActions(listed.client, "owner", "team-1")).actions.length, 1);
   assert.deepEqual(listed.calls[0]?.eq, [["team_id", "team-1"]]);
   assert.equal(listed.calls[0]?.columns?.includes("*"), false);
 
   const updated = mockSupabase({ data: { ...ROW, status: "done", resolved_at: "2026-07-20T00:00:00Z" }, error: null });
-  await updateTeamActionStatus(updated.client, "manager", "team-1", "action-1", "done", "2026-07-20T00:00:00Z");
-  assert.deepEqual(updated.calls[0]?.eq, [["team_id", "team-1"], ["id", "action-1"]]);
-  assert.deepEqual(updated.calls[0]?.payload, { status: "done", resolved_at: "2026-07-20T00:00:00Z" });
+  await updateTeamActionStatus(updated.client, "manager", "team-1", "action-1", "done");
+  assert.deepEqual(updated.rpcCalls, [{
+    functionName: "resolve_team_action",
+    args: {
+      p_team_id: "team-1",
+      p_action_id: "action-1",
+      p_status: "done",
+    },
+  }]);
+  assert.deepEqual(updated.calls, []);
 
   const deleted = mockSupabase();
   await deleteTeamAction(deleted.client, "owner", "team-1", "action-1");
-  assert.deepEqual(deleted.calls[0]?.eq, [["team_id", "team-1"], ["id", "action-1"]]);
+  assert.deepEqual(deleted.rpcCalls, [{
+    functionName: "delete_team_action",
+    args: { p_team_id: "team-1", p_action_id: "action-1" },
+  }]);
+  assert.deepEqual(deleted.calls, []);
 });
 
 function action(overrides: Partial<TeamAction> = {}): TeamAction {

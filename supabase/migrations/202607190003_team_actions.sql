@@ -57,19 +57,6 @@ for select
 to authenticated
 using ((select private.is_team_manager(team_id, auth.uid())));
 
-create policy team_actions_update_managers
-on public.team_actions
-for update
-to authenticated
-using ((select private.is_team_manager(team_id, auth.uid())))
-with check ((select private.is_team_manager(team_id, auth.uid())));
-
-create policy team_actions_delete_managers
-on public.team_actions
-for delete
-to authenticated
-using ((select private.is_team_manager(team_id, auth.uid())));
-
 -- Creation is RPC-only. The caller supplies the team scope plus the two
 -- product inputs; actor identity and lifecycle fields are always authoritative
 -- server values. Explicit authorization is required because SECURITY DEFINER
@@ -149,6 +136,97 @@ begin
 end;
 $$;
 
+-- Resolution is also RPC-only so the caller cannot forge the resolution time
+-- or mutate immutable action evidence through a direct table update.
+create or replace function public.resolve_team_action(
+  p_team_id uuid,
+  p_action_id uuid,
+  p_status text
+)
+returns public.team_actions
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller uuid := auth.uid();
+  resolved_action public.team_actions%rowtype;
+begin
+  if caller is null then
+    raise exception using
+      errcode = '42501',
+      message = 'Authentication required';
+  end if;
+
+  if p_team_id is null
+     or not private.is_team_manager(p_team_id, caller) then
+    raise exception using
+      errcode = '42501',
+      message = 'An active team manager or owner role is required';
+  end if;
+
+  if p_status is null or p_status not in ('done', 'dropped') then
+    raise exception using
+      errcode = '22023',
+      message = 'Action status must be done or dropped';
+  end if;
+
+  update public.team_actions
+  set status = p_status,
+      resolved_at = now()
+  where team_id = p_team_id
+    and id = p_action_id
+  returning * into resolved_action;
+
+  if resolved_action.id is null then
+    raise exception using
+      errcode = '22023',
+      message = 'Team action not found';
+  end if;
+
+  return resolved_action;
+end;
+$$;
+
+-- Deletion remains supported by the existing product contract, but only
+-- through the same explicit team-manager authorization boundary.
+create or replace function public.delete_team_action(
+  p_team_id uuid,
+  p_action_id uuid
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  caller uuid := auth.uid();
+begin
+  if caller is null then
+    raise exception using
+      errcode = '42501',
+      message = 'Authentication required';
+  end if;
+
+  if p_team_id is null
+     or not private.is_team_manager(p_team_id, caller) then
+    raise exception using
+      errcode = '42501',
+      message = 'An active team manager or owner role is required';
+  end if;
+
+  delete from public.team_actions
+  where team_id = p_team_id
+    and id = p_action_id;
+
+  if not found then
+    raise exception using
+      errcode = '22023',
+      message = 'Team action not found';
+  end if;
+end;
+$$;
+
 comment on function public.create_team_action(uuid, text, text) is
   'Creates one manager action in the authorized team. Trims/clamps text to 500 characters, validates the optional risk key, and server-sets actor and lifecycle fields.';
 
@@ -157,10 +235,17 @@ revoke all on function public.create_team_action(uuid, text, text)
 grant execute on function public.create_team_action(uuid, text, text)
   to authenticated;
 
+revoke all on function public.resolve_team_action(uuid, uuid, text)
+  from public, anon, authenticated;
+grant execute on function public.resolve_team_action(uuid, uuid, text)
+  to authenticated;
+
+revoke all on function public.delete_team_action(uuid, uuid)
+  from public, anon, authenticated;
+grant execute on function public.delete_team_action(uuid, uuid)
+  to authenticated;
+
 revoke all on table public.team_actions from public, anon, authenticated;
-grant select, delete on table public.team_actions to authenticated;
--- Action identity, scope, text, flag, creator, and creation time are immutable.
--- Resolution is the only supported update after creation.
-grant update (status, resolved_at) on table public.team_actions to authenticated;
+grant select on table public.team_actions to authenticated;
 
 commit;

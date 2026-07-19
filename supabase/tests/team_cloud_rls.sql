@@ -19,7 +19,7 @@
 
 begin;
 create extension if not exists pgtap;
-select plan(54);
+select plan(76);
 
 -- ---------------------------------------------------------------------------
 -- Schema contract
@@ -36,6 +36,8 @@ select has_function('private', 'is_active_team_member', array['uuid', 'uuid'], '
 select has_function('public', 'create_team_with_owner', array['text'], 'atomic team creation RPC exists');
 select has_function('public', 'accept_team_invite', array['text'], 'atomic invite acceptance RPC exists');
 select has_function('public', 'create_team_action', array['uuid', 'text', 'text'], 'manager action creation RPC exists');
+select has_function('public', 'resolve_team_action', array['uuid', 'uuid', 'text'], 'manager action resolution RPC exists');
+select has_function('public', 'delete_team_action', array['uuid', 'uuid'], 'manager action deletion RPC exists');
 select is(
   has_table_privilege('anon', 'public.team_actions', 'INSERT'),
   false,
@@ -45,6 +47,26 @@ select is(
   has_table_privilege('authenticated', 'public.team_actions', 'INSERT'),
   false,
   'authenticated clients have no direct team_actions INSERT privilege'
+);
+select is(
+  has_table_privilege('anon', 'public.team_actions', 'UPDATE'),
+  false,
+  'anonymous clients have no direct team_actions UPDATE privilege'
+);
+select is(
+  has_table_privilege('authenticated', 'public.team_actions', 'UPDATE'),
+  false,
+  'authenticated clients have no direct team_actions UPDATE privilege'
+);
+select is(
+  has_table_privilege('anon', 'public.team_actions', 'DELETE'),
+  false,
+  'anonymous clients have no direct team_actions DELETE privilege'
+);
+select is(
+  has_table_privilege('authenticated', 'public.team_actions', 'DELETE'),
+  false,
+  'authenticated clients have no direct team_actions DELETE privilege'
 );
 
 -- ---------------------------------------------------------------------------
@@ -177,6 +199,27 @@ select ok(
   'RPC derives team-scoped actor and open lifecycle fields on the server'
 );
 
+select throws_ok(
+  $$
+    update public.team_actions
+    set status = 'done', resolved_at = now() - interval '30 days'
+    where team_id = '30000000-0000-4000-8000-000000000001'
+  $$,
+  '42501',
+  'permission denied for table team_actions',
+  'A cannot bypass the resolution RPC by setting status or resolved_at directly'
+);
+
+select throws_ok(
+  $$
+    delete from public.team_actions
+    where team_id = '30000000-0000-4000-8000-000000000001'
+  $$,
+  '42501',
+  'permission denied for table team_actions',
+  'A cannot delete team action evidence directly'
+);
+
 select lives_ok(
   $$
     select public.create_team_action(
@@ -199,6 +242,64 @@ select is(
   ),
   500,
   'RPC clamps oversized action text to 500 characters'
+);
+
+select lives_ok(
+  $$
+    select public.resolve_team_action(
+      '30000000-0000-4000-8000-000000000001',
+      (
+        select action.id
+        from public.team_actions action
+        where action.team_id = '30000000-0000-4000-8000-000000000001'
+          and action.risk_flag_key = 'high-reactive'
+        limit 1
+      ),
+      'done'
+    )
+  $$,
+  'A can resolve a team action through the manager-only RPC'
+);
+
+select ok(
+  exists (
+    select 1
+    from public.team_actions action
+    where action.team_id = '30000000-0000-4000-8000-000000000001'
+      and action.risk_flag_key = 'high-reactive'
+      and action.status = 'done'
+      and action.resolved_at between statement_timestamp() - interval '5 seconds'
+                                and statement_timestamp() + interval '5 seconds'
+  ),
+  'resolution RPC derives the closed status and resolved_at on the server'
+);
+
+select lives_ok(
+  $$
+    select public.delete_team_action(
+      '30000000-0000-4000-8000-000000000001',
+      (
+        select action.id
+        from public.team_actions action
+        where action.team_id = '30000000-0000-4000-8000-000000000001'
+          and action.risk_flag_key is null
+        order by action.created_at desc, action.id desc
+        limit 1
+      )
+    )
+  $$,
+  'A can delete a team action through the manager-only RPC'
+);
+
+select is(
+  (
+    select count(*)::integer
+    from public.team_actions action
+    where action.team_id = '30000000-0000-4000-8000-000000000001'
+      and action.risk_flag_key is null
+  ),
+  0,
+  'delete RPC removes only the explicitly scoped manager action'
 );
 
 select throws_ok(
@@ -248,6 +349,48 @@ set local "request.jwt.claim.sub" = '20000000-0000-4000-8000-000000000002';
 
 select throws_ok(
   $$
+    insert into public.team_actions (
+      id, team_id, created_by, action_text, risk_flag_key,
+      status, created_at, resolved_at
+    ) values (
+      '60000000-0000-4000-8000-000000000001',
+      '30000000-0000-4000-8000-000000000001',
+      '20000000-0000-4000-8000-000000000002',
+      'Forged direct member action',
+      'high-meetings',
+      'done',
+      now() - interval '1 day',
+      now()
+    )
+  $$,
+  '42501',
+  'permission denied for table team_actions',
+  'B cannot insert a team action directly even when forging server-owned fields'
+);
+
+select throws_ok(
+  $$
+    update public.team_actions
+    set status = 'dropped', resolved_at = now()
+    where team_id = '30000000-0000-4000-8000-000000000001'
+  $$,
+  '42501',
+  'permission denied for table team_actions',
+  'B cannot update a team action directly'
+);
+
+select throws_ok(
+  $$
+    delete from public.team_actions
+    where team_id = '30000000-0000-4000-8000-000000000001'
+  $$,
+  '42501',
+  'permission denied for table team_actions',
+  'B cannot delete a team action directly'
+);
+
+select throws_ok(
+  $$
     select public.create_team_action(
       '30000000-0000-4000-8000-000000000001',
       'Member-authored manager action',
@@ -257,6 +400,41 @@ select throws_ok(
   '42501',
   'An active team manager or owner role is required',
   'B cannot create a manager action as a plain member'
+);
+
+select throws_ok(
+  $$
+    select public.resolve_team_action(
+      '30000000-0000-4000-8000-000000000001',
+      (
+        select action.id
+        from public.team_actions action
+        where action.team_id = '30000000-0000-4000-8000-000000000001'
+        limit 1
+      ),
+      'dropped'
+    )
+  $$,
+  '42501',
+  'An active team manager or owner role is required',
+  'B cannot resolve a manager action as a plain member'
+);
+
+select throws_ok(
+  $$
+    select public.delete_team_action(
+      '30000000-0000-4000-8000-000000000001',
+      (
+        select action.id
+        from public.team_actions action
+        where action.team_id = '30000000-0000-4000-8000-000000000001'
+        limit 1
+      )
+    )
+  $$,
+  '42501',
+  'An active team manager or owner role is required',
+  'B cannot delete a manager action as a plain member'
 );
 
 select lives_ok(
@@ -431,7 +609,32 @@ select throws_ok(
   $$,
   '42501',
   'An active team manager or owner role is required',
-  'D cannot create a manager action without team membership'
+  'D cannot create a manager action as an outsider'
+);
+
+select throws_ok(
+  $$
+    select public.resolve_team_action(
+      '30000000-0000-4000-8000-000000000001',
+      '60000000-0000-4000-8000-000000000001',
+      'done'
+    )
+  $$,
+  '42501',
+  'An active team manager or owner role is required',
+  'D cannot resolve a manager action as an outsider'
+);
+
+select throws_ok(
+  $$
+    select public.delete_team_action(
+      '30000000-0000-4000-8000-000000000001',
+      '60000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  '42501',
+  'An active team manager or owner role is required',
+  'D cannot delete a manager action as an outsider'
 );
 
 select is((select count(*)::integer from public.teams), 0, 'D cannot enumerate teams');
@@ -517,6 +720,44 @@ select throws_ok(
 -- ---------------------------------------------------------------------------
 
 set local role anon;
+
+select throws_ok(
+  $$
+    select public.create_team_action(
+      '30000000-0000-4000-8000-000000000001',
+      'Anonymous manager action',
+      'low-headroom'
+    )
+  $$,
+  '42501',
+  'permission denied for function create_team_action',
+  'Anonymous callers cannot execute the manager action RPC'
+);
+
+select throws_ok(
+  $$
+    select public.resolve_team_action(
+      '30000000-0000-4000-8000-000000000001',
+      '60000000-0000-4000-8000-000000000001',
+      'done'
+    )
+  $$,
+  '42501',
+  'permission denied for function resolve_team_action',
+  'Anonymous callers cannot execute the manager action resolution RPC'
+);
+
+select throws_ok(
+  $$
+    select public.delete_team_action(
+      '30000000-0000-4000-8000-000000000001',
+      '60000000-0000-4000-8000-000000000001'
+    )
+  $$,
+  '42501',
+  'permission denied for function delete_team_action',
+  'Anonymous callers cannot execute the manager action deletion RPC'
+);
 
 select throws_ok(
   $$ select count(*) from public.teams $$,

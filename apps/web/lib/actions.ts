@@ -205,7 +205,6 @@ export async function updateTeamActionStatus(
   teamId: string,
   actionId: string,
   status: ResolvedActionStatus,
-  resolvedAt: string,
 ): Promise<{ action: TeamAction | null; error: string | null }> {
   if (!isManagerRole(role)) {
     return { action: null, error: MANAGER_REQUIRED };
@@ -213,13 +212,11 @@ export async function updateTeamActionStatus(
   if (status !== "done" && status !== "dropped") {
     return { action: null, error: "Action status must be done or dropped." };
   }
-  const { data, error } = await supabase
-    .from("team_actions")
-    .update({ status, resolved_at: resolvedAt })
-    .eq("team_id", teamId)
-    .eq("id", actionId)
-    .select(ACTION_COLUMNS)
-    .single();
+  const { data, error } = await supabase.rpc("resolve_team_action", {
+    p_team_id: teamId,
+    p_action_id: actionId,
+    p_status: status,
+  });
 
   if (error || !data) {
     return { action: null, error: error?.message ?? "Action was not updated." };
@@ -236,11 +233,10 @@ export async function deleteTeamAction(
   if (!isManagerRole(role)) {
     return { error: MANAGER_REQUIRED };
   }
-  const { error } = await supabase
-    .from("team_actions")
-    .delete()
-    .eq("team_id", teamId)
-    .eq("id", actionId);
+  const { error } = await supabase.rpc("delete_team_action", {
+    p_team_id: teamId,
+    p_action_id: actionId,
+  });
   return { error: error?.message ?? null };
 }
 

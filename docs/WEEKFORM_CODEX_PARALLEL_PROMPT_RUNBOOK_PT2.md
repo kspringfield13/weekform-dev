@@ -28,8 +28,8 @@ Baseline at Part 2 authoring (July 19, 2026): `verify:wave3` exit 0 — 97/97 de
 | 13 | Team forecasting calibrated against outcomes (A7) | DONE (2026-07-19) | `apps/web/lib/forecast.ts` + `forecast.test.ts` (12 tests, tests-first); scorer cross-check `packages/inference/src/capacity.forecastScorer.test.ts`; Forecast panel in `apps/web/app/teams/[teamId]/page.tsx` (coverage n/n, "insufficient shared data" below threshold, medians/ranges only). Gates: verify:wave3 exit 0 (97/97 + 161/161), build exit 0, audit:check 0 vulns. Roadmap A7 row updated. |
 | 14 | Experience excellence pass — desktop + web coherence | DONE (2026-07-19; audit rerun env-blocked) | Audit-first artifact `docs/hackathon/TEAM_CLAWFATHER_UX_AUDIT.md`; all 20 FIX rows resolved across the desktop and web surfaces. Shared pending/confirmation controls, assertive errors, announced loading, destructive confirmations, canonical freshness and approved-snapshot provenance. Gate runner hardened from `tsx --test` to equivalent `node --import tsx --test` after IPC `EPERM`; final `verify:wave3` exit 0 (97/97 desktop-cloud, 162/162 web, 12 routes / 11 static pages) and root build exit 0. `audit:check` could not reach `registry.npmjs.org` (`ENOTFOUND`); no dependencies changed, and the last same-day audit evidence remains 0 vulnerabilities. |
 | 15 | Weekly review ritual (B1) | DONE (2026-07-19; audit rerun env-blocked) | Pure local checklist `apps/desktop/src/services/weeklyReview.ts` + 6 tests; routed `WeeklyReviewScreen`; current-week forecast comparison; cloud-disabled omission and matching sync-audit/consent-receipt proof; one idempotent ids/counts-only `weekly_review` audit event. Gates: `verify:wave3` exit 0 (103/103 desktop-cloud, 162/162 web, 12 routes / 11 static pages), root build exit 0, diff check clean. `audit:check` ran but registry DNS returned `ENOTFOUND`; no dependencies changed. |
-| 16 | Manager action follow-through — closed learning loop (B2) | DONE (2026-07-19; live migration proof env-blocked) | `supabase/migrations/202607190003_team_actions.sql` (SQL-review-only), pure `apps/web/lib/actions.ts` + 10 behavior tests, 5 migration-contract tests, and manager-only Actions panel/server commands. Creation is RPC-only: the caller supplies only team, clamped text, and an allowlisted risk key while the server sets identity/status/timestamps; direct table INSERT is revoked and pinned by static plus pgTAP contracts. Gates: focused boundary suite 15/15, verify:wave3 exit 0 (103/103 + 177/177, 12 routes / 11 static pages), build exit 0, audit:check exit 0 with 0 vulnerabilities in both workspaces. |
-| 17 | Demand mapping and capacity reservations (B4) | READY (after 16) | — |
+| 16 | Manager action follow-through — closed learning loop (B2) | REVIEW (2026-07-19; fresh audit and live migration proof env-blocked) | Loop `loop-20260719-135748-556358` removed every direct table mutation: create, resolve/drop, and delete are manager-authorized security-definer RPCs; the server derives `id`, `created_by`, `status`, `created_at`, and `resolved_at`. Direct INSERT/UPDATE/DELETE abuse is pinned by 7 migration-contract tests and a 76-assertion pgTAP contract, including direct member UPDATE/DELETE and outsider resolve/delete attempts. Lead and independent iteration-9 verification reproduced focused 17/17, verify:wave3 exit 0 (111/111 + 179/179, 12 routes / 11 static pages), build and diff check exit 0. Seventeen fresh `audit:check` attempts across the lead and independent reviewers exited 1 because registry DNS returned `ENOTFOUND`; the two iteration-9 attempts stopped at the root audit, so the web audit did not run. Do not mark DONE until the full command exits 0 on this tree. |
+| 17 | Demand mapping and capacity reservations (B4) | BLOCKED (after 16 DONE) | Prompt 16 remains at its human/audit approval gate. |
 | 18 | Connector contracts and role-based views (B3 + B5) | READY — live OAuth [env-blocked] | — |
 | 19 | Privacy thresholds and self-benchmarking (C2 + C3) | READY (after 17) | — |
 | 20 | Portfolio views and explainable planning APIs (C1 + C4) | BLOCKED on 19 | — |
@@ -55,7 +55,7 @@ Non-negotiables: sharing defaults off; null is never zero; medians/ranges, never
 
 **Web (`apps/web`):** Supabase SSR auth, teams/invites (hashed-token, copy-link), manager + member dashboards (medians/ranges, null-never-zero), weekly history + trends (A2), planning scenarios (A1), team forecasting calibrated against its own outcomes (A7), retention statement (A3), narrowing-only team share policy settings (A6, `lib/teamPolicy.ts`), manager-only AI team briefing with deterministic fallback, session-gated download with config-gated signed-URL artifact route.
 
-**Infrastructure:** 4 shared packages (`domain`, `inference`, `integrations`, `simulator`); 4 Supabase migrations (simulator, team cloud v1 + RLS, team share policy, manager actions); 25 repository-owned test files concentrated on cloud/policy/privacy and deterministic planning logic; `verify:wave3`, `build`, and `audit:check` are green on the hardened Prompt 16 tree. Live Supabase execution remains environment-blocked.
+**Infrastructure:** 4 shared packages (`domain`, `inference`, `integrations`, `simulator`); 4 Supabase migrations (simulator, team cloud v1 + RLS, team share policy, manager actions); 26 repository-owned test files concentrated on cloud/policy/privacy and deterministic planning logic. On the hardened Prompt 16 tree, `verify:wave3` and `build` are green; the fresh `audit:check` is registry-DNS-blocked. Live Supabase execution remains environment-blocked.
 
 ### 1.3 Honest deltas — where current state falls short of the definition
 
@@ -63,7 +63,7 @@ Non-negotiables: sharing defaults off; null is never zero; medians/ranges, never
 |---|---|---|---|
 | G1 | Team-level forecasting calibrated against outcomes (A7) | Roadmap A7; blueprint §17 | **CLOSED by Prompt 13** — pure forecast + walk-forward calibration, no per-member prediction |
 | G2 | Weekly review ritual (B1) — no guided weekly close-out that turns corrections into a habit loop | Blueprint §17 Phase B | **CLOSED by Prompt 15** — deterministic local checklist, routed ritual, approval/audit completion |
-| G3 | Manager action follow-through (B2) — briefings surface risk, but no loop records what the manager did and whether it helped | Blueprint §17 Phase B | **CLOSED by Prompt 16** — manager-only action log + correlation-only team follow-through after two later weeks |
+| G3 | Manager action follow-through (B2) — briefings surface risk, but no loop records what the manager did and whether it helped | Blueprint §17 Phase B | **IMPLEMENTED; REVIEW pending Prompt 16 audit gate** — manager-only action log + correlation-only team follow-through after two later weeks |
 | G4 | Demand mapping & capacity reservations (B4) — capacity supply exists; demand side is absent | Blueprint §17 Phase B | Buildable now → **Prompt 17** |
 | G5 | Live connectors (B3) — calendar/chat OAuth sources are "coming soon" disabled stubs (`calendarSource.ts`, `chatSource.ts`); only local file import works | Blueprint §17 Phase B | Contract-first now; live OAuth **[env-blocked]** → **Prompt 18** |
 | G6 | Role-based client views (B5) | Blueprint §17 Phase B | Buildable now → **Prompt 18** |
@@ -219,7 +219,7 @@ The ritual computes or uploads anything not already local; it introduces streaks
 
 ## Prompt 16 — Manager action follow-through: closed learning loop (B2)
 
-**Status:** DONE (July 19, 2026; live migration proof environment-blocked).
+**Status:** REVIEW (July 19, 2026; fresh audit and live migration proof environment-blocked).
 **Owner:** Web agent.
 **Depends on:** Briefing (`apps/web/lib/briefing.ts`), forecast (Prompt 13), team cloud schema.
 **Mode:** High effort; migration is SQL-review-only until a live stack exists (Part 1 Prompt 2 precedent).
@@ -229,19 +229,26 @@ Read AGENTS.md and docs/EXPANSION_ROADMAP.md. Implement blueprint §17 Phase B i
 record what a manager decided and close the loop on whether it helped.
 
 1. Migration supabase/migrations/<timestamp>_team_actions.sql: table team_actions
-   (team-scoped, manager-write via RLS mirroring existing patterns; columns: action
-   text ≤500 chars, optional link to the briefing risk flag key it responds to,
-   status open/done/dropped, created/resolved timestamps). RLS in the same migration;
-   SQL-review-only [env-blocked] like all prior migrations — never claim it ran live.
-2. Pure module apps/web/lib/actions.ts: CRUD wrappers against a mocked client (house
-   pattern from lib/teams.ts) + a follow-through view that joins an action's lifetime
+   with manager-only SELECT through RLS and no direct INSERT/UPDATE/DELETE privilege.
+   All writes use narrow SECURITY DEFINER RPCs that reauthorize the authenticated
+   manager server-side. Creation accepts only team id, clamped action text ≤500
+   characters, and an optional allowlisted briefing risk key; the server derives id,
+   created_by, open status, created_at, and null resolved_at. Resolve/drop accepts
+   only team id, action id, and the closed status, and derives resolved_at; delete
+   accepts only team id and action id. SQL-review-only [env-blocked] like all prior
+   migrations — never claim it ran live.
+2. Pure module apps/web/lib/actions.ts: RPC-backed mutation and explicit-column read
+   wrappers against a mocked client (house pattern from lib/teams.ts) + a
+   follow-through view that joins an action's lifetime
    to the team trend for the metric its risk flag came from, labeled strictly as
    "what changed after" — correlation, never causation, and no per-member attribution.
 3. UI: an Actions panel on the manager team page: log an action from a briefing risk
    flag, see open actions, resolve them, and see the after-trend once ≥2 subsequent
    weekly snapshots exist (else "too early to tell", never a fabricated readout).
-4. Tests: actions.test.ts — RLS-shape of every query (team-scoped, role-gated),
-   too-early gating, dropped actions excluded from follow-through, ≤500-char clamp.
+4. Tests: actions.test.ts plus a migration-boundary contract — every read/mutation is
+   team-scoped and role-gated; direct table writes are denied; member, outsider, and
+   anonymous RPC abuse is exercised; too-early gating, dropped-action exclusion, and
+   the ≤500-character clamp remain covered.
 Gates: npm run verify:wave3, npm run build, npm run audit:check — all exit 0.
 ```
 
@@ -260,27 +267,36 @@ Follow-through language implies causation or attributes change to individuals; t
   later ISO weeks (not two member rows), dropped exclusion, and correlation-only
   team medians.
 - `202607190003_team_actions.sql` is explicitly a SQL-review-only artifact. It
-  forces RLS, revokes direct authenticated table INSERT, and exposes only a
-  manager-authorized `create_team_action` RPC. The caller can provide team,
-  clamped text, and an allowlisted risk key; actor identity, open status, and
-  timestamps are server-set. It was not applied to a live stack here.
+  forces RLS, revokes direct authenticated INSERT/UPDATE/DELETE, and exposes
+  manager-authorized create, resolve/drop, and delete security-definer RPCs.
+  Creation accepts only team, clamped text, and an allowlisted risk key; the
+  server derives `id`, `created_by`, `status`, `created_at`, and `resolved_at`.
+  Resolution also derives `resolved_at = now()` server-side. It was not applied
+  to a live stack here.
 - The manager-only Actions panel records text plus an optional allowlisted
   briefing flag, shows open actions, resolves/drops with fresh server-side role
   checks, reports safe visible failures instead of false success, and renders
   either “Too early to tell” or “What changed after” with no individual
   attribution or causal claim.
-- Independent final gates on the hardened tree: focused boundary tests 15/15;
-  `npm run verify:wave3` exit 0 (103/103 desktop-cloud, 177/177 web, 12 routes /
-  11 static pages); `npm run build` exit 0; scoped diff check exit 0; and
-  `npm run audit:check` exit 0 with 0 vulnerabilities in both workspaces.
-  Live pgTAP/RLS execution remains unclaimed because neither Supabase CLI nor
-  `psql` is available on this machine.
+- Fresh lead and independent gates for loop `loop-20260719-135748-556358`:
+  focused boundary tests 17/17; `npm run verify:wave3` exit 0 (111/111
+  desktop-cloud, 179/179 web, 12 routes / 11 static pages); `npm run build` exit
+  0; and `git diff --check` exit 0. Two additional iteration-9 `npm run
+  audit:check` retries exited 1 because `registry.npmjs.org` DNS resolution was
+  blocked (`ENOTFOUND`), bringing the documented fresh retry count to seventeen.
+  Both stopped at the root audit before the `apps/web` audit could run, so this
+  prompt remains REVIEW
+  rather than DONE. Live pgTAP/RLS
+  execution remains unclaimed because neither Supabase CLI nor `psql` is
+  available on this machine. The defense-in-depth continuation expanded that
+  unapplied contract from 72 to 76 assertions with direct member UPDATE/DELETE
+  and outsider resolve/delete attempts; its static guard remains green.
 
 ---
 
 ## Prompt 17 — Demand mapping and capacity reservations (B4)
 
-**Status:** READY (after Prompt 16).
+**Status:** BLOCKED (until Prompt 16 reaches DONE).
 **Owner:** Web agent.
 **Depends on:** Scenario planning (`apps/web/lib/scenario.ts`), forecast (Prompt 13).
 **Mode:** High effort.

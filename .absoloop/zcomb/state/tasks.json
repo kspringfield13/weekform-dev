@@ -1,55 +1,16 @@
 {
   "tasks": [
     {
-      "id": "run-loop-20260719-110721-911171",
+      "id": "run-loop-20260719-135708-c35666",
       "title": "Loop 1 · Stopped",
       "status": "done",
       "assignee": null,
       "priority": "low",
       "dependencies": [],
       "phase": 5,
-      "createdAt": "2026-07-19T15:07:21Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
-      "description": "3 iters · Execute Prompt 13 from docs/WEEKFORM_CODEX_PARAL…",
-      "kind": "past_run"
-    },
-    {
-      "id": "run-loop-20260719-111515-98ce7f",
-      "title": "Loop 2 · Stopped",
-      "status": "done",
-      "assignee": null,
-      "priority": "low",
-      "dependencies": [],
-      "phase": 5,
-      "createdAt": "2026-07-19T15:15:15Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
-      "description": "21 iters · Execute Prompts 13 and 14 from docs/WEEKFORM_COD…",
-      "kind": "past_run"
-    },
-    {
-      "id": "run-loop-20260719-111613-cf7d72",
-      "title": "Loop 3 · Rejected",
-      "status": "done",
-      "assignee": null,
-      "priority": "low",
-      "dependencies": [],
-      "phase": 5,
-      "createdAt": "2026-07-19T15:16:13Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
-      "description": "3 iters · $17.00 · Building on the completed pass for “Using this d…\nREJECTED** · ABS-MINIMAL-001 · loop loop-20260719-111613-cf7d72 Generated 2026-07-19 12:04 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 3** — S…",
-      "kind": "past_run"
-    },
-    {
-      "id": "run-loop-20260719-122603-ea56cd",
-      "title": "Loop 4 · Stopped",
-      "status": "done",
-      "assignee": null,
-      "priority": "low",
-      "dependencies": [],
-      "phase": 5,
-      "createdAt": "2026-07-19T16:26:04Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
-      "description": "3 iters · $10.00 · Harden team_actions by revoking direct table INS…",
+      "createdAt": "2026-07-19T17:57:08Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
+      "description": "1 iter",
       "kind": "past_run"
     },
     {
@@ -60,8 +21,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#1 · Budget Exhausted · report\nBUDGET_EXHAUSTED** · ABS-MINIMAL-001 · loop loop-20260718-195338-2a8640 Generated 2026-07-19 04:57 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration…",
       "kind": "report"
     },
@@ -73,8 +34,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#2 · Completed · report\nAccepted** · ABS-MINIMAL-001 · loop loop-20260719-050445-52108e Generated 2026-07-19 05:27 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. Accepted** · critic PASS · gate approved Independently verified: Prompts 0A/0B outputs exist as claimed (five planning files; nine decisions D1–D9; eleven-field taskboard ledger with all five Program… Iterations: 3/50 Spend: $19.45 (1,798,922 tok) / $50.00 Delivery: local → working tree (unstaged) docs/hackathon/TEAM_…",
       "kind": "report"
     },
@@ -86,8 +47,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#3 · Completed · report\nCOMPLETED** · ABS-MINIMAL-001 · loop loop-20260719-052919-0cf644 Generated 2026-07-19 05:51 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 3** — …",
       "kind": "report"
     },
@@ -99,8 +60,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#4 · Completed · report\nCOMPLETED** · ABS-MINIMAL-001 · loop loop-20260719-055300-166f58 Generated 2026-07-19 06:52 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 3** — …",
       "kind": "report"
     },
@@ -112,8 +73,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#5 · Executing · report\nEXECUTING** · ABS-MINIMAL-001 · loop loop-20260719-065423-7b1b06 Reconstructed archive (original report.md was not preserved at stop). _Backfilled for search/history · 2026-07-19 10:26_",
       "kind": "report"
     },
@@ -125,8 +86,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#6 · Completed · report\nCOMPLETED** · ABS-MINIMAL-001 · loop loop-20260719-065525-403d03 Generated 2026-07-19 07:10 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 3** — …",
       "kind": "report"
     },
@@ -138,8 +99,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#7 · Completed · report\nCOMPLETED** · ABS-MINIMAL-001 · loop loop-20260719-071047-7592e7 Generated 2026-07-19 07:25 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 3** — …",
       "kind": "report"
     },
@@ -151,8 +112,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#8 · Executing · report\nEXECUTING** · ABS-MINIMAL-001 · loop loop-20260719-080950-755c05 Reconstructed archive (original report.md was not preserved at stop). _Backfilled for search/history · 2026-07-19 10:26_",
       "kind": "report"
     },
@@ -164,8 +125,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#9 · Executing · report\nEXECUTING** · ABS-MINIMAL-001 · loop loop-20260719-081420-ba53ab Reconstructed archive (original report.md was not preserved at stop). _Backfilled for search/history · 2026-07-19 10:26_",
       "kind": "report"
     },
@@ -177,8 +138,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#10 · Completed · report\nCOMPLETED** · ABS-MINIMAL-001 · loop loop-20260719-081455-c0b251 Generated 2026-07-19 08:48 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 3** — …",
       "kind": "report"
     },
@@ -190,8 +151,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#11 · Completed · report\nCOMPLETED** · ABS-MINIMAL-001 · loop loop-20260719-085257-7690b4 Generated 2026-07-19 09:23 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 3** — …",
       "kind": "report"
     },
@@ -203,8 +164,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#12 · Stopped · report\nEXECUTING** · ABS-MINIMAL-001 · loop loop-20260719-092551-3a0e37 Generated 2026-07-19 09:28 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. EXECUTING** · critic — EXECUTING Iterations: 1/50 Spend: $0.00 (0 tok) / $50.00 Delivery: local → working tree (unstaged) _No primary artifacts recorded._ _No screenshots or visual proof attached._ _No builder reports recorded yet._ _No critic review yet._ 2026-07-18 19:53** ✗ **Iteration 1 · Builder · Failed · Reach…",
       "kind": "report"
     },
@@ -216,8 +177,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#13 · Completed · report\nCOMPLETED** · ABS-MINIMAL-001 · loop loop-20260719-093522-27cfe6 Generated 2026-07-19 10:10 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 3** — …",
       "kind": "report"
     },
@@ -229,8 +190,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#14 · Completed · report · Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the fir…\nCOMPLETED** · ABS-MINIMAL-001 · loop loop-20260719-101318-ee04ec Generated 2026-07-19 10:26 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 3** — …",
       "kind": "report"
     },
@@ -242,8 +203,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#15 · Budget Exhausted · report · Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the fir…\nBUDGET_EXHAUSTED** · ABS-MINIMAL-001 · loop loop-20260719-102937-ac1403 Generated 2026-07-19 10:47 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration…",
       "kind": "report"
     },
@@ -255,8 +216,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#16 · Budget Exhausted · report · Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the fir…\nBUDGET_EXHAUSTED** · ABS-MINIMAL-001 · loop loop-20260719-104758-a238a2 Generated 2026-07-19 10:49 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration…",
       "kind": "report"
     },
@@ -268,8 +229,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#17 · Budget Exhausted · report · Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the fir…\nBUDGET_EXHAUSTED** · ABS-MINIMAL-001 · loop loop-20260719-105239-1d2f48 Generated 2026-07-19 10:54 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration…",
       "kind": "report"
     },
@@ -281,8 +242,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#18 · Budget Exhausted · report · Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the fir…\nBUDGET_EXHAUSTED** · ABS-MINIMAL-001 · loop loop-20260719-105517-b68b79 Generated 2026-07-19 10:57 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration…",
       "kind": "report"
     },
@@ -294,8 +255,8 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#19 · Budget Exhausted · report · Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the fir…\nBUDGET_EXHAUSTED** · ABS-MINIMAL-001 · loop loop-20260719-105904-efe7b9 Generated 2026-07-19 11:00 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration…",
       "kind": "report"
     },
@@ -307,9 +268,22 @@
       "priority": "low",
       "dependencies": [],
       "phase": 6,
-      "createdAt": "2026-07-19T17:55:48Z",
-      "updatedAt": "2026-07-19T17:55:48Z",
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
       "description": "#20 · Budget Exhausted · report · Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the fir…\nBUDGET_EXHAUSTED** · ABS-MINIMAL-001 · loop loop-20260719-110144-a88976 Generated 2026-07-19 11:03 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration…",
+      "kind": "report"
+    },
+    {
+      "id": "report-loop-20260719-111613-cf7d72",
+      "title": "Report · loop-20260719-111613-cf7d72",
+      "status": "done",
+      "assignee": null,
+      "priority": "low",
+      "dependencies": [],
+      "phase": 6,
+      "createdAt": "2026-07-19T18:40:29Z",
+      "updatedAt": "2026-07-19T18:40:29Z",
+      "description": "#21 · Rejected · report · Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the fir…\nREJECTED** · ABS-MINIMAL-001 · loop loop-20260719-111613-cf7d72 Generated 2026-07-19 12:04 Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence. 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 1** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 2** — Still in progress 2026-07-18 19:53** · **codex run** — exit 1, $5.00, 3s 2026-07-18 19:53** · **Iteration 3** — S…",
       "kind": "report"
     },
     {
@@ -320,79 +294,79 @@
       "priority": "high",
       "dependencies": [],
       "phase": 0,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
       "description": "ABS-MINIMAL-001 · Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s"
     },
     {
       "id": "task-execute",
-      "title": "Execute repair iterations (15/50)",
-      "status": "failed",
+      "title": "Execute repair iterations (10/50)",
+      "status": "in_progress",
       "assignee": "builder-01",
       "priority": "high",
       "dependencies": [
         "task-scaffold"
       ],
       "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
-      "description": "Engine claude · iteration 15/50"
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
+      "description": "Engine codex · iteration 10/50 · now: ran: /bin/zsh -lc \"ps -axo pid,etime,command | rg 'next build|npm run verify:wave3|npm run web:build|npm run b"
     },
     {
       "id": "task-integrity",
       "title": "Integrity check before critic",
-      "status": "assigned",
+      "status": "inbox",
       "assignee": "builder-01",
       "priority": "medium",
       "dependencies": [
         "task-execute"
       ],
       "phase": 2,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
       "description": "Builder self-audits acceptance evidence against the /goal contract"
     },
     {
       "id": "task-critic",
       "title": "Adversarial critic review",
-      "status": "assigned",
+      "status": "inbox",
       "assignee": "critic-01",
       "priority": "high",
       "dependencies": [
         "task-integrity"
       ],
       "phase": 3,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
-      "description": "Independent adversarial review of iteration 15 evidence"
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
+      "description": "Independent adversarial review of iteration 10 evidence"
     },
     {
       "id": "task-gate",
       "title": "Human approval gate",
-      "status": "assigned",
+      "status": "inbox",
       "assignee": null,
       "priority": "high",
       "dependencies": [
         "task-critic"
       ],
       "phase": 4,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
       "description": "Human reviews the critic-passed result before delivery"
     },
     {
       "id": "task-deliver",
       "title": "Deliver accepted work",
-      "status": "assigned",
+      "status": "inbox",
       "assignee": "builder-01",
       "priority": "medium",
       "dependencies": [
         "task-gate"
       ],
       "phase": 5,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
-      "description": "Hand off accepted work for ABS-MINIMAL-001"
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
+      "description": "Hand off accepted work for ABS-MINIMAL-001 · $45.00 spent"
     },
     {
       "id": "iter-0001",
@@ -404,8 +378,8 @@
         "task-execute"
       ],
       "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
       "description": "Repair pass 1 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
     },
     {
@@ -418,8 +392,8 @@
         "iter-0001"
       ],
       "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
       "description": "Repair pass 2 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
     },
     {
@@ -432,8 +406,8 @@
         "iter-0002"
       ],
       "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
       "description": "Repair pass 3 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
     },
     {
@@ -446,8 +420,8 @@
         "iter-0003"
       ],
       "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
       "description": "Repair pass 4 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
     },
     {
@@ -460,8 +434,8 @@
         "iter-0004"
       ],
       "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
       "description": "Repair pass 5 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
     },
     {
@@ -474,8 +448,8 @@
         "iter-0005"
       ],
       "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
       "description": "Repair pass 6 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
     },
     {
@@ -488,8 +462,8 @@
         "iter-0006"
       ],
       "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
       "description": "Repair pass 7 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
     },
     {
@@ -502,8 +476,8 @@
         "iter-0007"
       ],
       "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
       "description": "Repair pass 8 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
     },
     {
@@ -516,93 +490,23 @@
         "iter-0008"
       ],
       "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
       "description": "Repair pass 9 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
     },
     {
       "id": "iter-0010",
       "title": "Iteration 10: advance toward objective",
-      "status": "done",
+      "status": "in_progress",
       "assignee": "builder-01",
       "priority": "medium",
       "dependencies": [
         "iter-0009"
       ],
       "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
-      "description": "Repair pass 10 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
-    },
-    {
-      "id": "iter-0011",
-      "title": "Iteration 11: advance toward objective",
-      "status": "done",
-      "assignee": "builder-01",
-      "priority": "medium",
-      "dependencies": [
-        "iter-0010"
-      ],
-      "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
-      "description": "Repair pass 11 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
-    },
-    {
-      "id": "iter-0012",
-      "title": "Iteration 12: advance toward objective",
-      "status": "done",
-      "assignee": "builder-01",
-      "priority": "medium",
-      "dependencies": [
-        "iter-0011"
-      ],
-      "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
-      "description": "Repair pass 12 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
-    },
-    {
-      "id": "iter-0013",
-      "title": "Iteration 13: advance toward objective",
-      "status": "done",
-      "assignee": "builder-01",
-      "priority": "medium",
-      "dependencies": [
-        "iter-0012"
-      ],
-      "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
-      "description": "Repair pass 13 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
-    },
-    {
-      "id": "iter-0014",
-      "title": "Iteration 14: advance toward objective",
-      "status": "done",
-      "assignee": "builder-01",
-      "priority": "medium",
-      "dependencies": [
-        "iter-0013"
-      ],
-      "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
-      "description": "Repair pass 14 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
-    },
-    {
-      "id": "iter-0015",
-      "title": "Iteration 15: advance toward objective",
-      "status": "done",
-      "assignee": "builder-01",
-      "priority": "medium",
-      "dependencies": [
-        "iter-0014"
-      ],
-      "phase": 1,
-      "createdAt": "2026-07-19T16:40:44Z",
-      "updatedAt": "2026-07-19T16:39:43Z",
-      "description": "Repair pass 15 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
+      "createdAt": "2026-07-19T17:57:48Z",
+      "updatedAt": "2026-07-19T18:40:28Z",
+      "description": "Now: ran: /bin/zsh -lc \"ps -axo pid,etime,command | rg 'next build|npm run verify:wave3|npm run web:build|npm run build|npm run audit:check' || t"
     }
   ]
 }

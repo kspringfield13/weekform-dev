@@ -78,11 +78,14 @@ not contain briefing prose, raw activity, member evidence, notes, screenshots, o
 per-member outcomes. Managers should still avoid putting names, customer details,
 or other sensitive information in the action text.
 
-Creation is RPC-only. Authenticated clients do not have direct table INSERT
-privilege; the RPC accepts only the team id, action text, and optional allowlisted
-risk key, then derives the authenticated actor and server-sets open status plus
-creation/resolution timestamps. The repository pins this boundary with static
-contract tests and an unapplied four-actor pgTAP specification.
+Every mutation is RPC-only. Authenticated clients have SELECT-only table access
+and no direct INSERT, UPDATE, or DELETE privilege. Creation accepts only the team
+id, action text, and optional allowlisted risk key, then derives the authenticated
+actor, id, open status, creation time, and null resolution time. Resolve/drop
+accepts only team id, action id, and a closed status and derives the resolution
+time; delete accepts only team id and action id. Every security-definer RPC
+reauthorizes the manager server-side. Static contract tests and an unapplied
+four-actor pgTAP specification pin these boundaries.
 
 Weekform may compare the linked metric's team median across later approved weekly
 snapshots. It shows no result until two distinct later weeks share that metric,

@@ -1,16 +1,16 @@
 {
-  "cost_usd": 0.0,
+  "cost_usd": 5.0,
   "human_feedback": null,
-  "inexact_cost_events": 0,
+  "inexact_cost_events": 1,
   "iteration": 2,
-  "last_failure_fingerprint": "5ea045e6fc584c15",
+  "last_failure_fingerprint": "173f4d26accf99d4",
   "latest_agent_result": ".absoloop/tmp/iteration-0001-agent-result.json",
   "latest_checkpoint": ".absoloop/checkpoints/0002-pre-agent.json",
   "latest_critic_findings": null,
   "mission_id": "ABS-MINIMAL-001",
   "repeated_failure_count": 0,
-  "started_at": 1784479244.837024,
+  "started_at": 1784483868.10722,
   "status": "EXECUTING",
   "stop_reason": null,
-  "tokens_total": 0
+  "tokens_total": 3312363
 }

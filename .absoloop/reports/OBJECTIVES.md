@@ -3,15 +3,24 @@
 Archive of the ZComb objective dropdown — same labels, loop ids, elapsed times, and full statement text.
 
 - **Project:** weekform-dev
-- **Generated:** 2026-07-19 13:55:48 EDT
-- **Entries:** 24
-- **Current (displayed):** Complete the rejected Prompt 16 repair without widening scope. The Codex repair already hardened team_actions and added …
+- **Generated:** 2026-07-19 14:40:29 EDT
+- **Entries:** 25
+- **Current (displayed):** Harden Prompt 16 first: revoke direct team_actions INSERT, expose only a security-definer write path that clamps permitt…
 
 ---
 
 ## CONTINUATION · CURRENT
 
-`loop-20260719-124044-436388` · `00:00:29`
+`loop-20260719-135748-556358` · `00:42:41`
+
+Harden Prompt 16 first: revoke direct team_actions INSERT, expose only a security-definer write path that clamps permitted text and derives id, status, created_by, created_at, and resolved_at server-side, then add direct-boundary abuse tests. Retry npm run audit:check with registry access and mark Prompt 16 DONE only after every standing gate exits 0; update the runbook and blueprint with exact evidence.
+This closes the evidence-integrity vulnerability before any further feature work and prevents premature completion claims. It also converts the remaining audit uncertainty into a verifiable gate result.
+
+---
+
+## CONTINUATION
+
+`loop-20260719-124044-436388` · `01:16:24`
 
 Complete the rejected Prompt 16 repair without widening scope. The Codex repair already hardened team_actions and added RED/GREEN boundary tests. Independently inspect it, run the exact focused tests plus npm run verify:wave3, npm run build, and npm run audit:check. Host-side npm run audit:check passed on July 19 with 0 root and 0 web vulnerabilities after the prior Codex sandbox had DNS blocked. Update Prompt 16 RUNBOOK, BLUEPRINT, roadmap, privacy/provenance evidence only if your own exact gates exit 0. Stop at the human approval gate; do not start Prompt 17.
 

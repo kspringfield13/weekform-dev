@@ -105,15 +105,22 @@ The privacy-critic, integration/release-gate, and submission-package prompts (ru
   manager action follow-through loop: a manager-only, team-scoped action record
   created through a narrow RPC that server-sets identity and lifecycle fields,
   linked to an allowlisted briefing risk signal and a correlation-only team
-  median after two distinct later weeks. Direct table INSERT is revoked and
-  covered by static plus pgTAP contracts. The migration is an unapplied
+  median after two distinct later weeks. Create, resolve/drop, and delete now use
+  manager-authorized security-definer RPCs; direct table INSERT, UPDATE, and DELETE
+  are revoked and covered by static plus pgTAP contracts. The migration is an unapplied
   SQL-review artifact; no live RLS claim is made.
 - **Evidence:** `docs/hackathon/TEAM_CLAWFATHER_UX_AUDIT.md` maps each fix row
-  to its source resolution; the Prompt 16 boundary suite passes 15/15;
-  `npm run verify:wave3` passes with 103/103 desktop tests, 177/177 web tests,
-  and 12 routes / 11 static pages. The root build passes, and `npm run
-  audit:check` reports 0 vulnerabilities in both workspaces. No live Supabase,
-  OpenAI, Keychain, or release proof is implied by these local gates.
+  to its source resolution. Loop `loop-20260719-135748-556358` tightened Prompt
+  16 to RPC-only create/resolve/delete and server-derived lifecycle fields; its
+  focused boundary suite passes 17/17; its unapplied pgTAP specification now has
+  76 assertions, including direct member UPDATE/DELETE and outsider resolve/delete
+  abuse cases. `npm run verify:wave3` passes with
+  111/111 desktop tests, 179/179 web tests, and 12 routes / 11 static pages; the
+  root build passes. Seventeen fresh `npm run audit:check` attempts across the lead
+  and independent runner exited 1 because registry DNS returned `ENOTFOUND`;
+  the two iteration-9 attempts stopped at the root audit before the web audit could run,
+  so Prompt 16 remains REVIEW. No live
+  Supabase, OpenAI, Keychain, or release proof is implied by these local gates.
 
 This pass used Codex teammates for independent desktop, web, and critic slices;
 the product vocabulary and approval boundaries remained human-directed.

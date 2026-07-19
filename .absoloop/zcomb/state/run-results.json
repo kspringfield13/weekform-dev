@@ -19,43 +19,15 @@
       "The database boundary accepts fields beyond the permitted clamped text and risk key. `supabase/migrations/202607190003_team_actions.sql:60-67` checks only manager membership and `created_by`, while line 83 grants unrestricted table-level INSERT. A manager can directly supply arbitrary `id`, `status`, `created_at`, and `resolved_at`, backdating or pre-resolving actions and corrupting the follow-through chronology. This directly triggers the reject condition at `docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK_PT2.md:251-252`. The wrapper test does not secure or test this PostgREST/RLS boundary.",
       "The mandatory audit gate is not green. An independent `npm run audit:check` exited 1 because `registry.npmjs.org` was unavailable. The runbook requires all standing gates to exit 0 at lines 8-14 and 245, so marking Prompt 16 DONE remains premature even though the failure is honestly documented."
     ],
-    "ts": 1784477064.067605
+    "ts": 1784477064.0669272
   },
   "spend": {
-    "costUsd": 0.0,
-    "tokensTotal": 0,
+    "costUsd": 45.0,
+    "tokensTotal": 13661765,
     "maxCostUsd": 50.0,
-    "pctUsed": 0,
-    "remainingUsd": 50.0
+    "pctUsed": 90,
+    "remainingUsd": 5.0
   },
-  "mission": {
-    "status": "STOPPED",
-    "stopReason": "human_aborted",
-    "iteration": 15,
-    "costUsd": 0.0,
-    "tokensTotal": 0
-  },
-  "proposedExtension": {
-    "status": "ready",
-    "source": "llm",
-    "engine": "codex",
-    "fingerprint": "56b3b14ae46e1ca9",
-    "note": "Harden Prompt 16 first: revoke direct team_actions INSERT, expose only a security-definer write path that clamps permitted text and derives id, status, created_by, created_at, and resolved_at server-side, then add direct-boundary abuse tests. Retry npm run audit:check with registry access and mark Prompt 16 DONE only after every standing gate exits 0; update the runbook and blueprint with exact evidence.",
-    "rationale": "This closes the evidence-integrity vulnerability before any further feature work and prevents premature completion claims. It also converts the remaining audit uncertainty into a verifiable gate result.",
-    "chain": [
-      {
-        "role": "prompt",
-        "content": "You are proposing the next Absoloop mission extension.\nAbsoloop `extend` starts a follow-on run with fresh budgets; the `note` you write becomes the continuation objective (`-m`).\n\nLoop run context:\n- Project: weekform-dev\n- Original / current objective: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence.\n- Status: STOPPED\n- Stop reason: human_aborted\n- Critic recommendation: REJECT\n- Iteration: 15\n- Spend (USD): 0\n- Critic summary: Local implementation checks otherwise passed: 170/170 web tests, 103/103 desktop-cloud tests, web and root TypeScript checks, pricing validation, and diff checking. Current web/root build artifacts also exist from the Prompt 16 pass. However, the unrestricted INSERT privilege is a substantive security and evidence-integrity defect, and the required audit gate remains unverified.\n- Blocking findings:\n- The database boundary accepts fields beyond the permitted clamped text and risk key. `supabase/migrations/202607190003_team_actions.sql:60-67` checks only manager membership and `created_by`, while line 83 grants unrestricted table-level INSERT. A manager can directly supply arbitrary `id`, `status`, `created_at`, and `resolved_at`, backdating or pre-resolving actions and corrupting the follow-through chronology. This directly triggers the reject condition at `docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK_PT2.md:251-252`. The wrapper test does not secure or test this PostgREST/RLS boundary.\n- The mandatory audit gate is not green. An independent `npm run audit:check` exited 1 because `registry.npmjs.org` was unavailable. The runbook requires all standing gates to exit 0 at lines 8-14 and 245, so marking Prompt 16 DONE remains premature even though the failure is honestly documented.\n\nThink in two steps:\n1) analysis — what landed, what is still open, and the highest-leverage next slice\n2) proposal — a concrete continuation objective an operator can one-click extend\n\nReply with ONLY valid JSON (no markdown fences) shaped as:\n{\n  \"analysis\": \"2-4 sentences of situational analysis\",\n  \"note\": \"imperative continuation objective for absoloop extend -m (1-3 sentences, actionable, specific)\",\n  \"rationale\": \"1-2 sentences why this is the right next extend\"\n}\nConstraints for note:\n- Do not repeat the original objective verbatim; advance it.\n- If there are blocking findings, address the top ones first.\n- If the run PASSED / COMPLETED, propose the natural next slice of work.\n- Keep note under 400 characters.\n"
-      },
-      {
-        "role": "analysis",
-        "content": "Prompt 16’s implementation and build artifacts landed, with all local test, TypeScript, pricing, and diff checks passing. Prompt 16 remains incomplete because managers can bypass the wrapper and directly insert forged chronology fields through PostgREST/RLS, while the mandatory audit gate has not exited 0 due to registry unavailability."
-      },
-      {
-        "role": "response",
-        "content": "{\"analysis\":\"Prompt 16’s implementation and build artifacts landed, with all local test, TypeScript, pricing, and diff checks passing. Prompt 16 remains incomplete because managers can bypass the wrapper and directly insert forged chronology fields through PostgREST/RLS, while the mandatory audit gate has not exited 0 due to registry unavailability.\",\"note\":\"Harden Prompt 16 first: revoke direct team_actions INSERT, expose only a security-definer write path that clamps permitted text and derives id, status, created_by, created_at, and resolved_at server-side, then add direct-boundary abuse tests. Retry npm run audit:check with registry access and mark Prompt 16 DONE only after every standing gate exits 0; update the runbook and blueprint with exact evidence.\",\"rationale\":\"This closes the evidence-integrity vulnerability before any further feature work and prevents premature completion claims. It also converts the remaining audit uncertainty into a verifiable gate result.\"}"
-      }
-    ],
-    "generatedAt": "2026-07-19T16:41:36Z"
-  }
+  "mission": null,
+  "proposedExtension": null
 }
