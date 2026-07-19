@@ -1,7 +1,9 @@
 # weekform.com (apps/web)
 
-The web surface for Weekform: marketing landing page, email/password auth,
-an authenticated dashboard shell, and the account-gated Mac download page.
+The web surface for Weekform: marketing landing page, email/password and
+Google/GitHub OAuth,
+the stable `/app` browser-workspace entry, an authenticated dashboard shell,
+and the account-gated Mac download page.
 
 Built with Next.js (App Router, TypeScript strict) and `@supabase/ssr`
 (`createServerClient` plus the official `updateSession` session-refresh
@@ -11,30 +13,27 @@ pattern, wired through the Next.js 16
 
 ## Data and browser-storage boundary
 
-- Raw activity, window titles, sessions, work blocks, corrections, screenshots,
-  and the deterministic personal workload model stay in the Mac app's local
-  storage. The website never receives or reconstructs that local state.
-- The website has no `localStorage`, `sessionStorage`, IndexedDB, browser
-  Supabase data client, or application-managed persistent browser workload
-  cache. Authenticated pages and actions call Supabase from the Next.js server
-  under the signed-in user's RLS session. Client components retain only
-  short-lived React state while mounted.
+- Raw activity, window titles, sessions, evidence, notes, project/stakeholder
+  names, screenshots, and the complete deterministic personal workload model
+  stay in the Mac app. The optional private Web replica contains only the
+  review-safe allowlist documented in `docs/PRIVACY.md`.
+- The website has no `localStorage`, `sessionStorage`, IndexedDB, or
+  application-managed persistent browser workload cache. Authenticated pages
+  and actions call Supabase from the Next.js server under the signed-in user's
+  RLS session. One ephemeral browser client subscribes to the signed-in user's
+  private Broadcast topic and only calls `router.refresh()`; it does not cache rows.
 - Standard Supabase auth cookies keep the account session across requests;
-  signing out clears that session. The Admin Portal has one additional
-  HTTP-only, `/admin`-scoped cookie containing only allowlisted theme, accent,
-  density, and motion values. It contains no workload, simulator, identity, or
-  authorization data and can be reset from the portal.
+  signing out clears that session. Manager Access uses that same account
+  session and adds no portal-specific browser storage or appearance cookie.
 - Multi-user records necessarily persist in Supabase: accounts, profiles,
   teams, memberships, invites, manager actions, and the allowlisted aggregate
   workload snapshots members explicitly approve in the Mac app. Shared
   snapshots currently remain until the member uses **Delete my cloud history**;
   there is no automatic expiry.
 - `/dashboard` and `/teams/[teamId]` are explicitly request-fresh dynamic
-  routes. While either page is visible and online, a client coordinator asks
-  Next.js for a fresh server render every 15 seconds and on bounded
-  online/visibility resume events. This is near-real-time polling, **not** a
-  Supabase Realtime subscription; an open page can lag a successful desktop
-  sync by up to the polling interval plus network time.
+  routes. The dashboard also uses private Supabase Broadcast invalidations.
+  While visible and online, a client coordinator asks Next.js for a fresh server
+  render every 15 seconds and on bounded online/visibility resume events as a fallback.
 
 ## Setup
 
@@ -62,16 +61,20 @@ read in exactly one server route handler:
 Supabase dashboard configuration expected at runtime:
 
 - Email/password auth enabled.
+- Google and GitHub auth providers enabled with credentials from their
+  respective developer consoles. Each provider's OAuth app callback points to
+  `https://<project-ref>.supabase.co/auth/v1/callback`.
 - Auth redirect URL allowlist includes `<site-url>/auth/callback` (email
-  confirmation links are handled there via `token_hash`/`type` or `code`).
+  confirmation and social OAuth callbacks are handled there via
+  `token_hash`/`type` or PKCE `code`). Include the local callback
+  `http://localhost:3000/auth/callback` for development only.
 - Optional `profiles` table (`id uuid primary key references auth.users`,
   `display_name text`) with RLS letting a user select/insert their own row.
   The app reads and bootstraps a profile best-effort and falls back to the
   account email when the table or row is absent.
-- Repository migrations applied through
-  `202607190006_simulator_admin_access.sql`. A trusted maintainer must grant a
-  real authenticated user in `private.simulator_admins`; team roles, profile
-  metadata, and the local demo login never satisfy this boundary.
+- Repository migrations applied through `202607190007_personal_replica_sync.sql`.
+  Simulator authorization remains a separate, explicit maintainer grant; it is
+  not implied by a manager team role.
 
 ## Behavior without configuration
 
@@ -80,27 +83,31 @@ with no Supabase project). At runtime without configuration:
 
 - middleware skips session handling,
 - auth forms render disabled with an honest "not configured" notice,
-- `/dashboard` and `/download` show a setup panel instead of user data,
-- `/admin` renders its branded, fail-closed connection state without exposing
-  administration tools.
+- `/app` resolves to the dashboard setup state, while `/dashboard`,
+  `/manager-access`, and `/download` show setup panels instead of
+  user or team data,
+- `/admin` redirects to `/manager-access` and exposes no separate portal.
 
-Route protection for `/admin`, `/dashboard`, and `/download` (redirect to
-`/login` with a `next` return path) only applies once Supabase is configured.
+Route protection for `/app`, `/manager-access`, `/admin`, `/dashboard`, and `/download`
+(redirect to `/login` with a `next` return path) only applies once Supabase is
+configured.
 
 ## Routes
 
 - `/` — landing page (product story, privacy explanation, prototype disclosure)
-- `/login`, `/signup` — email/password auth (server actions)
+- `/login`, `/signup` — email/password auth plus Google/GitHub OAuth (server actions)
 - `/auth/callback` — Supabase confirmation/PKCE callback
 - `/auth/error` — honest auth failure page
-- `/admin` — protected and request-fresh; verifies the signed-in user through
-  the argument-free `has_simulator_admin_access()` RPC, exposes tools only for
-  an explicit `private.simulator_admins` grant, and otherwise renders a
-  distinct unavailable or access-required state. The Span Simulator remains a
-  local desktop sandbox; this route does not claim production execution.
-- `/dashboard` — protected; profile greeting, the signed-in user's teams and
-  role in each, a create-team form (calls the `create_team_with_owner` RPC),
-  and an entry point to `/invite`; Personal use leads to `/download`
+- `/app` — protected, stable public entry for Weekform Web; resolves to the
+  authenticated dashboard so marketing, documentation, and future clients do
+  not need to couple themselves to the internal dashboard route name
+- `/manager-access` — protected and request-fresh; filters the signed-in user's
+  active memberships to owner/manager roles, opens a sole managed team directly,
+  or offers a team chooser when more than one is available
+- `/admin` — compatibility redirect to `/manager-access`; no standalone portal
+- `/dashboard` — protected; private personal replica/review requests, profile
+  greeting, the signed-in user's teams and role in each, a create-team form
+  (calls the `create_team_with_owner` RPC), and an entry point to `/invite`
 - `/teams/[teamId]` — protected; owners/managers see the active roster
   (memberships + profiles), a member-invite form, and sent invites with
   status; plain members see an honest limited view (RLS hides the roster)

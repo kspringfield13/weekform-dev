@@ -1,7 +1,7 @@
 // Version-1 Weekform cloud-sharing contract (blueprint §5, TEAM_CLAWFATHER_ARCHITECTURE §2).
 //
-// THE RULE: the cloud never receives the desktop state object or a filtered copy of it. It
-// receives only `SharedWorkloadSnapshotV1`, a separately constructed, versioned payload built by
+// THE TEAM-SHARING RULE: a team never receives the desktop state object or a filtered copy of it.
+// It receives only `SharedWorkloadSnapshotV1`, a separately constructed, versioned payload built by
 // the pure allowlist builder in `packages/inference/src/sharedSnapshot.ts`. Every field in the
 // payload exists because the builder explicitly put it there AND the member's
 // `CloudSharePolicyV1` explicitly allowed it. Nothing here is "everything minus a blocklist", so
@@ -66,8 +66,9 @@ export interface SharedAllocationEntry {
 }
 
 /**
- * The ONLY object the cloud ever receives. Also the exact object rendered in the desktop consent
- * preview — preview and upload are the same reference, not two calculations.
+ * The only object the team-sharing path receives. Also the exact object rendered in the desktop
+ * consent preview — preview and upload are the same reference, not two calculations. The separate,
+ * user-private Web workspace uses `PersonalWorkloadReplicaV1` and cannot expose team fields.
  *
  * Never present, by construction: app names, window titles, raw samples, activity sessions,
  * source/derived_from IDs, evidence arrays, notes, stakeholder names, calendar titles/locations/

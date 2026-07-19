@@ -5,7 +5,8 @@ import {
   History,
   Radio,
   Gauge,
-  ChevronLeft
+  ChevronLeft,
+  UsersRound,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { WeeklyCapacitySnapshot } from "../../../../../packages/domain/src/models";
@@ -38,6 +39,8 @@ export function AppShell({
   demoMode,
   toasts,
   onDismissToast,
+  managerAccessAvailable,
+  onOpenManagerAccess,
   children
 }: {
   active: Screen;
@@ -58,6 +61,8 @@ export function AppShell({
   demoMode: boolean;
   toasts: Toast[];
   onDismissToast: (id: string) => void;
+  managerAccessAvailable: boolean;
+  onOpenManagerAccess: () => void;
   children: ReactNode;
 }) {
   // Context navigation is shown inside the page column when a primary section
@@ -131,6 +136,19 @@ export function AppShell({
             );
           })}
         </nav>
+        {managerAccessAvailable && (
+          <button
+            className="nav-item manager-access-entry"
+            onClick={onOpenManagerAccess}
+            type="button"
+          >
+            <UsersRound size={18} aria-hidden />
+            <span>
+              <strong>Manager Access</strong>
+              <small>Approved team signals</small>
+            </span>
+          </button>
+        )}
         <div className="sidebar-intelligence">
           <div className="side-metric-heading">
             <span>Reliable capacity</span>

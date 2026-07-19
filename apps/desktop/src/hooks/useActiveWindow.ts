@@ -7,10 +7,11 @@ interface UseActiveWindowParams {
   isDemoMode: boolean;
   setActiveWindowSamples: React.Dispatch<React.SetStateAction<ActiveWindowSample[]>>;
   setAuditEvents: React.Dispatch<React.SetStateAction<AuditEvent[]>>;
+  setCaptureError?: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 export function useActiveWindow(params: UseActiveWindowParams) {
-  const { isDemoMode, setActiveWindowSamples, setAuditEvents } = params;
+  const { isDemoMode, setActiveWindowSamples, setAuditEvents, setCaptureError } = params;
 
   useEffect(() => {
     if (isDemoMode) return;
@@ -21,7 +22,7 @@ export function useActiveWindow(params: UseActiveWindowParams) {
       const payload = event.payload;
 
       if (payload.capture_error) {
-        // caller can handle error state
+        setCaptureError?.(String(payload.capture_error).slice(0, 240));
         return;
       }
 
@@ -41,10 +42,11 @@ export function useActiveWindow(params: UseActiveWindowParams) {
         return;
       }
       const timestamp = sampleDate.toISOString();
+      setCaptureError?.(null);
 
       setActiveWindowSamples((current) => {
         const sample: ActiveWindowSample = {
-          sample_id: crypto.randomUUID(),
+          sample_id: typeof payload.sample_id === "string" ? payload.sample_id : crypto.randomUUID(),
           timestamp,
           app_name: payload.app_name ?? "Unknown app",
           window_title: payload.window_title || null,
@@ -92,5 +94,5 @@ export function useActiveWindow(params: UseActiveWindowParams) {
       cancelled = true;
       unlisten?.();
     };
-  }, [isDemoMode, setActiveWindowSamples, setAuditEvents]);
+  }, [isDemoMode, setActiveWindowSamples, setAuditEvents, setCaptureError]);
 }

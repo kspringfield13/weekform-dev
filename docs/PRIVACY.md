@@ -14,7 +14,7 @@ The desktop app can collect:
 - derived activity sessions, work blocks, forecasts, and narratives
 - an audit trail of collection and review events
 
-The desktop app persists this data locally with the Tauri Store plugin. Web and demo builds fall back to browser local storage. Weekform does not currently encrypt either store; data remains on the local macOS user account until the user resets prototype data or clears the corresponding application storage.
+The native desktop collector writes each successful foreground sample to an AES-256-GCM encrypted, append-only journal before it emits that sample to the React review layer. A fresh nonce is used per entry and the journal key is stored in macOS Keychain. Native persistence does not duplicate raw foreground samples into the general Tauri Store; older unencrypted sample arrays are migrated into the encrypted journal before the legacy copy is cleared. Other local prototype data in Tauri Store remains unencrypted. Web and demo builds have no native collector or encrypted journal and retain the browser-local fallback for the desktop React demo only. Data remains on the local macOS user account until retention or reset removes it.
 
 That browser fallback describes the desktop React app when it is run in web/demo
 mode. It is not the `apps/web` account and team site described below.
@@ -53,13 +53,17 @@ Filesystem errors can prevent temporary-file cleanup. The screenshot can also in
 
 ## Weekform Cloud Sharing (Account & Sharing)
 
-Cloud sharing is **off by default** and exists only in builds configured with a publishable Supabase URL and anon key (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`). Without that configuration the Account & Sharing tab states that no upload path exists and the app remains fully local. There is no secret or service key in the desktop app; row access is governed entirely by Supabase row-level security under the signed-in user's own session.
+Cloud sharing and the private Web replica are **off by default** and exist only in builds configured with a publishable Supabase URL and anon key (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`). Without that configuration the Account & Sharing tab states that no upload path exists and the app remains fully local. There is no secret or service key in the desktop app; row access is governed entirely by Supabase row-level security under the signed-in user's own session.
+
+The private Web workspace is a separate contract from team sharing. After the signed-in user explicitly enables it, the Mac registers a device id and uploads idempotent, cursor-receipted batches containing `PersonalWorkloadReplicaV1`. That allowlist contains only week ids, block ids, times, capacity percentage, category, work mode, planned status, confidence, reviewed/blocker flags, deterministic revisions, and derived capacity metrics. It cannot contain raw samples, sessions, app/window titles, evidence, notes, project or stakeholder names, calendar/chat details, screenshots, audit detail, AI outputs, or credentials. Offline batches remain in the local cloud envelope until a later successful sync; a newer unsent revision replaces an older revision for the same week.
+
+Web review actions create `review_commands`; they do not mutate the replica or desktop state. The Mac polls pending commands while open and shows Approve on Mac and Reject controls. Approval applies only a closed set of confirm, exclude, category, mode, planned-status, and blocker changes. Every command carries the block revision it was created against; stale commands become visible conflicts rather than overwriting newer local work. Applied changes enter the normal local correction and audit path, then the next derived replica sync reflects the result.
 
 To share anything, the user must, in order: sign in with the account created on weekform.com; select exactly one recipient team they belong to; turn sharing on; choose a share level and individual metric toggles (and, at the "projects" level, an explicit project-name allowlist); review the **exact JSON payload** that will be uploaded; and record consent. Only then does a manually approved "Sync Now" upload one `SharedWorkloadSnapshotV1` row — a versioned, allowlist-built weekly summary produced by `packages/inference/src/sharedSnapshot.ts`. The preview and the upload are the same object; a disabled metric is omitted, never sent as zero. Changing the recipient team or the shared fields clears the recorded consent and requires a new review.
 
 The shared payload can contain only: team and ISO week identifiers, timestamps, the share level, the selected capacity metrics, sanitized category/work-mode allocation, allowlisted project-name allocation from user-verified blocks, and review-coverage counts. It never contains raw activity samples, sessions, app names, window titles, evidence, notes, stakeholder names, calendar or chat details, screenshots, Visual Context insights, audit details, or AI keys.
 
-An optional hourly auto-sync preference is stored but off by default, and scheduled sync can only run while the app is open. The Supabase session (auth tokens) lives in local prototype storage (unencrypted), is never written to `PersistedAppState`, and is excluded from every JSON export; the full backup includes only the sharing policy and sync bookkeeping. Users can delete their previously synced snapshots for the selected team from the cloud, and disconnecting (or "Reset all local data") clears the session, policy, and sync state so no upload path remains. Every connect, policy change, sync success/failure, snapshot deletion, pause, and disconnect emits a local audit event.
+An optional hourly team-snapshot auto-sync preference is stored but off by default, and scheduled sync can only run while the app is open. The Supabase session (auth tokens) lives in macOS Keychain in native builds, is never written to `PersistedAppState`, and is excluded from every JSON export; the full backup includes only policy and sync bookkeeping. Users can delete their previously synced snapshots for the selected team from the cloud, and disconnecting (or "Reset all local data") clears the session, policy, replica queue, and sync state so no upload path remains. Every connect, policy change, sync success/failure, snapshot deletion, pause, and disconnect emits a local audit event.
 
 Immediately before either a manual or automatic upload, the desktop app
 re-fetches the selected membership and current team narrowing policy. A failed
@@ -68,33 +72,44 @@ request body is constructed; a policy change clears prior consent and requires t
 rebuild before another attempt. Unchanged scheduled state is reconciled against
 the authenticated snapshot row. If that row was deleted on the website, the
 desktop stops automatic recreation and requires an explicit Sync Now (or a
-fresh sharing re-arm). A native Tauri Store failure does not fall through to a
-second localStorage token copy. Browser localStorage remains a web/demo-only
+fresh sharing re-arm). A native Keychain failure does not fall through to a
+Tauri Store or localStorage token copy. Browser localStorage remains a web/demo-only
 credential-envelope fallback; native builds may store a credential-free
 revocation marker there so a failed Store deletion cannot resurrect an old
 session. Only a later successful replacement write clears that marker. Durable
-clear failure is surfaced instead of recording a false successful reset. Local
-storage is still unencrypted.
+clear failure is surfaced instead of recording a false successful reset. The
+general local prototype store remains unencrypted even though raw capture journal entries and session credentials now use the native encrypted boundaries above.
 
 ## Weekform.com browser and persistence boundary
 
 The account/team website uses server-side Supabase API calls under the signed-in
 user's row-level-security session. It has no browser `localStorage`,
-`sessionStorage`, IndexedDB, browser Supabase data client, or
-application-managed persistent workload cache. Client components keep only
+`sessionStorage`, IndexedDB, or application-managed persistent workload cache.
+The private Web workspace mounts one ephemeral browser Supabase client solely to
+subscribe to the signed-in user's private Broadcast topic; the event requests a
+fresh server render and is not a workload cache. Client components otherwise keep only
 mounted React state. Standard Supabase auth cookies persist the account session
-and are cleared by sign-out. Production Manager Access has one additional
-HTTP-only cookie scoped to `/admin`; it stores only allowlisted theme, accent,
-density, and motion values. It contains no workload, simulator, identity, or
-authorization data and can be reset from the portal.
+and are cleared by sign-out. Manager Access uses that same signed-in account
+session and adds no portal-specific browser storage or appearance cookie. It
+filters active team memberships to owner and manager roles before presenting a
+team workspace; authorization for team records still comes from RLS.
 
-Raw Mac activity never reaches the website. Approved workload snapshots and
+The sign-in page also supports optional Google and GitHub OAuth through
+Supabase Auth when the site operator enables those providers. Choosing one
+sends the user through that provider's authentication and consent flow;
+Supabase receives the resulting account identity needed to create or resume the
+Weekform session. The OAuth flow does not send Mac activity, workload evidence,
+replicas, snapshots, or team records to Google or GitHub. Provider-side account
+processing and retention remain governed by the provider's own terms and the
+site operator's OAuth configuration.
+
+Raw Mac activity never reaches the website. Private derived replicas, approved workload snapshots, and
 explicit multi-user coordination records (accounts, teams, memberships,
 invites, and manager actions) persist in Supabase because other authorized
-users need them. Dashboard and team pages are request-fresh dynamic routes;
-while visible and online they request a fresh server render every 15 seconds.
-This is bounded near-real-time polling, not a Realtime subscription, and can lag
-a successful desktop sync by the interval plus network time. Snapshot latest
+users need them. Dashboard and team pages are request-fresh dynamic routes. The
+personal dashboard subscribes to a private Supabase Broadcast topic and requests
+a fresh server render when a replica or command changes. While visible and online
+it also requests a fresh server render every 15 seconds as a fallback. Snapshot latest
 selection and web freshness use a server-owned `synced_at` receipt timestamp;
 client `observed_at` and `source_updated_at` remain provenance and cannot win
 latest ordering through clock skew.
@@ -140,7 +155,7 @@ has not been applied or verified against a live Supabase project here.
 - **Private mode / Pause Tracking** stops new active-window and visual-context capture.
 - **Visual Context** can be enabled or disabled independently.
 - **Exclude** removes a work block from the reviewed workload model.
-- **Reset Prototype Data** clears the app's persisted prototype state.
+- **Reset Prototype Data** clears the app's persisted prototype state, encrypted capture journal and journal key, Keychain cloud session, replica queue/policy, and team-sharing policy. Cloud rows already received remain until the user deletes them through the corresponding cloud control.
 
 ## Not Collected
 
@@ -167,7 +182,7 @@ Fast Forward performs no workplace-app automation. The optional Controlled Local
 
 Simulation JSON/CSV exports are prepared locally and repeat the synthetic provenance markers. An audit receipt records that an export was prepared; it does not claim the operating system completed the save. Archiving hides a run from the active simulation view without deleting it. Permanent run deletion cascades through generated members, artifacts, and week snapshots; a minimal deletion receipt remains without preserving the deleted payload. Personal backup/reset and simulation export/delete are separate controls and do not imply one another.
 
-The simulator migrations and RLS tests in this repository are review artifacts; they have not been applied to or verified against a live Supabase project here. Local Manager Access is automatically available only in Vite development mode. Its published synthetic demo credentials create a tab-scoped `sessionStorage` marker and grant no production or cloud access. The local Manager Mode demo uses synthetic, allowlisted summary metrics only; it does not read personal `PersistedAppState` or widen the production manager data contract. Local workspace-only theme, accent, density, and motion preferences are stored separately in browser `localStorage`; they contain no workload data and can be reset from the workspace. The Next.js `/admin` route is a separate production surface: it never accepts the local session, rechecks the signed-in database grant on each request, stores appearance only in its narrow HTTP-only cookie, and shows no administration tools when authentication or the role RPC is unavailable. Production Span Simulator execution remains unconnected until the migrations, Supabase environment, real user, explicit grant, and live RLS proof are in place. Browser-development runs use a simulator-only IndexedDB database rather than personal Weekform state; local prototype storage remains unencrypted.
+The simulator migrations and RLS tests in this repository are review artifacts; they have not been applied to or verified against a live Supabase project here. Local Manager Access is automatically available only in Vite development mode. Its published synthetic demo credentials create a tab-scoped `sessionStorage` marker and grant no production or cloud access. The desktop Manager Mode entry is shown only while the cloud account is signed in and has an active owner or manager membership. Its current manager workspace remains visibly labeled as a synthetic preview: it uses synthetic, allowlisted summary metrics only, does not read personal `PersistedAppState`, and does not widen the production manager data contract. Its question responses are deterministic local demo copy and make no model or network request. Proposed coordination actions remain approval-gated and, when approved, are added only to the current in-memory synthetic history; they do not notify a person or mutate production data. Local workspace-only monochrome theme, density, and motion preferences are stored separately in browser `localStorage`; they contain no workload data and can be reset from the workspace. The authenticated Next.js `/manager-access` route is the production web entry for owner/manager team memberships; legacy `/admin` only redirects there. Production Span Simulator execution remains unconnected until the migrations, Supabase environment, real user, explicit simulator grant, and live RLS proof are in place. Browser-development runs use a simulator-only IndexedDB database rather than personal Weekform state; local prototype storage remains unencrypted.
 
 Current modeling limitations also matter to privacy and interpretation: capacity still uses a fixed 40-hour denominator, PTO does not redefine that denominator, and some time-of-day inference uses the host machine timezone rather than the configured scenario timezone. Simulation results are prototype planning evidence, not observed facts or organizational benchmarks.
 

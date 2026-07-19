@@ -159,81 +159,87 @@ the product vocabulary and approval boundaries remained human-directed.
 ### Manager Access and Span Simulator access
 
 - **Date:** July 19, 2026
-- **Outcome:** the local Admin Portal no longer depends on the primary Span
-  Simulator feature flag. Vite development exposes one Admin Portal entry in
-  Account & Sharing; valid synthetic demo credentials establish a tab-scoped
-  local session, and Span Simulator appears inside the signed-in portal as an
-  administration tool. The former query-role shortcut and duplicate Settings
-  simulator row were removed. Sign-out clears the local session, and a direct
-  simulator URL fails closed until the user signs in again. The separate
-  `VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK` safety gate remains unchanged. A later
-  presentation pass rebuilt the signed-in landing as a responsive synthetic
-  operations desk and added portal-scoped theme, accent, density, and motion
-  preferences. Those display preferences remain local to the browser and do
-  not change workload evidence or the main Weekform theme. The separate Next.js
-  production web app now owns a request-fresh, non-indexed `/admin` route with
-  the same synthetic-operations direction. It rechecks the cookie-bound user
-  through an argument-free current-user RPC, distinguishes unavailable from
-  ungranted access, and authorizes only an explicit simulator-admin row. Its
-  appearance settings persist through a narrow HTTP-only `/admin` cookie rather
-  than browser workload storage.
-- **Evidence:** the tests-first access-contract change produced four expected
-  simulator-test failures before implementation. The final tree passes 15/15
-  simulator tests, 130/130 desktop service tests, and the root TypeScript/Vite
-  build. Browser verification on `http://127.0.0.1:5173/admin` confirmed the
-  no-flag login, invalid-credential alert, signed-in Span Simulator card,
-  portal-to-simulator navigation, session-preserving return, sign-out, and
-  direct-route denial with no Vite overlay or captured console error.
-  The presentation pass added preference parsing and recovery coverage; the
-  desktop service suite passes 133/133 and the root build passes. Browser proof
-  at `http://127.0.0.1:5175/admin` covered the authenticated desktop landing,
-  settings focus loop, persisted light/Ember/compact/no-motion combination,
-  reset behavior, and a 390-pixel layout with no horizontal overflow. The
-  production-route pass adds focused access/preference/migration contracts;
-  `npm run test:web` passes 199/199 and `npm run web:build` emits `/admin` as
-  one of 13 application routes. Browser proof against the optimized Next.js
-  build covered the honest unconfigured state, settings focus return,
-  HTTP-only preference persistence across reload, reset, dark/light themes,
-  reduced motion, and 390-pixel rendering without horizontal overflow or
-  captured console errors.
-- **Boundary:** the local credentials and session marker are development-only.
-  The production route does not make the Span Simulator executable on the web.
-  Live authorization remains unconnected in this checkout and still requires
-  Supabase environment configuration, applied migrations, a real authenticated
-  user, an explicit simulator-admin grant, and verified RLS before any
-  live-access claim may be made.
-  Supabase CLI/psql and a disposable project remain unavailable, so live
-  migration/pgTAP and four-actor desktop-write/web-read/delete proof are not
-  claimed.
-
-#### Manager Access Weekform-shell expansion
-
-- **Date:** July 19, 2026
-- **Outcome:** the user-facing Admin Portal entry is now **Manager Access**. Its
-  authenticated local workspace reuses Weekform's Today, Week, Agent, History,
-  and Settings information architecture. Every page exposes an Individual / Manager
-  mode control; Individual mode preserves the personal workload perspective,
-  while Manager Mode adds approved-summary filters, collapsible and scrollable
-  roster triage, team medians and ranges, briefings, coordination history, and a
-  persistent comparison rail capped at six ICs. Existing administration
-  capabilities remain available under Manager Settings, including the isolated
-  Span Simulator. The demo is visibly synthetic and does not widen the production
-  sharing contract or read personal desktop state.
-- **Evidence:** tests were written first for comparison selection order, the
-  six-IC hard cap, and combined query/team/category/risk filtering. The final
-  tree passes 15/15 simulator tests, 136/136 desktop service tests, 199/199 web
-  tests, the root TypeScript/Vite build, and the optimized Next.js build with 13
-  routes. Browser verification on `http://127.0.0.1:5175/admin` covered local
-  sign-in, Manager / Individual mode switching, Today and Week navigation,
-  six-person comparison with remaining ICs disabled, and rendered desktop,
-  760-pixel, and 390-pixel layouts. Both narrow widths reported no page-level
-  horizontal overflow, and no browser console error was captured.
+- **Outcome:** **Manager Access** is the only manager-facing product surface.
+  The Next.js web app owns the canonical, non-indexed `/manager-access` entry
+  inside the normal Weekform shell. It filters the signed-in user's active team
+  memberships to owner/manager roles, opens a sole managed team directly, and
+  presents a chooser when several teams are eligible. Legacy `/admin` now does
+  nothing except redirect to `/manager-access`; the standalone portal client,
+  appearance cookie, and portal-only styling were removed.
+- **Desktop Manager Mode:** a signed-in desktop account sees Manager Access in
+  the Weekform sidebar only while at least one cloud membership has an owner or
+  manager role. Signing out or losing the eligible membership closes the mode.
+  Individual mode returns to the real personal workspace without replacing its
+  state. Manager Mode reuses Weekform's Today, Week, Agent, History, and Settings
+  hierarchy with approved-summary filters, team medians and ranges, briefings,
+  approval-gated coordination actions, history, and a six-person comparison
+  limit. Live team administration continues in authenticated web Manager Access.
+- **Theme:** both surfaces use the Weekform black-and-white system. Manager
+  color-accent controls and purple palette values were removed; legacy stored
+  preference fields remain parseable only for compatibility and no longer
+  control rendered color.
+- **Boundary:** the current desktop manager workspace is visibly labeled
+  **Synthetic preview**. It uses deterministic synthetic approved summaries,
+  makes no model request, reads no personal `PersistedAppState`, and performs no
+  production team write. Span Simulator stays an isolated, development-only
+  synthetic tool with separate simulator authorization and RLS requirements.
+  Live simulator execution and live multi-actor RLS proof are not claimed.
+- **Evidence:** tests cover owner/manager filtering, single-team routing,
+  authenticated-route protection, six-person comparison, combined roster
+  filters, approval/cancellation behavior, safe web handoff, and monochrome
+  source contracts. The simulator suite passes 15/15, the desktop service suite
+  passes 145/145, and the web suite passes 201/201. The authoritative root
+  TypeScript/Vite build and optimized Next.js build pass with `/app`,
+  `/manager-access`, and the legacy redirect present. Browser verification
+  covered the fail-closed web state, `/admin` redirect, signed-out desktop gate,
+  authenticated local synthetic Manager Mode, and black-and-white rendering at
+  desktop and 390-pixel widths with no horizontal overflow or console errors.
 
 The work used separate desktop and web implementers plus an independent critic;
 the maintainer supplied the local-first/cloud-complexity boundary and requested
 the alignment QA.
 
+### Weekform Web and Mac entry choice
+
+- **Date:** July 19, 2026
+- **Outcome:** the verified `apps/web` build presents **Open in Web** and
+  **Download for Mac** as distinct choices in the hero, global navigation,
+  closing action, and footer. A stable protected `/app` route opens the
+  authenticated Weekform Web workspace instead of returning 404, and the
+  dashboard is labeled Weekform Web. Production publication remains a separate
+  deployment action.
+- **Boundary:** the choice UI states that the browser workspace handles approved
+  shared snapshots, teams, commitments, and Manager Access, while local activity
+  capture, reviewed raw evidence, native permissions, and the full local model
+  remain in the Mac app. No browser-native capture equivalence is claimed.
+- **Evidence:** the product-entry contract was written red-first; focused route
+  tests and the full 201-test web suite pass. The optimized Next.js build includes
+  `/app`, and rendered desktop plus 390px browser checks confirm both choices,
+  responsive layout, and a clean development console.
+
+### Supabase social sign-in
+
+- **Date:** July 19, 2026
+- **Outcome:** the existing Weekform sign-in card now offers Google and GitHub
+  alongside email/password. Both providers use Supabase's server-side PKCE
+  flow, return through the existing `/auth/callback`, preserve the protected
+  destination, and render provider failures in the established auth surface.
+- **Boundary:** provider credentials and enablement remain site-operator
+  configuration in Supabase plus the Google and GitHub developer consoles. A
+  public settings check on this date reported both providers disabled, so live
+  social sign-in is not claimed until that external setup is completed.
+- **Evidence:** four focused provider/callback tests and the full 208-test web
+  suite pass. The optimized Next.js build and authoritative root build pass;
+  browser verification at 1024×720 confirmed the two accessible provider
+  controls, the email fallback, no error overlay, and no runtime errors.
+
 The hackathon-readiness and provenance task is supplemental evidence:
+
+### Native-to-cloud personal Web workspace
+
+- **User-visible outcome:** Weekform for Mac can explicitly enable a private, review-safe Web replica. The authenticated Web dashboard shows derived capacity and reviewable blocks, sends confirm/exclude/relabel requests, and states that the Mac must approve every request. Private Supabase Broadcast invalidations refresh the server-rendered view; the 15-second request-fresh loop remains the fallback.
+- **Implementation evidence:** `PersonalWorkloadReplicaV1` is built field-by-field with no raw evidence fields; desktop sync uses registered devices, durable offline batches, idempotent batch ids, server cursors, and block revisions. The additive Supabase migration defines RLS-scoped replicas, commands, hardened RPCs, and private Broadcast authorization. Native capture writes AES-256-GCM journal entries before emitting a sample, keeps the journal/session keys in macOS Keychain, migrates legacy raw samples out of the general Tauri Store, and connects retention/reset to the journal.
+- **Boundary:** The migration is a reviewed repository artifact until it is applied to a configured Supabase project and exercised with live RLS actors. Browser/demo proof does not prove native capture or Keychain behavior; native Rust tests and a packaged-app smoke test are separate evidence surfaces.
 
 - **Codex Session ID:** `019f75f1-73fc-7850-98a4-c23ec0aae893`
 - **Task title:** `Prepare Weekform for Build Week`

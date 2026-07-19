@@ -19,8 +19,11 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
 import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
+import { PersonalReplicaRealtime } from "@/components/PersonalReplicaRealtime";
+import { listOwnPersonalReplicas, type PersonalReplicaView } from "@/lib/personalReplica";
+import { deletePersonalReplicaHistory, queuePersonalReviewCommand } from "./personalActions";
 
-export const metadata: Metadata = { title: "Dashboard" };
+export const metadata: Metadata = { title: "Weekform Web" };
 export const dynamic = "force-dynamic";
 
 interface DashboardPageProps {
@@ -52,7 +55,7 @@ export default async function DashboardPage({
         <SiteHeader />
         <main className="container">
           <div className="page-head">
-            <h1>Dashboard</h1>
+            <h1>Weekform Web</h1>
           </div>
           <div className="error-panel" role="alert">
             <h2>Supabase is not configured</h2>
@@ -85,17 +88,19 @@ export default async function DashboardPage({
   const { teams, error: teamsError } = await listUserTeams(supabase, user.id);
   const { snapshots: ownSnapshots, error: snapshotsError } =
     await listOwnLatestSnapshots(supabase, user.id);
+  const { replicas: personalReplicas, error: personalReplicaError } =
+    await listOwnPersonalReplicas(supabase);
 
   return (
     <>
       <SiteHeader />
       <main className="container">
         <div className="page-head">
-          <h1>Welcome, {greetingName}</h1>
+          <h1>Weekform Web</h1>
           <p>
-            Your account is ready. Weekform&apos;s intelligence lives in the Mac
-            app; this dashboard is where teams will coordinate approved
-            capacity signals.
+            Welcome, {greetingName}. Review the workload snapshots you chose to
+            share, coordinate commitments, and open the right team workspace.
+            Raw activity and the full evidence loop remain on your Mac.
           </p>
           <div className="status-line">
             <span>
@@ -111,6 +116,7 @@ export default async function DashboardPage({
         </div>
 
         <RequestFreshnessRefresh />
+        <PersonalReplicaRealtime userId={user.id} />
 
         {params.notice ? (
           <div className="form-notice" role="status">
@@ -237,9 +243,121 @@ export default async function DashboardPage({
           snapshots={ownSnapshots}
           snapshotsError={snapshotsError}
         />
+        <PersonalWorkspaceSection replicas={personalReplicas} error={personalReplicaError} />
       </main>
       <SiteFooter />
     </>
+  );
+}
+
+const REVIEW_CATEGORIES = [
+  "Planned analysis / project work",
+  "Ad hoc stakeholder requests",
+  "Recurring reporting",
+  "Dashboard development / edits",
+  "SQL / data modeling / query work",
+  "QA / data validation",
+  "Debugging / issue investigation",
+  "Documentation / requirement clarification",
+  "Meetings / stakeholder syncs",
+  "Admin / coordination",
+  "Blocked / waiting / dependency delay",
+];
+
+function PersonalWorkspaceSection({ replicas, error }: { replicas: PersonalReplicaView[]; error: string | null }) {
+  const current = replicas[0] ?? null;
+  return (
+    <section aria-labelledby="personal-workspace-title">
+      <div className="panel">
+        <span className="badge">Private to you</span>
+        <h2 id="personal-workspace-title">Your Web review workspace</h2>
+        <p>
+          This surface mirrors only review-safe derived fields from Weekform for Mac. Raw capture,
+          app and window titles, evidence, notes, project and stakeholder names, screenshots, and
+          AI credentials stay on the Mac. Every Web action below creates a request; it does not
+          change local truth until you approve it in the desktop app.
+        </p>
+        {error ? (
+          <div className="form-alert" role="alert">Your private Web workspace could not be loaded.</div>
+        ) : !current ? (
+          <div className="empty-state">
+            <h3>No private replica yet</h3>
+            <p>In Weekform for Mac, open Account &amp; Sharing and enable the Private Web workspace.</p>
+            <Link href="/download" className="button button-secondary">Open the Mac setup</Link>
+          </div>
+        ) : (
+          <>
+            <div className="metric-grid compact-metrics">
+              <div className="metric"><span>Reliable new-work capacity</span><strong>{Math.round(current.payload.capacity.reliableNewWorkCapacityPct)}%</strong></div>
+              <div className="metric"><span>Allocated</span><strong>{Math.round(current.payload.capacity.allocatedPct)}%</strong></div>
+              <div className="metric"><span>Reactive</span><strong>{Math.round(current.payload.capacity.reactivePct)}%</strong></div>
+              <div className="metric"><span>Context switching</span><strong>{Math.round(current.payload.capacity.contextSwitchScore)}/100</strong></div>
+            </div>
+            <div className="status-line">
+              <span>{current.weekId} · {current.payload.blocks.length} review-safe block{current.payload.blocks.length === 1 ? "" : "s"}</span>
+              <span>Received {formatDateTime(current.syncedAt)}</span>
+            </div>
+            <details className="disclosure">
+              <summary>Delete private Web history</summary>
+              <p>Turn the Private Web workspace off on your Mac first, or a later desktop sync can recreate the current week.</p>
+              <form action={deletePersonalReplicaHistory}>
+                <FormSubmitButton className="button button-danger" pendingLabel="Deleting Web history…">
+                  Delete replicas and pending requests
+                </FormSubmitButton>
+              </form>
+            </details>
+            {current.payload.blocks.length === 0 ? <p>No blocks are available for this week.</p> : (
+              <ul className="member-grid personal-review-grid" style={{ listStyle: "none", padding: 0 }}>
+                {current.payload.blocks.map((block) => (
+                  <li className="member-card" key={block.blockId}>
+                    <div className="member-card-head">
+                      <div><strong>{block.category}</strong><span>{block.mode} · {block.plannedStatus}</span></div>
+                      <span className="badge">{block.userVerified ? "Reviewed" : "Needs review"}</span>
+                    </div>
+                    <p>{formatDateTime(block.startTime)} — {formatDateTime(block.endTime)} · {Math.round(block.estimatedCapacityPct)}% of week</p>
+                    <div className="action-row">
+                      {!block.userVerified && (
+                        <form action={queuePersonalReviewCommand}>
+                          <input type="hidden" name="block_id" value={block.blockId} />
+                          <input type="hidden" name="week_id" value={block.weekId} />
+                          <input type="hidden" name="expected_revision" value={block.revision} />
+                          <input type="hidden" name="action" value="confirm" />
+                          <FormSubmitButton className="button button-primary" pendingLabel="Sending request…">
+                            Request confirmation
+                          </FormSubmitButton>
+                        </form>
+                      )}
+                      <form action={queuePersonalReviewCommand}>
+                        <input type="hidden" name="block_id" value={block.blockId} />
+                        <input type="hidden" name="week_id" value={block.weekId} />
+                        <input type="hidden" name="expected_revision" value={block.revision} />
+                        <input type="hidden" name="action" value="exclude" />
+                        <FormSubmitButton className="button button-secondary" pendingLabel="Sending request…">
+                          Request exclusion
+                        </FormSubmitButton>
+                      </form>
+                    </div>
+                    <form action={queuePersonalReviewCommand} className="inline-review-form">
+                      <input type="hidden" name="block_id" value={block.blockId} />
+                      <input type="hidden" name="week_id" value={block.weekId} />
+                      <input type="hidden" name="expected_revision" value={block.revision} />
+                      <input type="hidden" name="action" value="relabel" />
+                      <label htmlFor={`category-${block.blockId}`}>Request category change</label>
+                      <select id={`category-${block.blockId}`} name="category" defaultValue={block.category}>
+                        {REVIEW_CATEGORIES.map((category) => <option value={category} key={category}>{category}</option>)}
+                      </select>
+                      <FormSubmitButton className="button button-secondary" pendingLabel="Sending request…">
+                        Send request
+                      </FormSubmitButton>
+                    </form>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+      </div>
+    </section>
   );
 }
 

@@ -288,10 +288,10 @@ test("delete clears via the active adapter and a later read is null", async () =
 });
 
 // ---------------------------------------------------------------------------
-// The stub itself never fakes success
+// The native adapter never fakes success without its Tauri command boundary
 // ---------------------------------------------------------------------------
 
-test("the keychain stub throws without a bridge — it never pretends tokens were stored", async () => {
+test("the keychain adapter throws without a native bridge — it never pretends tokens were stored", async () => {
   await withWindow({}, async () => {
     await assert.rejects(keychainSessionStorageAdapter.read());
     await assert.rejects(keychainSessionStorageAdapter.write(createDefaultCloudState()));

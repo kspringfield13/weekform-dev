@@ -11,6 +11,10 @@ import type {
   CloudSharePolicyV1,
   CloudSyncState
 } from "../../../../packages/domain/src/cloud";
+import type {
+  PersonalReplicaPolicyV1,
+  PersonalReplicaSyncStateV1,
+} from "../../../../packages/domain/src/personalCloud";
 import {
   buildCloudBackupMetadata,
   createDefaultCloudSharePolicy,
@@ -19,6 +23,10 @@ import {
   type CloudPendingSnapshot,
   type PersistedCloudSession
 } from "../services/cloudPolicy";
+import {
+  createDefaultPersonalReplicaPolicy,
+  createDefaultPersonalSyncState,
+} from "../services/personalSync";
 import {
   clearPersistedCloudState,
   readPersistedCloudState,
@@ -49,6 +57,8 @@ export interface CloudAccountController {
   policy: CloudSharePolicyV1;
   syncState: CloudSyncState;
   pendingSnapshot: CloudPendingSnapshot | null;
+  personalReplicaPolicy: PersonalReplicaPolicyV1;
+  personalSyncState: PersonalReplicaSyncStateV1;
   authBusy: boolean;
   authError: string | null;
   signIn: (email: string, password: string) => Promise<boolean>;
@@ -60,6 +70,8 @@ export interface CloudAccountController {
   /** For useCloudSync: sync bookkeeping + reserved clientSnapshotId setters. */
   setSyncState: (updater: (current: CloudSyncState) => CloudSyncState) => void;
   setPendingSnapshot: (value: CloudPendingSnapshot | null) => void;
+  updatePersonalReplicaPolicy: (patch: Partial<PersonalReplicaPolicyV1>) => void;
+  setPersonalSyncState: (updater: (current: PersonalReplicaSyncStateV1) => PersonalReplicaSyncStateV1) => void;
   /** Session for an authenticated call, refreshed when near expiry; null = signed out. */
   getFreshSession: () => Promise<PersistedCloudSession | null>;
   /** Fail-closed recipient/policy refresh immediately before a snapshot upload. */
@@ -95,6 +107,12 @@ export function useCloudAccount({
   const [policy, setPolicy] = useState<CloudSharePolicyV1>(() => createDefaultCloudSharePolicy());
   const [syncState, setSyncStateRaw] = useState<CloudSyncState>(() => createEmptyCloudSyncState());
   const [pendingSnapshot, setPendingSnapshot] = useState<CloudPendingSnapshot | null>(null);
+  const [personalReplicaPolicy, setPersonalReplicaPolicy] = useState<PersonalReplicaPolicyV1>(
+    () => createDefaultPersonalReplicaPolicy(),
+  );
+  const [personalSyncState, setPersonalSyncStateRaw] = useState<PersonalReplicaSyncStateV1>(
+    () => createDefaultPersonalSyncState(),
+  );
   const [teams, setTeams] = useState<CloudTeamMembership[]>([]);
   const [teamsError, setTeamsError] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
@@ -136,6 +154,8 @@ export function useCloudAccount({
         setPolicy(state.policy);
         setSyncStateRaw(state.syncState);
         setPendingSnapshot(state.pendingSnapshot);
+        setPersonalReplicaPolicy(state.personalReplicaPolicy);
+        setPersonalSyncStateRaw(state.personalSyncState);
         if (state.session) void loadTeams(state.session);
       }
       setHydrated(true);
@@ -148,8 +168,16 @@ export function useCloudAccount({
   // Persist after hydration; a failed write leaves in-memory state working.
   useEffect(() => {
     if (isDemoMode || !configured || !hydrated) return;
-    void writePersistedCloudState({ version: 1, session, policy, syncState, pendingSnapshot });
-  }, [isDemoMode, configured, hydrated, session, policy, syncState, pendingSnapshot]);
+    void writePersistedCloudState({
+      version: 1,
+      session,
+      policy,
+      syncState,
+      pendingSnapshot,
+      personalReplicaPolicy,
+      personalSyncState,
+    });
+  }, [isDemoMode, configured, hydrated, session, policy, syncState, pendingSnapshot, personalReplicaPolicy, personalSyncState]);
 
   const signIn = useCallback(
     async (email: string, password: string): Promise<boolean> => {
@@ -191,6 +219,8 @@ export function useCloudAccount({
       consentedAt: null
     }));
     setSyncStateRaw((current) => ({ ...current, status: "idle", nextScheduledAt: null }));
+    setPersonalReplicaPolicy(createDefaultPersonalReplicaPolicy());
+    setPersonalSyncStateRaw(createDefaultPersonalSyncState());
     emitAudit("disconnect", "Signed out of Weekform Cloud; sharing disabled and future syncs stopped");
     const cleared = await clearPersistedCloudState();
     if (!cleared) {
@@ -247,6 +277,22 @@ export function useCloudAccount({
     emitAudit("policy_change", "Reviewed the exact shared payload and recorded consent", {
       changed_fields: ["consentedAt"],
       consented_at: consentedAt
+    });
+  }, [emitAudit]);
+
+  const updatePersonalReplicaPolicy = useCallback((patch: Partial<PersonalReplicaPolicyV1>) => {
+    setPersonalReplicaPolicy((current) => {
+      const next = { ...current, ...patch, version: 1 as const };
+      if (next.enabled && !next.consentedAt) next.enabled = false;
+      if (JSON.stringify(next) === JSON.stringify(current)) return current;
+      emitAudit(
+        next.enabled ? "policy_change" : "pause",
+        next.enabled
+          ? "Enabled the private Weekform Web replica"
+          : "Disabled the private Weekform Web replica; no further personal syncs will run",
+        { personal_replica_enabled: next.enabled, consented_at: next.consentedAt },
+      );
+      return next;
     });
   }, [emitAudit]);
 
@@ -321,6 +367,8 @@ export function useCloudAccount({
     setPolicy(createDefaultCloudSharePolicy());
     setSyncStateRaw(createEmptyCloudSyncState());
     setPendingSnapshot(null);
+    setPersonalReplicaPolicy(createDefaultPersonalReplicaPolicy());
+    setPersonalSyncStateRaw(createDefaultPersonalSyncState());
     const cleared = await clearPersistedCloudState();
     if (!cleared) {
       setAuthError(
@@ -351,9 +399,16 @@ export function useCloudAccount({
     []
   );
 
+  const setPersonalSyncState = useCallback(
+    (updater: (current: PersonalReplicaSyncStateV1) => PersonalReplicaSyncStateV1) => {
+      setPersonalSyncStateRaw(updater);
+    },
+    [],
+  );
+
   const backupMetadata = useCallback(
-    () => buildCloudBackupMetadata(policy, syncState),
-    [policy, syncState]
+    () => buildCloudBackupMetadata(policy, syncState, personalReplicaPolicy, personalSyncState),
+    [policy, syncState, personalReplicaPolicy, personalSyncState]
   );
 
   // A stable controller reference (App memoizes on it, and the auto-sync
@@ -369,6 +424,8 @@ export function useCloudAccount({
       policy,
       syncState,
       pendingSnapshot,
+      personalReplicaPolicy,
+      personalSyncState,
       authBusy,
       authError,
       signIn,
@@ -376,8 +433,10 @@ export function useCloudAccount({
       refreshTeams,
       updatePolicy,
       recordConsent,
+      updatePersonalReplicaPolicy,
       setSyncState,
       setPendingSnapshot,
+      setPersonalSyncState,
       getFreshSession,
       checkFreshUpload,
       emitAudit,
@@ -393,6 +452,8 @@ export function useCloudAccount({
       policy,
       syncState,
       pendingSnapshot,
+      personalReplicaPolicy,
+      personalSyncState,
       authBusy,
       authError,
       signIn,
@@ -400,8 +461,10 @@ export function useCloudAccount({
       refreshTeams,
       updatePolicy,
       recordConsent,
+      updatePersonalReplicaPolicy,
       setSyncState,
       setPendingSnapshot,
+      setPersonalSyncState,
       getFreshSession,
       checkFreshUpload,
       emitAudit,

@@ -3,10 +3,10 @@ import test from "node:test";
 
 import { isProtectedWebPath } from "./protectedPaths";
 
-test("production admin and account surfaces require an authenticated session", () => {
+test("Manager Access and account surfaces require an authenticated session", () => {
   for (const path of [
     "/admin",
-    "/admin/settings",
+    "/manager-access",
     "/dashboard",
     "/download/artifact",
     "/teams/123",

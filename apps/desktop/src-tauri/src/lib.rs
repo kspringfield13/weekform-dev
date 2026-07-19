@@ -1,8 +1,19 @@
+use aes_gcm::{
+    aead::{Aead, OsRng, rand_core::RngCore},
+    Aes256Gcm, KeyInit, Nonce,
+};
 use base64::{engine::general_purpose, Engine as _};
+use security_framework::passwords::{
+    delete_generic_password, get_generic_password, set_generic_password,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
+    collections::HashSet,
     env, fs,
+    fs::OpenOptions,
+    io::{BufRead, BufReader, Write},
+    path::PathBuf,
     process::Command,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -24,6 +35,10 @@ const COMPACT_WINDOW_WIDTH: u32 = 620;
 const COMPACT_WINDOW_HEIGHT: u32 = 850;
 const COMPACT_WINDOW_RIGHT_MARGIN: i32 = 16;
 const COMPACT_WINDOW_TOP_OFFSET: i32 = 44;
+const KEYCHAIN_SERVICE: &str = "com.weekform.desktop";
+const CAPTURE_JOURNAL_KEY_ACCOUNT: &str = "weekform:capture-journal-key:v1";
+const CAPTURE_JOURNAL_FILE: &str = "capture-journal-v1.jsonl";
+const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
 
 struct PauseMenuItem(MenuItem<Wry>);
 
@@ -34,12 +49,29 @@ struct TrayHandle(TrayIcon<Wry>);
 struct ActivityCaptureState {
     paused: Arc<AtomicBool>,
 }
-#[derive(Clone, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 struct ActiveWindowPayload {
+    sample_id: String,
     timestamp_ms: u64,
     app_name: Option<String>,
     window_title: Option<String>,
     capture_error: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct EncryptedJournalEntry {
+    version: u8,
+    timestamp_ms: u64,
+    nonce: String,
+    ciphertext: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CaptureJournalStatus {
+    encrypted: bool,
+    entry_count: usize,
+    byte_count: u64,
 }
 
 #[derive(Deserialize)]
@@ -325,6 +357,7 @@ fn now_ms() -> u64 {
 }
 
 fn sample_active_window() -> ActiveWindowPayload {
+    let sample_id = random_sample_id();
     let output = Command::new("osascript")
         .args([
             "-e",
@@ -362,6 +395,7 @@ fn sample_active_window() -> ActiveWindowPayload {
                 .map(str::to_string);
 
             ActiveWindowPayload {
+                sample_id,
                 timestamp_ms: now_ms(),
                 app_name,
                 window_title,
@@ -369,18 +403,26 @@ fn sample_active_window() -> ActiveWindowPayload {
             }
         }
         Ok(result) => ActiveWindowPayload {
+            sample_id,
             timestamp_ms: now_ms(),
             app_name: None,
             window_title: None,
             capture_error: Some(String::from_utf8_lossy(&result.stderr).trim().to_string()),
         },
         Err(error) => ActiveWindowPayload {
+            sample_id,
             timestamp_ms: now_ms(),
             app_name: None,
             window_title: None,
             capture_error: Some(error.to_string()),
         },
     }
+}
+
+fn random_sample_id() -> String {
+    let mut bytes = [0_u8; 16];
+    OsRng.fill_bytes(&mut bytes);
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn model_supports_reasoning_effort(model: &str) -> bool {
@@ -443,10 +485,259 @@ fn capture_screen_png_base64() -> Result<String, String> {
     Ok(general_purpose::STANDARD.encode(bytes))
 }
 
+fn capture_journal_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve Weekform data directory: {error}"))?;
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("Could not prepare Weekform data directory: {error}"))?;
+    Ok(directory.join(CAPTURE_JOURNAL_FILE))
+}
+
+fn capture_journal_key() -> Result<Vec<u8>, String> {
+    match get_generic_password(KEYCHAIN_SERVICE, CAPTURE_JOURNAL_KEY_ACCOUNT) {
+        Ok(key) if key.len() == 32 => Ok(key),
+        Ok(_) => Err("Capture journal key has an invalid length.".to_string()),
+        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => {
+            let mut key = vec![0_u8; 32];
+            OsRng.fill_bytes(&mut key);
+            set_generic_password(KEYCHAIN_SERVICE, CAPTURE_JOURNAL_KEY_ACCOUNT, &key)
+                .map_err(|error| format!("Could not store the capture journal key in macOS Keychain: {error}"))?;
+            Ok(key)
+        }
+        Err(error) => Err(format!("Could not read the capture journal key from macOS Keychain: {error}")),
+    }
+}
+
+fn encrypt_capture_payload(payload: &ActiveWindowPayload) -> Result<EncryptedJournalEntry, String> {
+    let key = capture_journal_key()?;
+    let mut nonce_bytes = [0_u8; 12];
+    OsRng.fill_bytes(&mut nonce_bytes);
+    encrypt_capture_payload_with_key(payload, &key, nonce_bytes)
+}
+
+fn encrypt_capture_payload_with_key(
+    payload: &ActiveWindowPayload,
+    key: &[u8],
+    nonce_bytes: [u8; 12],
+) -> Result<EncryptedJournalEntry, String> {
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|_| "Could not initialize capture journal encryption.".to_string())?;
+    let plaintext = serde_json::to_vec(payload)
+        .map_err(|error| format!("Could not encode the capture journal entry: {error}"))?;
+    let ciphertext = cipher
+        .encrypt(Nonce::from_slice(&nonce_bytes), plaintext.as_ref())
+        .map_err(|_| "Could not encrypt the capture journal entry.".to_string())?;
+    Ok(EncryptedJournalEntry {
+        version: 1,
+        timestamp_ms: payload.timestamp_ms,
+        nonce: general_purpose::STANDARD.encode(nonce_bytes),
+        ciphertext: general_purpose::STANDARD.encode(ciphertext),
+    })
+}
+
+fn decrypt_capture_payload(entry: &EncryptedJournalEntry, key: &[u8]) -> Result<ActiveWindowPayload, String> {
+    if entry.version != 1 { return Err("Unsupported capture journal version.".to_string()); }
+    let nonce = general_purpose::STANDARD.decode(&entry.nonce)
+        .map_err(|_| "Capture journal nonce is invalid.".to_string())?;
+    let ciphertext = general_purpose::STANDARD.decode(&entry.ciphertext)
+        .map_err(|_| "Capture journal ciphertext is invalid.".to_string())?;
+    if nonce.len() != 12 { return Err("Capture journal nonce has an invalid length.".to_string()); }
+    let cipher = Aes256Gcm::new_from_slice(key)
+        .map_err(|_| "Could not initialize capture journal decryption.".to_string())?;
+    let plaintext = cipher.decrypt(Nonce::from_slice(&nonce), ciphertext.as_ref())
+        .map_err(|_| "Capture journal authentication failed; no entries were returned.".to_string())?;
+    serde_json::from_slice(&plaintext)
+        .map_err(|_| "Capture journal entry could not be decoded.".to_string())
+}
+
+fn append_capture_journal(app: &AppHandle, payload: &ActiveWindowPayload) -> Result<(), String> {
+    let path = capture_journal_path(app)?;
+    let encrypted = encrypt_capture_payload(payload)?;
+    let line = serde_json::to_string(&encrypted)
+        .map_err(|error| format!("Could not encode the encrypted capture entry: {error}"))?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|error| format!("Could not open the encrypted capture journal: {error}"))?;
+    writeln!(file, "{line}")
+        .and_then(|_| file.flush())
+        .map_err(|error| format!("Could not write the encrypted capture journal: {error}"))
+}
+
+#[tauri::command]
+fn keychain_get_secret(key: String) -> Result<Option<String>, String> {
+    match get_generic_password(KEYCHAIN_SERVICE, &key) {
+        Ok(bytes) => String::from_utf8(bytes)
+            .map(Some)
+            .map_err(|_| "The macOS Keychain value was not valid UTF-8.".to_string()),
+        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(None),
+        Err(error) => Err(format!("Could not read from macOS Keychain: {error}")),
+    }
+}
+
+#[tauri::command]
+fn keychain_set_secret(key: String, value: String) -> Result<(), String> {
+    set_generic_password(KEYCHAIN_SERVICE, &key, value.as_bytes())
+        .map_err(|error| format!("Could not write to macOS Keychain: {error}"))
+}
+
+#[tauri::command]
+fn keychain_delete_secret(key: String) -> Result<(), String> {
+    match delete_generic_password(KEYCHAIN_SERVICE, &key) {
+        Ok(()) => Ok(()),
+        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(()),
+        Err(error) => Err(format!("Could not delete from macOS Keychain: {error}")),
+    }
+}
+
+#[tauri::command]
+fn capture_journal_status(app: AppHandle) -> Result<CaptureJournalStatus, String> {
+    let path = capture_journal_path(&app)?;
+    if !path.exists() {
+        return Ok(CaptureJournalStatus { encrypted: true, entry_count: 0, byte_count: 0 });
+    }
+    let file = fs::File::open(&path)
+        .map_err(|error| format!("Could not inspect the capture journal: {error}"))?;
+    let entry_count = BufReader::new(file).lines().filter(|line| line.as_ref().is_ok_and(|value| !value.trim().is_empty())).count();
+    let byte_count = fs::metadata(path).map(|metadata| metadata.len()).unwrap_or(0);
+    Ok(CaptureJournalStatus { encrypted: true, entry_count, byte_count })
+}
+
+#[tauri::command]
+fn read_capture_journal(app: AppHandle) -> Result<Vec<ActiveWindowPayload>, String> {
+    let path = capture_journal_path(&app)?;
+    if !path.exists() { return Ok(Vec::new()); }
+    let key = get_generic_password(KEYCHAIN_SERVICE, CAPTURE_JOURNAL_KEY_ACCOUNT)
+        .map_err(|error| format!("Could not unlock the encrypted capture journal: {error}"))?;
+    if key.len() != 32 { return Err("Capture journal key has an invalid length.".to_string()); }
+    let file = fs::File::open(path)
+        .map_err(|error| format!("Could not open the encrypted capture journal: {error}"))?;
+    let mut samples = Vec::new();
+    for line in BufReader::new(file).lines() {
+        let line = line.map_err(|error| format!("Could not read a capture journal entry: {error}"))?;
+        let entry: EncryptedJournalEntry = serde_json::from_str(&line)
+            .map_err(|_| "The encrypted capture journal is corrupt; no partial history was loaded.".to_string())?;
+        samples.push(decrypt_capture_payload(&entry, &key)?);
+    }
+    Ok(samples)
+}
+
+#[tauri::command]
+fn import_capture_journal_samples(app: AppHandle, samples: Vec<ActiveWindowPayload>) -> Result<usize, String> {
+    let existing: HashSet<String> = read_capture_journal(app.clone())?
+        .into_iter()
+        .map(|sample| sample.sample_id)
+        .collect();
+    let mut imported = 0_usize;
+    for sample in samples {
+      if sample.capture_error.is_some() || sample.app_name.is_none() || existing.contains(&sample.sample_id) {
+          continue;
+      }
+      append_capture_journal(&app, &sample)?;
+      imported += 1;
+    }
+    Ok(imported)
+}
+
+#[tauri::command]
+fn prune_capture_journal(app: AppHandle, cutoff_ms: u64) -> Result<usize, String> {
+    let path = capture_journal_path(&app)?;
+    if !path.exists() { return Ok(0); }
+    let file = fs::File::open(&path)
+        .map_err(|error| format!("Could not read the capture journal for retention: {error}"))?;
+    let mut kept = Vec::new();
+    let mut removed = 0_usize;
+    for line in BufReader::new(file).lines() {
+        let line = line.map_err(|error| format!("Could not read a capture journal entry: {error}"))?;
+        match serde_json::from_str::<EncryptedJournalEntry>(&line) {
+            Ok(entry) if entry.version == 1 && entry.timestamp_ms >= cutoff_ms => kept.push(line),
+            Ok(_) => removed += 1,
+            Err(_) => return Err("The encrypted capture journal is corrupt; retention stopped without rewriting it.".to_string()),
+        }
+    }
+    let replacement = path.with_extension("jsonl.next");
+    {
+        let mut file = fs::File::create(&replacement)
+            .map_err(|error| format!("Could not prepare the retained capture journal: {error}"))?;
+        for line in kept { writeln!(file, "{line}").map_err(|error| format!("Could not write retained capture entries: {error}"))?; }
+        file.flush().map_err(|error| format!("Could not flush retained capture entries: {error}"))?;
+    }
+    fs::rename(replacement, path)
+        .map_err(|error| format!("Could not replace the capture journal after retention: {error}"))?;
+    Ok(removed)
+}
+
+#[tauri::command]
+fn clear_capture_journal(app: AppHandle) -> Result<(), String> {
+    let path = capture_journal_path(&app)?;
+    if path.exists() {
+        fs::remove_file(path).map_err(|error| format!("Could not clear the capture journal: {error}"))?;
+    }
+    match delete_generic_password(KEYCHAIN_SERVICE, CAPTURE_JOURNAL_KEY_ACCOUNT) {
+        Ok(()) => Ok(()),
+        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(()),
+        Err(error) => Err(format!("Capture data was removed, but its Keychain key could not be removed: {error}")),
+    }
+}
+
+#[cfg(test)]
+mod capture_journal_tests {
+    use super::*;
+
+    #[test]
+    fn encrypted_capture_entry_round_trips_and_contains_no_plaintext() {
+        let payload = ActiveWindowPayload {
+            sample_id: "sample-test".to_string(),
+            timestamp_ms: 1_721_000_000_000,
+            app_name: Some("Sensitive App".to_string()),
+            window_title: Some("Customer Alpha renewal".to_string()),
+            capture_error: None,
+        };
+        let key = [7_u8; 32];
+        let entry = encrypt_capture_payload_with_key(&payload, &key, [9_u8; 12])
+            .expect("encrypts");
+        let serialized = serde_json::to_string(&entry).expect("serializes");
+        assert!(!serialized.contains("Sensitive App"));
+        assert!(!serialized.contains("Customer Alpha"));
+        let decoded = decrypt_capture_payload(&entry, &key).expect("decrypts");
+        assert_eq!(decoded.sample_id, payload.sample_id);
+        assert_eq!(decoded.app_name, payload.app_name);
+        assert_eq!(decoded.window_title, payload.window_title);
+    }
+
+    #[test]
+    fn tampered_capture_entry_fails_authentication() {
+        let payload = ActiveWindowPayload {
+            sample_id: "sample-test".to_string(),
+            timestamp_ms: 1,
+            app_name: Some("App".to_string()),
+            window_title: None,
+            capture_error: None,
+        };
+        let key = [1_u8; 32];
+        let mut entry = encrypt_capture_payload_with_key(&payload, &key, [2_u8; 12])
+            .expect("encrypts");
+        entry.ciphertext.push('A');
+        assert!(decrypt_capture_payload(&entry, &key).is_err());
+    }
+}
+
 fn start_activity_capture(app: AppHandle, paused: Arc<AtomicBool>) {
     thread::spawn(move || loop {
         if !paused.load(Ordering::SeqCst) {
-            let payload = sample_active_window();
+            let mut payload = sample_active_window();
+            if payload.capture_error.is_none() && payload.app_name.is_some() {
+                if let Err(error) = append_capture_journal(&app, &payload) {
+                    // Fail closed: a sensitive sample is not emitted into JS when its
+                    // encrypted native journal write did not complete.
+                    payload.app_name = None;
+                    payload.window_title = None;
+                    payload.capture_error = Some(error);
+                }
+            }
             let _ = app.emit("clear-capacity:active-window-sample", payload);
         }
 
@@ -1533,6 +1824,14 @@ pub fn run() {
             set_pause_menu_label,
             set_tray_tooltip,
             set_activity_capture_paused,
+            keychain_get_secret,
+            keychain_set_secret,
+            keychain_delete_secret,
+            capture_journal_status,
+            read_capture_journal,
+            import_capture_journal_samples,
+            prune_capture_journal,
+            clear_capture_journal,
             generate_weekly_narrative_with_openai,
             classify_active_window_sessions_with_openai,
             generate_review_copilot_suggestions_with_openai,

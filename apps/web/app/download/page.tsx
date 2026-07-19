@@ -180,8 +180,9 @@ export default async function DownloadPage({
               for what stays local.
             </li>
             <li>
-              Local storage is unencrypted prototype storage, not suitable
-              for regulated data.
+              Raw native capture uses an encrypted journal and cloud account
+              state uses macOS Keychain. Other prototype state remains
+              unencrypted and is not suitable for regulated data.
             </li>
           </ul>
         </div>

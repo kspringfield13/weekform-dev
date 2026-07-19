@@ -218,7 +218,7 @@ function AccessBoundary({ children }: { children: ReactNode }) {
             </span>
           </div>
         </div>
-        <a className="sim-button secondary" href={LOCAL_SIMULATOR_AVAILABLE ? "/admin" : "/"}>
+        <a className="sim-button secondary" href={LOCAL_SIMULATOR_AVAILABLE ? "/manager-access" : "/"}>
           {LOCAL_SIMULATOR_AVAILABLE ? "Go to Manager Access" : "Return to Weekform"}
         </a>
       </section>
@@ -424,14 +424,14 @@ function SpanSimulatorApp() {
           <WeekformMark />
           <strong>Weekform</strong>
           <span>/</span>
-          <a href="/admin">Manager Access</a>
+          <a href="/manager-access">Manager Access</a>
           <span>/</span>
           <b>Span Simulator</b>
           <span className="admin-lab-badge">Admin lab</span>
         </div>
         <div className="sim-titlebar-actions">
           <span className="local-gate-chip"><ShieldCheck size={13} aria-hidden /> Local admin session</span>
-          <a href="/admin">Back to Manager Access</a>
+          <a href="/manager-access">Back to Manager Access</a>
           <a href="/">Exit to Weekform</a>
         </div>
       </header>
@@ -987,5 +987,5 @@ function SimulatorSandbox({ surface }: { surface: string }) {
 }
 
 function SimulatorSandboxLocked() {
-  return <main className="sim-access-shell"><section className="sim-access-card" aria-labelledby="sandbox-locked-title"><div className="sim-access-mark"><LockKeyhole /></div><span className="sim-kicker">Weekform controlled playback</span><h1 id="sandbox-locked-title">Sandbox playback is locked.</h1><p>This localhost-only surface requires the dedicated playback flag and an allowlisted mock application route.</p><div className="sim-gate-note"><ShieldCheck size={17} aria-hidden /><div><strong>Dedicated playback gate</strong><span>Set <code>VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true</code> only for explicit local sandbox sessions.</span></div></div><a className="sim-button secondary" href="/admin/span-simulator">Return to Span Simulator</a></section></main>;
+  return <main className="sim-access-shell"><section className="sim-access-card" aria-labelledby="sandbox-locked-title"><div className="sim-access-mark"><LockKeyhole /></div><span className="sim-kicker">Weekform controlled playback</span><h1 id="sandbox-locked-title">Sandbox playback is locked.</h1><p>This localhost-only surface requires the dedicated playback flag and an allowlisted mock application route.</p><div className="sim-gate-note"><ShieldCheck size={17} aria-hidden /><div><strong>Dedicated playback gate</strong><span>Set <code>VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true</code> only for explicit local sandbox sessions.</span></div></div><a className="sim-button secondary" href="/manager-access/span-simulator">Return to Span Simulator</a></section></main>;
 }

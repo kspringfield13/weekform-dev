@@ -300,7 +300,7 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 Desktop prototype:
 
 - macOS is the only native platform currently supported.
-- Prototype state is persisted locally with Tauri Store (or browser storage in web/demo mode) rather than an encrypted application database; cloud session credentials also use prototype (unencrypted) local storage.
+- Raw native foreground samples are written to an AES-256-GCM journal whose key is stored in macOS Keychain. Cloud account state uses the native Keychain-backed adapter. Other prototype state remains in unencrypted Tauri Store (or browser storage in web/demo mode), so Weekform is not an encrypted application database.
 - Outlook integration requires a manual `.ics` export.
 - Window titles can contain sensitive information and should be reviewed or excluded.
 - AI features require network access and may incur provider costs.
@@ -312,7 +312,7 @@ Desktop prototype:
 Team cloud layer:
 
 - **Live RLS behavior is unproven.** The policies were written and reviewed, an RLS test script and four-actor matrix exist, but they have not been executed against a live Supabase stack in this development environment. This is the single largest untested claim.
-- Live Supabase auth/sync/storage-signing, the live OpenAI briefing model, and a live desktop soak are likewise unexercised here; deterministic fallbacks are the demonstrated paths.
+- The private Web replica, its review-command RLS/RPCs, private Broadcast invalidation, live Supabase auth/sync/storage-signing, the live OpenAI briefing model, and a live desktop soak are likewise unexercised against production here; deterministic contract tests and local build gates are the demonstrated paths.
 - Invites are copy-link only; no email delivery is integrated.
 - Scheduled sync runs only while the desktop app is open — there is no background sync while the app is closed — and a sync that exhausts its retry ladder pauses until re-arm, reconnect, or manual sync.
 

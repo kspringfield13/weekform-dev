@@ -184,7 +184,9 @@ export type CloudSharingAuditAction =
   | "sync_failure"
   | "delete"
   | "pause"
-  | "disconnect";
+  | "disconnect"
+  | "personal_sync_success"
+  | "personal_sync_failure";
 
 const CLOUD_SHARING_TITLES: Record<CloudSharingAuditAction, string> = {
   connect: "Weekform Cloud account connected",
@@ -193,7 +195,9 @@ const CLOUD_SHARING_TITLES: Record<CloudSharingAuditAction, string> = {
   sync_failure: "Workload snapshot sync failed",
   delete: "Synced snapshots deleted from team",
   pause: "Cloud sharing paused",
-  disconnect: "Weekform Cloud account disconnected"
+  disconnect: "Weekform Cloud account disconnected",
+  personal_sync_success: "Private Web workspace synced",
+  personal_sync_failure: "Private Web workspace sync failed"
 };
 
 /**
@@ -211,7 +215,8 @@ export function createCloudSharingAuditEvent(input: {
   details?: Record<string, unknown>;
 }): AuditEvent {
   const { action, summary, details = {} } = input;
-  const networkAction = action === "sync_success" || action === "sync_failure" || action === "delete";
+  const networkAction = action === "sync_success" || action === "sync_failure" || action === "delete"
+    || action === "personal_sync_success" || action === "personal_sync_failure";
   return createAuditEvent({
     type: "cloud_sharing",
     source: "cloud_sync",
@@ -222,7 +227,7 @@ export function createCloudSharingAuditEvent(input: {
       action,
       ...details,
       stored_locally: true,
-      sent_to_cloud: action === "sync_success" || action === "delete",
+      sent_to_cloud: action === "sync_success" || action === "delete" || action === "personal_sync_success",
       auth_tokens: false,
       raw_activity: false
     }

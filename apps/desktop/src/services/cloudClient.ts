@@ -11,6 +11,12 @@
 // app, and the four calls here don't justify adding one.
 
 import type { TeamSharePolicyV1 } from "../../../../packages/domain/src/cloud";
+import type {
+  PersonalReplicaSyncQueueItemV1,
+  PersonalSyncReceiptV1,
+  ReviewCommandStatus,
+  ReviewCommandV1,
+} from "../../../../packages/domain/src/personalCloud";
 import { parseTeamSharePolicy, type PersistedCloudSession, type WorkloadSnapshotRow } from "./cloudPolicy";
 
 /** Matches `CloudAccountSummary["role"]` (non-null) and the web app's `TeamRole`. */
@@ -320,6 +326,145 @@ export async function deleteMySnapshotsForTeam(
     const contentRange = response.headers.get("content-range") ?? "";
     const match = /\/(\d+)\s*$/.exec(contentRange);
     return { ok: true, value: match ? Number(match[1]) : 0 };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
+/** Register or refresh this signed-in Mac device. Server derives user_id from auth.uid(). */
+export async function registerWeekformDevice(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  deviceId: string,
+  deviceName: string,
+): Promise<CloudResult<null>> {
+  try {
+    const response = await fetch(`${env.url}/rest/v1/rpc/register_weekform_device`, {
+      method: "POST",
+      headers: authHeaders(env, session.accessToken),
+      body: JSON.stringify({ p_device_id: deviceId, p_device_name: deviceName }),
+    });
+    if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not register this Mac"), status: response.status };
+    return { ok: true, value: null };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
+export async function syncPersonalReplicaBatch(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  deviceId: string,
+  item: PersonalReplicaSyncQueueItemV1,
+): Promise<CloudResult<PersonalSyncReceiptV1>> {
+  try {
+    const response = await fetch(`${env.url}/rest/v1/rpc/sync_personal_replica_batch`, {
+      method: "POST",
+      headers: authHeaders(env, session.accessToken),
+      body: JSON.stringify({
+        p_device_id: deviceId,
+        p_batch_id: item.batchId,
+        p_fingerprint: item.fingerprint,
+        p_payload: item.payload,
+      }),
+    });
+    if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not sync your Web workspace"), status: response.status };
+    const rows: unknown = await response.json();
+    const row = Array.isArray(rows) ? rows[0] : rows;
+    if (typeof row !== "object" || row === null) return { ok: false, message: "Sync receipt was incomplete." };
+    const record = row as Record<string, unknown>;
+    const cursor = typeof record.cursor === "number" ? record.cursor : Number(record.cursor);
+    if (!Number.isSafeInteger(cursor) || cursor < 0 || typeof record.synced_at !== "string") {
+      return { ok: false, message: "Sync receipt was incomplete." };
+    }
+    return { ok: true, value: { batchId: item.batchId, cursor, syncedAt: record.synced_at } };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
+function parseReviewCommand(value: unknown): ReviewCommandV1 | null {
+  if (typeof value !== "object" || value === null) return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.command_id !== "string" || typeof row.block_id !== "string"
+    || typeof row.week_id !== "string" || typeof row.expected_revision !== "string"
+    || (row.action !== "confirm" && row.action !== "exclude" && row.action !== "relabel")
+    || row.status !== "pending" || typeof row.created_at !== "string"
+  ) return null;
+  const rawPatch = typeof row.patch === "object" && row.patch !== null
+    ? row.patch as Record<string, unknown>
+    : null;
+  const categoryValues = new Set([
+    "Planned analysis / project work", "Ad hoc stakeholder requests", "Recurring reporting",
+    "Dashboard development / edits", "SQL / data modeling / query work", "QA / data validation",
+    "Debugging / issue investigation", "Documentation / requirement clarification",
+    "Meetings / stakeholder syncs", "Admin / coordination", "Blocked / waiting / dependency delay",
+  ]);
+  const modeValues = new Set(["Deep work", "Reactive", "Collaborative", "Fragmented", "Blocked"]);
+  const statusValues = new Set(["planned", "unplanned", "fixed", "blocked"]);
+  if (row.action === "relabel" && (!rawPatch
+    || Object.keys(rawPatch).length === 0
+    || Object.keys(rawPatch).some((key) => !["category", "mode", "plannedStatus", "blockerFlag"].includes(key))
+    || (rawPatch.category !== undefined && !categoryValues.has(rawPatch.category as string))
+    || (rawPatch.mode !== undefined && !modeValues.has(rawPatch.mode as string))
+    || (rawPatch.plannedStatus !== undefined && !statusValues.has(rawPatch.plannedStatus as string))
+    || (rawPatch.blockerFlag !== undefined && typeof rawPatch.blockerFlag !== "boolean"))) return null;
+  const patch = row.action === "relabel" ? rawPatch as ReviewCommandV1["patch"] : null;
+  return {
+    schemaVersion: 1,
+    commandId: row.command_id,
+    blockId: row.block_id,
+    weekId: row.week_id,
+    expectedRevision: row.expected_revision,
+    action: row.action,
+    patch,
+    status: "pending",
+    createdAt: row.created_at,
+    decidedAt: null,
+    decisionReason: null,
+  };
+}
+
+export async function fetchPendingReviewCommands(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+): Promise<CloudResult<ReviewCommandV1[]>> {
+  const query = "select=command_id,block_id,week_id,expected_revision,action,patch,status,created_at"
+    + "&status=eq.pending&order=created_at.asc&limit=50";
+  try {
+    const response = await fetch(`${env.url}/rest/v1/review_commands?${query}`, {
+      headers: authHeaders(env, session.accessToken),
+    });
+    if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not load Web review requests"), status: response.status };
+    const rows: unknown = await response.json();
+    return { ok: true, value: (Array.isArray(rows) ? rows : []).map(parseReviewCommand).filter((value): value is ReviewCommandV1 => value !== null) };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
+export async function completeReviewCommand(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  deviceId: string,
+  commandId: string,
+  status: Exclude<ReviewCommandStatus, "pending">,
+  reason: string | null,
+): Promise<CloudResult<boolean>> {
+  try {
+    const response = await fetch(`${env.url}/rest/v1/rpc/complete_review_command`, {
+      method: "POST",
+      headers: authHeaders(env, session.accessToken),
+      body: JSON.stringify({
+        p_device_id: deviceId,
+        p_command_id: commandId,
+        p_status: status,
+        p_reason: reason,
+      }),
+    });
+    if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not acknowledge the Web review request"), status: response.status };
+    return { ok: true, value: (await response.json()) === true };
   } catch {
     return { ok: false, message: NETWORK_ERROR_MESSAGE };
   }

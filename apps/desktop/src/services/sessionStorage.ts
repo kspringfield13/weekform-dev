@@ -7,20 +7,15 @@
 // nothing more; no listing, no migration, no partial updates, because the current
 // code does none of those. The defensive parsing (`parsePersistedCloudState`) and
 // the swallow-every-error degradation stay ABOVE the seam in the `*Through`
-// helpers, so every adapter — localStorage, Tauri Store, or a future Keychain
+// helpers, so every adapter — localStorage, Tauri Store, or Keychain
 // bridge — gets identical corrupt-envelope and thrown-error behavior for free.
 //
-// HONESTY CONTRACT (non-negotiable in this repo): the Keychain adapter below is a
-// STUB. `keychainAvailable()` returns false in every current build — browser/Vite
-// and the unpackaged Tauri dev shell alike — because no native Keychain bridge
-// exists yet. Live macOS Keychain storage CANNOT be verified until a packaged
-// desktop build ships a bridge (e.g. a Tauri command or Electron `safeStorage`
-// call wired to `window.__WEEKFORM_KEYCHAIN__`); until then this module is
-// env-blocked for live proof and every session read/write/delete goes through the
-// default adapter. The stub never fakes success: if it were ever selected without
-// a real bridge, its methods throw instead of silently dropping tokens.
+// Native Tauri builds use three Rust commands backed by macOS Security.framework.
+// Browser/demo builds have no bridge and retain the documented fallback. Tests may
+// inject `__WEEKFORM_KEYCHAIN__`; production native code does not depend on it.
 
 import { Store } from "@tauri-apps/plugin-store";
+import { invoke } from "@tauri-apps/api/core";
 import {
   parsePersistedCloudState,
   type PersistedCloudStateV1
@@ -188,14 +183,12 @@ export const defaultSessionStorageAdapter = createSerializedSessionStorageAdapte
 );
 
 // ---------------------------------------------------------------------------
-// Keychain adapter — capability-gated STUB (env-blocked for live proof).
+// Keychain adapter — native Tauri commands backed by macOS Security.framework.
 // ---------------------------------------------------------------------------
 
 /**
- * The bridge a packaged native build would install on `window` to expose the
- * OS keychain (e.g. a Tauri `invoke` wrapper over the macOS Security framework,
- * or Electron `safeStorage`). Values are opaque serialized strings; the bridge
- * owns service/account naming. No build ships this today.
+ * Values are opaque serialized strings. Tests can inject this bridge; native
+ * builds construct the same interface over Tauri `invoke` commands below.
  */
 export interface KeychainBridge {
   getSecret(key: string): Promise<string | null>;
@@ -210,53 +203,58 @@ function getKeychainBridge(): KeychainBridge | null {
   try {
     if (typeof window === "undefined") return null;
     const bridge = (window as unknown as Record<string, unknown>).__WEEKFORM_KEYCHAIN__;
-    if (!bridge || typeof bridge !== "object") return null;
-    const candidate = bridge as Partial<KeychainBridge>;
-    if (
-      typeof candidate.getSecret !== "function" ||
-      typeof candidate.setSecret !== "function" ||
-      typeof candidate.deleteSecret !== "function"
-    ) {
-      return null;
+    if (bridge && typeof bridge === "object") {
+      const candidate = bridge as Partial<KeychainBridge>;
+      if (
+        typeof candidate.getSecret === "function" &&
+        typeof candidate.setSecret === "function" &&
+        typeof candidate.deleteSecret === "function"
+      ) {
+        return candidate as KeychainBridge;
+      }
     }
-    return candidate as KeychainBridge;
+    if ("__TAURI_INTERNALS__" in window) {
+      return {
+        getSecret: (key) => invoke<string | null>("keychain_get_secret", { key }),
+        setSecret: (key, value) => invoke<void>("keychain_set_secret", { key, value }),
+        deleteSecret: (key) => invoke<void>("keychain_delete_secret", { key }),
+      };
+    }
+    return null;
   } catch {
     return null;
   }
 }
 
 /**
- * True only when a native keychain bridge is actually installed. Today that is
- * NEVER — no packaged build ships `__WEEKFORM_KEYCHAIN__` — so this honestly
- * returns false everywhere and the default adapter carries all traffic. Do not
- * hardcode this to true without a real bridge and a packaged-build verification.
+ * True only when a fake test bridge or the Tauri native bridge is available.
  */
 export function keychainAvailable(): boolean {
   return getKeychainBridge() !== null;
 }
 
 /**
- * Keychain-backed adapter shape. Fully functional ONLY once a real bridge
- * exists; selected only behind `keychainAvailable()`. If invoked without a
+ * Keychain-backed adapter shape. Selected only behind `keychainAvailable()`.
+ * If invoked without a
  * bridge it throws — never a fake success — and the `*Through` helpers turn
  * that throw into the same safe degradation every backend gets.
  */
 const primaryKeychainSessionStorageAdapter: SessionStorageAdapter = {
   async read(): Promise<unknown> {
     const bridge = getKeychainBridge();
-    if (!bridge) throw new Error("keychain bridge not installed (env-blocked stub)");
+    if (!bridge) throw new Error("keychain bridge not installed");
     const raw = await bridge.getSecret(KEYCHAIN_SECRET_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as unknown;
   },
   async write(state: PersistedCloudStateV1): Promise<void> {
     const bridge = getKeychainBridge();
-    if (!bridge) throw new Error("keychain bridge not installed (env-blocked stub)");
+    if (!bridge) throw new Error("keychain bridge not installed");
     await bridge.setSecret(KEYCHAIN_SECRET_KEY, JSON.stringify(state));
   },
   async delete(): Promise<void> {
     const bridge = getKeychainBridge();
-    if (!bridge) throw new Error("keychain bridge not installed (env-blocked stub)");
+    if (!bridge) throw new Error("keychain bridge not installed");
     await bridge.deleteSecret(KEYCHAIN_SECRET_KEY);
   }
 };

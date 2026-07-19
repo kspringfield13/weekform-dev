@@ -1,4 +1,11 @@
-const PROTECTED_PREFIXES = ["/admin", "/dashboard", "/download", "/teams"];
+const PROTECTED_PREFIXES = [
+  "/admin",
+  "/manager-access",
+  "/app",
+  "/dashboard",
+  "/download",
+  "/teams",
+];
 
 export function isProtectedWebPath(pathname: string): boolean {
   return PROTECTED_PREFIXES.some(

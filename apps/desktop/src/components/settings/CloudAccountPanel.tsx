@@ -11,6 +11,7 @@ import {
   CloudUpload,
   ExternalLink,
   LoaderCircle,
+  Laptop,
   LogIn,
   LogOut,
   RefreshCw,
@@ -26,8 +27,8 @@ import { formatAuditTime } from "../../lib/format";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { SharePreview } from "./SharePreview";
 import {
-  getConfiguredAdminPortalSignInUrl,
-  openAdminPortalSignIn
+  getConfiguredManagerAccessSignInUrl,
+  openManagerAccess
 } from "../../services/adminPortal";
 
 const SHARE_LEVEL_OPTIONS: Array<{ value: CloudShareLevel; label: string; hint: string }> = [
@@ -52,15 +53,15 @@ function AccountSharingHeading() {
   );
 }
 
-function AdminPortalSettingsRow() {
+function ManagerAccessSettingsRow() {
   const [openError, setOpenError] = useState<string | null>(null);
-  const destination = getConfiguredAdminPortalSignInUrl();
-  const isLocalPortal = destination.endsWith("/admin");
+  const destination = getConfiguredManagerAccessSignInUrl();
+  const isLocalWorkspace = destination.endsWith("/manager-access");
 
   const openPortal = async () => {
     setOpenError(null);
     try {
-      await openAdminPortalSignIn(destination);
+      await openManagerAccess(destination);
     } catch (error) {
       setOpenError(error instanceof Error ? error.message : "Manager Access could not be opened.");
     }
@@ -72,13 +73,13 @@ function AdminPortalSettingsRow() {
       <div>
         <h3>Manager Access</h3>
         <p>
-          {isLocalPortal
+          {isLocalWorkspace
             ? "Open the local Weekform Manager Access workspace for development and testing."
             : "Open Weekform Manager Access to use your individual workspace and manage approved team signals."}
         </p>
       </div>
       <div className="settings-row-status">
-        <strong>{isLocalPortal ? "Local development" : "Web app"}</strong>
+        <strong>{isLocalWorkspace ? "Local development" : "Web app"}</strong>
         <span>Opens in your browser</span>
         {openError && <small className="import-error" role="alert">{openError}</small>}
       </div>
@@ -118,7 +119,7 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
     return (
       <>
         <AccountSharingHeading />
-        <AdminPortalSettingsRow />
+        <ManagerAccessSettingsRow />
         <section className="settings-row">
           <div className="settings-row-icon"><Cloud size={18} aria-hidden /></div>
           <div>
@@ -177,7 +178,7 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
   return (
     <>
       <AccountSharingHeading />
-      <AdminPortalSettingsRow />
+      <ManagerAccessSettingsRow />
 
       {!signedIn && (
         <section className="settings-row">
@@ -186,8 +187,8 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
             <h3>Sign in to Weekform Cloud</h3>
             <p>
               Use the account you created on weekform.com — account creation starts there, not in the
-              app. Your session is kept in local prototype storage on this Mac (unencrypted, never
-              included in JSON exports).
+              app. In the native Mac app your session is kept in macOS Keychain and is never included
+              in JSON exports. Browser/demo mode uses its documented local fallback.
             </p>
             {ctrl.isDemoMode && (
               <p className="import-error" role="note">Cloud sign-in is disabled in the browser demo.</p>
@@ -242,8 +243,8 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
               <h3>Connected account</h3>
               <p>
                 Signed in as {ctrl.account.email}
-                {ctrl.account.displayName ? ` (${ctrl.account.displayName})` : ""}. The session is kept
-                in local prototype storage on this Mac and is excluded from data exports. Disconnecting
+                {ctrl.account.displayName ? ` (${ctrl.account.displayName})` : ""}. The native session is kept
+                in macOS Keychain and is excluded from data exports. Disconnecting
                 stops all future syncs.
               </p>
               {ctrl.authError && <p className="import-error" role="alert">{ctrl.authError}</p>}
@@ -260,6 +261,79 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
               <LogOut size={15} aria-hidden />
               <span>Disconnect</span>
             </button>
+          </section>
+
+          <section className="settings-row">
+            <div className="settings-row-icon"><Laptop size={18} aria-hidden /></div>
+            <div>
+              <h3>Private Web workspace</h3>
+              <p>
+                Keep Weekform Web current with review-safe derived blocks and capacity metrics. This
+                private replica never includes raw samples, app or window titles, evidence, notes,
+                project or stakeholder names, screenshots, audit detail, or AI credentials. Web edits
+                arrive here as requests and cannot change local truth until you approve them on this Mac.
+              </p>
+              {cloud.personal.lastError && <p className="import-error" role="alert">{cloud.personal.lastError}</p>}
+              {cloud.personal.pendingCommands.length > 0 && (
+                <div className="cloud-share-preview" aria-label="Pending Web review requests">
+                  <strong>{cloud.personal.pendingCommands.length} Web review request{cloud.personal.pendingCommands.length === 1 ? "" : "s"}</strong>
+                  <ul className="cloud-share-preview-lines">
+                    {cloud.personal.pendingCommands.map((command) => (
+                      <li key={command.commandId}>
+                        <span>
+                          {command.action === "confirm" ? "Confirm" : command.action === "exclude" ? "Exclude" : "Relabel"}
+                          {" "}block {command.blockId.slice(0, 8)}… for {command.weekId}
+                        </span>
+                        <div className="ai-provider-actions">
+                          <button className="settings-control" type="button" onClick={() => void cloud.personal.rejectCommand(command.commandId)}>
+                            Reject
+                          </button>
+                          <button className="primary-action" type="button" onClick={() => void cloud.personal.approveCommand(command.commandId)}>
+                            Approve on Mac
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+            <div className="settings-row-status">
+              <strong>{cloud.personal.enabled ? "On" : "Off"}</strong>
+              <span>
+                {cloud.personal.enabled
+                  ? cloud.personal.queuedBatches > 0
+                    ? `${cloud.personal.queuedBatches} update${cloud.personal.queuedBatches === 1 ? "" : "s"} queued`
+                    : ctrl.personalSyncState.lastSuccessAt
+                      ? <>Synced <time dateTime={ctrl.personalSyncState.lastSuccessAt}>{formatAuditTime(ctrl.personalSyncState.lastSuccessAt)}</time></>
+                      : "Ready to sync"
+                  : "No personal replica uploads"}
+              </span>
+            </div>
+            <div className="data-export-options">
+              {cloud.personal.enabled ? (
+                <>
+                  <button className="settings-control" type="button" onClick={() => void cloud.personal.syncNow()} disabled={cloud.personal.syncBusy}>
+                    <RefreshCw size={15} aria-hidden className={cloud.personal.syncBusy ? "spin" : undefined} />
+                    <span>{cloud.personal.syncBusy ? "Syncing…" : "Sync Web"}</span>
+                  </button>
+                  <button className="settings-control" type="button" onClick={() => ctrl.updatePersonalReplicaPolicy({ enabled: false })}>
+                    Turn Off
+                  </button>
+                </>
+              ) : (
+                <button
+                  className="primary-action"
+                  type="button"
+                  onClick={() => {
+                    const consentedAt = new Date().toISOString();
+                    ctrl.updatePersonalReplicaPolicy({ enabled: true, consentedAt });
+                  }}
+                >
+                  Enable Web workspace
+                </button>
+              )}
+            </div>
           </section>
 
           <section className="settings-row">

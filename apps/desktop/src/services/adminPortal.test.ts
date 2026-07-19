@@ -5,16 +5,22 @@ import {
   DEFAULT_ADMIN_PORTAL_PREFERENCES,
   DEFAULT_WEEKFORM_WEB_APP_URL,
   getAdminPortalPreferencesStorage,
-  getAdminPortalSignInUrl,
+  getManagerAccessSignInUrl,
+  getManagerModeMemberships,
   LOCAL_ADMIN_PORTAL_PREFERENCES_KEY,
   LOCAL_ADMIN_PORTAL_SESSION_KEY,
   readAdminPortalPreferences,
   readLocalAdminPortalSession,
+  resolveSettingsTab,
   resetAdminPortalPreferences,
   writeAdminPortalPreferences,
   writeLocalAdminPortalSession,
   MAX_MANAGER_COMPARISONS,
+  createInitialManagerWorkspaceState,
   filterManagerMembers,
+  getIndividualWorkspaceUrl,
+  getWeekformWebAppUrl,
+  managerWorkspaceReducer,
   toggleManagerComparison,
 } from "./adminPortal";
 
@@ -56,41 +62,126 @@ test("Manager Access filters the roster by query, team, category, and risk", () 
   );
 });
 
-test("Admin Portal opens the production web sign-in and returns to the portal", () => {
+test("Manager Access opens briefings and answers prompts from synthetic approved evidence", () => {
+  const initial = createInitialManagerWorkspaceState();
+  const briefing = managerWorkspaceReducer(initial, { type: "open-briefing" });
+  assert.equal(briefing.page, "agent");
+  assert.equal(briefing.mode, "manager");
+
+  const answered = managerWorkspaceReducer(briefing, {
+    type: "ask-agent",
+    prompt: "What can this team absorb next week?",
+  });
+  assert.equal(answered.agentPrompt, "What can this team absorb next week?");
+  assert.match(answered.agentAnswer ?? "", /approved snapshots/i);
+  assert.match(answered.agentAnswer ?? "", /small commitment/i);
+});
+
+test("Manager Access keeps coordination actions approval-gated and records the approved outcome", () => {
+  const initial = createInitialManagerWorkspaceState();
+  const staged = managerWorkspaceReducer(initial, {
+    type: "stage-action",
+    action: "Protect Thursday focus block",
+  });
+
+  assert.equal(staged.page, "agent");
+  assert.equal(staged.pendingAction, "Protect Thursday focus block");
+  assert.deepEqual(staged.activity, initial.activity);
+
+  const approved = managerWorkspaceReducer(staged, { type: "approve-action" });
+  assert.equal(approved.pendingAction, null);
+  assert.equal(approved.page, "history");
+  assert.equal(approved.activity[0]?.detail, "Protect Thursday focus block");
+  assert.equal(approved.activity[0]?.status, "Approved");
+});
+
+test("Manager Access can cancel a proposed action without changing coordination history", () => {
+  const initial = createInitialManagerWorkspaceState();
+  const staged = managerWorkspaceReducer(initial, {
+    type: "stage-action",
+    action: "Re-sequence launch support",
+  });
+  const canceled = managerWorkspaceReducer(staged, { type: "cancel-action" });
+
+  assert.equal(canceled.pendingAction, null);
+  assert.deepEqual(canceled.activity, initial.activity);
+});
+
+test("Manager Access builds working links to the personal workspace and production web app", () => {
+  assert.equal(
+    getIndividualWorkspaceUrl("account", "http://127.0.0.1:5174"),
+    "http://127.0.0.1:5174/?demo=1&screen=setup&settings=account",
+  );
+  assert.equal(
+    getWeekformWebAppUrl("/dashboard", "https://staging.weekform.example/base"),
+    "https://staging.weekform.example/dashboard",
+  );
+  assert.equal(
+    getWeekformWebAppUrl("/dashboard", "javascript:alert(1)"),
+    `${DEFAULT_WEEKFORM_WEB_APP_URL}/dashboard`,
+  );
+  assert.equal(
+    getWeekformWebAppUrl("//outside.example/dashboard"),
+    `${DEFAULT_WEEKFORM_WEB_APP_URL}/`,
+  );
+});
+
+test("personal workspace links accept only known settings tabs", () => {
+  assert.equal(resolveSettingsTab("account"), "account");
+  assert.equal(resolveSettingsTab("ai-assistance"), "ai-assistance");
+  assert.equal(resolveSettingsTab("unknown"), null);
+  assert.equal(resolveSettingsTab(null), null);
+});
+
+test("Manager Access opens the production web sign-in and returns to the web app surface", () => {
   assert.equal(DEFAULT_WEEKFORM_WEB_APP_URL, "https://weekform.dev");
   assert.equal(
-    getAdminPortalSignInUrl(),
-    `${DEFAULT_WEEKFORM_WEB_APP_URL}/login?next=%2Fadmin`
+    getManagerAccessSignInUrl(),
+    `${DEFAULT_WEEKFORM_WEB_APP_URL}/login?next=%2Fmanager-access`
   );
 });
 
-test("Admin Portal supports a configured staging web origin", () => {
+test("Manager Access supports a configured staging web origin", () => {
   assert.equal(
-    getAdminPortalSignInUrl(" https://staging.weekform.example/base/path/ "),
-    "https://staging.weekform.example/login?next=%2Fadmin"
+    getManagerAccessSignInUrl(" https://staging.weekform.example/base/path/ "),
+    "https://staging.weekform.example/login?next=%2Fmanager-access"
   );
 });
 
-test("Admin Portal uses the current local origin during development", () => {
+test("Manager Access uses the current local origin during development", () => {
   assert.equal(
-    getAdminPortalSignInUrl("https://weekform.com", {
+    getManagerAccessSignInUrl("https://weekform.com", {
       isDevelopment: true,
       currentOrigin: "http://127.0.0.1:5174"
     }),
-    "http://127.0.0.1:5174/admin"
+    "http://127.0.0.1:5174/manager-access"
   );
 });
 
-test("Admin Portal rejects non-web and malformed configured origins", () => {
+test("Manager Access rejects non-web and malformed configured origins", () => {
   for (const unsafeOrigin of ["javascript:alert(1)", "file:///tmp/weekform", "not a url"]) {
     assert.equal(
-      getAdminPortalSignInUrl(unsafeOrigin),
-      `${DEFAULT_WEEKFORM_WEB_APP_URL}/login?next=%2Fadmin`
+      getManagerAccessSignInUrl(unsafeOrigin),
+      `${DEFAULT_WEEKFORM_WEB_APP_URL}/login?next=%2Fmanager-access`
     );
   }
 });
 
-test("local Admin Portal authentication persists only in the current browser tab", () => {
+test("desktop Manager Mode is available only from authenticated owner or manager memberships", () => {
+  const memberships = [
+    { teamId: "member-team", teamName: "Member team", role: "member" as const, sharePolicy: null },
+    { teamId: "managed-team", teamName: "Managed team", role: "manager" as const, sharePolicy: null },
+    { teamId: "owned-team", teamName: "Owned team", role: "owner" as const, sharePolicy: null },
+  ];
+
+  assert.deepEqual(
+    getManagerModeMemberships(memberships).map(({ teamId }) => teamId),
+    ["managed-team", "owned-team"],
+  );
+  assert.deepEqual(getManagerModeMemberships(memberships.slice(0, 1)), []);
+});
+
+test("local Manager Access authentication persists only in the current browser tab", () => {
   const values = new Map<string, string>();
   const storage = {
     getItem(key: string) {
@@ -112,7 +203,7 @@ test("local Admin Portal authentication persists only in the current browser tab
   assert.equal(readLocalAdminPortalSession(storage), false);
 });
 
-test("local Admin Portal authentication fails closed when session storage is unavailable", () => {
+test("local Manager Access authentication fails closed when session storage is unavailable", () => {
   const blockedStorage = {
     getItem() {
       throw new Error("blocked");
@@ -130,7 +221,7 @@ test("local Admin Portal authentication fails closed when session storage is una
   assert.equal(writeLocalAdminPortalSession(blockedStorage, false), false);
 });
 
-test("Admin Portal preferences round-trip through local display storage", () => {
+test("Manager Access preferences round-trip through local display storage", () => {
   const values = new Map<string, string>();
   const storage = {
     getItem(key: string) {
@@ -157,7 +248,7 @@ test("Admin Portal preferences round-trip through local display storage", () => 
   assert.deepEqual(readAdminPortalPreferences(storage), DEFAULT_ADMIN_PORTAL_PREFERENCES);
 });
 
-test("Admin Portal preferences recover from partial, malformed, and unsupported values", () => {
+test("Manager Access preferences recover from partial, malformed, and unsupported values", () => {
   const storedValues = [
     JSON.stringify({ theme: "light", accent: "unknown", density: "compact" }),
     "not-json",
@@ -181,7 +272,7 @@ test("Admin Portal preferences recover from partial, malformed, and unsupported 
   }
 });
 
-test("Admin Portal preferences fail safely when browser storage is unavailable", () => {
+test("Manager Access preferences fail safely when browser storage is unavailable", () => {
   const blockedStorage = {
     getItem() {
       throw new Error("blocked");

@@ -3,6 +3,10 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { WeekformMark } from "@/components/WeekformMark";
+import { productEntry, type ProductEntry } from "@/lib/productEntry";
+
+const WEB_ENTRY = productEntry("web");
+const MAC_ENTRY = productEntry("mac");
 
 const WEEK_ROWS = [
   {
@@ -67,7 +71,7 @@ function SignalWave({ className, id }: { className?: string; id: string }) {
         <linearGradient id={id} x1="0" x2="1">
           <stop offset="0" stopColor="var(--signal-blue)" />
           <stop offset="0.52" stopColor="var(--signal-green)" />
-          <stop offset="1" stopColor="var(--signal-violet)" />
+          <stop offset="1" stopColor="var(--signal-neutral)" />
         </linearGradient>
       </defs>
       <g className="signal-grid">
@@ -185,7 +189,7 @@ function ProductStage() {
             <div className="stage-metrics">
               <div data-tone="blue"><small>Planned load</small><strong>22h</strong><i style={{ width: "55%" }} /></div>
               <div data-tone="orange"><small>Reactive work</small><strong>7h</strong><i style={{ width: "36%" }} /></div>
-              <div data-tone="violet"><small>Carryover</small><strong>4.5h</strong><i style={{ width: "24%" }} /></div>
+              <div data-tone="neutral"><small>Carryover</small><strong>4.5h</strong><i style={{ width: "24%" }} /></div>
               <div data-tone="green"><small>New-work capacity</small><strong>6.5h</strong><i style={{ width: "41%" }} /></div>
             </div>
 
@@ -221,6 +225,33 @@ function ProductStage() {
   );
 }
 
+function EntryChoice({ entry }: { entry: ProductEntry }) {
+  return (
+    <article className={`entry-choice is-${entry.id}`}>
+      <div className="entry-choice-heading">
+        <span className="entry-choice-index mono">{entry.id === "web" ? "WEB" : "MAC"}</span>
+        <span className="entry-choice-eyebrow">{entry.eyebrow}</span>
+      </div>
+      <h3>{entry.title}</h3>
+      <p className="entry-choice-description">{entry.description}</p>
+      <div className="entry-choice-scope">
+        <strong>Available here</strong>
+        <p>{entry.capabilities}</p>
+      </div>
+      <p className="entry-choice-limit">
+        <span>Boundary</span>
+        {entry.limitations}
+      </p>
+      <Link
+        href={entry.href}
+        className={entry.id === "web" ? "button button-primary" : "button button-secondary"}
+      >
+        {entry.action} <span aria-hidden="true">→</span>
+      </Link>
+    </article>
+  );
+}
+
 export default function LandingPage() {
   return (
     <>
@@ -240,11 +271,11 @@ export default function LandingPage() {
               capacity, delivery risk, and the tradeoffs behind your next commitment.
             </p>
             <div className="hero-actions">
-              <Link href="/signup" className="button button-primary button-large">
-                Create an account <span aria-hidden="true">→</span>
+              <Link href={WEB_ENTRY.href} className="button button-primary button-large">
+                {WEB_ENTRY.action} <span aria-hidden="true">→</span>
               </Link>
-              <Link href="#product" className="button button-secondary button-large">
-                See the evidence loop
+              <Link href={MAC_ENTRY.href} className="button button-secondary button-large">
+                {MAC_ENTRY.action}
               </Link>
             </div>
             <div className="hero-assurances" aria-label="Weekform product principles">
@@ -255,6 +286,31 @@ export default function LandingPage() {
           </div>
           <div className="container hero-product-stage">
             <ProductStage />
+          </div>
+        </section>
+
+        <section className="entry-section section container" aria-labelledby="entry-title">
+          <div className="section-intro entry-section-intro">
+            <p className="section-kicker mono">Two places · one privacy boundary</p>
+            <h2 className="section-title" id="entry-title">Choose where you work.</h2>
+            <p className="section-lede">
+              Open the browser workspace for shared decisions, or use the Mac app
+              for the complete local evidence loop. Your raw activity does not
+              move between them.
+            </p>
+          </div>
+          <div className="entry-choice-grid">
+            <EntryChoice entry={WEB_ENTRY} />
+            <div className="entry-boundary" aria-label="Only approved workload snapshots cross between the Mac app and web workspace">
+              <span className="entry-boundary-line" aria-hidden="true" />
+              <div>
+                <span className="entry-boundary-mark" aria-hidden="true">✓</span>
+                <strong>Approved summaries only</strong>
+                <small>Raw activity stays local</small>
+              </div>
+              <span className="entry-boundary-line" aria-hidden="true" />
+            </div>
+            <EntryChoice entry={MAC_ENTRY} />
           </div>
         </section>
 
@@ -388,8 +444,8 @@ export default function LandingPage() {
               <p>Review what happened. Know what fits before you commit. Make the call with evidence.</p>
             </div>
             <div className="closing-actions">
-              <Link href="/signup" className="button button-primary button-large">Get Weekform <span aria-hidden="true">→</span></Link>
-              <Link href="/login" className="button button-secondary button-large">Sign in</Link>
+              <Link href={WEB_ENTRY.href} className="button button-primary button-large">{WEB_ENTRY.action} <span aria-hidden="true">→</span></Link>
+              <Link href={MAC_ENTRY.href} className="button button-secondary button-large">{MAC_ENTRY.action}</Link>
             </div>
           </div>
         </section>
@@ -399,7 +455,7 @@ export default function LandingPage() {
             <h2 id="disclosure-title">Honest prototype disclosure</h2>
             <ul>
               <li>Weekform is a working OpenAI Build Week 2026 prototype, not a finished commercial product.</li>
-              <li>Capacity weights are heuristics and local desktop storage is currently unencrypted.</li>
+              <li>Capacity weights are heuristics. Raw native capture uses an encrypted journal, while other prototype desktop state remains unencrypted.</li>
               <li>Outlook import is manual; Visual Context can capture the full screen only when explicitly enabled.</li>
               <li>Public examples and the interface above use synthetic data.</li>
             </ul>

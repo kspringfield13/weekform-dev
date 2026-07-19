@@ -16,13 +16,11 @@ function productionSources(directory: string): string[] {
   });
 }
 
-test("production web source has no browser workload persistence or browser Supabase client", () => {
+test("production web source has no browser workload persistence", () => {
   const forbidden = [
     /\blocalStorage\b/,
     /\bsessionStorage\b/,
     /\bindexedDB\b/i,
-    /\bcreateBrowserClient\b/,
-    /["']@\/lib\/supabase\/client["']/,
   ];
   const violations: string[] = [];
 
@@ -40,10 +38,8 @@ test("production web source has no browser workload persistence or browser Supab
   assert.deepEqual(violations, []);
 });
 
-test("client components cannot import Supabase or server workload data modules", () => {
+test("client components can use only the ephemeral Realtime client, never server workload modules", () => {
   const forbiddenClientImports = [
-    /from\s+["']@supabase\//,
-    /from\s+["']@\/lib\/supabase\//,
     /from\s+["']@\/lib\/(?:actions|profile|snapshots|teams)["']/,
   ];
   const violations: string[] = [];
@@ -62,6 +58,9 @@ test("client components cannot import Supabase or server workload data modules",
   }
 
   assert.deepEqual(violations, []);
+  const realtime = readFileSync(path.join(WEB_ROOT, "components/PersonalReplicaRealtime.tsx"), "utf8");
+  assert.match(realtime, /@\/lib\/supabase\/browser/);
+  assert.doesNotMatch(realtime, /localStorage|sessionStorage|indexedDB/i);
 });
 
 test("request-fresh coordinator is mounted on both authenticated workload surfaces", () => {

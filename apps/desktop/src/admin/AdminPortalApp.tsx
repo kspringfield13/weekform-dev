@@ -46,12 +46,6 @@ const THEME_OPTIONS = [
   { value: "light", label: "Light", icon: Sun }
 ] as const;
 
-const ACCENT_OPTIONS = [
-  { value: "iris", label: "Weekform" },
-  { value: "cobalt", label: "Cobalt" },
-  { value: "ember", label: "Ember" }
-] as const;
-
 type PreferenceStatus = "idle" | "saved" | "memory-only";
 
 interface AdminPortalHeaderProps {
@@ -149,7 +143,7 @@ function AdminPortalSettings({
         <section className="admin-settings-section" aria-labelledby="admin-settings-theme">
           <div className="admin-settings-heading">
             <h3 id="admin-settings-theme">Theme</h3>
-            <span>Portal only</span>
+            <span>Manager Access only</span>
           </div>
           <div className="admin-theme-options">
             {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
@@ -163,29 +157,6 @@ function AdminPortalSettings({
                 <Icon size={16} aria-hidden />
                 <span>{label}</span>
                 {preferences.theme === value && <Check size={13} aria-hidden />}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="admin-settings-section" aria-labelledby="admin-settings-accent">
-          <div className="admin-settings-heading">
-            <h3 id="admin-settings-accent">Accent</h3>
-            <span>Signal color</span>
-          </div>
-          <div className="admin-accent-options">
-            {ACCENT_OPTIONS.map(({ value, label }) => (
-              <button
-                aria-pressed={preferences.accent === value}
-                className="admin-accent-option"
-                data-accent-preview={value}
-                key={value}
-                onClick={() => onUpdate({ accent: value })}
-                type="button"
-              >
-                <span className="admin-accent-swatch" aria-hidden />
-                <span>{label}</span>
-                {preferences.accent === value && <Check size={13} aria-hidden />}
               </button>
             ))}
           </div>
@@ -258,7 +229,6 @@ function AdminPortalShell({
   return (
     <main
       className="admin-portal-shell"
-      data-admin-accent={preferences.accent}
       data-admin-density={preferences.density}
       data-admin-motion={preferences.ambientMotion ? "on" : "off"}
       data-admin-theme={preferences.theme}
@@ -287,7 +257,7 @@ function SpanSignal() {
   );
 }
 
-export function AdminPortalRoot() {
+export function ManagerAccessRoot() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -392,7 +362,6 @@ export function AdminPortalRoot() {
     return (
       <main
         className="admin-portal-shell"
-        data-admin-accent={preferences.accent}
         data-admin-density={preferences.density}
         data-admin-motion={preferences.ambientMotion ? "on" : "off"}
         data-admin-theme={preferences.theme}

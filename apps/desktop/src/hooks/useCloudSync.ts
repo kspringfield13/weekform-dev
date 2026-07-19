@@ -1,9 +1,11 @@
 // Manual "Sync Now" for the Account & Sharing surface.
 //
-// THE RULE (cloud.ts): the only object that ever leaves this device is the
-// `SharedWorkloadSnapshotV1` built by the shared allowlist builder in
+// THE TEAM-SHARING RULE (cloud.ts): the only object this team path uploads is
+// `SharedWorkloadSnapshotV1`, built by the shared allowlist builder in
 // `packages/inference/src/sharedSnapshot.ts` — this hook never assembles a second
 // payload, and the JSON preview the user consents to IS the uploaded object.
+// User-private Web sync is a distinct positive-allowlist contract owned by
+// `usePersonalCloudSync`; neither path can serialize desktop state directly.
 // The clientSnapshotId is reserved per content fingerprint in local storage, so a
 // retry of the same approved content reuses the same id and the server upserts
 // instead of duplicating.
@@ -46,6 +48,7 @@ import {
   reconcileRemoteSnapshot
 } from "../services/cloudReconciliation";
 import type { CloudAccountController } from "./useCloudAccount";
+import type { PersonalCloudSyncController } from "./usePersonalCloudSync";
 
 export interface CloudSyncController {
   /** The exact payload (or typed rejection) for the current policy + reviewed data. */
@@ -568,4 +571,5 @@ export function useCloudSync({
 export interface CloudController {
   account: CloudAccountController;
   sync: CloudSyncController;
+  personal: PersonalCloudSyncController;
 }

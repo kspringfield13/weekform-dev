@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
   ArrowRight,
   BarChart3,
@@ -13,6 +13,7 @@ import {
   FileClock,
   FlaskConical,
   Gauge,
+  Globe2,
   History,
   LayoutDashboard,
   LogOut,
@@ -27,14 +28,19 @@ import {
 import { WeekformMark } from "../components/common/WeekformMark";
 import {
   filterManagerMembers,
+  getIndividualWorkspaceUrl,
+  getWeekformWebAppUrl,
+  managerWorkspaceReducer,
   MAX_MANAGER_COMPARISONS,
+  createInitialManagerWorkspaceState,
   toggleManagerComparison,
+  type ManagerWorkspaceActivity,
+  type ManagerWorkspaceHistoryPeriod,
+  type ManagerWorkspaceMode,
+  type ManagerWorkspacePage,
   type ManagerRosterFilters,
   type ManagerRosterMember,
 } from "../services/adminPortal";
-
-type ManagerPage = "today" | "week" | "agent" | "history" | "settings";
-type AccessMode = "individual" | "manager";
 
 interface DemoMember extends ManagerRosterMember {
   initials: string;
@@ -69,7 +75,7 @@ const NAV_ITEMS = [
   { id: "history" as const, label: "History", description: "Ledger and audit trail", icon: History },
 ];
 
-const PAGE_COPY: Record<ManagerPage, { individual: [string, string]; manager: [string, string] }> = {
+const PAGE_COPY: Record<ManagerWorkspacePage, { individual: [string, string]; manager: [string, string] }> = {
   today: {
     individual: ["Today", "Review your evidence and decide what deserves attention."],
     manager: ["Today across your teams", "Triage shared workload signals without ranking people."],
@@ -99,13 +105,30 @@ const METRICS = [
   { label: "Needs attention", value: "2", note: "Fresh, member-approved signals", tone: "attention" },
 ];
 
-function MetricCards({ individual = false }: { individual?: boolean }) {
+function median(values: number[]): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+}
+
+function MetricCards({ individual = false, members = MEMBERS }: { individual?: boolean; members?: DemoMember[] }) {
+  if (!members.length && !individual) {
+    return <div className="manager-empty"><Search size={20} aria-hidden /><strong>No approved summaries match</strong><span>Adjust the filters to restore the team view. Missing values are never treated as zero.</span></div>;
+  }
+  const capacityValues = members.map((member) => member.capacity);
+  const focusValues = members.map((member) => member.focusHours);
   const items = individual ? [
     { label: "Reliable capacity", value: "31%", note: "12.4 hours can absorb new work", tone: "positive" },
     { label: "Reactive load", value: "24%", note: "2 pts lower than last week", tone: "neutral" },
     { label: "Protected focus", value: "15.6h", note: "Three uninterrupted blocks", tone: "positive" },
     { label: "Review coverage", value: "96%", note: "2 blocks still need review", tone: "watch" },
-  ] : METRICS;
+  ] : members.length === MEMBERS.length ? METRICS : [
+    { label: "Median reliable capacity", value: `${Math.round(median(capacityValues))}%`, note: `${members.length} matching · range ${Math.min(...capacityValues)}–${Math.max(...capacityValues)}%`, tone: "neutral" },
+    { label: "Reactive load", value: `${Math.round(median(members.map((member) => member.reactive)))}%`, note: "Median of the current filter", tone: "watch" },
+    { label: "Protected focus", value: `${median(focusValues).toFixed(1)}h`, note: `Range ${Math.min(...focusValues).toFixed(1)}–${Math.max(...focusValues).toFixed(1)}h`, tone: "positive" },
+    { label: "Needs attention", value: String(members.filter((member) => member.risk === "attention").length), note: "Fresh, member-approved signals", tone: "attention" },
+  ];
   return <div className="manager-metric-grid">{items.map((item) => (
     <article className={`manager-metric is-${item.tone}`} key={item.label}>
       <span>{item.label}</span><strong>{item.value}</strong><small>{item.note}</small>
@@ -113,7 +136,7 @@ function MetricCards({ individual = false }: { individual?: boolean }) {
   ))}</div>;
 }
 
-function ModeToggle({ mode, onChange }: { mode: AccessMode; onChange: (mode: AccessMode) => void }) {
+function ModeToggle({ mode, onChange }: { mode: ManagerWorkspaceMode; onChange: (mode: ManagerWorkspaceMode) => void }) {
   return (
     <div className="manager-mode-control" aria-label="Weekform view mode">
       <button aria-pressed={mode === "individual"} onClick={() => onChange("individual")} type="button">
@@ -126,18 +149,41 @@ function ModeToggle({ mode, onChange }: { mode: AccessMode; onChange: (mode: Acc
   );
 }
 
-function IndividualPage({ page }: { page: ManagerPage }) {
+function IndividualPage({
+  agentAnswer,
+  agentPrompt,
+  page,
+  settingsUrls,
+  onAsk,
+}: {
+  agentAnswer: string | null;
+  agentPrompt: string;
+  page: ManagerWorkspacePage;
+  settingsUrls: Record<"account" | "data-control" | "ai-assistance" | "notifications", string>;
+  onAsk: (prompt: string) => void;
+}) {
+  const [question, setQuestion] = useState("");
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const submitQuestion = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!question.trim()) return;
+    onAsk(question);
+    setQuestion("");
+  };
+
   if (page === "agent") return (
     <div className="manager-two-column">
       <section className="manager-card manager-agent-card">
         <span className="manager-kicker"><Bot size={13} aria-hidden /> Evidence-aware assistance</span>
         <h2>What can I help you decide?</h2>
         <div className="manager-prompt-list">
-          <button type="button">What can I reliably commit to next week?<ChevronRight size={15} /></button>
-          <button type="button">Why was my focus fragmented?<ChevronRight size={15} /></button>
-          <button type="button">Draft my weekly summary.<ChevronRight size={15} /></button>
+          {["What can I reliably commit to next week?", "Why was my focus fragmented?", "Draft my weekly summary."].map((prompt) => (
+            <button key={prompt} onClick={() => onAsk(prompt)} type="button">{prompt}<ChevronRight size={15} /></button>
+          ))}
         </div>
-        <label className="manager-agent-input"><span className="sr-only">Ask Weekform Agent</span><input placeholder="Ask about your reviewed week…" /><button type="button"><ArrowRight size={15} /></button></label>
+        <form className="manager-agent-input" onSubmit={submitQuestion}><label className="sr-only" htmlFor="individual-agent-question">Ask Weekform Agent</label><input id="individual-agent-question" onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about your reviewed week…" value={question} /><button aria-label="Ask Weekform Agent" disabled={!question.trim()} type="submit"><ArrowRight size={15} /></button></form>
+        {agentAnswer && <div className="manager-agent-response" aria-live="polite"><small>{agentPrompt}</small><p>{agentAnswer}</p></div>}
       </section>
       <aside className="manager-card"><span className="manager-kicker">Evidence available</span><h3>Strong grounding</h3><p>34 reviewed blocks · 96% coverage · 4 source types</p><div className="manager-evidence-bars"><span style={{ width: "96%" }} /><span style={{ width: "72%" }} /><span style={{ width: "84%" }} /></div></aside>
     </div>
@@ -146,11 +192,11 @@ function IndividualPage({ page }: { page: ManagerPage }) {
   if (page === "settings") return (
     <div className="manager-settings-list">
       {[
-        ["Account & sharing", "Choose exactly what one team can see. Sharing remains off until you approve it."],
-        ["Data control", "Pause capture, set retention, export, or reset local prototype data."],
-        ["AI assistance", "Choose a provider and review when work metadata may leave this device."],
-        ["Notifications", "Control local reminders and proactive capacity alerts."],
-      ].map(([title, copy]) => <section className="manager-settings-row" key={title}><div><h3>{title}</h3><p>{copy}</p></div><button type="button">Open <ChevronRight size={14} /></button></section>)}
+        ["Account & sharing", "Choose exactly what one team can see. Sharing remains off until you approve it.", settingsUrls.account],
+        ["Data control", "Pause capture, set retention, export, or reset local prototype data.", settingsUrls["data-control"]],
+        ["AI assistance", "Choose a provider and review when work metadata may leave this device.", settingsUrls["ai-assistance"]],
+        ["Notifications", "Control local reminders and proactive capacity alerts.", settingsUrls.notifications],
+      ].map(([title, copy, href]) => <section className="manager-settings-row" key={title}><div><h3>{title}</h3><p>{copy}</p></div><a href={href}>Open <ChevronRight size={14} /></a></section>)}
     </div>
   );
 
@@ -159,14 +205,16 @@ function IndividualPage({ page }: { page: ManagerPage }) {
       <MetricCards individual />
       <div className="manager-two-column">
         <section className="manager-card">
-          <div className="manager-card-heading"><div><span className="manager-kicker">{page === "history" ? "Reviewed truth" : "This week"}</span><h2>{page === "history" ? "Recent activity" : "Allocation"}</h2></div><button type="button">View detail</button></div>
+          <div className="manager-card-heading"><div><span className="manager-kicker">{page === "history" ? "Reviewed truth" : "This week"}</span><h2>{page === "history" ? "Recent activity" : "Allocation"}</h2></div><button aria-expanded={detailOpen} onClick={() => setDetailOpen(!detailOpen)} type="button">{detailOpen ? "Hide detail" : "View detail"}</button></div>
           <div className="manager-allocation-list">
             {[ ["Planned delivery", 38], ["Analysis", 27], ["Reactive work", 24], ["Meetings", 11] ].map(([label, value]) => <div key={String(label)}><span>{label}</span><i><b style={{ width: `${value}%` }} /></i><strong>{value}%</strong></div>)}
           </div>
+          {detailOpen && <div className="manager-inline-detail"><strong>Allocation evidence</strong><p>34 reviewed blocks across calendar, foreground apps, local imports, and user corrections. Two reactive blocks remain provisional.</p></div>}
         </section>
         <section className="manager-card">
           <span className="manager-kicker">Decision support</span><h2>{page === "today" ? "Two items need review" : "Capacity is stabilizing"}</h2><p>Review the remaining reactive blocks before using this week as your next commitment baseline.</p>
-          <button className="manager-primary-button" type="button">Open weekly review <ArrowRight size={14} /></button>
+          <button aria-expanded={reviewOpen} className="manager-primary-button" onClick={() => setReviewOpen(!reviewOpen)} type="button">{reviewOpen ? "Close weekly review" : "Open weekly review"} <ArrowRight size={14} /></button>
+          {reviewOpen && <div className="manager-review-checklist" aria-live="polite"><span><Check size={13} /> 32 blocks reviewed</span><span><Clock3 size={13} /> 2 reactive blocks pending</span><span><ShieldCheck size={13} /> Sharing remains unchanged</span></div>}
         </section>
       </div>
     </>
@@ -235,76 +283,128 @@ function ComparisonTable({ members }: { members: DemoMember[] }) {
   );
 }
 
-function ManagerWeek({ members }: { members: DemoMember[] }) {
-  return <><MetricCards /><div className="manager-two-column manager-week-grid"><section className="manager-card"><div className="manager-card-heading"><div><span className="manager-kicker">Distribution</span><h2>Capacity bands</h2></div><span>12 fresh snapshots</span></div><div className="manager-band-chart"><div><span>Healthy headroom</span><b><i style={{ width: "33%" }} /></b><strong>4</strong></div><div><span>Watch</span><b><i style={{ width: "50%" }} /></b><strong>6</strong></div><div><span>Needs attention</span><b><i style={{ width: "17%" }} /></b><strong>2</strong></div></div></section><section className="manager-card"><span className="manager-kicker">Allocation mix</span><h2>What consumed the team’s week</h2><div className="manager-donut-layout"><div className="manager-donut" aria-label="Allocation: delivery 36%, analysis 27%, coordination 22%, research 15%"><span><strong>12</strong><small>sharing</small></span></div><ul><li><i className="one" />Delivery <b>36%</b></li><li><i className="two" />Analysis <b>27%</b></li><li><i className="three" />Coordination <b>22%</b></li><li><i className="four" />Research <b>15%</b></li></ul></div></section></div><ComparisonTable members={members} /></>;
+function ManagerWeek({ selectedMembers, scopeMembers }: { selectedMembers: DemoMember[]; scopeMembers: DemoMember[] }) {
+  const healthy = scopeMembers.filter((member) => member.risk === "stable").length;
+  const watch = scopeMembers.filter((member) => member.risk === "watch").length;
+  const attention = scopeMembers.filter((member) => member.risk === "attention").length;
+  const denominator = Math.max(scopeMembers.length, 1);
+  return <><MetricCards members={scopeMembers} /><div className="manager-two-column manager-week-grid"><section className="manager-card"><div className="manager-card-heading"><div><span className="manager-kicker">Distribution</span><h2>Capacity bands</h2></div><span>{scopeMembers.length} matching snapshots</span></div><div className="manager-band-chart"><div><span>Healthy headroom</span><b><i style={{ width: `${healthy / denominator * 100}%` }} /></b><strong>{healthy}</strong></div><div><span>Watch</span><b><i style={{ width: `${watch / denominator * 100}%` }} /></b><strong>{watch}</strong></div><div><span>Needs attention</span><b><i style={{ width: `${attention / denominator * 100}%` }} /></b><strong>{attention}</strong></div></div></section><section className="manager-card"><span className="manager-kicker">Allocation mix</span><h2>What consumed the team’s week</h2><div className="manager-donut-layout"><div className="manager-donut" aria-label="Allocation: delivery 36%, analysis 27%, coordination 22%, research 15%"><span><strong>{scopeMembers.length}</strong><small>matching</small></span></div><ul><li><i className="one" />Delivery <b>36%</b></li><li><i className="two" />Analysis <b>27%</b></li><li><i className="three" />Coordination <b>22%</b></li><li><i className="four" />Research <b>15%</b></li></ul></div></section></div><ComparisonTable members={selectedMembers} /></>;
 }
 
-function ManagerToday({ members, allMembers, selectedIds, onToggle }: { members: DemoMember[]; allMembers: DemoMember[]; selectedIds: string[]; onToggle: (id: string) => void }) {
-  return <><div className="manager-alert-strip"><CircleAlert size={16} aria-hidden /><div><strong>Two fresh signals need coordination</strong><span>Ines and Amina share low reliable capacity with rising reactive load. Review context before proposing a change.</span></div><button type="button">Open briefing</button></div><MetricCards /><div className="manager-roster-layout"><MemberRoster members={allMembers} selectedIds={selectedIds} onToggle={onToggle} /><aside className="manager-card manager-priority-card"><span className="manager-kicker">Coordination queue</span><h2>Three decisions today</h2>{[["Protect Thursday focus block", "Insights", "High leverage"], ["Re-sequence launch support", "Operations", "Needs owner"], ["Review Platform intake", "Platform", "By 3 PM"]].map(([title, team, note]) => <button key={title} type="button"><span><strong>{title}</strong><small>{team}</small></span><em>{note}</em><ChevronRight size={14} /></button>)}</aside></div><ComparisonTable members={members} /></>;
+function ManagerToday({ members, allMembers, selectedIds, onOpenBriefing, onStageAction, onToggle }: { members: DemoMember[]; allMembers: DemoMember[]; selectedIds: string[]; onOpenBriefing: () => void; onStageAction: (action: string) => void; onToggle: (id: string) => void }) {
+  return <><div className="manager-alert-strip"><CircleAlert size={16} aria-hidden /><div><strong>Two fresh signals need coordination</strong><span>Ines and Amina share low reliable capacity with rising reactive load. Review context before proposing a change.</span></div><button onClick={onOpenBriefing} type="button">Open briefing</button></div><MetricCards members={allMembers} /><div className="manager-roster-layout"><MemberRoster members={allMembers} selectedIds={selectedIds} onToggle={onToggle} /><aside className="manager-card manager-priority-card"><span className="manager-kicker">Coordination queue</span><h2>Three decisions today</h2>{[["Protect Thursday focus block", "Insights", "High leverage"], ["Re-sequence launch support", "Operations", "Needs owner"], ["Review Platform intake", "Platform", "By 3 PM"]].map(([title, team, note]) => <button key={title} onClick={() => onStageAction(title)} type="button"><span><strong>{title}</strong><small>{team}</small></span><em>{note}</em><ChevronRight size={14} /></button>)}</aside></div><ComparisonTable members={members} /></>;
 }
 
-function ManagerAgent() {
-  return <div className="manager-agent-layout"><section className="manager-card manager-briefing"><span className="manager-kicker"><Bot size={13} aria-hidden /> Grounded in 12 approved snapshots</span><h2>Protect focus before accepting the new reporting request.</h2><p>Two contributors show fresh low-headroom signals, while Insights has the widest reactive-load spread. The team median still supports a small commitment if Thursday focus blocks remain protected.</p><div className="manager-evidence-grid"><div><strong>2</strong><span>low-headroom signals</span></div><div><strong>+6 pts</strong><span>Insights reactive spread</span></div><div><strong>27%</strong><span>team median capacity</span></div></div><details open><summary>Evidence and uncertainty <ChevronDown size={14} /></summary><p>Based on member-approved weekly summaries from 12 of 14 ICs. Two non-sharing members are excluded; their values remain unknown.</p></details><div className="manager-briefing-actions"><button className="manager-primary-button" type="button">Propose coordination action</button><button type="button">Ask a follow-up</button></div></section><aside className="manager-card"><span className="manager-kicker">Suggested questions</span><div className="manager-prompt-list"><button type="button">What can this team absorb next week?<ChevronRight size={14} /></button><button type="button">Where is reactive load rising?<ChevronRight size={14} /></button><button type="button">Compare the selected ICs.<ChevronRight size={14} /></button><button type="button">Draft a team summary.<ChevronRight size={14} /></button></div><p className="manager-boundary-note"><ShieldCheck size={13} /> Agent output is guidance, not observed fact. Actions remain approval-gated.</p></aside></div>;
+function ManagerAgent({ answer, prompt, onAsk, onStageAction }: { answer: string | null; prompt: string; onAsk: (prompt: string) => void; onStageAction: (action: string) => void }) {
+  const [question, setQuestion] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!question.trim()) return;
+    onAsk(question);
+    setQuestion("");
+  };
+  const suggestions = ["What can this team absorb next week?", "Where is reactive load rising?", "Compare the selected ICs.", "Draft a team summary."];
+  return <div className="manager-agent-layout"><section className="manager-card manager-briefing"><span className="manager-kicker"><Bot size={13} aria-hidden /> Grounded in 12 approved snapshots</span><h2>{answer && prompt ? prompt : "Protect focus before accepting the new reporting request."}</h2><p aria-live="polite">{answer ?? "Two contributors show fresh low-headroom signals, while Insights has the widest reactive-load spread. The team median still supports a small commitment if Thursday focus blocks remain protected."}</p><div className="manager-evidence-grid"><div><strong>2</strong><span>low-headroom signals</span></div><div><strong>+6 pts</strong><span>Insights reactive spread</span></div><div><strong>27%</strong><span>team median capacity</span></div></div><details open><summary>Evidence and uncertainty <ChevronDown size={14} /></summary><p>Based on member-approved weekly summaries from 12 of 14 ICs. Two non-sharing members are excluded; their values remain unknown.</p></details><form className="manager-agent-input manager-followup-input" onSubmit={submit}><label className="sr-only" htmlFor="manager-agent-question">Ask a manager follow-up</label><input id="manager-agent-question" onChange={(event) => setQuestion(event.target.value)} placeholder="Ask about approved team signals…" ref={inputRef} value={question} /><button aria-label="Ask manager follow-up" disabled={!question.trim()} type="submit"><ArrowRight size={15} /></button></form><div className="manager-briefing-actions"><button className="manager-primary-button" onClick={() => onStageAction("Protect Thursday focus block")} type="button">Propose coordination action</button><button onClick={() => inputRef.current?.focus()} type="button">Ask a follow-up</button></div></section><aside className="manager-card"><span className="manager-kicker">Suggested questions</span><div className="manager-prompt-list">{suggestions.map((suggestion) => <button key={suggestion} onClick={() => onAsk(suggestion)} type="button">{suggestion}<ChevronRight size={14} /></button>)}</div><p className="manager-boundary-note"><ShieldCheck size={13} /> Agent output is guidance, not observed fact. Actions remain approval-gated.</p></aside></div>;
 }
 
-function ManagerHistory() {
-  return <><div className="manager-history-timeline">{[
-    ["Today · 10:42", "Manager action proposed", "Protect Thursday focus block", "Awaiting approval"],
-    ["Today · 09:15", "Team snapshots refreshed", "12 of 14 members sharing", "Completed"],
-    ["Friday · 16:30", "Weekly review closed", "Median capacity rose 3 points", "Observed"],
-    ["Thursday · 14:05", "Share policy updated", "Projects narrowed to categories", "Audited"],
-  ].map(([time, title, detail, status]) => <article key={time}><time>{time}</time><span className="manager-timeline-dot" /><div><strong>{title}</strong><p>{detail}</p></div><em>{status}</em></article>)}</div><section className="manager-card"><div className="manager-card-heading"><div><span className="manager-kicker">What changed after</span><h2>Coordination follow-through</h2></div><select aria-label="History period"><option>Last 4 weeks</option><option>Last 12 weeks</option></select></div><div className="manager-followthrough"><div><strong>Protect Insights focus window</strong><span>Reliable capacity median</span><b>+5 pts</b><small>Correlation across 3 later weeks</small></div><div><strong>Rotate launch support</strong><span>Reactive load median</span><b>−4 pts</b><small>Correlation across 2 later weeks</small></div></div><p className="manager-boundary-note">These are correlations after recorded actions, never claims that the action caused the change.</p></section></>;
+function ManagerHistory({ activity, period, onPeriodChange }: { activity: ManagerWorkspaceActivity[]; period: ManagerWorkspaceHistoryPeriod; onPeriodChange: (period: ManagerWorkspaceHistoryPeriod) => void }) {
+  const visibleActivity = period === "4-weeks" ? activity.slice(0, 4) : activity;
+  return <><div className="manager-history-timeline">{visibleActivity.map(({ id, time, title, detail, status }) => <article key={id}><time>{time}</time><span className="manager-timeline-dot" /><div><strong>{title}</strong><p>{detail}</p></div><em>{status}</em></article>)}</div><section className="manager-card"><div className="manager-card-heading"><div><span className="manager-kicker">What changed after</span><h2>Coordination follow-through</h2></div><select aria-label="History period" onChange={(event) => onPeriodChange(event.target.value as ManagerWorkspaceHistoryPeriod)} value={period}><option value="4-weeks">Last 4 weeks</option><option value="12-weeks">Last 12 weeks</option></select></div><div className="manager-followthrough"><div><strong>Protect Insights focus window</strong><span>Reliable capacity median</span><b>+5 pts</b><small>Correlation across 3 later weeks</small></div><div><strong>Rotate launch support</strong><span>Reactive load median</span><b>−4 pts</b><small>Correlation across 2 later weeks</small></div></div><p className="manager-boundary-note">These are correlations after recorded actions, never claims that the action caused the change.</p></section></>;
 }
 
-function ManagerSettings({ onOpenPreferences }: { onOpenPreferences: () => void }) {
+function ManagerSettings({ onOpenPreferences, webAppDashboardUrl }: { onOpenPreferences: () => void; webAppDashboardUrl: string }) {
   const cards = [
-    { icon: Users, title: "People & access", copy: "Invite ICs, review roles, and manage team membership.", action: "Manage members" },
-    { icon: ShieldCheck, title: "Sharing policy", copy: "Narrow what future member-approved snapshots may include.", action: "Review policy" },
-    { icon: FlaskConical, title: "Span Simulator", copy: "Generate and audit isolated synthetic spans for product testing.", action: "Open simulator", href: "/admin/span-simulator" },
-    { icon: LayoutDashboard, title: "Workspace appearance", copy: "Set theme, accent, density, and reduced ambient motion.", action: "Customize" },
+    { icon: Users, title: "People & access", copy: "Invite ICs, review roles, and manage team membership in the authenticated web app.", action: "Open team dashboard", href: webAppDashboardUrl, external: true },
+    { icon: ShieldCheck, title: "Sharing policy", copy: "Narrow what future member-approved snapshots may include from the authenticated team workspace.", action: "Review team policy", href: webAppDashboardUrl, external: true },
+    { icon: FlaskConical, title: "Span Simulator", copy: "Generate and audit isolated synthetic spans for product testing.", action: "Open simulator", href: "/manager-access/span-simulator" },
+    { icon: LayoutDashboard, title: "Workspace appearance", copy: "Set monochrome theme, density, and reduced ambient motion.", action: "Customize" },
   ];
-  return <><div className="manager-settings-grid">{cards.map(({ icon: Icon, title, copy, action, href }) => <article className="manager-card" key={title}><span className="manager-settings-icon"><Icon size={18} /></span><h2>{title}</h2><p>{copy}</p>{href ? <a href={href}>{action}<ArrowRight size={14} /></a> : <button type="button" onClick={title === "Workspace appearance" ? onOpenPreferences : undefined}>{action}<ArrowRight size={14} /></button>}</article>)}</div><section className="manager-card manager-access-boundary"><ShieldCheck size={18} /><div><h2>Manager Access boundary</h2><p>Managers see approved summary snapshots only. Raw activity, window titles, notes, screenshots, and unshared fields stay unavailable.</p></div><span>Policy active</span></section></>;
+  return <><div className="manager-settings-grid">{cards.map(({ icon: Icon, title, copy, action, href, external }) => <article className="manager-card" key={title}><span className="manager-settings-icon"><Icon size={18} /></span><h2>{title}</h2><p>{copy}</p>{href ? <a href={href} rel={external ? "noreferrer" : undefined} target={external ? "_blank" : undefined}>{action}{external ? <Globe2 size={14} /> : <ArrowRight size={14} />}</a> : <button type="button" onClick={onOpenPreferences}>{action}<ArrowRight size={14} /></button>}</article>)}</div><section className="manager-card manager-access-boundary"><ShieldCheck size={18} /><div><h2>Manager Access boundary</h2><p>Managers see approved summary snapshots only. Raw activity, window titles, notes, screenshots, and unshared fields stay unavailable.</p></div><span>Policy active</span></section></>;
 }
 
-export function ManagerAccessWorkspace({ onOpenPreferences, onSignOut }: { onOpenPreferences: () => void; onSignOut: () => void }) {
-  const [page, setPage] = useState<ManagerPage>("today");
-  const [mode, setMode] = useState<AccessMode>("manager");
+function ActionApprovalDialog({ action, onApprove, onCancel }: { action: string; onApprove: () => void; onCancel: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    dialog.showModal();
+    cancelRef.current?.focus();
+    return () => dialog.close();
+  }, []);
+  return <dialog aria-labelledby="manager-action-approval-title" className="manager-action-modal" onCancel={(event) => { event.preventDefault(); onCancel(); }} ref={dialogRef}><section className="sim-dialog manager-action-dialog"><div className="sim-dialog-icon"><ShieldCheck size={20} aria-hidden /></div><span className="manager-kicker">Approval required</span><h2 id="manager-action-approval-title">Record this coordination action?</h2><p><strong>{action}</strong></p><p>This synthetic demo records the action in its in-memory history only. It does not notify a person, change production data, or claim an outcome.</p><div className="sim-dialog-actions"><button className="sim-button secondary" onClick={onCancel} ref={cancelRef} type="button">Cancel</button><button className="sim-button primary" onClick={onApprove} type="button">Approve and record</button></div></section></dialog>;
+}
+
+export function ManagerAccessWorkspace({
+  managerTeamName,
+  onOpenIndividualWorkspace,
+  onOpenPreferences,
+  onSignOut,
+  webAppDashboardUrl: configuredWebAppDashboardUrl,
+}: {
+  managerTeamName?: string;
+  onOpenIndividualWorkspace?: () => void;
+  onOpenPreferences: () => void;
+  onSignOut: () => void;
+  webAppDashboardUrl?: string;
+}) {
+  const [workspace, dispatch] = useReducer(managerWorkspaceReducer, undefined, createInitialManagerWorkspaceState);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>(["maya", "ines"]);
   const [filters, setFilters] = useState<ManagerRosterFilters>({ query: "", team: "all", category: "all", risk: "all" });
+  const { mode, page } = workspace;
   const filteredMembers = useMemo(() => filterManagerMembers(MEMBERS, filters), [filters]);
   const selectedMembers = selectedIds.map((id) => MEMBERS.find((member) => member.id === id)).filter((member): member is DemoMember => Boolean(member));
   const copy = PAGE_COPY[page][mode];
   const toggleMember = (id: string) => setSelectedIds((current) => toggleManagerComparison(current, id));
+  const webAppDashboardUrl = configuredWebAppDashboardUrl
+    ?? getWeekformWebAppUrl("/manager-access", import.meta.env.VITE_WEEKFORM_WEB_URL);
+  const settingsUrls = useMemo(() => ({
+    account: getIndividualWorkspaceUrl("account", window.location.origin),
+    "data-control": getIndividualWorkspaceUrl("data-control", window.location.origin),
+    "ai-assistance": getIndividualWorkspaceUrl("ai-assistance", window.location.origin),
+    notifications: getIndividualWorkspaceUrl("notifications", window.location.origin),
+  }), []);
+  const navigate = (nextPage: ManagerWorkspacePage) => dispatch({ type: "navigate", page: nextPage });
+  const askAgent = (prompt: string) => dispatch({ type: "ask-agent", prompt });
+  const stageAction = (action: string) => dispatch({ type: "stage-action", action });
 
   let content: ReactNode;
-  if (mode === "individual") content = <IndividualPage page={page} />;
-  else if (page === "today") content = <ManagerToday members={selectedMembers} allMembers={filteredMembers} selectedIds={selectedIds} onToggle={toggleMember} />;
-  else if (page === "week") content = <ManagerWeek members={selectedMembers} />;
-  else if (page === "agent") content = <ManagerAgent />;
-  else if (page === "history") content = <ManagerHistory />;
-  else content = <ManagerSettings onOpenPreferences={onOpenPreferences} />;
+  if (mode === "individual") content = <IndividualPage agentAnswer={workspace.agentAnswer} agentPrompt={workspace.agentPrompt} page={page} settingsUrls={settingsUrls} onAsk={askAgent} />;
+  else if (page === "today") content = <ManagerToday members={selectedMembers} allMembers={filteredMembers} selectedIds={selectedIds} onOpenBriefing={() => dispatch({ type: "open-briefing" })} onStageAction={stageAction} onToggle={toggleMember} />;
+  else if (page === "week") content = <ManagerWeek selectedMembers={selectedMembers} scopeMembers={filteredMembers} />;
+  else if (page === "agent") content = <ManagerAgent answer={workspace.agentAnswer} prompt={workspace.agentPrompt} onAsk={askAgent} onStageAction={stageAction} />;
+  else if (page === "history") content = <ManagerHistory activity={workspace.activity} period={workspace.historyPeriod} onPeriodChange={(period) => dispatch({ type: "set-history-period", period })} />;
+  else content = <ManagerSettings onOpenPreferences={onOpenPreferences} webAppDashboardUrl={webAppDashboardUrl} />;
 
   return (
     <div className={`manager-access-app${sidebarCollapsed ? " is-sidebar-collapsed" : ""}`}>
       <header className="manager-access-toolbar">
         <span><i aria-hidden /> Manager Access</span>
-        <div><span className="manager-synthetic-badge">Synthetic demo</span><button type="button" onClick={onOpenPreferences} aria-label="Open display preferences"><Settings size={15} /></button><button type="button" onClick={onSignOut}><LogOut size={14} /> Sign out</button></div>
+        <div><span className="manager-synthetic-badge">Synthetic preview{managerTeamName ? ` · ${managerTeamName}` : ""}</span><a aria-label="Open Manager Access in the authenticated Weekform web app" className="manager-web-app-link" href={webAppDashboardUrl} rel="noreferrer" target="_blank"><Globe2 size={14} /><span>Web app</span></a><button type="button" onClick={onOpenPreferences} aria-label="Open display preferences"><Settings size={15} /></button><button type="button" onClick={onSignOut}><LogOut size={14} /> Sign out</button></div>
       </header>
       <aside className="manager-access-sidebar" aria-label="Manager Access navigation">
-        <button className="manager-access-brand" onClick={() => setPage("today")} type="button"><WeekformMark /><span><strong>Weekform</strong><small>Manager Access</small></span></button>
-        <nav>{NAV_ITEMS.map(({ id, label, description, icon: Icon }) => <button aria-current={page === id ? "page" : undefined} className={page === id ? "is-active" : ""} key={id} onClick={() => setPage(id)} type="button"><Icon size={18} /><span><strong>{label}</strong><small>{description}</small></span>{id === "today" && <b>2</b>}</button>)}</nav>
+        <button className="manager-access-brand" onClick={() => navigate("today")} type="button"><WeekformMark /><span><strong>Weekform</strong><small>Manager Access</small></span></button>
+        <nav>{NAV_ITEMS.map(({ id, label, description, icon: Icon }) => <button aria-current={page === id ? "page" : undefined} className={page === id ? "is-active" : ""} key={id} onClick={() => navigate(id)} type="button"><Icon size={18} /><span><strong>{label}</strong><small>{description}</small></span>{id === "today" && <b>2</b>}</button>)}</nav>
         <div className="manager-sidebar-signal"><div><span>Team headroom</span><Gauge size={14} /></div><strong>27%</strong><small>12 of 14 sharing</small><i><b style={{ width: "27%" }} /></i><p><ShieldCheck size={11} /> Approved summaries only</p></div>
-        <button className={page === "settings" ? "manager-sidebar-settings is-active" : "manager-sidebar-settings"} onClick={() => setPage("settings")} type="button"><Settings size={17} /><span>Settings</span></button>
+        <button className={page === "settings" ? "manager-sidebar-settings is-active" : "manager-sidebar-settings"} onClick={() => navigate("settings")} type="button"><Settings size={17} /><span>Settings</span></button>
       </aside>
       <button className="manager-sidebar-collapse" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"} type="button"><ChevronLeft size={14} /></button>
       <main className="manager-access-main">
         <div className="manager-page-shell">
-          <header className="manager-page-header"><div><span className="manager-kicker">{mode === "manager" ? "Manager view · approved team signals" : "Individual contributor view"}</span><h1>{copy[0]}</h1><p>{copy[1]}</p></div><ModeToggle mode={mode} onChange={setMode} /></header>
-          {mode === "manager" && page !== "settings" && <><ManagerFilters filters={filters} onChange={setFilters} /><ComparisonRail selected={selectedMembers} onRemove={toggleMember} /></>}
+          <header className="manager-page-header"><div><span className="manager-kicker">{mode === "manager" ? "Manager view · synthetic approved signals" : "Individual contributor view"}</span><h1>{copy[0]}</h1><p>{copy[1]}</p></div><ModeToggle mode={mode} onChange={(nextMode) => {
+            if (nextMode === "individual" && onOpenIndividualWorkspace) {
+              onOpenIndividualWorkspace();
+              return;
+            }
+            dispatch({ type: "set-mode", mode: nextMode });
+          }} /></header>
+          {mode === "manager" && (page === "today" || page === "week") && <><ManagerFilters filters={filters} onChange={setFilters} /><ComparisonRail selected={selectedMembers} onRemove={toggleMember} /></>}
           <div className="manager-page-content">{content}</div>
         </div>
       </main>
+      {workspace.pendingAction && <ActionApprovalDialog action={workspace.pendingAction} onApprove={() => dispatch({ type: "approve-action" })} onCancel={() => dispatch({ type: "cancel-action" })} />}
     </div>
   );
 }

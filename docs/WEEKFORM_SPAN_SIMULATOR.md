@@ -6,23 +6,23 @@ Weekform Span Simulator is an administrator-oriented workload laboratory for gen
 
 This repository contains a Fast Forward simulator vertical slice, a reviewable Supabase migration, and policy-test SQL. The Team Cloud web application described in the planning blueprint is not deployed from this checkout. The migration in `supabase/migrations/202607180001_span_simulator.sql` has not been applied to or verified against a live Supabase project, and the pgTAP-style contract in `supabase/tests/span_simulator_rls.sql` has not been run here because Supabase CLI/local services are unavailable.
 
-Any local desktop admin session in this prototype is a development convenience, not a production authorization boundary. Production cloud access requires an authenticated Supabase user with an explicit row in `private.simulator_admins`; a normal member, team manager, local session marker, environment flag, or user-editable metadata value is insufficient.
+Any local Manager Access session in this prototype is a development convenience, not a production authorization boundary. Production cloud simulator access requires an authenticated Supabase user with an explicit row in `private.simulator_admins`; a normal member, team manager, local session marker, environment flag, or user-editable metadata value is insufficient.
 
 Run the isolated local UI with:
 
 ```bash
 npm run dev
-# open http://127.0.0.1:5173/, then choose Settings → Account & Sharing → Admin Portal
+# open http://127.0.0.1:5173/, then choose Settings → Account & Sharing → Manager Access
 ```
 
-The local Admin Portal uses a visibly synthetic demo account:
+The local Manager Access lab uses a visibly synthetic demo account:
 
 ```text
 Email: span.admin@example.test
 Password: Weekform-Span-2026!
 ```
 
-The portal entry is automatically available in Settings → Account & Sharing during Vite development. **Open Admin Portal** stays on the current local origin; after sign-in, Span Simulator appears as a tool within the portal. Successful local authentication creates a tab-scoped `sessionStorage` marker so returning to the portal retains the session and directly pasting the simulator URL does not bypass sign-in. Portal appearance preferences use browser `localStorage` and never contain workload evidence or grant access. These published demo credentials and local browser values have no production or cloud access. The optional mock playback surfaces additionally require `VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true`.
+The Manager Access entry is automatically available in Settings → Account & Sharing during Vite development. **Open Manager Access** stays on the current local origin; after sign-in, Span Simulator appears as an isolated synthetic tool. Successful local authentication creates a tab-scoped `sessionStorage` marker so returning to Manager Access retains the session and directly pasting the simulator URL does not bypass sign-in. Monochrome display preferences use browser `localStorage` and never contain workload evidence or grant access. These published demo credentials and local browser values have no production or cloud access. The optional mock playback surfaces additionally require `VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true`.
 
 ## Canonical pipeline
 

@@ -923,7 +923,10 @@ export async function writePersistedState(state: PersistedAppState): Promise<voi
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     return;
   }
-  await store.set(STATE_KEY, state);
+  // Raw active-window samples are durably owned by the encrypted native journal.
+  // Do not duplicate them into the general unencrypted Tauri Store. Browser/demo
+  // mode has no native capture journal and keeps its documented fallback behavior.
+  await store.set(STATE_KEY, { ...state, activeWindowSamples: [] });
   await store.save();
 }
 

@@ -20,6 +20,16 @@ import type {
   SharedWorkloadSnapshotV1,
   TeamSharePolicyV1
 } from "../../../../packages/domain/src/cloud";
+import type {
+  PersonalReplicaPolicyV1,
+  PersonalReplicaSyncStateV1,
+} from "../../../../packages/domain/src/personalCloud";
+import {
+  createDefaultPersonalReplicaPolicy,
+  createDefaultPersonalSyncState,
+  parsePersonalReplicaPolicy,
+  parsePersonalSyncState,
+} from "./personalSync";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -357,6 +367,8 @@ export interface PersistedCloudStateV1 {
   policy: CloudSharePolicyV1;
   syncState: CloudSyncState;
   pendingSnapshot: CloudPendingSnapshot | null;
+  personalReplicaPolicy: PersonalReplicaPolicyV1;
+  personalSyncState: PersonalReplicaSyncStateV1;
 }
 
 export function createDefaultCloudState(): PersistedCloudStateV1 {
@@ -365,7 +377,9 @@ export function createDefaultCloudState(): PersistedCloudStateV1 {
     session: null,
     policy: createDefaultCloudSharePolicy(),
     syncState: createEmptyCloudSyncState(),
-    pendingSnapshot: null
+    pendingSnapshot: null,
+    personalReplicaPolicy: createDefaultPersonalReplicaPolicy(),
+    personalSyncState: createDefaultPersonalSyncState(),
   };
 }
 
@@ -376,7 +390,9 @@ export function parsePersistedCloudState(value: unknown): PersistedCloudStateV1 
     session: parseCloudSession(value.session),
     policy: parseCloudSharePolicy(value.policy),
     syncState: parseCloudSyncState(value.syncState),
-    pendingSnapshot: parseCloudPendingSnapshot(value.pendingSnapshot)
+    pendingSnapshot: parseCloudPendingSnapshot(value.pendingSnapshot),
+    personalReplicaPolicy: parsePersonalReplicaPolicy(value.personalReplicaPolicy),
+    personalSyncState: parsePersonalSyncState(value.personalSyncState),
   };
 }
 
@@ -388,6 +404,8 @@ export function parsePersistedCloudState(value: unknown): PersistedCloudStateV1 
 export interface CloudBackupMetadata {
   policy: CloudSharePolicyV1;
   syncState: CloudSyncState;
+  personalReplicaPolicy: PersonalReplicaPolicyV1;
+  personalSync: Omit<PersonalReplicaSyncStateV1, "queue"> & { queuedBatches: number };
 }
 
 /**
@@ -397,7 +415,9 @@ export interface CloudBackupMetadata {
  */
 export function buildCloudBackupMetadata(
   policy: CloudSharePolicyV1,
-  syncState: CloudSyncState
+  syncState: CloudSyncState,
+  personalReplicaPolicy: PersonalReplicaPolicyV1 = createDefaultPersonalReplicaPolicy(),
+  personalSyncState: PersonalReplicaSyncStateV1 = createDefaultPersonalSyncState(() => "not-configured"),
 ): CloudBackupMetadata {
   const metrics = {} as CloudMetricPolicy;
   for (const key of CLOUD_METRIC_KEYS) {
@@ -423,7 +443,21 @@ export function buildCloudBackupMetadata(
       lastSyncedFingerprint: syncState.lastSyncedFingerprint,
       lastSyncedClientSnapshotId: syncState.lastSyncedClientSnapshotId,
       nextScheduledAt: syncState.nextScheduledAt
-    }
+    },
+    personalReplicaPolicy: {
+      version: 1,
+      enabled: personalReplicaPolicy.enabled,
+      consentedAt: personalReplicaPolicy.consentedAt,
+    },
+    personalSync: {
+      deviceId: personalSyncState.deviceId,
+      deviceName: personalSyncState.deviceName,
+      cursor: personalSyncState.cursor,
+      lastAttemptAt: personalSyncState.lastAttemptAt,
+      lastSuccessAt: personalSyncState.lastSuccessAt,
+      lastError: personalSyncState.lastError,
+      queuedBatches: personalSyncState.queue.length,
+    },
   };
 }
 

@@ -66,6 +66,7 @@ import { useTrayStatus } from "./hooks/useTrayStatus";
 import { useToasts } from "./hooks/useToasts";
 import { useCloudAccount } from "./hooks/useCloudAccount";
 import { useCloudSync, type CloudController } from "./hooks/useCloudSync";
+import { usePersonalCloudSync } from "./hooks/usePersonalCloudSync";
 import { screenLabels } from "./lib/ui";
 import {
   MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY,
@@ -77,6 +78,12 @@ import { ScreenRouter } from "./components/shell/ScreenRouter";
 import { buildOnboardingSteps } from "./components/common/OnboardingCard";
 import { WalkthroughOverlay } from "./components/onboarding/WalkthroughOverlay";
 import type { Screen, SettingsTab, WindowMode } from "./lib/types";
+import { ManagerAccessWorkspace } from "./admin/ManagerAccessWorkspace";
+import {
+  getManagerModeMemberships,
+  getWeekformWebAppUrl,
+  resolveSettingsTab,
+} from "./services/adminPortal";
 import { deriveWeeklyReviewState } from "./services/weeklyReview";
 import {
   getInitialWindowMode,
@@ -136,9 +143,27 @@ export function App() {
   // Async load persisted state (hydrates non-ledger state and forces re-eval)
   useEffect(() => {
     if (isDemoMode) return;
-    readPersistedState().then((data) => {
-      // The read resolved (readPersistedState never rejects — it returns null on any
-      // failure), so it's now safe to persist regardless of whether data was found.
+    readPersistedState().then(async (data) => {
+      // One-time compatibility migration: older builds kept raw samples in the
+      // general Tauri Store. Move them into the encrypted native journal before
+      // allowing the next persistence write to clear that legacy duplicate.
+      if (isTauriRuntime && data?.activeWindowSamples?.length) {
+        await invoke("import_capture_journal_samples", {
+          samples: data.activeWindowSamples.flatMap((sample) => {
+            const timestampMs = new Date(sample.timestamp).getTime();
+            if (!Number.isFinite(timestampMs)) return [];
+            return [{
+              sample_id: sample.sample_id,
+              timestamp_ms: timestampMs,
+              app_name: sample.app_name,
+              window_title: sample.window_title,
+              capture_error: null,
+            }];
+          }),
+        }).catch(() => undefined);
+      }
+      // The read/migration resolved, so it's now safe to persist regardless of
+      // whether data was found.
       persistenceHydrated.current = true;
       if (data) {
         setPersistedSnapshot(data);
@@ -180,6 +205,33 @@ export function App() {
         setUsageCsvRowHashes(data.usageCsvRowHashes ?? []);
         setConsentReceipts(data.consentReceipts ?? []);
       }
+      if (isTauriRuntime) {
+        void invoke<Array<{
+          sample_id: string;
+          timestamp_ms: number;
+          app_name: string | null;
+          window_title: string | null;
+          capture_error: string | null;
+        }>>("read_capture_journal").then((journal) => {
+          const recovered: ActiveWindowSample[] = journal.flatMap((entry) => {
+            if (entry.capture_error || !entry.app_name || !Number.isFinite(entry.timestamp_ms)) return [];
+            return [{
+              sample_id: entry.sample_id,
+              timestamp: new Date(entry.timestamp_ms).toISOString(),
+              app_name: entry.app_name,
+              window_title: entry.window_title,
+              source_type: "macos_active_window",
+              privacy_level: "local_only",
+            }];
+          });
+          setActiveWindowSamples((current) => {
+            const byId = new Map([...current, ...recovered].map((sample) => [sample.sample_id, sample]));
+            return [...byId.values()].sort((left, right) => left.timestamp.localeCompare(right.timestamp)).slice(-2000);
+          });
+        }).catch((error) => {
+          setCaptureError(error instanceof Error ? error.message : "The encrypted capture journal could not be read.");
+        });
+      }
     }).catch(() => {});
   }, [isDemoMode, isTauriRuntime]);
 
@@ -190,7 +242,11 @@ export function App() {
       ? requested
       : initialBlocks.some((block) => !block.user_verified) ? "daily" : "weekly";
   });
-  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>("data-sources");
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>(() => (
+    resolveSettingsTab(new URLSearchParams(window.location.search).get("settings"))
+      ?? "data-sources"
+  ));
+  const [managerModeOpen, setManagerModeOpen] = useState(false);
   const [paused, setPaused] = useState(() => persistedSnapshot?.paused ?? true);
   // Tracks the last `paused` value we've already emitted an audit event for, so
   // the audit effect below records only real user-driven transitions — never the
@@ -402,6 +458,7 @@ export function App() {
     isDemoMode,
     setActiveWindowSamples,
     setAuditEvents,
+    setCaptureError,
   });
 
   const derived = useDerived({
@@ -463,10 +520,26 @@ export function App() {
       setConsentReceipts((current) => [...current, receipt].slice(-1000));
     },
   });
+  const personalCloud = usePersonalCloudSync({
+    account: cloudAccount,
+    snapshot,
+    workBlocks: blocks,
+    setBlocks,
+    addCorrection,
+  });
   const cloud: CloudController = useMemo(
-    () => ({ account: cloudAccount, sync: cloudSync }),
-    [cloudAccount, cloudSync]
+    () => ({ account: cloudAccount, sync: cloudSync, personal: personalCloud }),
+    [cloudAccount, cloudSync, personalCloud]
   );
+  const managerMemberships = useMemo(
+    () => getManagerModeMemberships(cloudAccount.teams),
+    [cloudAccount.teams],
+  );
+  const managerAccessAvailable = cloudAccount.account !== null && managerMemberships.length > 0;
+
+  useEffect(() => {
+    if (!managerAccessAvailable) setManagerModeOpen(false);
+  }, [managerAccessAvailable]);
 
   // The ritual closes the current week. `forecastTrackRecord` deliberately
   // excludes the accumulating current week, so project its existing live
@@ -603,6 +676,10 @@ export function App() {
   useEffect(() => {
     if (isDemoMode || retentionDays === null) return;
     const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    if (isTauriRuntime) {
+      void invoke("prune_capture_journal", { cutoffMs: Math.max(0, Math.floor(cutoff)) })
+        .catch(() => undefined);
+    }
     setActiveWindowSamples((current) => {
       const kept = current.filter((sample) => new Date(sample.timestamp).getTime() >= cutoff);
       return kept.length === current.length ? current : kept;
@@ -611,7 +688,7 @@ export function App() {
       const kept = current.filter((event) => new Date(event.timestamp_end).getTime() >= cutoff);
       return kept.length === current.length ? current : kept;
     });
-  }, [isDemoMode, retentionDays, activeWindowSamples, chatEvents]);
+  }, [isDemoMode, isTauriRuntime, retentionDays, activeWindowSamples, chatEvents]);
 
   const { classificationStatus, classificationError, classifyActiveWindowSessions, resetClassification } =
     useClassification({
@@ -1597,6 +1674,9 @@ export function App() {
     // Cloud session, sharing policy, sync bookkeeping, and the reserved snapshot id
     // are wiped too — a reset must leave no active upload path behind.
     const cloudCredentialsCleared = await cloudAccount.clearAll();
+    const captureJournalCleared = !isTauriRuntime || await invoke("clear_capture_journal")
+      .then(() => true)
+      .catch(() => false);
     setBlocks([]);
     setCalendarEvents([]);
     setActiveWindowSamples([]);
@@ -1607,9 +1687,9 @@ export function App() {
         type: "data_reset",
         source: "privacy_control",
         title: "Prototype data reset",
-        summary: cloudCredentialsCleared
-          ? "All local activity, imports, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and your Weekform Cloud session and sharing policy. Screenshot capture was turned off and tracking paused."
-          : "Local activity and app state were reset, but durable Weekform Cloud credential removal could not be confirmed. Retry Reset Local Data before closing the app.",
+        summary: cloudCredentialsCleared && captureJournalCleared
+          ? "All local activity, the encrypted capture journal, imports, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and Weekform Cloud session, replica queue, and sharing policies. Screenshot capture was turned off and tracking paused."
+          : "Local app state was reset, but durable removal of the Keychain cloud session or encrypted capture journal could not be confirmed. Retry Reset Local Data before closing the app.",
         privacy_level: "local_only",
         details: {
           visual_context_enabled: false,
@@ -1619,6 +1699,8 @@ export function App() {
           cloud_session_cleared: cloudCredentialsCleared,
           cloud_sharing_policy_cleared: cloudCredentialsCleared,
           cloud_clear_requires_retry: !cloudCredentialsCleared,
+          encrypted_capture_journal_cleared: captureJournalCleared,
+          capture_journal_clear_requires_retry: !captureJournalCleared,
           stored_locally: true,
           sent_to_cloud: false
         }
@@ -2005,6 +2087,36 @@ export function App() {
   // window (the compact menu-bar widget has no nav) and never in demo mode.
   const showWalkthrough = !isDemoMode && windowMode === "large" && !walkthroughCompleted;
 
+  if (managerModeOpen && managerAccessAvailable) {
+    const primaryManagerTeam = managerMemberships[0];
+    return (
+      <main
+        className="admin-portal-shell"
+        data-admin-density="comfortable"
+        data-admin-motion="off"
+        data-admin-theme={theme}
+      >
+        <ManagerAccessWorkspace
+          managerTeamName={primaryManagerTeam?.teamName ?? "Managed team"}
+          onOpenIndividualWorkspace={() => setManagerModeOpen(false)}
+          onOpenPreferences={() => {
+            setManagerModeOpen(false);
+            setActiveSettingsTab("account");
+            setActive("setup");
+          }}
+          onSignOut={() => {
+            setManagerModeOpen(false);
+            void cloudAccount.signOut();
+          }}
+          webAppDashboardUrl={getWeekformWebAppUrl(
+            "/manager-access",
+            import.meta.env.VITE_WEEKFORM_WEB_URL,
+          )}
+        />
+      </main>
+    );
+  }
+
   return (
     <AppShell
       active={active}
@@ -2025,6 +2137,8 @@ export function App() {
       demoMode={isDemoMode}
       toasts={toasts}
       onDismissToast={dismissToast}
+      managerAccessAvailable={managerAccessAvailable}
+      onOpenManagerAccess={() => setManagerModeOpen(true)}
     >
       <ScreenRouter
         active={active}
