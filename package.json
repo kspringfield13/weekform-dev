@@ -9,6 +9,7 @@
     "tauri": "tauri",
     "desktop:dev": "DEVELOPER_DIR=${DEVELOPER_DIR:-/Library/Developer/CommandLineTools} tauri dev",
     "desktop:build": "DEVELOPER_DIR=${DEVELOPER_DIR:-/Library/Developer/CommandLineTools} tauri build",
+    "test:simulator": "tsx --test packages/simulator/src/*.test.ts",
     "build": "tsc -b && npm run pricing:check && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "pricing:check": "node scripts/refresh-model-prices.mjs --check",
@@ -32,9 +33,11 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.1",
+    "@types/node": "^26.1.1",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^6.0.1",
+    "tsx": "^4.23.1",
     "typescript": "^6.0.3",
     "vite": "^8.0.10"
   }

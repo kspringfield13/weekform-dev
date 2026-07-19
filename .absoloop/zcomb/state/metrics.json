@@ -1,0 +1,45 @@
+{
+  "completionPct": 62,
+  "errorRate": 0.125,
+  "tasksPerHour": 8.0,
+  "phases": [
+    {
+      "phase": 0,
+      "name": "Scaffold",
+      "progress": 100
+    },
+    {
+      "phase": 1,
+      "name": "Execute",
+      "progress": 81
+    },
+    {
+      "phase": 2,
+      "name": "Integrity",
+      "progress": 0
+    },
+    {
+      "phase": 3,
+      "name": "Critic",
+      "progress": 0
+    },
+    {
+      "phase": 4,
+      "name": "Human Gate",
+      "progress": 0
+    },
+    {
+      "phase": 5,
+      "name": "Deliver",
+      "progress": 0
+    }
+  ],
+  "missionId": "ABS-MINIMAL-001",
+  "loopId": "loop-20260718-195338-2a8640",
+  "objective": "Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s been done and ensure PROMPT_RUNBOOK & BLUEPRINT are updated, tasks marked as done. Complete the full response to each prompt in sequence.",
+  "status": "BUDGET_EXHAUSTED",
+  "live": false,
+  "awaitingRun": false,
+  "runKey": "loop-20260718-195338-2a8640:1784418820",
+  "projectName": "weekform-dev"
+}

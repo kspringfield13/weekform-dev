@@ -16,5 +16,6 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["apps/desktop/src", "packages"]
+  "include": ["apps/desktop/src", "packages"],
+  "exclude": ["packages/**/*.test.ts"]
 }

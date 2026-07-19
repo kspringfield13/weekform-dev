@@ -1,0 +1,8 @@
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0001-agent-result.events.jsonl", "exit_code": 0, "result": ".absoloop/tmp/iteration-0001-agent-result.json", "tokens": 376638, "ts": 1784419280.0067441, "type": "agent_run", "wall_seconds": 104.22849798202515}
+{"done": false, "iteration": 1, "ts": 1784419280.00964, "type": "iteration"}
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0002-agent-result.events.jsonl", "exit_code": 0, "result": ".absoloop/tmp/iteration-0002-agent-result.json", "tokens": 531582, "ts": 1784419391.053625, "type": "agent_run", "wall_seconds": 110.99628520011902}
+{"done": false, "iteration": 2, "ts": 1784419391.054494, "type": "iteration"}
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0003-agent-result.events.jsonl", "exit_code": 0, "result": ".absoloop/tmp/iteration-0003-agent-result.json", "tokens": 673443, "ts": 1784419659.6760042, "type": "agent_run", "wall_seconds": 268.59083700180054}
+{"done": true, "iteration": 3, "ts": 1784419659.676832, "type": "iteration"}
+{"cost_is_exact": false, "cost_usd": 2.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0003-critic.events.jsonl", "exit_code": 0, "result": ".absoloop/tmp/iteration-0003-critic.json", "tokens": 1687675, "ts": 1784419966.750425, "type": "agent_run", "wall_seconds": 307.0720360279083}
+{"reason": "critic_reject", "status": "REJECTED", "ts": 1784419966.753314, "type": "mission_stop"}

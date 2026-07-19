@@ -14,3 +14,4 @@ apps/marketing-video/out/
 artifacts/
 public/weekform-video/*.wav
 packages/integrations/src/usage/*.candidate.json
+.absoloop/tmp/

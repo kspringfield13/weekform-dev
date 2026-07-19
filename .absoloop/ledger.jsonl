@@ -1,0 +1,35 @@
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0001-agent-result.events.jsonl", "exit_code": 1, "result": ".absoloop/tmp/iteration-0001-agent-result.json", "tokens": null, "ts": 1784418823.916339, "type": "agent_run", "wall_seconds": 3.315485954284668}
+{"exit_code": 1, "iteration": 1, "limit_reached": null, "ts": 1784418823.91688, "type": "bounded_agent_failure"}
+{"done": false, "iteration": 1, "ts": 1784418823.916929, "type": "iteration"}
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0002-agent-result.events.jsonl", "exit_code": 1, "result": ".absoloop/tmp/iteration-0002-agent-result.json", "tokens": null, "ts": 1784418826.783576, "type": "agent_run", "wall_seconds": 2.8375461101531982}
+{"exit_code": 1, "iteration": 2, "limit_reached": null, "ts": 1784418826.785401, "type": "bounded_agent_failure"}
+{"done": false, "iteration": 2, "ts": 1784418826.785585, "type": "iteration"}
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0003-agent-result.events.jsonl", "exit_code": 1, "result": ".absoloop/tmp/iteration-0003-agent-result.json", "tokens": null, "ts": 1784418829.430047, "type": "agent_run", "wall_seconds": 2.6152000427246094}
+{"exit_code": 1, "iteration": 3, "limit_reached": null, "ts": 1784418829.430631, "type": "bounded_agent_failure"}
+{"done": false, "iteration": 3, "ts": 1784418829.4306822, "type": "iteration"}
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0004-agent-result.events.jsonl", "exit_code": 1, "result": ".absoloop/tmp/iteration-0004-agent-result.json", "tokens": null, "ts": 1784418832.195801, "type": "agent_run", "wall_seconds": 2.7358040809631348}
+{"exit_code": 1, "iteration": 4, "limit_reached": null, "ts": 1784418832.196367, "type": "bounded_agent_failure"}
+{"done": false, "iteration": 4, "ts": 1784418832.196414, "type": "iteration"}
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0005-agent-result.events.jsonl", "exit_code": 1, "result": ".absoloop/tmp/iteration-0005-agent-result.json", "tokens": null, "ts": 1784418834.816288, "type": "agent_run", "wall_seconds": 2.589067220687866}
+{"exit_code": 1, "iteration": 5, "limit_reached": null, "ts": 1784418834.816991, "type": "bounded_agent_failure"}
+{"done": false, "iteration": 5, "ts": 1784418834.817038, "type": "iteration"}
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0006-agent-result.events.jsonl", "exit_code": 1, "result": ".absoloop/tmp/iteration-0006-agent-result.json", "tokens": null, "ts": 1784418839.54279, "type": "agent_run", "wall_seconds": 4.696836948394775}
+{"exit_code": 1, "iteration": 6, "limit_reached": null, "ts": 1784418839.543478, "type": "bounded_agent_failure"}
+{"done": false, "iteration": 6, "ts": 1784418839.543529, "type": "iteration"}
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0007-agent-result.events.jsonl", "exit_code": 1, "result": ".absoloop/tmp/iteration-0007-agent-result.json", "tokens": null, "ts": 1784418842.2562728, "type": "agent_run", "wall_seconds": 2.681013345718384}
+{"exit_code": 1, "iteration": 7, "limit_reached": null, "ts": 1784418842.2569652, "type": "bounded_agent_failure"}
+{"done": false, "iteration": 7, "ts": 1784418842.2570949, "type": "iteration"}
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0008-agent-result.events.jsonl", "exit_code": 1, "result": ".absoloop/tmp/iteration-0008-agent-result.json", "tokens": null, "ts": 1784418845.303599, "type": "agent_run", "wall_seconds": 3.0166988372802734}
+{"exit_code": 1, "iteration": 8, "limit_reached": null, "ts": 1784418845.3042371, "type": "bounded_agent_failure"}
+{"done": false, "iteration": 8, "ts": 1784418845.304306, "type": "iteration"}
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0009-agent-result.events.jsonl", "exit_code": 1, "result": ".absoloop/tmp/iteration-0009-agent-result.json", "tokens": null, "ts": 1784418848.0248709, "type": "agent_run", "wall_seconds": 2.691088914871216}
+{"exit_code": 1, "iteration": 9, "limit_reached": null, "ts": 1784418848.02542, "type": "bounded_agent_failure"}
+{"done": false, "iteration": 9, "ts": 1784418848.025472, "type": "iteration"}
+{"cost_is_exact": false, "cost_usd": 5.0, "engine": "codex", "events": ".absoloop/tmp/iteration-0010-agent-result.events.jsonl", "exit_code": 1, "result": ".absoloop/tmp/iteration-0010-agent-result.json", "tokens": null, "ts": 1784418850.533896, "type": "agent_run", "wall_seconds": 2.4770967960357666}
+{"exit_code": 1, "iteration": 10, "limit_reached": null, "ts": 1784418850.534496, "type": "bounded_agent_failure"}
+{"done": false, "iteration": 10, "ts": 1784418850.5345469, "type": "iteration"}
+{"reason": "cost_budget", "status": "BUDGET_EXHAUSTED", "ts": 1784418850.562169, "type": "mission_stop"}
+{"reason": "cost_budget", "status": "BUDGET_EXHAUSTED", "ts": 1784419000.257303, "type": "mission_stop"}
+{"reason": "cost_budget", "status": "BUDGET_EXHAUSTED", "ts": 1784419020.631861, "type": "mission_stop"}
+{"reason": "cost_budget", "status": "BUDGET_EXHAUSTED", "ts": 1784419055.835652, "type": "mission_stop"}
+{"reason": "cost_budget", "status": "BUDGET_EXHAUSTED", "ts": 1784419147.9566872, "type": "mission_stop"}

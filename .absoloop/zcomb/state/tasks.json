@@ -1,0 +1,226 @@
+{
+  "tasks": [
+    {
+      "id": "task-scaffold",
+      "title": "Prepare mission — scaffold · skills · /goal contract",
+      "status": "done",
+      "assignee": "builder-01",
+      "priority": "high",
+      "dependencies": [],
+      "phase": 0,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "ABS-MINIMAL-001 · Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runbook. Then, stop, review and analyze what’s"
+    },
+    {
+      "id": "task-execute",
+      "title": "Execute repair iterations (10/50)",
+      "status": "failed",
+      "assignee": "builder-01",
+      "priority": "high",
+      "dependencies": [
+        "task-scaffold"
+      ],
+      "phase": 1,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Engine claude · iteration 10/50"
+    },
+    {
+      "id": "task-integrity",
+      "title": "Integrity check before critic",
+      "status": "assigned",
+      "assignee": "builder-01",
+      "priority": "medium",
+      "dependencies": [
+        "task-execute"
+      ],
+      "phase": 2,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Builder self-audits acceptance evidence against the /goal contract"
+    },
+    {
+      "id": "task-critic",
+      "title": "Adversarial critic review",
+      "status": "assigned",
+      "assignee": "critic-01",
+      "priority": "high",
+      "dependencies": [
+        "task-integrity"
+      ],
+      "phase": 3,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Independent adversarial review of iteration 10 evidence"
+    },
+    {
+      "id": "task-gate",
+      "title": "Human approval gate",
+      "status": "assigned",
+      "assignee": null,
+      "priority": "high",
+      "dependencies": [
+        "task-critic"
+      ],
+      "phase": 4,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Human reviews the critic-passed result before delivery"
+    },
+    {
+      "id": "task-deliver",
+      "title": "Deliver accepted work",
+      "status": "assigned",
+      "assignee": "builder-01",
+      "priority": "medium",
+      "dependencies": [
+        "task-gate"
+      ],
+      "phase": 5,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Hand off accepted work for ABS-MINIMAL-001 · $50.00 spent"
+    },
+    {
+      "id": "iter-0001",
+      "title": "Iteration 1: advance toward objective",
+      "status": "done",
+      "assignee": "builder-01",
+      "priority": "medium",
+      "dependencies": [
+        "task-execute"
+      ],
+      "phase": 1,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Repair pass 1 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
+    },
+    {
+      "id": "iter-0002",
+      "title": "Iteration 2: advance toward objective",
+      "status": "done",
+      "assignee": "builder-01",
+      "priority": "medium",
+      "dependencies": [
+        "iter-0001"
+      ],
+      "phase": 1,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Repair pass 2 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
+    },
+    {
+      "id": "iter-0003",
+      "title": "Iteration 3: advance toward objective",
+      "status": "done",
+      "assignee": "builder-01",
+      "priority": "medium",
+      "dependencies": [
+        "iter-0002"
+      ],
+      "phase": 1,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Repair pass 3 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
+    },
+    {
+      "id": "iter-0004",
+      "title": "Iteration 4: advance toward objective",
+      "status": "done",
+      "assignee": "builder-01",
+      "priority": "medium",
+      "dependencies": [
+        "iter-0003"
+      ],
+      "phase": 1,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Repair pass 4 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
+    },
+    {
+      "id": "iter-0005",
+      "title": "Iteration 5: advance toward objective",
+      "status": "done",
+      "assignee": "builder-01",
+      "priority": "medium",
+      "dependencies": [
+        "iter-0004"
+      ],
+      "phase": 1,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Repair pass 5 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
+    },
+    {
+      "id": "iter-0006",
+      "title": "Iteration 6: advance toward objective",
+      "status": "done",
+      "assignee": "builder-01",
+      "priority": "medium",
+      "dependencies": [
+        "iter-0005"
+      ],
+      "phase": 1,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Repair pass 6 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
+    },
+    {
+      "id": "iter-0007",
+      "title": "Iteration 7: advance toward objective",
+      "status": "done",
+      "assignee": "builder-01",
+      "priority": "medium",
+      "dependencies": [
+        "iter-0006"
+      ],
+      "phase": 1,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Repair pass 7 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
+    },
+    {
+      "id": "iter-0008",
+      "title": "Iteration 8: advance toward objective",
+      "status": "done",
+      "assignee": "builder-01",
+      "priority": "medium",
+      "dependencies": [
+        "iter-0007"
+      ],
+      "phase": 1,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Repair pass 8 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
+    },
+    {
+      "id": "iter-0009",
+      "title": "Iteration 9: advance toward objective",
+      "status": "done",
+      "assignee": "builder-01",
+      "priority": "medium",
+      "dependencies": [
+        "iter-0008"
+      ],
+      "phase": 1,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Repair pass 9 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
+    },
+    {
+      "id": "iter-0010",
+      "title": "Iteration 10: advance toward objective",
+      "status": "failed",
+      "assignee": "builder-01",
+      "priority": "medium",
+      "dependencies": [
+        "iter-0009"
+      ],
+      "phase": 1,
+      "createdAt": "2026-07-18T23:53:40Z",
+      "updatedAt": "2026-07-18T23:59:07Z",
+      "description": "Repair pass 10 of 50 toward: Using this document, docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md, run the first two prompts from the runboo"
+    }
+  ]
+}

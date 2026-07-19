@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import "@fontsource-variable/geist/wght.css";
 import { App } from "./App";
+import { SpanSimulatorRoot } from "./admin/SpanSimulatorApp";
 import { readStoredThemeSync, readThemePreference } from "./services/localStore";
 import "./styles.css";
 
@@ -18,6 +19,8 @@ readThemePreference().then((theme) => {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    {window.location.pathname === "/admin/span-simulator" || window.location.pathname.startsWith("/simulator-sandbox/")
+      ? <SpanSimulatorRoot />
+      : <App />}
   </React.StrictMode>
 );

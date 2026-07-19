@@ -1,0 +1,16 @@
+{
+  "cost_usd": 25.0,
+  "human_feedback": null,
+  "inexact_cost_events": 5,
+  "iteration": 6,
+  "last_failure_fingerprint": "e69cbd22485de45b",
+  "latest_agent_result": ".absoloop/tmp/iteration-0005-agent-result.json",
+  "latest_checkpoint": ".absoloop/checkpoints/0006-pre-agent.json",
+  "latest_critic_findings": null,
+  "mission_id": "ABS-MINIMAL-001",
+  "repeated_failure_count": 0,
+  "started_at": 1784418820.558159,
+  "status": "EXECUTING",
+  "stop_reason": null,
+  "tokens_total": 0
+}

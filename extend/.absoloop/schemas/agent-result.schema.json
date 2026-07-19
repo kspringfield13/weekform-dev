@@ -1,0 +1,46 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "done": {
+      "type": "boolean",
+      "description": "true only when every item in the definition of done is genuinely met"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "changed_artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "commands_run": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Screenshot or proof file paths (images preferred)"
+    }
+  },
+  "required": [
+    "done",
+    "summary",
+    "changed_artifacts",
+    "commands_run",
+    "risks",
+    "evidence"
+  ]
+}
