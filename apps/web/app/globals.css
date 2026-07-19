@@ -2009,39 +2009,6 @@ button.text-link {
   margin: 0 0 22px;
 }
 
-.oauth-options {
-  display: grid;
-  gap: 10px;
-}
-
-.button-oauth {
-  position: relative;
-  justify-content: center;
-  border-color: var(--border-strong);
-  color: var(--text);
-  background: var(--background);
-}
-
-.button-oauth:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--text) 32%, var(--border));
-  background: var(--background-subtle);
-}
-
-.oauth-provider-mark,
-.oauth-provider-icon {
-  position: absolute;
-  left: 14px;
-  width: 18px;
-  height: 18px;
-}
-
-.oauth-provider-mark {
-  display: grid;
-  place-items: center;
-  font-size: 15px;
-  font-weight: 700;
-}
-
 .auth-divider {
   display: flex;
   align-items: center;

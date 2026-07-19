@@ -1,7 +1,7 @@
 # weekform.com (apps/web)
 
-The web surface for Weekform: marketing landing page, email/password and
-Google/GitHub OAuth,
+The web surface for Weekform: marketing landing page, passwordless Magic Link
+and email/password auth,
 the stable `/app` browser-workspace entry, an authenticated dashboard shell,
 and the account-gated Mac download page.
 
@@ -61,11 +61,8 @@ read in exactly one server route handler:
 Supabase dashboard configuration expected at runtime:
 
 - Email/password auth enabled.
-- Google and GitHub auth providers enabled with credentials from their
-  respective developer consoles. Each provider's OAuth app callback points to
-  `https://<project-ref>.supabase.co/auth/v1/callback`.
 - Auth redirect URL allowlist includes `<site-url>/auth/callback` (email
-  confirmation and social OAuth callbacks are handled there via
+  confirmation and passwordless callbacks are handled there via
   `token_hash`/`type` or PKCE `code`). Include the local callback
   `http://localhost:3000/auth/callback` for development only.
 - Optional `profiles` table (`id uuid primary key references auth.users`,
@@ -95,7 +92,7 @@ configured.
 ## Routes
 
 - `/` — landing page (product story, privacy explanation, prototype disclosure)
-- `/login`, `/signup` — email/password auth plus Google/GitHub OAuth (server actions)
+- `/login`, `/signup` — passwordless Magic Link and email/password auth (server actions)
 - `/auth/callback` — Supabase confirmation/PKCE callback
 - `/auth/error` — honest auth failure page
 - `/app` — protected, stable public entry for Weekform Web; resolves to the

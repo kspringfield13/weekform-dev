@@ -94,14 +94,11 @@ session and adds no portal-specific browser storage or appearance cookie. It
 filters active team memberships to owner and manager roles before presenting a
 team workspace; authorization for team records still comes from RLS.
 
-The sign-in page also supports optional Google and GitHub OAuth through
-Supabase Auth when the site operator enables those providers. Choosing one
-sends the user through that provider's authentication and consent flow;
-Supabase receives the resulting account identity needed to create or resume the
-Weekform session. The OAuth flow does not send Mac activity, workload evidence,
-replicas, snapshots, or team records to Google or GitHub. Provider-side account
-processing and retention remain governed by the provider's own terms and the
-site operator's OAuth configuration.
+The sign-in page also supports passwordless email Magic Links through Supabase
+Auth. The submitted email address is processed by Supabase and the configured
+email-delivery service solely to deliver the one-time sign-in link; the flow
+does not send Mac activity, workload evidence, replicas, snapshots, or team
+records to the email service.
 
 Raw Mac activity never reaches the website. Private derived replicas, approved workload snapshots, and
 explicit multi-user coordination records (accounts, teams, memberships,

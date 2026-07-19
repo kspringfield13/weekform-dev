@@ -217,18 +217,17 @@ the alignment QA.
   `/app`, and rendered desktop plus 390px browser checks confirm both choices,
   responsive layout, and a clean development console.
 
-### Supabase social sign-in
+### Supabase passwordless sign-in
 
 - **Date:** July 19, 2026
-- **Outcome:** the existing Weekform sign-in card now offers Google and GitHub
-  alongside email/password. Both providers use Supabase's server-side PKCE
-  flow, return through the existing `/auth/callback`, preserve the protected
-  destination, and render provider failures in the established auth surface.
-- **Boundary:** provider credentials and enablement remain site-operator
-  configuration in Supabase plus the Google and GitHub developer consoles. A
-  public settings check on this date reported both providers disabled, so live
-  social sign-in is not claimed until that external setup is completed.
-- **Evidence:** four focused provider/callback tests and the full 208-test web
+- **Outcome:** the existing Weekform sign-in card now offers a passwordless
+  email Magic Link alongside email/password. It uses Supabase's built-in email
+  auth, returns through the existing `/auth/callback`, preserves the protected
+  destination, and requires no external social-provider application.
+- **Boundary:** production email delivery still depends on the Supabase email
+  provider and its configured SMTP/rate limits. The flow does not claim Google
+  or GitHub identity.
+- **Evidence:** four focused email/callback tests and the full 208-test web
   suite pass. The optimized Next.js build and authoritative root build pass;
   browser verification at 1024×720 confirmed the two accessible provider
   controls, the email fallback, no error overlay, and no runtime errors.

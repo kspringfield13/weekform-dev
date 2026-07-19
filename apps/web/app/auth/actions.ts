@@ -7,9 +7,9 @@ import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safeNextPath";
 import {
-  buildOAuthCallbackUrl,
-  parseOAuthProvider,
-} from "@/lib/oauthAuth";
+  buildEmailCallbackUrl,
+  normalizeMagicLinkEmail,
+} from "@/lib/emailAuth";
 
 const NOT_CONFIGURED =
   "This deployment has no Supabase project configured yet, so accounts are unavailable. See apps/web/README.md.";
@@ -45,7 +45,7 @@ export async function login(formData: FormData): Promise<void> {
   redirect(next);
 }
 
-export async function loginWithOAuth(formData: FormData): Promise<void> {
+export async function loginWithMagicLink(formData: FormData): Promise<void> {
   const supabase = await createClient();
   const next = safeNextPath(formData.get("next"));
 
@@ -55,10 +55,10 @@ export async function loginWithOAuth(formData: FormData): Promise<void> {
     );
   }
 
-  const provider = parseOAuthProvider(formData.get("provider"));
-  if (!provider) {
+  const email = normalizeMagicLinkEmail(formData.get("email"));
+  if (!email) {
     redirect(
-      `/login?error=${encodeMessage("Choose Google or GitHub to continue.")}&next=${encodeURIComponent(next)}`,
+      `/login?error=${encodeMessage("Enter your email to receive a sign-in link.")}&next=${encodeURIComponent(next)}`,
     );
   }
 
@@ -71,25 +71,30 @@ export async function loginWithOAuth(formData: FormData): Promise<void> {
 
   let redirectTo: string;
   try {
-    redirectTo = buildOAuthCallbackUrl(requestOrigin, next);
+    redirectTo = buildEmailCallbackUrl(requestOrigin, next);
   } catch {
     redirect(
       `/login?error=${encodeMessage("We could not start secure sign-in. Please try again.")}&next=${encodeURIComponent(next)}`,
     );
   }
 
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: { redirectTo },
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: redirectTo,
+      shouldCreateUser: false,
+    },
   });
 
-  if (error || !data.url) {
+  if (error) {
     redirect(
-      `/login?error=${encodeMessage(error?.message ?? "The sign-in provider did not return a redirect URL.")}&next=${encodeURIComponent(next)}`,
+      `/login?error=${encodeMessage(error.message)}&next=${encodeURIComponent(next)}`,
     );
   }
 
-  redirect(data.url);
+  redirect(
+    `/login?notice=${encodeMessage("Check your email for a secure sign-in link.")}&next=${encodeURIComponent(next)}`,
+  );
 }
 
 export async function signup(formData: FormData): Promise<void> {
