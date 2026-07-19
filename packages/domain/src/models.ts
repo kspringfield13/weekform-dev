@@ -82,7 +82,9 @@ export type AuditEventType =
   | "acceleration_engine"
   | "onboarding"
   | "usage_import"
-  | "usage_settings";
+  | "usage_settings"
+  | "cloud_sharing"
+  | "weekly_review";
 
 export interface AuditEvent {
   event_id: string;

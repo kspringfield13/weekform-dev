@@ -140,7 +140,8 @@ export function ForecastAgentPanel({
       )}
       {error && <InlineError message={error} onRetry={onGenerate} />}
       {status === "generating" && !forecast ? (
-        <div className="forecast-skeleton">
+        <div className="forecast-skeleton" role="status">
+          <span className="sr-only">Generating forecast…</span>
           <div className="forecast-skeleton-grid">
             {[0, 1, 2, 3].map((i) => (
               <div className="forecast-skeleton-cell" key={i}>

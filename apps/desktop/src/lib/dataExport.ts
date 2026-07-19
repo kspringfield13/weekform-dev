@@ -1,5 +1,7 @@
 import type { AuditEvent, SavedSkill, WorkBlock } from "../../../../packages/domain/src/models";
 import type { PersistedAppState } from "../services/localStore";
+import type { CloudBackupMetadata } from "../services/cloudPolicy";
+import type { ConsentReceiptV1 } from "../services/consentReceipt";
 import { formatDurationMinutes } from "./format";
 
 // Local-first data portability: serialize the work ledger and audit trail to
@@ -226,8 +228,14 @@ export function serializeSavedSkillsAsSkillBundle(skills: SavedSkill[], now = ne
  * so a newly-persisted field can't silently fall out of the backup — tsc forces
  * the App-side assembler to cover it. Excludes `aiConfig`: credentials never
  * belong in a plaintext export, and a reset leaves them intact anyway.
+ *
+ * `cloudSharing` carries the Account & Sharing policy + sync bookkeeping via the
+ * field-by-field `buildCloudBackupMetadata` projection — auth tokens/session are
+ * excluded by construction and must never be added to any export.
  */
-export type FullBackup = Omit<PersistedAppState, "version" | "aiConfig">;
+export type FullBackup = Omit<PersistedAppState, "version" | "aiConfig"> & {
+  cloudSharing: CloudBackupMetadata;
+};
 
 /** Serialize the full destroyable local state as one JSON document (the pre-reset backup). */
 export function serializeFullBackup(backup: FullBackup, now = new Date()): string {
@@ -238,6 +246,37 @@ export function serializeFullBackup(backup: FullBackup, now = new Date()): strin
     data: backup,
   };
   return JSON.stringify(payload, null, 2);
+}
+
+// Consent-receipt CSV keeps every scalar; `shared_fields` — the byte-exact field
+// allowlist of the approved payload — is joined into one cell in its recorded
+// order (the JSON export retains it as an array at full fidelity). Receipts carry
+// field NAMES and share metadata only — no metric values, no tokens — so
+// exporting them to a local file is privacy-safe.
+const CONSENT_RECEIPT_COLUMNS: Array<[string, (receipt: ConsentReceiptV1) => unknown]> = [
+  ["receipt_id", (r) => r.receipt_id],
+  ["recorded_at", (r) => r.recorded_at],
+  ["trigger", (r) => r.trigger],
+  ["destination", (r) => r.destination.kind],
+  ["team_id", (r) => r.destination.team_id],
+  ["week_id", (r) => r.week_id],
+  ["share_level", (r) => r.share_level],
+  ["client_snapshot_id", (r) => r.client_snapshot_id],
+  ["content_fingerprint", (r) => r.content_fingerprint],
+  ["shared_field_count", (r) => r.shared_fields.length],
+  ["shared_fields", (r) => r.shared_fields.join("; ")],
+];
+
+/** Serialize the durable consent receipts (one per approved share) for local export. */
+export function serializeConsentReceipts(
+  receipts: ConsentReceiptV1[],
+  format: ExportFormat
+): string {
+  if (format === "json") return envelope("consent_receipts", receipts);
+  return toCsv(
+    CONSENT_RECEIPT_COLUMNS.map(([header]) => header),
+    receipts.map((receipt) => CONSENT_RECEIPT_COLUMNS.map(([, get]) => get(receipt)))
+  );
 }
 
 export function serializeAuditTrail(events: AuditEvent[], format: ExportFormat): string {

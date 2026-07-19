@@ -1,0 +1,139 @@
+import { type FormEvent, useState } from "react";
+import { ArrowRight, FlaskConical, ShieldCheck } from "lucide-react";
+import {
+  authenticateLocalSimulatorAdmin,
+  getLocalAdminPortalView,
+  LOCAL_SIMULATOR_ADMIN_EMAIL,
+  LOCAL_SIMULATOR_ADMIN_PASSWORD
+} from "../../../../packages/simulator/src/authorization";
+import { WeekformMark } from "../components/common/WeekformMark";
+import "./span-simulator.css";
+
+const LOCAL_ADMIN_PORTAL_ENABLED = import.meta.env.DEV
+  && import.meta.env.VITE_ENABLE_SPAN_SIMULATOR === "true";
+
+export function AdminPortalRoot() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [authenticated, setAuthenticated] = useState(false);
+  const portalView = getLocalAdminPortalView(authenticated);
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const decision = authenticateLocalSimulatorAdmin(LOCAL_ADMIN_PORTAL_ENABLED, email, password);
+    if (!decision.allowed) {
+      setError(decision.reason);
+      return;
+    }
+    setError(null);
+    setPassword("");
+    setAuthenticated(true);
+  };
+
+  if (!LOCAL_ADMIN_PORTAL_ENABLED) {
+    return (
+      <main className="sim-access-shell">
+        <section className="sim-access-card" aria-labelledby="admin-portal-locked-title">
+          <div className="admin-portal-brand" aria-label="Weekform">
+            <WeekformMark />
+            <strong>Weekform</strong>
+          </div>
+          <span className="sim-kicker">Weekform admin portal</span>
+          <h1 id="admin-portal-locked-title">Admin Portal is locked.</h1>
+          <p>This local-only portal is available in development when the Span Simulator feature flag is enabled.</p>
+          <div className="sim-gate-note">
+            <ShieldCheck size={17} aria-hidden />
+            <div>
+              <strong>Production access remains separate</strong>
+              <span>Real simulator administration requires authenticated Supabase access and an explicit simulator-admin grant.</span>
+            </div>
+          </div>
+          <a className="sim-button secondary" href="/">Return to Weekform</a>
+        </section>
+      </main>
+    );
+  }
+
+  if (authenticated) {
+    return (
+      <main className="sim-access-shell">
+        <section className="sim-access-card admin-portal-card" aria-labelledby="admin-portal-title">
+          <div className="admin-portal-brand" aria-label="Weekform">
+            <WeekformMark />
+            <strong>Weekform</strong>
+          </div>
+          <span className="sim-kicker">Weekform admin portal</span>
+          <h1 id="admin-portal-title">{portalView.heading}</h1>
+          <p>{portalView.description}</p>
+
+          <div className="admin-portal-tools" aria-label="Administration tools">
+            {portalView.tools.map((tool) => (
+              <a className="admin-portal-tool" href={tool.href} key={tool.href}>
+                <FlaskConical size={18} aria-hidden />
+                <span>
+                  <strong>{tool.label}</strong>
+                  <small>{tool.description}</small>
+                </span>
+                <ArrowRight size={16} aria-hidden />
+              </a>
+            ))}
+          </div>
+
+          <a className="admin-portal-return" href="/">Return to Weekform</a>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="sim-access-shell">
+      <section className="sim-access-card admin-portal-card" aria-labelledby="admin-portal-title">
+        <div className="admin-portal-brand" aria-label="Weekform">
+          <WeekformMark />
+          <strong>Weekform</strong>
+        </div>
+        <span className="sim-kicker">Weekform admin portal</span>
+        <h1 id="admin-portal-title">{portalView.heading}</h1>
+        <p>{portalView.description}</p>
+
+        <form className="sim-form-grid admin-portal-form" onSubmit={submit}>
+          <label>
+            <span>Email</span>
+            <input
+              autoComplete="username"
+              autoFocus
+              inputMode="email"
+              onChange={(event) => setEmail(event.target.value)}
+              type="email"
+              value={email}
+            />
+          </label>
+          <label>
+            <span>Password</span>
+            <input
+              autoComplete="current-password"
+              onChange={(event) => setPassword(event.target.value)}
+              type="password"
+              value={password}
+            />
+          </label>
+          {error && <p className="admin-portal-error" role="alert">{error}</p>}
+          <button className="sim-button primary" type="submit">
+            Sign in to Admin Portal <ArrowRight size={15} aria-hidden />
+          </button>
+        </form>
+
+        <div className="sim-gate-note admin-demo-credentials">
+          <FlaskConical size={17} aria-hidden />
+          <div>
+            <strong>Local demo credentials</strong>
+            <span>Email: <code>{LOCAL_SIMULATOR_ADMIN_EMAIL}</code></span>
+            <span>Password: <code>{LOCAL_SIMULATOR_ADMIN_PASSWORD}</code></span>
+          </div>
+        </div>
+        <a className="admin-portal-return" href="/">Return to Weekform</a>
+      </section>
+    </main>
+  );
+}

@@ -73,6 +73,7 @@ export function usePersistence(
     persistData.tokenUsageDays,
     persistData.tokenUsageSettings,
     persistData.usageCsvRowHashes,
+    persistData.consentReceipts,
     isDemoMode,
   ]);
 }

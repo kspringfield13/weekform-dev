@@ -1145,6 +1145,7 @@ ${latestUserQuestion}`;
             const isCurrentStream = streamingMessageId === m.id;
             const isThinking = isCurrentStream && m.content === AGENT_PENDING_MESSAGE;
             const isRevealing = isCurrentStream && !isThinking;
+            const isFailure = m.role === "assistant" && (m.interrupted === true || m.id.startsWith("err-"));
             return (
               <div key={m.id || idx} className={`agent-message ${m.role}`}>
                 {m.role === "assistant" && (
@@ -1155,7 +1156,10 @@ ${latestUserQuestion}`;
                 )}
                 <div className="agent-bubble">
                   {m.role === "user" && <span className="sr-only">You: </span>}
-                  <div className={`agent-content${isCurrentStream ? " streaming" : ""}${isThinking ? " thinking" : ""}${isRevealing ? " revealing" : ""}`}>
+                  <div
+                    className={`agent-content${isCurrentStream ? " streaming" : ""}${isThinking ? " thinking" : ""}${isRevealing ? " revealing" : ""}`}
+                    role={isFailure ? "alert" : undefined}
+                  >
                     {isThinking ? (
                       <AgentThinkingText />
                     ) : m.role === "assistant" && isCurrentStream ? (

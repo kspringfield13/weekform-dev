@@ -85,14 +85,18 @@ function readRect(selector: string): Rect | null {
 export function WalkthroughOverlay({
   onComplete,
   onSkip,
+  onOpenSettings,
 }: {
   /** Called when the user finishes the last step. */
   onComplete: () => void;
   /** Called when the user dismisses the tour early. */
   onSkip: () => void;
+  /** Opens Settings while treating the unfinished tour as skipped. */
+  onOpenSettings: () => void;
 }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [rect, setRect] = useState<Rect | null>(null);
+  const [settingsRect, setSettingsRect] = useState<Rect | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const primaryButtonRef = useRef<HTMLButtonElement>(null);
   const baseId = useId();
@@ -115,6 +119,21 @@ export function WalkthroughOverlay({
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
   }, [step.target]);
+
+  // The walkthrough intentionally blocks background controls, but Settings is
+  // the user's escape hatch for setup and for replaying the tour later. Mirror
+  // the visible Settings affordance with a transparent control inside the modal
+  // pointer plane so the first click both exits the tour and navigates there.
+  useLayoutEffect(() => {
+    const update = () => {
+      setSettingsRect(
+        readRect('[data-tour="setup"]') ?? readRect(".nav-item-settings")
+      );
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   const goNext = useCallback(() => {
     if (isLast) onComplete();
@@ -233,6 +252,21 @@ export function WalkthroughOverlay({
         <div className="walkthrough-spotlight" style={spotlightStyle} aria-hidden="true" />
       ) : (
         <div className="walkthrough-backdrop" aria-hidden="true" />
+      )}
+      {settingsRect && (
+        <button
+          className="walkthrough-settings-escape"
+          type="button"
+          aria-label="Open Settings and skip tour"
+          title="Open Settings and skip tour"
+          style={{
+            top: settingsRect.top,
+            left: settingsRect.left,
+            width: settingsRect.width,
+            height: settingsRect.height,
+          }}
+          onClick={onOpenSettings}
+        />
       )}
       <div
         ref={cardRef}

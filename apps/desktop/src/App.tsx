@@ -34,14 +34,15 @@ import {
 import type { AppTheme, GettingStartedStatus, PersistedAccelerationRecord, PersistedAccelerationSnapshot, PersistedAppState, PersistedForecastRecord, PersistedNarrativeRecord, PersistedSnapshotRecord } from "./services/localStore";
 import { createDemoState } from "./services/demoData";
 import { createDefaultAIConfig } from "./services/aiProviders";
+import type { ConsentReceiptV1 } from "./services/consentReceipt";
 import {
   addDays,
   getLocalDateKey,
 } from "./lib/date";
 import { unionSpanMs } from "./lib/meetingLoad";
-import { fieldLabel, formatDurationMinutes, humanizeCorrectionValue } from "./lib/format";
+import { fieldLabel, formatDurationMinutes, formatIsoWeekLabel, humanizeCorrectionValue } from "./lib/format";
 import { downloadTextFile, exportFilename, exportMimeType, serializeFullBackup, type FullBackup } from "./lib/dataExport";
-import { createAccelerationPlayAuditEvent, createAuditEvent, createCalendarImportAuditEvent, createChatImportAuditEvent, createUsageImportAuditEvent, createUsageSettingsAuditEvent } from "./lib/audit";
+import { createAccelerationPlayAuditEvent, createAuditEvent, createCalendarImportAuditEvent, createChatImportAuditEvent, createUsageImportAuditEvent, createUsageSettingsAuditEvent, createWeeklyReviewAuditEvent } from "./lib/audit";
 import { removeSeededCorrections, removeSeededWorkBlocks } from "./lib/blocks";
 import { useDateContext } from "./hooks/useDateContext";
 import { useDerived } from "./hooks/useDerived";
@@ -64,6 +65,8 @@ import {
 } from "./lib/proactiveAlerts";
 import { useTrayStatus } from "./hooks/useTrayStatus";
 import { useToasts } from "./hooks/useToasts";
+import { useCloudAccount } from "./hooks/useCloudAccount";
+import { useCloudSync, type CloudController } from "./hooks/useCloudSync";
 import { screenLabels } from "./lib/ui";
 import {
   MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY,
@@ -77,6 +80,17 @@ import { WalkthroughOverlay } from "./components/onboarding/WalkthroughOverlay";
 import { GettingStartedModal } from "./components/onboarding/GettingStartedModal";
 import { WelcomeOverlay } from "./components/onboarding/WelcomeOverlay";
 import type { Screen, SettingsTab, WindowMode } from "./lib/types";
+import { deriveWeeklyReviewState } from "./services/weeklyReview";
+import {
+  getInitialWindowMode,
+  isTauriWindow,
+  isWebPopup,
+  openCompactWebWindow,
+  positionCompactWebPopup,
+  positionLargeWebPopup,
+  restoreWebHost,
+  syncWebPopupMode,
+} from "./services/webWindowMode";
 
 // Correction fields whose inverse can be replayed cleanly through the relabel path
 // (`updateBlock`): every entry is a string-typed `keyof WorkBlock`, so the stored
@@ -108,6 +122,7 @@ function calendarEventChanged(prior: OutlookCalendarEvent, next: OutlookCalendar
 }
 
 export function App() {
+  const [isTauriRuntime] = useState(() => isTauriWindow());
   const [isDemoMode] = useState(() => new URLSearchParams(window.location.search).get("demo") === "1");
   const [persistedSnapshot, setPersistedSnapshot] = useState<PersistedAppState | null>(() => isDemoMode ? createDemoState() : null);
   // Date-derived keys that roll over across midnight / a week boundary in this
@@ -133,7 +148,7 @@ export function App() {
         // Hydrate chrome + other states
         setActive((current) => {
           const requested = new URLSearchParams(window.location.search).get("screen") as Screen | null;
-          if (isDemoMode && requested && requested in screenLabels) return requested;
+          if ((isDemoMode || !isTauriRuntime) && requested && requested in screenLabels) return requested;
           const loadedBlocks = removeSeededWorkBlocks(data.blocks ?? []);
           return loadedBlocks.some((block) => !block.user_verified) ? "daily" : current;
         });
@@ -172,6 +187,7 @@ export function App() {
         setTokenUsageDays(data.tokenUsageDays ?? []);
         setTokenUsageSettings(data.tokenUsageSettings ?? DEFAULT_TOKEN_USAGE_SETTINGS);
         setUsageCsvRowHashes(data.usageCsvRowHashes ?? []);
+        setConsentReceipts(data.consentReceipts ?? []);
       }
       // Every launch: bring the main window forward maximized in the full
       // layout (first launch lands in welcome → walkthrough → setup; returning
@@ -179,12 +195,12 @@ export function App() {
       // either way; closing the window returns the app to tray-only.
       void invoke("present_main_window").catch(() => undefined);
     }).catch(() => {});
-  }, [isDemoMode]);
+  }, [isDemoMode, isTauriRuntime]);
 
   const initialBlocks = removeSeededWorkBlocks(persistedSnapshot?.blocks ?? []);
   const [active, setActive] = useState<Screen>(() => {
     const requested = new URLSearchParams(window.location.search).get("screen") as Screen | null;
-    return isDemoMode && requested && requested in screenLabels
+    return (isDemoMode || !isTauriRuntime) && requested && requested in screenLabels
       ? requested
       : initialBlocks.some((block) => !block.user_verified) ? "daily" : "weekly";
   });
@@ -294,6 +310,11 @@ export function App() {
   const [usageCsvRowHashes, setUsageCsvRowHashes] = useState<string[]>(
     () => persistedSnapshot?.usageCsvRowHashes ?? []
   );
+  // One durable consent receipt per approved cloud share — written by useCloudSync
+  // from the exact uploaded payload, retained like the audit trail (capped, persisted).
+  const [consentReceipts, setConsentReceipts] = useState<ConsentReceiptV1[]>(
+    () => persistedSnapshot?.consentReceipts ?? []
+  );
   const [visualContextAttemptedSessionIds, setVisualContextAttemptedSessionIds] = useState<string[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
   const [lastCalendarImportSummary, setLastCalendarImportSummary] = useState<string | null>(null);
@@ -308,8 +329,9 @@ export function App() {
   const [theme, setTheme] = useState<AppTheme>(() => readStoredThemeSync());
   const themeHydrated = useRef(false);
   const [windowMode, setWindowMode] = useState<WindowMode>(() =>
-    isDemoMode && new URLSearchParams(window.location.search).get("mode") === "compact" ? "compact" : "large"
+    getInitialWindowMode({ search: window.location.search, isTauriRuntime })
   );
+  const [resetConfirmationRequestId, setResetConfirmationRequestId] = useState(0);
 
   // Transient app-level feedback (success/error/retry). Queue lives here so any
   // handler or effect can emit one; the visual stack is rendered once in AppShell.
@@ -394,6 +416,7 @@ export function App() {
     tokenUsageDays,
     tokenUsageSettings,
     usageCsvRowHashes,
+    consentReceipts,
     isDemoMode,
   }, persistenceHydrated, (error) => {
     console.error("Failed to persist app state", error);
@@ -446,6 +469,84 @@ export function App() {
     proxyUsageDays,
     aiUsageSummary,
   } = derived;
+
+  // Account & Sharing (Weekform Cloud). Renders "not configured" when the build has
+  // no Supabase env; the demo path always starts signed out with sharing disabled.
+  // Only the shared allowlist builder's payload can leave the device (useCloudSync).
+  const cloudAccount = useCloudAccount({
+    isDemoMode,
+    onAuditEvent: (event) => {
+      if (isDemoMode) return;
+      setAuditEvents((current) => [...current, event].slice(-1000));
+    },
+  });
+  const cloudSync = useCloudSync({
+    account: cloudAccount,
+    snapshot,
+    workBlocks: blocks,
+    // A receipt exists iff an approved payload actually left the device. Capped
+    // like the audit trail; the demo never uploads, so it never writes receipts.
+    onConsentReceipt: (receipt) => {
+      if (isDemoMode) return;
+      setConsentReceipts((current) => [...current, receipt].slice(-1000));
+    },
+  });
+  const cloud: CloudController = useMemo(
+    () => ({ account: cloudAccount, sync: cloudSync }),
+    [cloudAccount, cloudSync]
+  );
+
+  // The ritual closes the current week. `forecastTrackRecord` deliberately
+  // excludes the accumulating current week, so project its existing live
+  // forecast-vs-actual review into the same primitive shape for this checklist.
+  const weeklyReviewForecastTrackRecord = useMemo(
+    () => forecastAccuracy
+      ? [{
+          week_id: currentWeekId,
+          predicted_pct: forecastAccuracy.predicted_pct,
+          actual_pct: forecastAccuracy.actual_pct,
+          error_pts: forecastAccuracy.error_pts,
+          signed_error_pts: forecastAccuracy.signed_error_pts,
+          rating: forecastAccuracy.rating
+        }, ...forecastTrackRecord]
+      : forecastTrackRecord,
+    [forecastAccuracy, forecastTrackRecord, currentWeekId]
+  );
+  const closingWeekId = currentWeekId;
+  const weeklyReviewState = useMemo(
+    () => deriveWeeklyReviewState({
+      weekId: closingWeekId,
+      blocks,
+      visualContextInsights,
+      forecastTrackRecord: weeklyReviewForecastTrackRecord,
+      generatedNarrative,
+      cloudSharing: {
+        enabled: cloud.account.policy.enabled,
+        teamId: cloud.account.policy.teamId
+      },
+      auditEvents,
+      consentReceipts
+    }),
+    [
+      closingWeekId,
+      blocks,
+      visualContextInsights,
+      weeklyReviewForecastTrackRecord,
+      generatedNarrative,
+      cloud.account.policy.enabled,
+      cloud.account.policy.teamId,
+      auditEvents,
+      consentReceipts
+    ]
+  );
+  const weeklyReviewCompletionRecorded = useMemo(
+    () => auditEvents.some((event) =>
+      event.type === "weekly_review" &&
+      typeof event.details.week_id === "string" &&
+      normalizeWeekId(event.details.week_id) === normalizeWeekId(weeklyReviewState.weekId)
+    ),
+    [auditEvents, weeklyReviewState.weekId]
+  );
 
   // Retain the latest computed snapshot per ISO week so cross-week trends and
   // personal baselines have history to read. Mirrors `forecastHistory`: one record
@@ -849,8 +950,10 @@ export function App() {
     }
 
     function resetLocalDataFromNative() {
-      resetLocalData();
-      setActive("daily");
+      setActiveSettingsTab("data-control");
+      setActive("setup");
+      setWindowMode("large");
+      setResetConfirmationRequestId((current) => current + 1);
     }
 
     window.addEventListener("clear-capacity:copy-manager-summary", copyManagerSummaryFromNative);
@@ -916,8 +1019,19 @@ export function App() {
     } else {
       setSidebarCollapsed(false);
     }
-    void invoke("set_clear_capacity_window_mode", { mode: windowMode }).catch(() => undefined);
-  }, [windowMode]);
+    if (isTauriRuntime) {
+      void invoke("set_clear_capacity_window_mode", { mode: windowMode }).catch(() => undefined);
+      return;
+    }
+    if (isWebPopup()) {
+      syncWebPopupMode(windowMode);
+      if (windowMode === "compact") {
+        positionCompactWebPopup();
+      } else {
+        positionLargeWebPopup();
+      }
+    }
+  }, [isTauriRuntime, windowMode]);
 
   useEffect(() => {
     if (isDemoMode) return;
@@ -1572,6 +1686,9 @@ export function App() {
       tokenUsageDays,
       tokenUsageSettings,
       usageCsvRowHashes,
+      consentReceipts,
+      // Field-by-field projection: sharing policy + sync bookkeeping, never tokens.
+      cloudSharing: cloudAccount.backupMetadata(),
     };
     downloadTextFile(
       exportFilename("full-backup", "json"),
@@ -1598,6 +1715,7 @@ export function App() {
           chat_events: backup.chatEvents.length,
           corrections: backup.corrections.length,
           audit_events: backup.auditEvents.length,
+          consent_receipts: backup.consentReceipts.length,
           saved_skills: backup.savedSkills.length,
           visual_context_insights: backup.visualContextInsights.length
         }
@@ -1605,12 +1723,15 @@ export function App() {
     ].slice(-1000));
   }
 
-  function resetLocalData() {
+  async function resetLocalData() {
     if (isDemoMode) {
       window.location.reload();
       return;
     }
     clearPersistedState().catch(() => {});
+    // Cloud session, sharing policy, sync bookkeeping, and the reserved snapshot id
+    // are wiped too — a reset must leave no active upload path behind.
+    const cloudCredentialsCleared = await cloudAccount.clearAll();
     setBlocks([]);
     setCalendarEvents([]);
     setActiveWindowSamples([]);
@@ -1621,14 +1742,18 @@ export function App() {
         type: "data_reset",
         source: "privacy_control",
         title: "Prototype data reset",
-        summary:
-          "All local activity, imports, AI outputs, and saved skills were cleared, along with your saved AI provider credentials. Screenshot capture was turned off and tracking paused.",
+        summary: cloudCredentialsCleared
+          ? "All local activity, imports, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and your Weekform Cloud session and sharing policy. Screenshot capture was turned off and tracking paused."
+          : "Local activity and app state were reset, but durable Weekform Cloud credential removal could not be confirmed. Retry Reset Local Data before closing the app.",
         privacy_level: "local_only",
         details: {
           visual_context_enabled: false,
           tracking_paused: true,
           retention_days: null,
           ai_credentials_cleared: true,
+          cloud_session_cleared: cloudCredentialsCleared,
+          cloud_sharing_policy_cleared: cloudCredentialsCleared,
+          cloud_clear_requires_retry: !cloudCredentialsCleared,
           stored_locally: true,
           sent_to_cloud: false
         }
@@ -1667,6 +1792,7 @@ export function App() {
     setTokenUsageDays([]);
     setTokenUsageSettings(DEFAULT_TOKEN_USAGE_SETTINGS);
     setUsageCsvRowHashes([]);
+    setConsentReceipts([]);
     setUsageImportError(null);
     setLastUsageImportSummary(null);
     resetNarrative();
@@ -1950,8 +2076,53 @@ export function App() {
   }
 
   function openScreenFromQuickView(screen: Screen) {
+    if (!isTauriRuntime && restoreWebHost(screen)) return;
+    // Settings is the intentional escape hatch from first-run guidance. The
+    // walkthrough otherwise owns the pointer plane, so dismiss it before the
+    // requested screen opens instead of making Settings appear unresponsive.
+    if (screen === "setup" && !walkthroughCompleted) {
+      endWalkthrough("skipped");
+    }
     setActive(screen);
-    setWindowMode("large");
+    changeWindowMode("large");
+  }
+
+  function changeWindowMode(nextMode: WindowMode) {
+    // A normal browser tab cannot be resized or moved by page script. Open the
+    // compact surface as a same-origin auxiliary window from this user gesture;
+    // that window can then honor the screenshot-matched geometry. If popups are
+    // blocked, keep the existing inline compact layout and report the limitation.
+    if (!isTauriRuntime && nextMode === "large" && restoreWebHost()) return;
+    if (!isTauriRuntime && nextMode === "compact" && !isWebPopup()) {
+      if (openCompactWebWindow()) return;
+      pushToast({
+        tone: "info",
+        message: "Your browser blocked the compact window — showing the compact layout here instead",
+      });
+    }
+    setWindowMode(nextMode);
+  }
+
+  function completeWeeklyReview() {
+    if (!weeklyReviewState.isComplete || weeklyReviewCompletionRecorded) return;
+    setAuditEvents((current) => {
+      const alreadyRecorded = current.some((event) =>
+        event.type === "weekly_review" &&
+        typeof event.details.week_id === "string" &&
+        normalizeWeekId(event.details.week_id) === normalizeWeekId(weeklyReviewState.weekId)
+      );
+      if (alreadyRecorded) return current;
+      return [
+        ...current,
+        createWeeklyReviewAuditEvent({
+          weekId: normalizeWeekId(weeklyReviewState.weekId),
+          itemIds: weeklyReviewState.items.map((item) => item.id),
+          doneCount: weeklyReviewState.doneCount,
+          pendingCount: weeklyReviewState.pendingCount
+        })
+      ].slice(-1000);
+    });
+    pushToast({ tone: "success", message: "Weekly review completed" });
   }
 
   // First-run guidance shown on the empty daily/weekly screens. Shares its step
@@ -1991,7 +2162,7 @@ export function App() {
   return (
     <AppShell
       active={active}
-      setActive={setActive}
+      setActive={openScreenFromQuickView}
       snapshot={snapshot}
       hasWorkBlocks={blocks.length > 0}
       reviewCount={reviewQueue.length}
@@ -2001,10 +2172,10 @@ export function App() {
       sidebarCollapsed={sidebarCollapsed}
       setSidebarCollapsed={setSidebarCollapsed}
       windowMode={windowMode}
-      setWindowMode={setWindowMode}
+      setWindowMode={changeWindowMode}
       theme={theme}
       setTheme={setTheme}
-      weekRangeLabel={currentWeekRangeLabel}
+      weekRangeLabel={active === "weekly-review" ? formatIsoWeekLabel(closingWeekId) : currentWeekRangeLabel}
       demoMode={isDemoMode}
       showTrackingReminder={showTrackingReminder}
       toasts={toasts}
@@ -2076,6 +2247,7 @@ export function App() {
         setAiConfig={setAiConfig}
         retentionDays={retentionDays}
         setRetentionDays={changeRetentionDays}
+        cloud={cloud}
         proactiveAlert={proactiveAlert}
         onDismissProactiveAlert={dismissProactiveAlert}
         proactiveAlertSettings={proactiveAlertSettings}
@@ -2087,6 +2259,8 @@ export function App() {
         onClassifySessions={classifyActiveWindowSessions}
         corrections={corrections}
         onResetLocalData={resetLocalData}
+        resetConfirmationRequestId={resetConfirmationRequestId}
+        onResetConfirmationRequestHandled={() => setResetConfirmationRequestId(0)}
         onExportBackup={exportFullBackup}
         reviewSuggestions={reviewSuggestions}
         reviewCopilotStatus={reviewCopilotStatus}
@@ -2096,6 +2270,9 @@ export function App() {
         onDismissReviewSuggestion={dismissReviewSuggestion}
         weekRangeLabel={currentWeekRangeLabel}
         nextWeekRangeLabel={nextWeekRangeLabel}
+        weeklyReviewState={weeklyReviewState}
+        weeklyReviewCompletionRecorded={weeklyReviewCompletionRecorded}
+        onCompleteWeeklyReview={completeWeeklyReview}
         generatedForecast={generatedForecast}
         forecastAccuracy={forecastAccuracy}
         forecastAccuracyTrend={forecastAccuracyTrend}
@@ -2112,6 +2289,7 @@ export function App() {
         onManagerSummaryChange={updateManagerSummary}
         onRegenerate={() => regenerateNarrative("manual")}
         auditEvents={auditEvents}
+        consentReceipts={consentReceipts}
         todayKey={todayKey}
         currentWeekRangeLabel={currentWeekRangeLabel}
         onReplayWalkthrough={replayWalkthrough}
@@ -2124,6 +2302,7 @@ export function App() {
         <WalkthroughOverlay
           onComplete={() => endWalkthrough("completed")}
           onSkip={() => endWalkthrough("skipped")}
+          onOpenSettings={() => openScreenFromQuickView("setup")}
         />
       )}
       {showGettingStarted && (

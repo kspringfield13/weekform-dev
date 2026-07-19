@@ -8,10 +8,8 @@ const TONE_ICON: Record<ToastTone, typeof Info> = {
 };
 
 /**
- * Renders the active toast stack as a single polite live region. Mounted once in
- * `AppShell`; the region is always present in the DOM (even when empty) so screen
- * readers observe additions. The slide-in and slide-out get reduced-motion
- * overrides next to the `.toast` rules in `styles.css`.
+ * Renders the active toast stack with per-tone live regions: errors announce
+ * assertively, while success and informational feedback remain polite.
  */
 export function ToastHost({
   toasts,
@@ -21,16 +19,22 @@ export function ToastHost({
   onDismiss: (id: string) => void;
 }) {
   return (
-    <div className="toast-host" role="status" aria-live="polite">
+    <div className="toast-host">
       {toasts.map((toast) => {
         const Icon = TONE_ICON[toast.tone];
         return (
           <div
             className={`toast toast-${toast.tone}${toast.leaving ? " toast-leaving" : ""}`}
             key={toast.id}
+            role={toast.tone === "error" ? "alert" : "status"}
+            aria-live={toast.tone === "error" ? "assertive" : "polite"}
+            aria-atomic="true"
           >
             <Icon className="toast-icon" size={16} aria-hidden="true" />
-            <span className="toast-message">{toast.message}</span>
+            <span className="toast-message">
+              {toast.tone === "error" && <span className="sr-only">Error: </span>}
+              {toast.message}
+            </span>
             {toast.action && (
               <button
                 type="button"

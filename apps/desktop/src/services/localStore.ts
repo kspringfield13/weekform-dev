@@ -28,6 +28,7 @@ import {
 } from "../lib/proactiveAlerts";
 import type { WindowMode } from "../lib/types";
 import type { AuthoredAccelerationPlay } from "./accelerationSchema";
+import { parseConsentReceipts, type ConsentReceiptV1 } from "./consentReceipt";
 
 const STORE_FILE = "clear-capacity.store";
 const STATE_KEY = "appState";
@@ -187,6 +188,8 @@ export interface PersistedAppState {
   tokenUsageSettings: TokenUsageSettings;
   /** stableHash of every accepted usage-CSV row, for idempotent re-imports. */
   usageCsvRowHashes: string[];
+  /** One durable consent receipt per approved cloud share (consentReceipt.ts). */
+  consentReceipts: ConsentReceiptV1[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -214,7 +217,9 @@ const SUPPORTED_AUDIT_EVENT_TYPES = new Set<AuditEventType>([
   "acceleration_engine",
   "onboarding",
   "usage_import",
-  "usage_settings"
+  "usage_settings",
+  "cloud_sharing",
+  "weekly_review"
 ]);
 
 const AI_AUDIT_EVENT_TYPES = new Set<AuditEventType>([
@@ -888,7 +893,8 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
         proactiveAlertRuntime: parseProactiveAlertRuntime(parsed.proactiveAlertRuntime),
         tokenUsageDays: parseTokenUsageDays(parsed.tokenUsageDays),
         tokenUsageSettings: parseTokenUsageSettings(parsed.tokenUsageSettings),
-        usageCsvRowHashes: parseStringIdList(parsed.usageCsvRowHashes)
+        usageCsvRowHashes: parseStringIdList(parsed.usageCsvRowHashes),
+        consentReceipts: parseConsentReceipts(parsed.consentReceipts)
       };
     }
     const data = await store.get<unknown>(STATE_KEY);
@@ -944,7 +950,8 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
       proactiveAlertRuntime: parseProactiveAlertRuntime(parsed.proactiveAlertRuntime),
       tokenUsageDays: parseTokenUsageDays(parsed.tokenUsageDays),
       tokenUsageSettings: parseTokenUsageSettings(parsed.tokenUsageSettings),
-      usageCsvRowHashes: parseStringIdList(parsed.usageCsvRowHashes)
+      usageCsvRowHashes: parseStringIdList(parsed.usageCsvRowHashes),
+      consentReceipts: parseConsentReceipts(parsed.consentReceipts)
     };
   } catch {
     return null;

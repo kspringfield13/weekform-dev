@@ -17,6 +17,7 @@ import type {
   SavedSkill,
 } from "../../../../../packages/domain/src/models";
 import type { PersistedForecastRecord, PersistedNarrativeRecord, ForecastAccuracyReview, PersistedSnapshotRecord } from "../../services/localStore";
+import type { ConsentReceiptV1 } from "../../services/consentReceipt";
 import type { computeWeeklyCapacitySnapshot, generateWeeklyNarrative, ChatStakeholderSummary, ForecastAccuracyTrend, ForecastTrackRecordEntry, InterruptionLoadAnalysis } from "../../../../../packages/inference/src/capacity";
 import type { RealizedSavingsEntry, RealizedSavingsSummary } from "../../../../../packages/inference/src/accelerate";
 
@@ -24,6 +25,7 @@ import { CompactWidget } from "../compact/CompactWidget";
 import { SetupScreen } from "../settings/SetupScreen";
 import { LedgerScreen } from "../ledger/LedgerScreen";
 import { DailyReviewScreen } from "../review/DailyReviewScreen";
+import { WeeklyReviewScreen } from "../review/WeeklyReviewScreen";
 import { WeeklyCapacityScreen } from "../capacity/WeeklyCapacityScreen";
 import { ForecastScreen } from "../capacity/ForecastScreen";
 import { NarrativeScreen } from "../narrative/NarrativeScreen";
@@ -36,6 +38,8 @@ import { SkillsLibraryScreen } from "../accelerate/SkillsLibraryScreen";
 import type { OnboardingStep } from "../common/OnboardingCard";
 import type { ProactiveAlert, ProactiveAlertSettings } from "../../lib/proactiveAlerts";
 import type { PushToast } from "../../hooks/useToasts";
+import type { CloudController } from "../../hooks/useCloudSync";
+import type { WeeklyReviewState } from "../../services/weeklyReview";
 
 interface ScreenRouterProps {
   active: Screen;
@@ -113,6 +117,8 @@ interface ScreenRouterProps {
   setAiConfig: (value: AIConfig | null) => void;
   retentionDays: number | null;
   setRetentionDays: (value: number | null) => void;
+  // Account & Sharing (setup screen)
+  cloud: CloudController;
   // proactive alerts (compact widget + setup screen)
   proactiveAlert: ProactiveAlert | null;
   onDismissProactiveAlert: () => void;
@@ -127,6 +133,8 @@ interface ScreenRouterProps {
   // corrections screen
   corrections: UserCorrection[];
   onResetLocalData: () => void;
+  resetConfirmationRequestId: number;
+  onResetConfirmationRequestHandled: () => void;
   onExportBackup: () => void;
   // daily review screen
   reviewSuggestions: ReviewCopilotSuggestion[];
@@ -138,6 +146,10 @@ interface ScreenRouterProps {
   // weekly capacity + forecast
   weekRangeLabel: string;
   nextWeekRangeLabel: string;
+  // weekly close-out ritual
+  weeklyReviewState: WeeklyReviewState;
+  weeklyReviewCompletionRecorded: boolean;
+  onCompleteWeeklyReview: () => void;
   // forecast screen
   generatedForecast: PersistedForecastRecord | null;
   forecastAccuracy: ForecastAccuracyReview | null;
@@ -157,6 +169,7 @@ interface ScreenRouterProps {
   onRegenerate: () => Promise<AppActionResult>;
   // audit log screen
   auditEvents: AuditEvent[];
+  consentReceipts: ConsentReceiptV1[];
   // agent screen
   todayKey: string;
   currentWeekRangeLabel: string;
@@ -233,6 +246,7 @@ export function ScreenRouter({
   setAiConfig,
   retentionDays,
   setRetentionDays,
+  cloud,
   proactiveAlert,
   onDismissProactiveAlert,
   proactiveAlertSettings,
@@ -244,6 +258,8 @@ export function ScreenRouter({
   onClassifySessions,
   corrections,
   onResetLocalData,
+  resetConfirmationRequestId,
+  onResetConfirmationRequestHandled,
   onExportBackup,
   reviewSuggestions,
   reviewCopilotStatus,
@@ -253,6 +269,9 @@ export function ScreenRouter({
   onDismissReviewSuggestion,
   weekRangeLabel,
   nextWeekRangeLabel,
+  weeklyReviewState,
+  weeklyReviewCompletionRecorded,
+  onCompleteWeeklyReview,
   generatedForecast,
   forecastAccuracy,
   forecastAccuracyTrend,
@@ -269,6 +288,7 @@ export function ScreenRouter({
   onManagerSummaryChange,
   onRegenerate,
   auditEvents,
+  consentReceipts,
   todayKey,
   currentWeekRangeLabel,
   pushToast,
@@ -334,6 +354,8 @@ export function ScreenRouter({
           corrections={corrections}
           auditEvents={auditEvents}
           onResetLocalData={onResetLocalData}
+          resetConfirmationRequestId={resetConfirmationRequestId}
+          onResetConfirmationRequestHandled={onResetConfirmationRequestHandled}
           onExportBackup={onExportBackup}
           retentionDays={retentionDays}
           setRetentionDays={setRetentionDays}
@@ -344,6 +366,7 @@ export function ScreenRouter({
           onDefaultWindowModeChange={onDefaultWindowModeChange}
           activeSettingsTab={activeSettingsTab}
           onActiveSettingsTabChange={onActiveSettingsTabChange}
+          cloud={cloud}
         />
       )}
       {active === "ledger" && (
@@ -419,6 +442,15 @@ export function ScreenRouter({
           hasWorkBlocks={blocks.length > 0}
         />
       )}
+      {active === "weekly-review" && (
+        <WeeklyReviewScreen
+          state={weeklyReviewState}
+          completionRecorded={weeklyReviewCompletionRecorded}
+          onOpenScreen={openScreen}
+          onOpenSettingsTab={openSettingsTab}
+          onComplete={onCompleteWeeklyReview}
+        />
+      )}
       {active === "narrative" && (
         <NarrativeScreen
           aiAvailable={aiAvailable}
@@ -444,7 +476,9 @@ export function ScreenRouter({
           onOpenSettingsTab={openSettingsTab}
         />
       )}
-      {active === "audit" && <AuditLogScreen auditEvents={auditEvents} pushToast={pushToast} />}
+      {active === "audit" && (
+        <AuditLogScreen auditEvents={auditEvents} consentReceipts={consentReceipts} pushToast={pushToast} />
+      )}
       {active === "sensitive" && (
         <SensitiveReviewScreen
           visualContextInsights={visualContextInsights}

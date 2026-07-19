@@ -70,7 +70,96 @@ Two focused GPT-5.6 Codex tasks provide supporting evidence for later timeline e
 | July 14 | `019f629a-3cb7-7a01-a817-1103ef57bb15` | `Enhance model prices` | Reviewed pricing, usage, settings, and capacity workflows; commits `21b32f5`, `f678fb6`, and `8888a66`. |
 | July 16 | `019f6aba-c925-7173-ad3a-3d730c5dd689` | `Fix compact view overlap` | Compact layout and approval-gated Agent actions; commit `cf51d8a`. |
 
+### Team Clawfather cloud slice (Waves 1–3)
+
+The team-sharing vertical slice was implemented by an Absoloop-supervised Claude agent loop rather than a Codex session; per policy, only mission/loop IDs and outcomes are recorded, not raw prompts:
+
+- **Mission ID:** `ABS-MINIMAL-001`; loop runs `loop-20260719-050445-52108e`, `loop-20260719-052919-0cf644`, and `loop-20260719-055300-166f58`
+- **Dates:** July 19, 2026
+- **Outcome:** Wave 1 (shared cloud contract with privacy tests, Supabase schema/RLS/seed SQL, Next.js web foundation) and Wave 2 (team creation and hashed-token invites, desktop Account & Sharing with manual privacy-gated sync, manager/member dashboards) per `docs/WEEKFORM_CODEX_PARALLEL_PROMPT_RUNBOOK.md` §0, whose status table carries the per-prompt evidence and limitations. Gate commands at the Wave 1–2 close: `npm run test:cloud` 10/10, `npm run test:desktop-cloud` 12/12, `npm run test:web` 24/24, `npm run web:build` and root `npm run build` exit 0 (the suites grew in later hardening passes — see the Wave 3 entry below for current counts). Supabase SQL is review-only on this machine (no CLI/psql), so live RLS behavior remains unproven.
+- **Wave 3 (completeness and intelligence), same mission:** loop runs `loop-20260719-065525-403d03`, `loop-20260719-071047-7592e7`, and the validation pass `loop-20260719-080950-755c05`, all July 19, 2026. Outcome: scheduled auto-sync policy (`apps/desktop/src/services/cloudScheduler.ts`), the server-side AI Team Briefing at `/teams/[teamId]/briefing` (allowlisted aggregates only, deterministic fallback, `docs/PRIVACY.md` updated), and the account-gated `/download` + `/download/artifact` signed-URL path, per the runbook §0 Wave 3 close-out row. Gate command at close: `npm run verify:wave3` (chains `test:desktop-cloud` 55/55, `test:web` 85/85, `web:build` with 12 routes / 11 static pages) exit 0, plus `apps/web` typecheck and root `npm run build` exit 0. A July 19 Wave 3 hardening pass (loop run `loop-20260719-081455-c0b251`) made the previously inspection-only `/download/artifact` signed-URL branch test-proven via a pure dependency-injected planner, growing `test:web` to 91/91 with `verify:wave3` still exit 0; a second hardening pass the same day (loop run `loop-20260719-081455-c0b251`, iteration 2) test-proved the Team Briefing orchestrator's remaining branches (real-timer timeout/abort, network-rejection fallback, `output[]` extraction, API-key non-leak guard), growing `test:web` to 95/95 with `verify:wave3` still exit 0. A third hardening pass (loop run `loop-20260719-081455-c0b251`, iteration 3) test-proved the desktop auto-sync real-timer wiring by extracting the plan→timer translation into the pure injectable `armAutoSyncTimer` helper in `cloudScheduler.ts` (5 new tests, including a real-platform-timer end-to-end fire), growing `test:desktop-cloud` to 60/60 with `verify:wave3` still exit 0. Live-stack, live-model, and live-app-soak verification remain environment-blocked, as documented in the runbook.
+
+### Team Clawfather release wave (Wave 4)
+
+The privacy-critic, integration/release-gate, and submission-package prompts (runbook Prompts 10–12) closed the mission on the same working tree:
+
+- **Dates:** July 19, 2026
+- **Prompt 10 — adversarial privacy critic:** completed with **no BLOCKER or HIGH findings**; two MEDIUM findings were remediated the same day with regression tests. Report: `docs/hackathon/TEAM_CLAWFATHER_PRIVACY_CRITIC_REPORT.md`.
+- **Prompt 11 — integration and release gate:** all gates re-run on the final tree, recorded in `docs/hackathon/TEAM_CLAWFATHER_RELEASE_REPORT.md`. Results: `npm run test:cloud` 10/10; `npm run verify:wave3` exit 0 (60/60 desktop-cloud tests, 102/102 web tests, web build with 12 routes / 11 static pages); root `npm run build` exit 0; secret scan clean. Live-RLS / synthetic golden-path verification (no Supabase CLI, psql, or live stack on this machine) remains explicitly **operator-pending / environment-blocked** — documented, not claimed as passed. The `npm audit` gate closed later on July 19, 2026: `npm run audit:check` exit 0 with 0 vulnerabilities at root and in `apps/web`, after remediating postcss GHSA-qx2v-qp2m-jg93 with an `overrides: { "postcss": ">=8.5.10" }` pin (8.4.31 → 8.5.20) and re-running all gates green. No test, RLS policy, privacy copy, or build gate was weakened to produce these results.
+- **Prompt 12 — submission package:** demo script and Devpost copy prepared as part of this wave (`docs/hackathon/TEAM_CLAWFATHER_DEMO_SCRIPT.md`, `docs/hackathon/TEAM_CLAWFATHER_DEVPOST.md`), alongside the README restructure around the team-cloud product story and this provenance entry. The demo sequence uses synthetic data only and keeps inherited desktop capabilities distinct from Team Clawfather work.
+
 ### Supplemental submission-readiness task
+
+### Part 2 forecasting, experience excellence, weekly review, and action follow-through
+
+- **Date:** July 19, 2026
+- **Absoloop loop:** `loop-20260719-111613-cf7d72`
+- **Outcome:** PT2 Prompt 13 added deterministic, self-calibrated team
+  forecasting. PT2 Prompt 14 then completed an audit-first coherence pass over
+  desktop and web: 20 identified loading, error, destructive-action,
+  terminology, provenance, and accessibility gaps were resolved without adding
+  a product capability or widening data flow. PT2 Prompt 15 then added the
+  optional local weekly-review ritual: a deterministic closing-week checklist,
+  handoffs to existing correction/review/share-preview surfaces, and one
+  ids/counts-only completion audit event. PT2 Prompt 16 then added the first
+  manager action follow-through loop: a manager-only, team-scoped action record
+  created through a narrow RPC that server-sets identity and lifecycle fields,
+  linked to an allowlisted briefing risk signal and a correlation-only team
+  median after two distinct later weeks. Create, resolve/drop, and delete now use
+  manager-authorized security-definer RPCs; direct table INSERT, UPDATE, and DELETE
+  are revoked and covered by static plus pgTAP contracts. The migration is an unapplied
+  SQL-review artifact; no live RLS claim is made.
+- **Evidence:** `docs/hackathon/TEAM_CLAWFATHER_UX_AUDIT.md` maps each fix row
+  to its source resolution. Loop `loop-20260719-135748-556358` tightened Prompt
+  16 to RPC-only create/resolve/delete and server-derived lifecycle fields; its
+  focused boundary suite passes 17/17; its unapplied pgTAP specification now has
+  76 assertions, including direct member UPDATE/DELETE and outsider resolve/delete
+  abuse cases. `npm run verify:wave3` passes with
+  111/111 desktop tests, 179/179 web tests, and 12 routes / 11 static pages; the
+  root build passes. The final clean integration reran `npm run audit:check`
+  successfully with zero vulnerabilities in both workspaces, after eighteen
+  earlier attempts had been blocked by registry DNS. Prompt 16 is complete at
+  the repository level; live Supabase/RLS execution remains unclaimed. No live
+  Supabase, OpenAI, Keychain, or release proof is implied by these local gates.
+
+This pass used Codex teammates for independent desktop, web, and critic slices;
+the product vocabulary and approval boundaries remained human-directed.
+
+### Desktop/web alignment and local-data boundary hardening
+
+- **Date:** July 19, 2026
+- **Absoloop loop:** `loop-20260719-144536-63efe8`
+- **Outcome:** parallel desktop, web, and independent security reviews repaired
+  the request-consistency seams between the local Mac model, approved Supabase
+  snapshots, and the server-rendered team site. Desktop writes now revalidate
+  membership and the current narrowing policy immediately before upload;
+  unchanged state reconciles the authenticated row so website deletion cannot
+  remain falsely "Up to date" or be automatically recreated without an
+  explicit re-arm/manual sync. Retry exhaustion resets on changed reviewed
+  content. Native Store failure no longer creates a second browser-storage
+  credential envelope, and corrupt pending snapshot IDs are discarded.
+- **Web/data boundary:** dashboard and team pages are force-dynamic and request
+  fresh server/RLS data every 15 seconds while visible and online. The website
+  has no application-managed persistent browser workload cache or browser Supabase client; Supabase auth
+  cookies are the documented persistent exception. Supabase now server-stamps
+  `synced_at`, and latest/freshness ordering uses it rather than a client clock.
+- **Evidence:** tests-first focused failures were observed for UUID parsing,
+  native fallback selection, server-clock mapping, refresh mounts, fresh-policy
+  upload guarding, retry reset, and remote reconciliation. A credential-free
+  revocation tombstone also prevents stale cloud credentials
+  from rehydrating when primary deletion fails. A failed explicit re-sync cannot
+  erase the guard and allow automatic recreation, and an additive migration
+  applies the server receipt clock to already-provisioned databases.
+  `npm run verify:wave3` passes 128/128 desktop-cloud and 188/188 web tests with
+  12 routes; root `npm run build`, `npm run audit:check` (zero vulnerabilities
+  in both workspaces), and `git diff --check` pass.
+  Supabase CLI/psql and a disposable project remain unavailable, so live
+  migration/pgTAP and four-actor desktop-write/web-read/delete proof are not
+  claimed.
+
+The work used separate desktop and web implementers plus an independent critic;
+the maintainer supplied the local-first/cloud-complexity boundary and requested
+the alignment QA.
 
 The hackathon-readiness and provenance task is supplemental evidence:
 

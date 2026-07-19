@@ -62,6 +62,8 @@ import { ConfirmDialog } from "../common/ConfirmDialog";
 import { AgentMark } from "../common/AgentMark";
 import { CHAT_PROVIDERS } from "../../../../../packages/integrations/src/chat/chatSource";
 import { ModelPricingPanel } from "./ModelPricingPanel";
+import { CloudAccountPanel } from "./CloudAccountPanel";
+import type { CloudController } from "../../hooks/useCloudSync";
 
 // Chat sources the prototype can ingest today: local file exports parsed on-device.
 // Providers that would need a native OAuth connector are omitted until one exists.
@@ -86,7 +88,8 @@ const SETTINGS_TABS = [
   { id: "data-control", label: "Data Control" },
   { id: "ai-assistance", label: "AI Assistance" },
   { id: "ai-usage", label: "AI Usage" },
-  { id: "notifications", label: "Notifications" }
+  { id: "notifications", label: "Notifications" },
+  { id: "account", label: "Account & Sharing" }
 ] as const satisfies ReadonlyArray<{ id: SettingsTab; label: string }>;
 
 function settingsTabId(id: SettingsTab): string {
@@ -145,6 +148,9 @@ export function SetupScreen({
   activeSettingsTab,
   onActiveSettingsTabChange,
   aiAvailable,
+  cloud,
+  resetConfirmationRequestId,
+  onResetConfirmationRequestHandled,
 }: {
   paused: boolean;
   setPaused: (value: boolean) => void;
@@ -184,6 +190,9 @@ export function SetupScreen({
   onActiveSettingsTabChange: (tab: SettingsTab) => void;
   /** AI access exists (saved key or env fallback) — false grays the AI-dependent toggles. */
   aiAvailable: boolean;
+  cloud: CloudController;
+  resetConfirmationRequestId: number;
+  onResetConfirmationRequestHandled: () => void;
 }) {
   const latestImport = calendarEvents.reduce<string | null>((latest, event) => {
     if (!latest || new Date(event.imported_at) > new Date(latest)) {
@@ -204,6 +213,13 @@ export function SetupScreen({
   const [isTesting, setIsTesting] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
   const settingsTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  useEffect(() => {
+    if (resetConfirmationRequestId > 0) {
+      setConfirmingReset(true);
+      onResetConfirmationRequestHandled();
+    }
+  }, [onResetConfirmationRequestHandled, resetConfirmationRequestId]);
 
   // "Reset all local data" from the in-app dialog on this screen clears aiConfig
   // to null WITHOUT navigating away (unlike the native-menu path, which routes to
@@ -457,7 +473,7 @@ export function SetupScreen({
         <div className="settings-row-status">
           <strong>{formatCount(activeWindowSessions.length)} session{activeWindowSessions.length === 1 ? "" : "s"}</strong>
           <span>{formatCount(activeWindowSamples.length)} sample{activeWindowSamples.length === 1 ? "" : "s"} stored</span>
-          {captureError && <small className="import-error">{captureError}</small>}
+          {captureError && <small className="import-error" role="alert">{captureError}</small>}
         </div>
         <span className={paused ? "source-status is-paused" : "source-status is-active"}>
           {paused ? <Pause size={13} aria-hidden /> : <span className="source-status-dot" />}
@@ -477,7 +493,7 @@ export function SetupScreen({
             <>Imported <time dateTime={latestImport}>{formatAuditTime(latestImport)}</time></>
           ) : "Not imported yet"}</span>
           {lastCalendarImportSummary && <small className="import-delta">{lastCalendarImportSummary}</small>}
-          {importError && <small className="import-error">{importError}</small>}
+          {importError && <small className="import-error" role="alert">{importError}</small>}
         </div>
         <label className="settings-control">
           <Upload size={16} aria-hidden />
@@ -503,7 +519,7 @@ export function SetupScreen({
         <div className="settings-row-status">
           <strong>Metadata only</strong>
           <span>No message text imported</span>
-          {chatImportError && <small className="import-error">{chatImportError}</small>}
+          {chatImportError && <small className="import-error" role="alert">{chatImportError}</small>}
         </div>
         <div className="chat-connect-options">
           {FILE_IMPORT_CHAT_PROVIDERS.map((provider) => (
@@ -621,7 +637,7 @@ export function SetupScreen({
         <div className="settings-row-status">
           <strong>{csvBucketCount > 0 ? `${csvBucketCount} day-bucket${csvBucketCount === 1 ? "" : "s"}` : "Nothing imported"}</strong>
           <span>{lastUsageImportSummary ?? "Parsed locally, never uploaded"}</span>
-          {usageImportError && <small className="import-error">{usageImportError}</small>}
+          {usageImportError && <small className="import-error" role="alert">{usageImportError}</small>}
         </div>
         <label className="settings-control">
           <Upload size={16} aria-hidden />
@@ -801,8 +817,8 @@ export function SetupScreen({
 
             <div
               className={`ai-provider-status${providerStatus ? ` is-${providerStatus.tone}` : ''}`}
-              role="status"
-              aria-live="polite"
+              role={providerStatus?.tone === "error" ? "alert" : "status"}
+              aria-live={providerStatus?.tone === "error" ? "assertive" : "polite"}
               aria-atomic="true"
             >
               {providerStatus && (
@@ -1040,6 +1056,17 @@ export function SetupScreen({
           <span>Reset Data</span>
         </button>
       </section>
+      </div>
+
+      <div
+        className="settings-tab-panel"
+        id={settingsPanelId("account")}
+        role="tabpanel"
+        aria-labelledby={settingsTabId("account")}
+        tabIndex={0}
+        hidden={activeSettingsTab !== "account"}
+      >
+      <CloudAccountPanel cloud={cloud} />
       </div>
 
       {confirmingReset && (
