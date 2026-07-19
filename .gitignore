@@ -16,3 +16,6 @@ public/weekform-video/*.wav
 packages/integrations/src/usage/*.candidate.json
 .absoloop/
 absoloop/
+
+# Claude Code workspace (local tooling, not project source)
+.claude/
