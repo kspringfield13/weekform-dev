@@ -3,6 +3,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import {
   RELEASE_INFO,
@@ -13,7 +14,7 @@ import {
 
 const FULL_ENV = {
   WEEKFORM_ARTIFACT_BUCKET: "weekform-releases",
-  WEEKFORM_ARTIFACT_PATH: "releases/weekform-0.1.0.zip",
+  WEEKFORM_ARTIFACT_PATH: "releases/Weekform_0.1.0_universal.dmg",
   NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-role-secret",
 };
@@ -42,7 +43,7 @@ test("parseArtifactConfig returns a full config with the default TTL", () => {
   const config = parseArtifactConfig(FULL_ENV);
   assert.ok(config, "expected a parsed config");
   assert.equal(config.bucket, "weekform-releases");
-  assert.equal(config.path, "releases/weekform-0.1.0.zip");
+  assert.equal(config.path, "releases/Weekform_0.1.0_universal.dmg");
   assert.equal(config.supabaseUrl, "https://example.supabase.co");
   assert.equal(config.serviceRoleKey, "service-role-secret");
   assert.equal(config.signedUrlTtlSeconds, 300);
@@ -106,6 +107,29 @@ test("RELEASE_INFO carries non-empty version, date, and macOS requirement copy",
   assert.ok(RELEASE_INFO.version.length > 0);
   assert.ok(RELEASE_INFO.generatedDate.length > 0);
   assert.match(RELEASE_INFO.macOsRequirement, /macOS/);
+  assert.match(RELEASE_INFO.artifactFilename, /^Weekform_.+_universal\.dmg$/);
+  assert.equal(RELEASE_INFO.architecture, "Apple silicon and Intel");
+  assert.ok(RELEASE_INFO.releaseNotes.length >= 3);
+  assert.ok(RELEASE_INFO.features.length >= 4);
+  assert.ok(RELEASE_INFO.tips.length >= 3);
+});
+
+test("download page offers one Mac-native DMG action with no developer setup path", () => {
+  const source = readFileSync(
+    new URL("../app/download/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.equal(source.match(/Download now/g)?.length, 1);
+  assert.match(source, /RELEASE_INFO\.artifactFilename/);
+  assert.match(source, /RELEASE_INFO\.releaseNotes/);
+  assert.match(source, /RELEASE_INFO\.features/);
+  assert.match(source, /RELEASE_INFO\.tips/);
+  assert.match(source, /Open the DMG/);
+  assert.doesNotMatch(
+    source,
+    /npm ci|desktop:dev|xattr -dr|Download source archive|git clone/,
+  );
 });
 
 // --- planArtifactResponse: the full /download/artifact decision sequence ---
@@ -114,7 +138,7 @@ import { planArtifactResponse, type ArtifactConfig } from "./download";
 
 const CONFIG: ArtifactConfig = {
   bucket: "weekform-releases",
-  path: "releases/weekform-0.1.0.zip",
+  path: "releases/Weekform_0.1.0_universal.dmg",
   supabaseUrl: "https://example.supabase.co",
   serviceRoleKey: "service-role-secret",
   signedUrlTtlSeconds: 300,
@@ -180,7 +204,7 @@ test("artifact plan: signed in but no private bucket → honest 503 fallback, no
   assert.ok(plan.kind === "json");
   assert.equal(plan.status, 503);
   assert.equal(plan.body.error, "artifact_not_configured");
-  assert.match(plan.body.message, /public source archive/);
+  assert.match(plan.body.message, /DMG/);
   assert.equal(calls.getUser, 1);
   assert.equal(calls.createSignedUrl, 0, "service-key step must not run");
 });

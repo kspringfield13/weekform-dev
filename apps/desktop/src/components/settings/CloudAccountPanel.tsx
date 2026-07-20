@@ -7,6 +7,7 @@ import { useState, type FormEvent } from "react";
 import {
   AlertCircle,
   CheckCircle2,
+  ChevronDown,
   Cloud,
   CloudUpload,
   ExternalLink,
@@ -41,13 +42,11 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 function AccountSharingHeading() {
   return (
-    <div className="settings-section-heading">
+    <div className="settings-section-heading account-sharing-heading">
       <div>
-        <h2>Account &amp; sharing</h2>
-        <span>
-          Optionally share a small, reviewed weekly capacity snapshot with one team. Sharing is off
-          by default, every field is opt-in, and nothing uploads without your explicit approval.
-        </span>
+        <span className="account-sharing-eyebrow">Account</span>
+        <h2>Weekform Web</h2>
+        <p>Connect your workspace, then choose exactly what leaves this Mac.</p>
       </div>
     </div>
   );
@@ -110,6 +109,7 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
   const { account: ctrl, sync } = cloud;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [activeOAuthProvider, setActiveOAuthProvider] = useState<"google" | "github" | null>(null);
   const [projectNamesDraft, setProjectNamesDraft] = useState<string | null>(null);
   const [confirmingFirstSync, setConfirmingFirstSync] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -117,15 +117,15 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
 
   if (!ctrl.configured) {
     return (
-      <>
+      <div className="account-sharing-page">
         <AccountSharingHeading />
         <ManagerAccessSettingsRow />
         <section className="settings-row">
           <div className="settings-row-icon"><Cloud size={18} aria-hidden /></div>
           <div>
-            <h3>Weekform Cloud is not configured in this build</h3>
+            <h3>Weekform Web is not configured in this build</h3>
             <p>
-              This build has no cloud sync endpoint, so Weekform stays fully local: nothing can be
+              This build has no Web sync endpoint, so Weekform stays fully local: nothing can be
               uploaded, and no account features are available. Everything else in the app works normally.
             </p>
           </div>
@@ -134,7 +134,7 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
             <span>No upload path exists</span>
           </div>
         </section>
-      </>
+      </div>
     );
   }
 
@@ -154,6 +154,16 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
     if (ctrl.isDemoMode || ctrl.authBusy) return;
     const succeeded = await ctrl.signIn(email, password);
     if (succeeded) setPassword("");
+  };
+
+  const handleOAuthSignIn = async (provider: "google" | "github") => {
+    if (ctrl.isDemoMode || ctrl.authBusy) return;
+    setActiveOAuthProvider(provider);
+    try {
+      await ctrl.signInWithOAuth(provider);
+    } finally {
+      setActiveOAuthProvider(null);
+    }
   };
 
   const commitProjectNames = () => {
@@ -176,64 +186,93 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
   };
 
   return (
-    <>
+    <div className="account-sharing-page">
       <AccountSharingHeading />
-      <ManagerAccessSettingsRow />
 
       {!signedIn && (
-        <section className="settings-row">
-          <div className="settings-row-icon"><LogIn size={18} aria-hidden /></div>
-          <div>
-            <h3>Sign in to Weekform Cloud</h3>
+        <section className="cloud-auth-card" aria-labelledby="weekform-web-signin-title">
+          <div className="cloud-auth-intro">
+            <span className="cloud-auth-mark" aria-hidden><Cloud size={16} /></span>
+            <div>
+              <span className="cloud-auth-kicker">Your Weekform account</span>
+              <h3 id="weekform-web-signin-title">Sign in to Weekform Web</h3>
+            </div>
             <p>
-              Use the account you created on weekform.com — account creation starts there, not in the
-              app. In the native Mac app your session is kept in macOS Keychain and is never included
-              in JSON exports. Browser/demo mode uses its documented local fallback.
+              Continue your private workspace across Mac and Web. Sharing stays off until you choose
+              a team, review the exact payload, and approve the first sync.
             </p>
+            <span className="cloud-auth-trust"><ShieldCheck size={13} aria-hidden /> Session stored in macOS Keychain</span>
+          </div>
+
+          <div className="cloud-auth-actions">
             {ctrl.isDemoMode && (
-              <p className="import-error" role="note">Cloud sign-in is disabled in the browser demo.</p>
+              <p className="cloud-auth-note" role="note">Sign-in is available in the desktop app.</p>
             )}
-            <form className="ai-form cloud-signin-form" onSubmit={handleSignIn}>
-              <div className="ai-field">
-                <label htmlFor="cloud-email">Email</label>
-                <input
-                  id="cloud-email"
-                  type="email"
-                  autoComplete="username"
-                  value={email}
-                  disabled={ctrl.isDemoMode}
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              </div>
-              <div className="ai-field">
-                <label htmlFor="cloud-password">Password</label>
-                <input
-                  id="cloud-password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  disabled={ctrl.isDemoMode}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </div>
-              <div className="ai-provider-actions">
-                <button
-                  className="primary-action"
-                  type="submit"
-                  disabled={ctrl.isDemoMode || ctrl.authBusy || !email.trim() || !password}
-                  aria-busy={ctrl.authBusy}
-                >
-                  {ctrl.authBusy ? <LoaderCircle className="spin" size={15} aria-hidden /> : <LogIn size={15} aria-hidden />}
-                  <span>{ctrl.authBusy ? "Signing in…" : "Sign In"}</span>
+            <div className="cloud-oauth-options" aria-label="Sign-in options">
+              <button
+                className="cloud-oauth-button"
+                type="button"
+                disabled={ctrl.isDemoMode || ctrl.authBusy}
+                aria-busy={activeOAuthProvider === "google"}
+                onClick={() => void handleOAuthSignIn("google")}
+              >
+                <span className="cloud-provider-tile" aria-hidden>
+                  {activeOAuthProvider === "google" ? <LoaderCircle className="spin" size={18} /> : (
+                    <svg viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M21.6 12.23c0-.71-.06-1.4-.18-2.06H12v3.9h5.38a4.6 4.6 0 0 1-2 3.02v2.53h3.24c1.9-1.75 2.98-4.33 2.98-7.39Z" />
+                      <path fill="#34A853" d="M12 22c2.7 0 4.98-.9 6.63-2.38l-3.24-2.53c-.9.6-2.05.96-3.39.96-2.61 0-4.82-1.76-5.61-4.13H3.04v2.61A10 10 0 0 0 12 22Z" />
+                      <path fill="#FBBC05" d="M6.39 13.92A6.02 6.02 0 0 1 6.08 12c0-.67.11-1.32.31-1.92V7.47H3.04A10 10 0 0 0 2 12c0 1.61.38 3.14 1.04 4.53l3.35-2.61Z" />
+                      <path fill="#EA4335" d="M12 5.95c1.47 0 2.79.51 3.83 1.5l2.87-2.88A9.64 9.64 0 0 0 12 2a10 10 0 0 0-8.96 5.47l3.35 2.61C7.18 7.71 9.39 5.95 12 5.95Z" />
+                    </svg>
+                  )}
+                </span>
+                <span>Sign in with Google</span>
+              </button>
+
+              <button
+                className="cloud-oauth-button"
+                type="button"
+                disabled={ctrl.isDemoMode || ctrl.authBusy}
+                aria-busy={activeOAuthProvider === "github"}
+                onClick={() => void handleOAuthSignIn("github")}
+              >
+                <span className="cloud-provider-tile" aria-hidden>
+                  {activeOAuthProvider === "github" ? <LoaderCircle className="spin" size={18} /> : (
+                    <svg viewBox="0 0 24 24">
+                      <path fill="currentColor" d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.87c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.35 1.09 2.92.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.58 9.58 0 0 1 12 6.82a9.6 9.6 0 0 1 2.5.34c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85V21c0 .27.18.58.69.48A10 10 0 0 0 12 2Z" />
+                    </svg>
+                  )}
+                </span>
+                <span>Sign in with GitHub</span>
+              </button>
+            </div>
+
+            <details className="cloud-password-disclosure">
+              <summary>
+                <span>Sign in with email and password</span>
+                <ChevronDown className="cloud-disclosure-chevron" size={15} aria-hidden />
+              </summary>
+              <form className="ai-form cloud-signin-form" onSubmit={handleSignIn}>
+                <div className="ai-field">
+                  <label htmlFor="cloud-email">Email</label>
+                  <input id="cloud-email" type="email" autoComplete="username" value={email} disabled={ctrl.isDemoMode} onChange={(event) => setEmail(event.target.value)} />
+                </div>
+                <div className="ai-field">
+                  <label htmlFor="cloud-password">Password</label>
+                  <input id="cloud-password" type="password" autoComplete="current-password" value={password} disabled={ctrl.isDemoMode} onChange={(event) => setPassword(event.target.value)} />
+                </div>
+                <button className="primary-action cloud-password-submit" type="submit" disabled={ctrl.isDemoMode || ctrl.authBusy || !email.trim() || !password} aria-busy={ctrl.authBusy}>
+                  {ctrl.authBusy && activeOAuthProvider === null ? <LoaderCircle className="spin" size={15} aria-hidden /> : <LogIn size={15} aria-hidden />}
+                  <span>{ctrl.authBusy && activeOAuthProvider === null ? "Signing in…" : "Sign in"}</span>
                 </button>
-              </div>
-              {ctrl.authError && (
-                <p className="import-error" role="alert">{ctrl.authError}</p>
-              )}
-            </form>
+              </form>
+            </details>
+            {ctrl.authError && <p className="cloud-auth-error import-error" role="alert">{ctrl.authError}</p>}
           </div>
         </section>
       )}
+
+      <ManagerAccessSettingsRow />
 
       {signedIn && ctrl.account && (
         <>
@@ -685,7 +724,7 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
 
       {confirmingDisconnect && (
         <ConfirmDialog
-          title="Disconnect Weekform Cloud?"
+          title="Disconnect Weekform Web?"
           description="This signs out this Mac and stops all future syncs. Your local Weekform data and snapshots already shared with your team are untouched."
           confirmLabel="Disconnect"
           onConfirm={() => {
@@ -695,6 +734,6 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
           onCancel={() => setConfirmingDisconnect(false)}
         />
       )}
-    </>
+    </div>
   );
 }

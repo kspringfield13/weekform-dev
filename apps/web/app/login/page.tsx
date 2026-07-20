@@ -30,7 +30,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
         <div className="container-narrow">
           <div className="auth-card">
             <h1>Sign in</h1>
-            <p>Access your dashboard and the Weekform app for macOS.</p>
+            <p>Access your Individual and Manager workspaces, plus the Weekform app for macOS.</p>
 
             {!configured ? (
               <div className="form-alert" role="alert">

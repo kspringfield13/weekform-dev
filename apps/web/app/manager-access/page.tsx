@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
+import { WorkspaceModeToggle } from "@/components/WorkspaceModeToggle";
 import {
   getSingleManagerTeamPath,
   managerAccessMemberships,
@@ -32,6 +33,7 @@ export default async function ManagerAccessPage() {
             <h1>Manager Access is not connected.</h1>
             <p>This deployment needs its public Supabase configuration before accounts and manager roles can be verified.</p>
           </div>
+          <WorkspaceModeToggle managerAvailable={false} managerHref="/manager-access" mode="individual" />
           <div className="panel" role="alert">
             <h2>Cloud access is unavailable</h2>
             <p>No team data was requested or displayed.</p>
@@ -69,6 +71,12 @@ export default async function ManagerAccessPage() {
           <p>Manager Mode uses only member-approved summary signals. Raw activity, window titles, notes, and unshared fields remain unavailable.</p>
         </div>
 
+        <WorkspaceModeToggle
+          managerAvailable={managedTeams.length > 0}
+          managerHref="/manager-access"
+          mode="manager"
+        />
+
         {error ? (
           <div className="panel" role="alert">
             <h2>Your manager roles could not be verified</h2>
@@ -78,7 +86,7 @@ export default async function ManagerAccessPage() {
           <div className="panel">
             <h2>Manager Access is not enabled for this account</h2>
             <p>You are signed in, but none of your active team memberships has an owner or manager role.</p>
-            <Link className="button button-secondary" href="/dashboard">Return to your dashboard</Link>
+            <Link className="button button-secondary" href="/app">Return to your individual workspace</Link>
           </div>
         ) : (
           <div className="card-grid" aria-label="Teams available in Manager Access">

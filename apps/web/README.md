@@ -86,9 +86,9 @@ with no Supabase project). At runtime without configuration:
 
 - middleware skips session handling,
 - auth forms render disabled with an honest "not configured" notice,
-- `/app` resolves to the dashboard setup state, while `/dashboard`,
-  `/manager-access`, and `/download` show setup panels instead of
-  user or team data,
+- `/app` is the canonical Individual workspace. `/app`, `/dashboard`,
+  `/manager-access`, and `/download` show setup panels instead of user or team
+  data,
 - `/admin` redirects to `/manager-access` and exposes no separate portal.
 
 Route protection for `/app`, `/manager-access`, `/admin`, `/dashboard`, and `/download`
@@ -109,8 +109,9 @@ configured.
   active memberships to owner/manager roles, opens a sole managed team directly,
   or offers a team chooser when more than one is available
 - `/admin` — compatibility redirect to `/manager-access`; no standalone portal
-- `/dashboard` — protected; a Desktop-style first-run welcome and guided tour,
-  a role-aware workspace shell, private personal replica/review requests,
+- `/dashboard` — protected legacy-compatible route; primary navigation, auth callbacks,
+  and workspace actions return to `/app`. The role-aware Individual workspace
+  includes the shared Individual/Manager switch, private personal replica/review requests,
   profile greeting, the signed-in user's teams and role in each, a create-team
   form (calls the `create_team_with_owner` RPC), and an entry point to `/invite`
 - `/teams/[teamId]` — protected; owners/managers see the active roster

@@ -22,7 +22,7 @@ test("magic-link callback returns to the requested same-origin Weekform path", (
 test("magic-link callback falls back safely when next is an external URL", () => {
   assert.equal(
     buildEmailCallbackUrl("http://localhost:3000/", "https://evil.example"),
-    "http://localhost:3000/auth/callback?next=%2Fdashboard",
+    "http://localhost:3000/auth/callback?next=%2Fapp",
   );
 });
 

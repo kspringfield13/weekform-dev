@@ -13,12 +13,41 @@ export const RELEASE_INFO = {
   version: "0.1.0",
   generatedDate: "2026-07-19",
   macOsRequirement: "macOS 13 Ventura or later (Apple silicon or Intel)",
+  artifactFilename: "Weekform_0.1.0_universal.dmg",
+  architecture: "Apple silicon and Intel",
+  releaseChannel: "Build Week preview",
+  verification: "Developer preview — notarization pending",
+  releaseNotes: [
+    {
+      title: "A clearer weekly close",
+      body: "Review what changed, resolve uncertain work blocks, and carry a more reliable capacity picture into next week.",
+    },
+    {
+      title: "Mac and Web now work as one system",
+      body: "Keep raw evidence and the full workload model on your Mac, then approve only the review-safe summaries you want on the Web.",
+    },
+    {
+      title: "More deliberate Agent actions",
+      body: "Grounded answers retain their evidence, and any consequential action stays visible and approval-gated before it runs.",
+    },
+  ],
+  features: [
+    "Turn local calendar and activity signals into reviewable work blocks",
+    "See planned, reactive, fragmented, and carryover load together",
+    "Forecast what reliably fits before accepting more work",
+    "Pause capture, correct evidence, export data, or reset at any time",
+  ],
+  tips: [
+    "Begin in Today: confirm or relabel uncertain work before trusting the weekly model.",
+    "Use Forecast when a new commitment appears; reliable capacity is not the same as empty calendar time.",
+    "Pause from the menu bar whenever you switch into personal or sensitive work.",
+  ],
 } as const;
 
 export interface ArtifactConfig {
   /** Supabase Storage bucket holding the official packaged artifact. */
   bucket: string;
-  /** Object path within that bucket, e.g. "releases/weekform-0.1.0.zip". */
+  /** Object path within that bucket, e.g. "releases/Weekform_0.1.0_universal.dmg". */
   path: string;
   /** Supabase project URL (same project as the publishable client). */
   supabaseUrl: string;
@@ -39,8 +68,8 @@ const MAX_SIGNED_URL_TTL_SECONDS = 3600; // 1 hour
  * so callers can treat "unconfigured" as a first-class, honestly-labeled
  * state rather than an error — this is what powers the documented fallback:
  * when the official artifact hasn't been uploaded to a private bucket, the
- * page and route degrade to linking the public source archive instead of
- * claiming a packaged download exists.
+ * page and route degrade to an honestly unavailable release action instead
+ * of claiming a packaged download exists.
  */
 export function parseArtifactConfig(
   env: Record<string, string | undefined>,
@@ -149,7 +178,7 @@ export async function planArtifactResponse(deps: {
       body: {
         error: "artifact_not_configured",
         message:
-          "The official packaged artifact has not been uploaded to a private bucket yet. Use the public source archive and guided install path on /download instead.",
+          "The official Weekform DMG has not been published to the private release bucket yet. Return to /download for current release status.",
       },
     };
   }

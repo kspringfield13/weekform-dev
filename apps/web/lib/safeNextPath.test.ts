@@ -15,22 +15,22 @@ test("safeNextPath allows a normal same-origin relative path", () => {
 });
 
 test("safeNextPath rejects protocol-relative //host redirects", () => {
-  assert.equal(safeNextPath("//evil.com"), "/dashboard");
+  assert.equal(safeNextPath("//evil.com"), "/app");
 });
 
 test("safeNextPath rejects backslash bypass /\\host redirects", () => {
-  assert.equal(safeNextPath("/\\evil.com"), "/dashboard");
+  assert.equal(safeNextPath("/\\evil.com"), "/app");
 });
 
 test("safeNextPath rejects double-backslash \\\\host redirects", () => {
-  assert.equal(safeNextPath("\\\\evil.com"), "/dashboard");
+  assert.equal(safeNextPath("\\\\evil.com"), "/app");
 });
 
 test("safeNextPath rejects absolute URLs", () => {
-  assert.equal(safeNextPath("https://evil.com"), "/dashboard");
+  assert.equal(safeNextPath("https://evil.com"), "/app");
 });
 
-test("safeNextPath falls back to /dashboard for empty or missing values", () => {
-  assert.equal(safeNextPath(""), "/dashboard");
-  assert.equal(safeNextPath(null), "/dashboard");
+test("safeNextPath falls back to the canonical /app workspace for empty or missing values", () => {
+  assert.equal(safeNextPath(""), "/app");
+  assert.equal(safeNextPath(null), "/app");
 });

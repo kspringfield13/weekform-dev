@@ -158,7 +158,7 @@ export function AuditLogScreen({
         </p>
         {consentReceipts.length === 0 ? (
           <p className="consent-receipts-intro">
-            No consent receipts yet. Nothing has been shared to Weekform Cloud from this device.
+            No consent receipts yet. Nothing has been shared to Weekform Web from this device.
           </p>
         ) : (
           <>

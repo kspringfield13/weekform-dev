@@ -18,6 +18,7 @@ import {
   getCloudEnv,
   isCloudConfigured,
   refreshSession,
+  signInWithOAuth,
   signInWithPassword,
   signOutSession,
   upsertWorkloadSnapshot,
@@ -84,6 +85,66 @@ function jsonResponse(body: unknown, status = 200): Response {
 test("getCloudEnv returns null (and isCloudConfigured false) outside a Vite build", () => {
   assert.equal(getCloudEnv(), null);
   assert.equal(isCloudConfigured(), false);
+});
+
+// ---------------------------------------------------------------------------
+// signInWithOAuth: native browser PKCE handoff -> token exchange -> session
+// ---------------------------------------------------------------------------
+
+test("signInWithOAuth completes Google PKCE sign-in and maps the session", async () => {
+  let nativeRequest: { supabaseUrl: string; provider: string } | null = null;
+  await withFetch(
+    () =>
+      jsonResponse({
+        access_token: "oauth-at",
+        refresh_token: "oauth-rt",
+        expires_in: 3600,
+        user: { id: "oauth-user", email: "casey@example.test", user_metadata: { display_name: "Casey" } }
+      }),
+    async (requests) => {
+      const result = await signInWithOAuth(env, "google", async (request) => {
+        nativeRequest = request;
+        return { authCode: "one-time-code", codeVerifier: "pkce-verifier" };
+      });
+
+      assert.ok(result.ok);
+      assert.equal(result.value.userId, "oauth-user");
+      assert.equal(result.value.displayName, "Casey");
+      assert.deepEqual(nativeRequest, { supabaseUrl: env.url, provider: "google" });
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0].url, `${env.url}/auth/v1/token?grant_type=pkce`);
+      assert.deepEqual(JSON.parse(requests[0].body ?? ""), {
+        auth_code: "one-time-code",
+        code_verifier: "pkce-verifier"
+      });
+    }
+  );
+});
+
+test("signInWithOAuth supports GitHub and surfaces a cancelled browser flow", async () => {
+  const result = await signInWithOAuth(env, "github", async (request) => {
+    assert.equal(request.provider, "github");
+    throw "Sign-in was cancelled before it finished.";
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.match(result.message, /cancelled/i);
+});
+
+test("signInWithOAuth rejects providers outside the desktop allowlist", async () => {
+  let transportCalled = false;
+  const result = await signInWithOAuth(
+    env,
+    "gitlab" as "google",
+    async () => {
+      transportCalled = true;
+      return { authCode: "unused", codeVerifier: "unused" };
+    }
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(transportCalled, false);
+  if (!result.ok) assert.match(result.message, /Google or GitHub/);
 });
 
 // ---------------------------------------------------------------------------

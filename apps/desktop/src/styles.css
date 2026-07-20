@@ -12253,9 +12253,276 @@ html[data-theme="dark"] .settings-tabs button.is-active {
 }
 
 /* Account & Sharing: sign-in form, metric consent grid, and the exact-payload preview. */
+.account-sharing-page {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 32px;
+}
+
+.account-sharing-heading {
+  align-items: start;
+  margin: 0;
+  padding: 2px 2px 4px;
+}
+
+.account-sharing-heading h2 {
+  margin: 3px 0 0;
+  font-size: 19px;
+  font-weight: 630;
+  letter-spacing: -0.025em;
+}
+
+.account-sharing-heading p {
+  margin: 5px 0 0;
+  color: var(--text-subtle);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.account-sharing-eyebrow,
+.cloud-auth-kicker {
+  color: var(--text-subtle);
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.account-sharing-page > .settings-row {
+  min-height: 70px;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 62%, transparent);
+}
+
+.account-sharing-page > .settings-row h3 {
+  margin-bottom: 3px;
+  font-size: 14px;
+  line-height: 20px;
+  letter-spacing: -0.015em;
+}
+
+.account-sharing-page > .settings-row p {
+  line-height: 1.5;
+}
+
+.cloud-auth-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(240px, 0.82fr) minmax(360px, 1.18fr);
+  gap: 32px;
+  padding: 24px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent),
+    0 8px 30px color-mix(in srgb, var(--background) 65%, transparent);
+}
+
+.cloud-auth-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: color-mix(in srgb, var(--info) 62%, var(--border-strong));
+  content: "";
+}
+
+.cloud-auth-intro {
+  align-content: start;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 0 11px;
+}
+
+.cloud-auth-mark {
+  display: grid;
+  grid-row: 1;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid color-mix(in srgb, var(--info) 28%, var(--border));
+  border-radius: 10px;
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 7%, var(--surface));
+}
+
+.cloud-auth-kicker {
+  display: block;
+  margin-bottom: 3px;
+}
+
+.cloud-auth-intro h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 640;
+  line-height: 21px;
+  letter-spacing: -0.025em;
+}
+
+.cloud-auth-intro > p {
+  grid-column: 1 / -1;
+  max-width: 390px;
+  margin: 18px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.cloud-auth-trust {
+  display: inline-flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  margin-top: 14px;
+  color: var(--text-subtle);
+  font-size: 10.5px;
+}
+
+.cloud-auth-trust svg {
+  color: var(--success);
+}
+
+.cloud-auth-actions {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cloud-auth-note {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-subtle);
+  background: var(--surface-muted);
+  font-size: 11px;
+}
+
+.cloud-oauth-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.cloud-oauth-button {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  min-height: 48px;
+  padding: 5px 14px 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  color: var(--text);
+  background: var(--control-background);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--background) 45%, transparent);
+  font-size: 12px;
+  font-weight: 610;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, transform 120ms ease;
+}
+
+.cloud-oauth-button:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-elevated);
+  transform: translateY(-1px);
+}
+
+.cloud-oauth-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.cloud-oauth-button:focus-visible,
+.cloud-password-disclosure summary:focus-visible {
+  outline: 2px solid var(--info);
+  outline-offset: 2px;
+}
+
+.cloud-oauth-button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.cloud-provider-tile {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.cloud-provider-tile svg {
+  width: 18px;
+  height: 18px;
+}
+
+.cloud-password-disclosure {
+  border-top: 1px solid var(--border);
+}
+
+.cloud-password-disclosure summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 0 2px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 560;
+  list-style: none;
+  cursor: pointer;
+}
+
+.cloud-password-disclosure summary::-webkit-details-marker {
+  display: none;
+}
+
+.cloud-password-disclosure summary:hover {
+  color: var(--text);
+}
+
+.cloud-disclosure-chevron {
+  flex: 0 0 auto;
+  transition: transform 150ms ease;
+}
+
+.cloud-password-disclosure[open] .cloud-disclosure-chevron {
+  transform: rotate(180deg);
+}
+
 .cloud-signin-form {
-  margin-top: 12px;
-  max-width: 360px;
+  gap: 12px;
+  margin-top: 7px;
+}
+
+.cloud-signin-form .ai-field label {
+  margin-bottom: 5px;
+}
+
+.cloud-signin-form .ai-field input {
+  min-height: 36px;
+}
+
+.cloud-password-submit {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.cloud-auth-error {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, var(--danger) 28%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .cloud-metric-grid {
@@ -12397,11 +12664,26 @@ html[data-theme="dark"] .settings-tabs button.is-active {
   .settings-tabs button {
     flex: 1 0 124px;
   }
+
+  .cloud-auth-card {
+    grid-template-columns: 1fr;
+    gap: 22px;
+    padding: 20px;
+  }
+
+  .cloud-oauth-options {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .settings-tabs button {
     transition-duration: 0.01ms;
+  }
+
+  .cloud-oauth-button,
+  .cloud-disclosure-chevron {
+    transition: none;
   }
 }
 

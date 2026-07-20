@@ -335,7 +335,7 @@ const AUDIT_SOURCE_LABELS: Record<string, string> = {
   sessionizer: "Sessionizer",
   onboarding: "Onboarding",
   walkthrough: "Walkthrough",
-  cloud_sync: "Weekform Cloud",
+  cloud_sync: "Weekform Web",
 };
 
 // Humanize an `AuditEvent.source` for display (never render the raw snake_case id).

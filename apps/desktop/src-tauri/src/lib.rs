@@ -1107,6 +1107,189 @@ async fn connect_openai_via_chatgpt() -> Result<ChatGptConnectResult, String> {
     }
 }
 
+// --- Weekform Web browser sign-in (Supabase OAuth + PKCE) ----------------
+
+const CLOUD_OAUTH_PORT: u16 = 49321;
+const CLOUD_OAUTH_CALLBACK_PATH: &str = "/cloud-auth/callback";
+const CLOUD_OAUTH_TIMEOUT_SECS: u64 = 300;
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloudOAuthRequest {
+    supabase_url: String,
+    provider: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CloudOAuthCallback {
+    auth_code: String,
+    code_verifier: String,
+}
+
+fn build_cloud_oauth_authorize_url(
+    supabase_url: &str,
+    provider: &str,
+    callback_url: &str,
+    code_challenge: &str,
+) -> Result<String, String> {
+    if provider != "google" && provider != "github" {
+        return Err("Choose Google or GitHub to continue.".to_string());
+    }
+
+    let mut url = reqwest::Url::parse(supabase_url)
+        .map_err(|_| "Weekform Web is configured with an invalid URL.".to_string())?;
+    let is_loopback_http =
+        url.scheme() == "http" && matches!(url.host_str(), Some("localhost") | Some("127.0.0.1"));
+    if url.scheme() != "https" && !is_loopback_http {
+        return Err("Weekform Web sign-in requires a secure service URL.".to_string());
+    }
+
+    url.set_path("/auth/v1/authorize");
+    url.set_query(None);
+    url.query_pairs_mut()
+        .append_pair("provider", provider)
+        .append_pair("redirect_to", callback_url)
+        .append_pair("code_challenge", code_challenge)
+        .append_pair("code_challenge_method", "s256");
+    Ok(url.to_string())
+}
+
+fn parse_cloud_oauth_callback(target: &str, expected_state: &str) -> Result<String, String> {
+    let url = reqwest::Url::parse(&format!("http://127.0.0.1:{CLOUD_OAUTH_PORT}{target}"))
+        .map_err(|_| "The browser sign-in response was malformed. Please try again.".to_string())?;
+    if url.path() != CLOUD_OAUTH_CALLBACK_PATH {
+        return Err("Not found.".to_string());
+    }
+
+    let mut code = None;
+    let mut callback_state = None;
+    let mut callback_error = None;
+    for (key, value) in url.query_pairs() {
+        match key.as_ref() {
+            "code" => code = Some(value.into_owned()),
+            "state" => callback_state = Some(value.into_owned()),
+            "error" | "error_description" => callback_error = Some(value.into_owned()),
+            _ => {}
+        }
+    }
+
+    if let Some(error) = callback_error {
+        return Err(format!(
+            "Browser sign-in was not completed ({}).",
+            error.chars().take(120).collect::<String>()
+        ));
+    }
+    if callback_state.as_deref() != Some(expected_state) {
+        return Err(
+            "The browser sign-in response could not be verified. Please try again.".to_string(),
+        );
+    }
+    let code = code.filter(|value| !value.is_empty()).ok_or_else(|| {
+        "The browser sign-in response did not include a verification code. Please try again."
+            .to_string()
+    })?;
+    Ok(code)
+}
+
+fn wait_for_cloud_oauth_callback(
+    listener: std::net::TcpListener,
+    expected_state: &str,
+) -> Result<String, String> {
+    use std::io::Read;
+    listener
+        .set_nonblocking(true)
+        .map_err(|error| format!("Could not prepare Weekform Web sign-in: {error}"))?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(CLOUD_OAUTH_TIMEOUT_SECS);
+
+    loop {
+        match listener.accept() {
+            Ok((mut stream, _)) => {
+                let _ = stream.set_nonblocking(false);
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                let mut buf = [0u8; 4096];
+                let read = stream.read(&mut buf).unwrap_or(0);
+                let request = String::from_utf8_lossy(&buf[..read]);
+                let target = request
+                    .lines()
+                    .next()
+                    .and_then(|line| line.split_whitespace().nth(1))
+                    .unwrap_or("");
+
+                if !target.starts_with(CLOUD_OAUTH_CALLBACK_PATH) {
+                    oauth_html_response(&mut stream, 404, "Not found.");
+                    continue;
+                }
+
+                match parse_cloud_oauth_callback(target, expected_state) {
+                    Ok(code) => {
+                        oauth_html_response(
+                            &mut stream,
+                            200,
+                            "You're signed in to Weekform Web. Close this tab and return to Weekform.",
+                        );
+                        return Ok(code);
+                    }
+                    Err(error) => {
+                        oauth_html_response(
+                            &mut stream,
+                            200,
+                            "This sign-in response could not be verified. Return to Weekform and try again.",
+                        );
+                        return Err(error);
+                    }
+                }
+            }
+            Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                if std::time::Instant::now() > deadline {
+                    return Err(
+                        "Timed out waiting for browser sign-in. Try again from Weekform."
+                            .to_string(),
+                    );
+                }
+                thread::sleep(Duration::from_millis(120));
+            }
+            Err(error) => return Err(format!("The Weekform Web sign-in listener failed: {error}")),
+        }
+    }
+}
+
+#[tauri::command]
+async fn start_cloud_oauth(request: CloudOAuthRequest) -> Result<CloudOAuthCallback, String> {
+    use sha2::{Digest, Sha256};
+
+    let verifier = random_urlsafe(64);
+    let challenge = general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    let state = random_urlsafe(32);
+    let listener = std::net::TcpListener::bind(("127.0.0.1", CLOUD_OAUTH_PORT)).map_err(|_| {
+        format!(
+            "Port {CLOUD_OAUTH_PORT} is busy. Close another Weekform sign-in window and try again."
+        )
+    })?;
+    let callback_url =
+        format!("http://127.0.0.1:{CLOUD_OAUTH_PORT}{CLOUD_OAUTH_CALLBACK_PATH}?state={state}");
+    let authorize_url = build_cloud_oauth_authorize_url(
+        &request.supabase_url,
+        &request.provider,
+        &callback_url,
+        &challenge,
+    )?;
+    tauri_plugin_opener::open_url(&authorize_url, None::<&str>)
+        .map_err(|error| format!("Could not open your browser for sign-in: {error}"))?;
+
+    let expected_state = state.clone();
+    let auth_code = tauri::async_runtime::spawn_blocking(move || {
+        wait_for_cloud_oauth_callback(listener, &expected_state)
+    })
+    .await
+    .map_err(|error| format!("The Weekform Web sign-in listener failed: {error}"))??;
+
+    Ok(CloudOAuthCallback {
+        auth_code,
+        code_verifier: verifier,
+    })
+}
+
 fn get_ai_credentials(config: Option<&AIConfigRequest>) -> Result<(String, String), String> {
     let provider = config
         .and_then(|c| c.provider.as_deref())
@@ -2134,6 +2317,54 @@ fn configure_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
+mod cloud_oauth_tests {
+    use super::{build_cloud_oauth_authorize_url, parse_cloud_oauth_callback};
+
+    #[test]
+    fn authorize_url_is_scoped_to_supported_providers_and_pkce() {
+        let url = build_cloud_oauth_authorize_url(
+            "https://project.example.test",
+            "google",
+            "http://127.0.0.1:49321/cloud-auth/callback?state=state-1",
+            "challenge-1",
+        )
+        .expect("valid authorize URL");
+
+        assert!(url.starts_with("https://project.example.test/auth/v1/authorize?"));
+        assert!(url.contains("provider=google"));
+        assert!(url.contains("code_challenge=challenge-1"));
+        assert!(url.contains("code_challenge_method=s256"));
+        assert!(build_cloud_oauth_authorize_url(
+            "https://project.example.test",
+            "gitlab",
+            "http://127.0.0.1:49321/cloud-auth/callback?state=state-1",
+            "challenge-1",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn callback_requires_the_exact_loopback_path_state_and_code() {
+        assert_eq!(
+            parse_cloud_oauth_callback(
+                "/cloud-auth/callback?state=state-1&code=auth-code",
+                "state-1",
+            )
+            .expect("valid callback"),
+            "auth-code",
+        );
+        assert!(parse_cloud_oauth_callback(
+            "/cloud-auth/callback?state=wrong&code=auth-code",
+            "state-1",
+        )
+        .is_err());
+        assert!(
+            parse_cloud_oauth_callback("/other?state=state-1&code=auth-code", "state-1").is_err()
+        );
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Load local development configuration without overriding exported variables.
@@ -2174,6 +2405,7 @@ pub fn run() {
             get_env_ai_key_status,
             connect_openai_via_codex,
             connect_openai_via_chatgpt,
+            start_cloud_oauth,
             present_main_window,
             chat_with_agent,
             ai_complete,

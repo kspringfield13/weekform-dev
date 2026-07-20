@@ -189,13 +189,13 @@ export type CloudSharingAuditAction =
   | "personal_sync_failure";
 
 const CLOUD_SHARING_TITLES: Record<CloudSharingAuditAction, string> = {
-  connect: "Weekform Cloud account connected",
+  connect: "Weekform Web account connected",
   policy_change: "Cloud sharing policy changed",
   sync_success: "Workload snapshot synced to team",
   sync_failure: "Workload snapshot sync failed",
   delete: "Synced snapshots deleted from team",
   pause: "Cloud sharing paused",
-  disconnect: "Weekform Cloud account disconnected",
+  disconnect: "Weekform Web account disconnected",
   personal_sync_success: "Private Web workspace synced",
   personal_sync_failure: "Private Web workspace sync failed"
 };

@@ -528,7 +528,7 @@ export function App() {
     aiUsageSummary,
   } = derived;
 
-  // Account & Sharing (Weekform Cloud). Renders "not configured" when the build has
+  // Account & Sharing (Weekform Web). Renders "not configured" when the build has
   // no Supabase env; the demo path always starts signed out with sharing disabled.
   // Only the shared allowlist builder's payload can leave the device (useCloudSync).
   const cloudAccount = useCloudAccount({
@@ -1836,7 +1836,7 @@ export function App() {
         source: "privacy_control",
         title: "Prototype data reset",
         summary: cloudCredentialsCleared && captureJournalCleared
-          ? "All local activity, the encrypted capture journal, imports, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and Weekform Cloud session, replica queue, and sharing policies. Screenshot capture was turned off and tracking paused."
+          ? "All local activity, the encrypted capture journal, imports, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and Weekform Web session, replica queue, and sharing policies. Screenshot capture was turned off and tracking paused."
           : "Local app state was reset, but durable removal of the Keychain cloud session or encrypted capture journal could not be confirmed. Retry Reset Local Data before closing the app.",
         privacy_level: "local_only",
         details: {

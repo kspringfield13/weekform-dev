@@ -10,6 +10,7 @@
 // Plain `fetch` on purpose: `@supabase/supabase-js` is not a dependency of the desktop
 // app, and the four calls here don't justify adding one.
 
+import { invoke } from "@tauri-apps/api/core";
 import type { TeamSharePolicyV1 } from "../../../../packages/domain/src/cloud";
 import type {
   PersonalReplicaSyncQueueItemV1,
@@ -26,6 +27,20 @@ export interface CloudEnv {
   url: string;
   anonKey: string;
 }
+
+export type CloudOAuthProvider = "google" | "github";
+
+export interface CloudOAuthRequest {
+  supabaseUrl: string;
+  provider: CloudOAuthProvider;
+}
+
+interface CloudOAuthCallback {
+  authCode: string;
+  codeVerifier: string;
+}
+
+export type CloudOAuthTransport = (request: CloudOAuthRequest) => Promise<CloudOAuthCallback>;
 
 /**
  * `status` is the HTTP status of the failed response when one exists (absent for network-level
@@ -137,6 +152,58 @@ export async function signInWithPassword(
     }
     const session = sessionFromTokenResponse((await response.json()) as AuthTokenResponse, Date.now());
     if (!session) return { ok: false, message: "Sign-in response was incomplete. Try again." };
+    return { ok: true, value: session };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
+async function invokeCloudOAuth(request: CloudOAuthRequest): Promise<CloudOAuthCallback> {
+  return invoke<CloudOAuthCallback>("start_cloud_oauth", { request });
+}
+
+/**
+ * Completes browser OAuth through a short-lived native loopback callback, then
+ * exchanges the PKCE code on the same token-parsing path as password sign-in.
+ */
+export async function signInWithOAuth(
+  env: CloudEnv,
+  provider: CloudOAuthProvider,
+  transport: CloudOAuthTransport = invokeCloudOAuth
+): Promise<CloudResult<PersistedCloudSession>> {
+  if (provider !== "google" && provider !== "github") {
+    return { ok: false, message: "Choose Google or GitHub to continue." };
+  }
+
+  let callback: CloudOAuthCallback;
+  try {
+    callback = await transport({ supabaseUrl: env.url, provider });
+  } catch (error) {
+    const message = typeof error === "string"
+      ? error.trim()
+      : error instanceof Error
+        ? error.message.trim()
+        : "";
+    return {
+      ok: false,
+      message: message ? message.slice(0, 200) : "Browser sign-in did not finish. Try again."
+    };
+  }
+
+  try {
+    const response = await fetch(`${env.url}/auth/v1/token?grant_type=pkce`, {
+      method: "POST",
+      headers: authHeaders(env),
+      body: JSON.stringify({
+        auth_code: callback.authCode,
+        code_verifier: callback.codeVerifier
+      })
+    });
+    if (!response.ok) {
+      return { ok: false, message: await failureMessage(response, "Browser sign-in failed") };
+    }
+    const session = sessionFromTokenResponse((await response.json()) as AuthTokenResponse, Date.now());
+    if (!session) return { ok: false, message: "Browser sign-in response was incomplete. Try again." };
     return { ok: true, value: session };
   } catch {
     return { ok: false, message: NETWORK_ERROR_MESSAGE };

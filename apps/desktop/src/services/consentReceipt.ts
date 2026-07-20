@@ -20,7 +20,7 @@ import type { CloudShareLevel, SharedWorkloadSnapshotV1 } from "../../../../pack
 export type ConsentReceiptTrigger = "manual" | "auto";
 
 /**
- * The only v1 destination: a Weekform Cloud team. Modeled as a tagged record so
+ * The only v1 destination: a Weekform Web team. Modeled as a tagged record so
  * a future connector destination (roadmap B3) is a new `kind`, not a re-reading
  * of an ambiguous string.
  */

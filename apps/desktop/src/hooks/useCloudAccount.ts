@@ -1,4 +1,4 @@
-// Account & Sharing state: the signed-in Weekform Cloud session, the member's
+// Account & Sharing state: the signed-in Weekform Web session, the member's
 // CloudSharePolicyV1, sync bookkeeping, and the reserved clientSnapshotId — all
 // persisted in local prototype storage (`cloudStore.ts`) and NEVER inside the
 // exported JSON backups. Sharing is off by default; nothing here uploads anything
@@ -36,8 +36,10 @@ import {
   fetchTeamMemberships,
   getCloudEnv,
   refreshSession,
+  signInWithOAuth,
   signInWithPassword,
   signOutSession,
+  type CloudOAuthProvider,
   type CloudTeamMembership
 } from "../services/cloudClient";
 import {
@@ -62,6 +64,7 @@ export interface CloudAccountController {
   authBusy: boolean;
   authError: string | null;
   signIn: (email: string, password: string) => Promise<boolean>;
+  signInWithOAuth: (provider: CloudOAuthProvider) => Promise<boolean>;
   signOut: () => Promise<void>;
   refreshTeams: () => Promise<void>;
   updatePolicy: (patch: Partial<CloudSharePolicyV1>) => void;
@@ -192,9 +195,36 @@ export function useCloudAccount({
           return false;
         }
         setSession(result.value);
-        emitAudit("connect", `Signed in to Weekform Cloud as ${result.value.email}`, {
+        emitAudit("connect", `Signed in to Weekform Web as ${result.value.email}`, {
           user_id: result.value.userId
         });
+        void loadTeams(result.value);
+        return true;
+      } finally {
+        setAuthBusy(false);
+      }
+    },
+    [isDemoMode, emitAudit, loadTeams]
+  );
+
+  const signInWithOAuthProvider = useCallback(
+    async (provider: CloudOAuthProvider): Promise<boolean> => {
+      const env = getCloudEnv();
+      if (!env || isDemoMode) return false;
+      setAuthBusy(true);
+      setAuthError(null);
+      try {
+        const result = await signInWithOAuth(env, provider);
+        if (!result.ok) {
+          setAuthError(result.message);
+          return false;
+        }
+        setSession(result.value);
+        emitAudit(
+          "connect",
+          `Signed in to Weekform Web with ${provider === "github" ? "GitHub" : "Google"}`,
+          { user_id: result.value.userId, auth_provider: provider }
+        );
         void loadTeams(result.value);
         return true;
       } finally {
@@ -221,7 +251,7 @@ export function useCloudAccount({
     setSyncStateRaw((current) => ({ ...current, status: "idle", nextScheduledAt: null }));
     setPersonalReplicaPolicy(createDefaultPersonalReplicaPolicy());
     setPersonalSyncStateRaw(createDefaultPersonalSyncState());
-    emitAudit("disconnect", "Signed out of Weekform Cloud; sharing disabled and future syncs stopped");
+    emitAudit("disconnect", "Signed out of Weekform Web; sharing disabled and future syncs stopped");
     const cleared = await clearPersistedCloudState();
     if (!cleared) {
       setAuthError(
@@ -429,6 +459,7 @@ export function useCloudAccount({
       authBusy,
       authError,
       signIn,
+      signInWithOAuth: signInWithOAuthProvider,
       signOut,
       refreshTeams,
       updatePolicy,
@@ -457,6 +488,7 @@ export function useCloudAccount({
       authBusy,
       authError,
       signIn,
+      signInWithOAuthProvider,
       signOut,
       refreshTeams,
       updatePolicy,

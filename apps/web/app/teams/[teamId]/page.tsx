@@ -67,6 +67,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
 import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
+import { WorkspaceModeToggle } from "@/components/WorkspaceModeToggle";
 import { leaveTeam, updateTeamSharePolicy } from "@/app/teams/actions";
 import { InviteForm } from "./InviteForm";
 import {
@@ -305,8 +306,8 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
               join first.
             </p>
             <p>
-              <Link href="/dashboard" className="button button-secondary">
-                Back to dashboard
+              <Link href="/app" className="button button-secondary">
+                Back to your individual workspace
               </Link>
             </p>
           </div>
@@ -329,6 +330,12 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
             of this team.
           </p>
         </div>
+
+        <WorkspaceModeToggle
+          managerAvailable={manager}
+          managerHref={`/teams/${teamId}`}
+          mode={manager ? "manager" : "individual"}
+        />
 
         <RequestFreshnessRefresh />
 
@@ -421,8 +428,8 @@ async function MemberView({
           policy.
         </p>
         <p>
-          <Link href="/dashboard" className="text-link">
-            Manage sharing and cloud history on your dashboard
+          <Link href="/app" className="text-link">
+            Manage sharing and cloud history in your individual workspace
           </Link>
         </p>
       </section>

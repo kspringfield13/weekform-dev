@@ -382,52 +382,64 @@ export function SetupScreen({
     focusSettingsTab(nextIndex);
   };
 
+  const isAccountSettings = activeSettingsTab === "account";
+
   return (
     <section className="screen settings-screen">
       <div className="screen-header">
         <div>
           <p className="eyebrow">Settings</p>
-          <h1>Privacy and data sources</h1>
-          <p className="screen-intro">Weekform collects only the signals you enable. Tracking can be paused at any time.</p>
+          <h1>{isAccountSettings ? "Account & sharing" : "Privacy and data sources"}</h1>
+          <p className="screen-intro">
+            {isAccountSettings
+              ? "Connect Weekform Web and control every shared field from this Mac."
+              : "Weekform collects only the signals you enable. Tracking can be paused at any time."}
+          </p>
         </div>
         {/* Secondary on purpose: the toolbar owns the always-visible pause control;
             this is a contextual page action, not the page's primary CTA. */}
-        <button className="secondary-action" type="button" onClick={() => setPaused(!paused)}>
-          {paused ? <Play size={18} aria-hidden /> : <Pause size={18} aria-hidden />}
-          <span>{paused ? "Resume Tracking" : "Pause Tracking"}</span>
-        </button>
+        {!isAccountSettings && (
+          <button className="secondary-action" type="button" onClick={() => setPaused(!paused)}>
+            {paused ? <Play size={18} aria-hidden /> : <Pause size={18} aria-hidden />}
+            <span>{paused ? "Resume Tracking" : "Pause Tracking"}</span>
+          </button>
+        )}
       </div>
 
-      <div className="settings-walkthrough-replay">
-        <div>
-          <strong>App walkthrough</strong>
-          <span>Replay the guided tour of the main sections.</span>
-        </div>
-        <button className="ghost-action" type="button" onClick={onReplayWalkthrough}>
-          <Compass size={15} aria-hidden />
-          <span>Replay walkthrough</span>
-        </button>
-      </div>
+      {!isAccountSettings && (
+        <>
+          <div className="settings-walkthrough-replay">
+            <div>
+              <strong>App walkthrough</strong>
+              <span>Replay the guided tour of the main sections.</span>
+            </div>
+            <button className="ghost-action" type="button" onClick={onReplayWalkthrough}>
+              <Compass size={15} aria-hidden />
+              <span>Replay walkthrough</span>
+            </button>
+          </div>
 
-      <div className="settings-walkthrough-replay">
-        <div>
-          <strong>Default window size</strong>
-          <span>How Weekform opens from the menu bar.</span>
-        </div>
-        <div className="data-export-options">
-          <label className="sr-only" htmlFor="default-window-mode">Default window size on open</label>
-          <select
-            id="default-window-mode"
-            value={defaultWindowMode}
-            onChange={(event) =>
-              onDefaultWindowModeChange(event.target.value === "compact" ? "compact" : "large")
-            }
-          >
-            <option value="large">Full window</option>
-            <option value="compact">Compact widget</option>
-          </select>
-        </div>
-      </div>
+          <div className="settings-walkthrough-replay">
+            <div>
+              <strong>Default window size</strong>
+              <span>How Weekform opens from the menu bar.</span>
+            </div>
+            <div className="data-export-options">
+              <label className="sr-only" htmlFor="default-window-mode">Default window size on open</label>
+              <select
+                id="default-window-mode"
+                value={defaultWindowMode}
+                onChange={(event) =>
+                  onDefaultWindowModeChange(event.target.value === "compact" ? "compact" : "large")
+                }
+              >
+                <option value="large">Full window</option>
+                <option value="compact">Compact widget</option>
+              </select>
+            </div>
+          </div>
+        </>
+      )}
 
       <nav className="settings-tabs" role="tablist" aria-label="Settings sections">
         {SETTINGS_TABS.map((tab, index) => (

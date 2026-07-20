@@ -216,6 +216,14 @@ the alignment QA.
   tests and the full 201-test web suite pass. The optimized Next.js build includes
   `/app`, and rendered desktop plus 390px browser checks confirm both choices,
   responsive layout, and a clean development console.
+- **Canonical workspace follow-through:** primary navigation, sign-in fallback,
+  auth callbacks, and Web actions now return to `/app` rather than leaking the
+  legacy `/dashboard` route. The live Individual workspace, Manager Access
+  chooser, and owner/manager team view share an explicit Individual/Manager
+  mode control; Manager mode remains unavailable without an eligible role.
+  This follow-through was reproduced red-first, then verified with 224/224 Web
+  tests, Web typecheck, optimized Next.js build, root build, and an unauthenticated
+  browser check proving `/app` preserves `next=/app` through sign-in.
 
 ### Layered Supabase sign-in
 

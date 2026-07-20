@@ -22,8 +22,12 @@ import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
 import { PersonalReplicaRealtime } from "@/components/PersonalReplicaRealtime";
 import { listOwnPersonalReplicas, type PersonalReplicaView } from "@/lib/personalReplica";
 import { deletePersonalReplicaHistory, queuePersonalReviewCommand } from "./personalActions";
-import { managerAccessMemberships } from "@/lib/managerAccess";
+import {
+  getSingleManagerTeamPath,
+  managerAccessMemberships,
+} from "@/lib/managerAccess";
 import { WebWorkspaceIntro } from "@/components/WebWorkspaceIntro";
+import { WorkspaceModeToggle } from "@/components/WorkspaceModeToggle";
 
 export const metadata: Metadata = { title: "Weekform Web" };
 export const dynamic = "force-dynamic";
@@ -59,6 +63,11 @@ export default async function DashboardPage({
           <div className="page-head">
             <h1>Weekform Web</h1>
           </div>
+          <WorkspaceModeToggle
+            managerAvailable={false}
+            managerHref="/manager-access"
+            mode="individual"
+          />
           <div className="error-panel" role="alert">
             <h2>Supabase is not configured</h2>
             <p>
@@ -81,7 +90,7 @@ export default async function DashboardPage({
   } = await supabase.auth.getUser();
 
   if (userError || !user) {
-    redirect("/login?next=/dashboard");
+    redirect("/login?next=/app");
   }
 
   const params = await searchParams;
@@ -93,6 +102,7 @@ export default async function DashboardPage({
   const { replicas: personalReplicas, error: personalReplicaError } =
     await listOwnPersonalReplicas(supabase);
   const managedTeams = managerAccessMemberships(teams);
+  const managerHref = getSingleManagerTeamPath(managedTeams) ?? "/manager-access";
 
   return (
     <>
@@ -118,6 +128,12 @@ export default async function DashboardPage({
             )}
           </div>
         </div>
+
+        <WorkspaceModeToggle
+          managerAvailable={managedTeams.length > 0}
+          managerHref={managerHref}
+          mode="individual"
+        />
 
         <nav className="workspace-nav" aria-label="Web workspace">
           <a href="#personal-workspace">Private review</a>

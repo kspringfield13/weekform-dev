@@ -9,6 +9,7 @@
     "tauri": "tauri",
     "desktop:dev": "DEVELOPER_DIR=${DEVELOPER_DIR:-/Library/Developer/CommandLineTools} tauri dev",
     "desktop:build": "DEVELOPER_DIR=${DEVELOPER_DIR:-/Library/Developer/CommandLineTools} tauri build",
+    "desktop:release:mac": "DEVELOPER_DIR=${DEVELOPER_DIR:-/Library/Developer/CommandLineTools} CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2} tauri build --target universal-apple-darwin --bundles app,dmg",
     "test:simulator": "node --import tsx --test packages/simulator/src/*.test.ts",
     "test:cloud": "node --import tsx --test packages/inference/src/*.test.ts",
     "test:desktop-cloud": "node --import tsx --test apps/desktop/src/services/*.test.ts",

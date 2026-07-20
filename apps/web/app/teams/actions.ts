@@ -54,20 +54,20 @@ async function requestOrigin(): Promise<string> {
 export async function createTeam(formData: FormData): Promise<void> {
   const supabase = await createClient();
   if (!supabase) {
-    redirect(`/dashboard?team_error=${encodeMessage(NOT_CONFIGURED)}`);
+    redirect(`/app?team_error=${encodeMessage(NOT_CONFIGURED)}`);
   }
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    redirect("/login?next=/dashboard");
+    redirect("/login?next=/app");
   }
 
   const name = String(formData.get("team_name") ?? "").trim();
   if (name.length < 1 || name.length > 120) {
     redirect(
-      `/dashboard?team_error=${encodeMessage(
+      `/app?team_error=${encodeMessage(
         "Give your team a name between 1 and 120 characters.",
       )}`,
     );
@@ -79,7 +79,7 @@ export async function createTeam(formData: FormData): Promise<void> {
 
   if (error || typeof teamId !== "string") {
     redirect(
-      `/dashboard?team_error=${encodeMessage(
+      `/app?team_error=${encodeMessage(
         error?.message?.includes("Team name")
           ? "Give your team a name between 1 and 120 characters."
           : "The team could not be created. Try again in a moment.",
@@ -87,7 +87,7 @@ export async function createTeam(formData: FormData): Promise<void> {
     );
   }
 
-  revalidatePath("/dashboard");
+  revalidatePath("/app");
   redirect(`/teams/${teamId}?notice=${encodeMessage(`Team “${name}” created. You are the owner.`)}`);
 }
 
@@ -178,20 +178,20 @@ export async function createInvite(
 export async function leaveTeam(formData: FormData): Promise<void> {
   const supabase = await createClient();
   if (!supabase) {
-    redirect(`/dashboard?team_error=${encodeMessage(NOT_CONFIGURED)}`);
+    redirect(`/app?team_error=${encodeMessage(NOT_CONFIGURED)}`);
   }
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    redirect("/login?next=/dashboard");
+    redirect("/login?next=/app");
   }
 
   const teamId = String(formData.get("team_id") ?? "");
   if (!UUID_PATTERN.test(teamId)) {
     redirect(
-      `/dashboard?team_error=${encodeMessage(
+      `/app?team_error=${encodeMessage(
         "This leave form is missing its team. Reload the page.",
       )}`,
     );
@@ -207,12 +207,12 @@ export async function leaveTeam(formData: FormData): Promise<void> {
       : error.message.includes("membership not found")
         ? "You're not an active member of that team anymore."
         : "Leaving the team didn't work. Try again in a moment.";
-    redirect(`/dashboard?team_error=${encodeMessage(message)}`);
+    redirect(`/app?team_error=${encodeMessage(message)}`);
   }
 
   revalidatePath("/", "layout");
   redirect(
-    `/dashboard?notice=${encodeMessage(
+    `/app?notice=${encodeMessage(
       "You left the team. Snapshots you shared earlier still exist; use “Delete my cloud history” to remove them.",
     )}`,
   );
@@ -230,20 +230,20 @@ export async function leaveTeam(formData: FormData): Promise<void> {
 export async function updateTeamSharePolicy(formData: FormData): Promise<void> {
   const supabase = await createClient();
   if (!supabase) {
-    redirect(`/dashboard?team_error=${encodeMessage(NOT_CONFIGURED)}`);
+    redirect(`/app?team_error=${encodeMessage(NOT_CONFIGURED)}`);
   }
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    redirect("/login?next=/dashboard");
+    redirect("/login?next=/app");
   }
 
   const teamId = String(formData.get("team_id") ?? "");
   if (!UUID_PATTERN.test(teamId)) {
     redirect(
-      `/dashboard?team_error=${encodeMessage(
+      `/app?team_error=${encodeMessage(
         "This policy form is missing its team. Reload the page.",
       )}`,
     );
@@ -302,20 +302,20 @@ export async function updateTeamSharePolicy(formData: FormData): Promise<void> {
 export async function deleteCloudHistory(formData: FormData): Promise<void> {
   const supabase = await createClient();
   if (!supabase) {
-    redirect(`/dashboard?team_error=${encodeMessage(NOT_CONFIGURED)}`);
+    redirect(`/app?team_error=${encodeMessage(NOT_CONFIGURED)}`);
   }
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    redirect("/login?next=/dashboard");
+    redirect("/login?next=/app");
   }
 
   const teamId = String(formData.get("team_id") ?? "");
   if (!UUID_PATTERN.test(teamId)) {
     redirect(
-      `/dashboard?team_error=${encodeMessage(
+      `/app?team_error=${encodeMessage(
         "This delete form is missing its team. Reload the page.",
       )}`,
     );
@@ -329,7 +329,7 @@ export async function deleteCloudHistory(formData: FormData): Promise<void> {
 
   if (error) {
     redirect(
-      `/dashboard?team_error=${encodeMessage(
+      `/app?team_error=${encodeMessage(
         "Your cloud history could not be deleted. Try again in a moment.",
       )}`,
     );
@@ -337,7 +337,7 @@ export async function deleteCloudHistory(formData: FormData): Promise<void> {
 
   revalidatePath("/", "layout");
   redirect(
-    `/dashboard?notice=${encodeMessage(
+    `/app?notice=${encodeMessage(
       "Your shared snapshots for that team were deleted from the cloud. Local data on your Mac is untouched.",
     )}`,
   );

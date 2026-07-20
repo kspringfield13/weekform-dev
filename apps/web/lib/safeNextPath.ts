@@ -10,5 +10,5 @@ export function safeNextPath(value: FormDataEntryValue | null | undefined): stri
   ) {
     return value;
   }
-  return "/dashboard";
+  return "/app";
 }

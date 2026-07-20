@@ -42,7 +42,7 @@ export async function createManagerAction(formData: FormData): Promise<void> {
   const teamId = String(formData.get("team_id") ?? "");
   const context = await requireManager(teamId);
   if (!context) {
-    redirect("/dashboard?team_error=You%20do%20not%20have%20permission%20to%20manage%20that%20team.");
+    redirect("/app?team_error=You%20do%20not%20have%20permission%20to%20manage%20that%20team.");
   }
 
   const text = String(formData.get("action_text") ?? "").trim();
@@ -76,7 +76,7 @@ export async function updateManagerActionStatus(formData: FormData): Promise<voi
   const teamId = String(formData.get("team_id") ?? "");
   const context = await requireManager(teamId);
   if (!context) {
-    redirect("/dashboard?team_error=You%20do%20not%20have%20permission%20to%20manage%20that%20team.");
+    redirect("/app?team_error=You%20do%20not%20have%20permission%20to%20manage%20that%20team.");
   }
 
   const actionId = String(formData.get("action_id") ?? "");

@@ -74,8 +74,8 @@ export default async function BriefingPage({ params }: BriefingPageProps) {
               member, or you&apos;re a member rather than a manager.
             </p>
             <p>
-              <Link href="/dashboard" className="button button-secondary">
-                Back to dashboard
+              <Link href="/app" className="button button-secondary">
+                Back to your individual workspace
               </Link>
             </p>
           </div>
