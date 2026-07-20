@@ -271,8 +271,10 @@ the alignment QA.
   slices; `hdiutil verify`, mounted-content inspection, bundle metadata, and
   architecture checks passed. The page was reviewed at 1440px and 390px with
   no console errors or horizontal overflow. Developer ID signing, Apple
-  notarization, private-bucket upload, and production publication remain
-  explicitly pending and are not claimed as complete.
+  notarization, and private-bucket upload remain explicitly pending. The
+  public website-hosted preview path carries an explicit unsigned-preview
+  disclosure and is not presented as private or Gatekeeper-trusted
+  distribution.
 
 ### Layered Supabase sign-in
 

@@ -3,6 +3,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import {
@@ -125,7 +126,40 @@ test("the bundled DMG is presented as the active website release", () => {
   assert.equal(presentation.action.label, "Download now");
   assert.equal(presentation.action.href, "/download/artifact");
   assert.equal(presentation.filename, BUNDLED_ARTIFACT.filename);
-  assert.match(presentation.note, /6\.1 MB/);
+  assert.match(presentation.note, /6\.4 MiB/);
+  assert.match(presentation.note, /not Developer ID signed or Apple-notarized/i);
+  assert.match(presentation.note, /expected to block/i);
+});
+
+test("bundled DMG metadata identifies the current universal release and matches shipped bytes", () => {
+  assert.equal(RELEASE_INFO.generatedDate, "2026-07-20");
+
+  const artifact = readFileSync(
+    new URL(`../public${BUNDLED_ARTIFACT.href}`, import.meta.url),
+  );
+  const actualSha256 = createHash("sha256").update(artifact).digest("hex");
+
+  assert.equal(BUNDLED_ARTIFACT.sha256, actualSha256);
+  assert.equal(
+    BUNDLED_ARTIFACT.href,
+    `/downloads/${actualSha256.slice(0, 16)}/${RELEASE_INFO.artifactFilename}`,
+  );
+  assert.equal(
+    BUNDLED_ARTIFACT.sizeLabel,
+    `${(artifact.byteLength / (1024 * 1024)).toFixed(1)} MiB`,
+  );
+});
+
+test("download CDN headers cover every content-addressed universal release", () => {
+  const source = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
+
+  assert.match(
+    source,
+    /source: "\/downloads\/:release\/Weekform_0\.1\.0_universal\.dmg"/,
+  );
+  assert.match(source, /Content-Disposition/);
+  assert.match(source, /application\/x-apple-diskimage/);
+  assert.match(source, /max-age=31536000, immutable/);
 });
 
 test("configured artifact becomes an active, filename-specific download", () => {
@@ -165,6 +199,8 @@ test("download page keeps unavailable releases out of disabled-button limbo", ()
   assert.match(source, /RELEASE_INFO\.features/);
   assert.match(source, /RELEASE_INFO\.tips/);
   assert.match(source, /Open the DMG/);
+  assert.match(source, /Preview Mac install/);
+  assert.match(source, /Expect a Gatekeeper warning/);
   assert.doesNotMatch(
     source,
     /aria-disabled|is-disabled|private release bucket credentials|Developer ID certificate|notarization pending|npm ci|desktop:dev|xattr -dr|Download source archive|git clone/,

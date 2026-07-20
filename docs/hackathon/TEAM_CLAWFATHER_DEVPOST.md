@@ -18,7 +18,7 @@ Prepared July 19, 2026 for OpenAI Build Week 2026. Every claim below is traceabl
 
 - **Desktop (inherited baseline, predates Build Week):** a local-first macOS menu-bar app (Tauri 2 / React / Rust) that turns calendar and foreground-app signals into reviewable work blocks and a deterministic weekly capacity model — allocation, reactive load, fragmentation, and reliable new-work headroom. Capacity heuristics are planning aids, not validated performance science.
 - **New this week — the Team Clawfather cloud slice:**
-  - weekform.com web app: signup/login, team creation, member management, single-use **copy-link invites** (no email provider by design), and an **account-gated download page** (currently serving the public source archive with build-from-source instructions; unsigned local builds).
+  - weekform.com web app: signup/login, team creation, member management, single-use **copy-link invites** (no email provider by design), and an **account-gated download page** that redirects signed-in users to a public, content-addressed universal preview DMG. The preview is unsigned and Apple-notarization is pending; its exact CDN URL is not private.
   - Desktop **Account & Sharing**: off by default; sign-in, one recipient team, share level + per-metric toggles, a consent preview showing the **exact JSON that will be uploaded** (the same object the sync sends), recorded consent, manual **Sync Now**, optional hourly auto-sync only while the app is open, cloud-history deletion, and a local audit event for every cloud action.
   - **Manager dashboard**: per-member snapshot cards showing share level, freshness, and shared metrics — with disabled metrics rendered as "Not shared," never as fake zeros.
   - **Team Briefing**: a server-side summary of already-shared metrics. With `OPENAI_API_KEY` + `OPENAI_TEAM_BRIEFING_MODEL` configured it calls the OpenAI Responses API (`store: false`, schema-validated output, evidence citations outside the shared catalog stripped); without them it runs a labeled **deterministic fallback** from the same allowlisted inputs — the fallback is the path demonstrated in our demo. Both paths refuse member ranking, performance scoring, and HR/medical language.
@@ -58,7 +58,7 @@ Prepared July 19, 2026 for OpenAI Build Week 2026. Every claim below is traceabl
 ## What's next
 
 - Run the environment-blocked gates live: execute `supabase/tests/team_cloud_rls.sql` against a real stack and run the golden path on hosted Supabase. (`npm audit` is no longer pending — `npm run audit:check` reports 0 vulnerabilities in both workspaces as of July 19, 2026, after a `postcss >=8.5.10` override in `apps/web`.)
-- Deploy the web app; upload a signed packaged artifact to the private bucket so the existing `/download/artifact` signed-URL path replaces build-from-source.
+- Replace the public preview fallback with a Developer ID signed, Apple-notarized artifact in the private bucket so `/download/artifact` can issue short-lived signed URLs.
 - Email invite delivery, hardened credential storage on desktop (session tokens are currently in unencrypted prototype storage), and multi-week trends on the manager dashboard.
 - Validate capacity heuristics against real planning outcomes before presenting them as more than heuristics.
 
@@ -90,4 +90,4 @@ npm run build          # tsc -b + pricing check + vite build (desktop web bundle
 
 Verified July 19, 2026: `npm run audit:check` (npm audit at root and in `apps/web`) — 0 vulnerabilities in both workspaces after remediating GHSA-qx2v-qp2m-jg93 via a `postcss >=8.5.10` override. Operator-only, still pending (environment-blocked — no live Supabase credentials on this machine): `supabase db reset` + `supabase/tests/team_cloud_rls.sql` against a live local stack; the manual golden path ×2 in the demo script.
 
-**Known limitations disclosed to judges:** live RLS/auth/sync/briefing-model/artifact-signing unproven on the build machine (deterministic fallbacks are the demonstrated paths); copy-link invites only; unsigned source-build distribution; prototype (unencrypted) credential and local-state storage; sync runs only while the app is open; capacity numbers are unvalidated heuristics; synthetic data only in all demo material.
+**Known limitations disclosed to judges:** live RLS/auth/sync/briefing-model/artifact-signing unproven on the build machine (deterministic fallbacks are the demonstrated paths); copy-link invites only; a public unsigned/unnotarized universal preview DMG; prototype (unencrypted) credential and local-state storage; sync runs only while the app is open; capacity numbers are unvalidated heuristics; synthetic data only in all demo material.

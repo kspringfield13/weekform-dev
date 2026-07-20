@@ -206,13 +206,13 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
 
         <section className="download-install-strip" aria-labelledby="install-title">
           <div>
-            <p className="download-section-label">Standard Mac install</p>
-            <h2 id="install-title">From download to Weekform in one familiar flow.</h2>
+            <p className="download-section-label">Preview Mac install</p>
+            <h2 id="install-title">The familiar DMG flow, with one preview limitation.</h2>
           </div>
           <ol>
             <li><span>1</span><strong>Open the DMG</strong></li>
             <li><span>2</span><strong>Drag to Applications</strong></li>
-            <li><span>3</span><strong>Open Weekform</strong></li>
+            <li><span>3</span><strong>Expect a Gatekeeper warning</strong></li>
           </ol>
         </section>
 

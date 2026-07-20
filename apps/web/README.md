@@ -188,19 +188,24 @@ projection locally.
 
 `/download` is authenticated-session-required: signed-out visitors are
 redirected to `/login?next=/download` and returned here after signing in.
-The gate controls the *official packaged distribution path*, not the source
-— the page never claims the public GitHub repository is inaccessible, and
-always links or names it.
+The page and `/download/artifact` redirect are gated, but the bundled
+content-addressed CDN fallback is public to anyone who knows its exact URL.
+Use the private Storage path below when artifact access itself must be gated.
+The page never claims the public GitHub repository is inaccessible and always
+links or names it.
 
-**Current state of this environment:** a 6.1 MB universal DMG is built at
+**Current state of this environment:** a 6.4 MiB universal DMG is built at
 `apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/Weekform_0.1.0_universal.dmg`.
 It contains Apple silicon and Intel slices plus the standard Applications
-shortcut. The app is ad-hoc signed, not Developer ID signed or Apple-notarized.
-The verified DMG is copied into the Web release at a content-addressed static
-path. A signed-in visitor gets one active **Download now** action; the
+shortcut. The app bundle is unsigned, not Developer ID signed or
+Apple-notarized. The verified DMG is copied into the Web release at
+`apps/web/public/downloads/5a14980de083abb5/Weekform_0.1.0_universal.dmg`, whose SHA-256 is
+`5a14980de083abb536269c481788882ec60674f5434a19060e77dcbcf489cc6c`.
+A signed-in visitor gets one active **Download now** action; the
 authenticated `/download/artifact` route redirects to that website-hosted DMG
-when private Storage is unconfigured. The downloaded file is a normal `.dmg`,
-not a ZIP or source archive.
+when private Storage is unconfigured. That static fallback is public by URL;
+authentication controls the product page and redirect, not direct CDN access.
+The downloaded file is a normal `.dmg`, not a ZIP or source archive.
 
 **To move the artifact to a private signed-URL path:**
 

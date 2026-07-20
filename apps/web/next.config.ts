@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/downloads/9f93bedd11eb1813/Weekform_0.1.0_universal.dmg",
+        source: "/downloads/:release/Weekform_0.1.0_universal.dmg",
         headers: [
           {
             key: "Content-Disposition",

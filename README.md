@@ -336,7 +336,7 @@ Desktop prototype:
 - AI features require network access and may incur provider costs.
 - Visual Context captures the current screen, not only the active application window.
 - Capacity weights and thresholds are prototype heuristics, not validated organizational benchmarks.
-- Distribution is source-build only — the app is not signed or notarized.
+- A bundled universal preview DMG is available, but it is not Developer ID signed or Apple-notarized.
 - The largest React and Rust modules still need further decomposition.
 
 Chat connections:

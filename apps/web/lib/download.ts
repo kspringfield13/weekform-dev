@@ -11,7 +11,7 @@
 /** Static release metadata shown on /download. Update by hand on release. */
 export const RELEASE_INFO = {
   version: "0.1.0",
-  generatedDate: "2026-07-19",
+  generatedDate: "2026-07-20",
   macOsRequirement: "macOS 13 Ventura or later (Apple silicon or Intel)",
   artifactFilename: "Weekform_0.1.0_universal.dmg",
   architecture: "Apple silicon and Intel",
@@ -44,15 +44,17 @@ export const RELEASE_INFO = {
 } as const;
 
 /**
- * Release artifact shipped with the website and served by its static CDN.
+ * Release artifact shipped with the website and served by its public static
+ * CDN fallback. The authenticated page and redirect do not make this direct
+ * content-addressed URL private; private access requires the Storage path.
  * The content-addressed directory makes cache updates explicit while keeping
  * the downloaded filename familiar to Mac users.
  */
 export const BUNDLED_ARTIFACT = {
   filename: RELEASE_INFO.artifactFilename,
-  href: `/downloads/9f93bedd11eb1813/${RELEASE_INFO.artifactFilename}`,
-  sizeLabel: "6.1 MB",
-  sha256: "9f93bedd11eb1813d7e07d9a405f8196de39f6765916ba2ce250d19cf194c5d6",
+  href: `/downloads/5a14980de083abb5/${RELEASE_INFO.artifactFilename}`,
+  sizeLabel: "6.4 MiB",
+  sha256: "5a14980de083abb536269c481788882ec60674f5434a19060e77dcbcf489cc6c",
 } as const;
 
 export interface ArtifactConfig {
@@ -151,7 +153,7 @@ export function getReleasePresentation(
       kind: "available",
       action: { label: "Download now", href: "/download/artifact" },
       filename: bundledArtifact.filename,
-      note: `${bundledArtifact.sizeLabel}. Open the DMG, move Weekform to Applications, and launch it.`,
+      note: `${bundledArtifact.sizeLabel}. Open the DMG and move Weekform to Applications. This Build Week preview is not Developer ID signed or Apple-notarized, so macOS is expected to block first launch on another Mac. Use Weekform Web while a Gatekeeper-trusted Mac release is pending.`,
     };
   }
 
