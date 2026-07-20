@@ -85,9 +85,9 @@ test("source installer removes only its temporary macOS app bundle after install
   assert.ok(cleanedAt > installedAt, "cleanup must run only after the Applications copy succeeds");
 });
 
-test("source installer explains that the extracted source folder can be removed", () => {
+test("source installer explains that a cloned source checkout can be removed", () => {
   assert.match(installer, /temporary build copy was removed/i);
-  assert.match(installer, /extracted source folder can be moved to Trash/i);
+  assert.match(installer, /cloned source checkout can be moved to Trash/i);
 });
 
 test("source installer never bypasses Gatekeeper quarantine", () => {

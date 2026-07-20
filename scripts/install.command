@@ -350,8 +350,9 @@ cat <<DONE
 
 ${BOLD}${GREEN}✓ All set!${RESET} Weekform is in your Applications folder.
 
-  The temporary build copy was removed. If you downloaded the source ZIP,
-  its extracted source folder can be moved to Trash after Weekform opens.
+  The temporary build copy was removed. If you cloned the source only to
+  install Weekform, the cloned source checkout can be moved to Trash after
+  Weekform opens.
 
 ${BOLD}One more thing — launching the app:${RESET}
   • Weekform opens its ${BOLD}full window${RESET} every time you launch it; the

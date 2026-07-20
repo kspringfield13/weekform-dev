@@ -287,9 +287,11 @@ the alignment QA.
   unnotarized and unstapled; Gatekeeper rejected it and macOS launched it through
   App Translocation. The beta's production download configuration was removed
   rather than asking users to bypass macOS security. The authenticated download
-  page now offers a clearly separate source archive while the official release
-  remains fail-closed; `start.sh` delegates to the reviewed installer, builds on
-  the user's Mac, and never claims to be the notarized DMG. Web Inspector traced
+  page now offers a clearly separate, Apple-independent two-command source
+  install while the official release remains fail-closed: users shallow-clone
+  the public repository, then run its included `start.sh`. The launcher
+  delegates to the reviewed installer, builds on the user's Mac, and never
+  claims to be the notarized DMG. Web Inspector traced
   the packaged white window to Tauri's
   `freezePrototype` hardening: freezing `Object.prototype.toString` caused Zod's
   namespace initialization to throw before React could mount. The incompatible
@@ -306,9 +308,11 @@ the alignment QA.
   sequence. A local Keychain notarization profile is now available, but the two
   Apple submissions checked on July 20 still reported `In Progress`; therefore
   no official artifact or trusted-download claim has been published yet.
-  Focused red-first regressions, the root build, desktop/web suites, optimized
-  Web build, shell syntax check, and both dependency audits passed before
-  deployment.
+  The source route was tightened without a downloaded ZIP, `curl | bash`, or a
+  quarantine bypass, and the installer repairs only the unidentified ad-hoc
+  signature shape produced by a local build. Focused red-first regressions,
+  269 desktop service tests, 570 Web tests, the root build, optimized Web build,
+  shell syntax check, and both dependency audits passed before deployment.
 
 ### Layered Supabase sign-in
 

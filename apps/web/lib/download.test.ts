@@ -227,24 +227,25 @@ test("download page keeps unavailable releases out of disabled-button limbo", ()
   assert.doesNotMatch(source, /Expect a Gatekeeper warning|unsigned preview/i);
   assert.doesNotMatch(
     source,
-    /aria-disabled|is-disabled|private release bucket credentials|Developer ID certificate|notarization pending|npm ci|desktop:dev|xattr -dr|git clone/,
+    /aria-disabled|is-disabled|private release bucket credentials|Developer ID certificate|notarization pending|npm ci|desktop:dev|xattr -dr/,
   );
 });
 
-test("pending Mac release offers an honestly labeled source package beside Web", () => {
+test("pending Mac release offers an honestly labeled two-command source install beside Web", () => {
   const source = readFileSync(
     new URL("../app/download/page.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /SOURCE_ARCHIVE_URL/);
-  assert.match(source, /archive\/refs\/heads\/main\.zip/);
-  assert.match(source, /Download source package/);
-  assert.match(source, /bash start\.sh/);
-  assert.match(source, /builds Weekform locally/i);
+  assert.match(source, /href="#source-install"/);
+  assert.match(source, /Install from source/);
+  assert.match(source, /git clone --depth 1/);
+  assert.match(source, /cd weekform-dev && bash start\.sh/);
+  assert.match(source, /builds\s+Weekform locally/i);
   assert.match(source, /className="button button-secondary download-web-action"/);
   assert.match(source, /releasePresentation\.action\.label/);
-  assert.doesNotMatch(source, /source package[\s\S]{0,180}(notarized|stapled)/i);
+  assert.doesNotMatch(source, /archive\/refs\/heads\/main\.zip/);
+  assert.doesNotMatch(source, /source install[\s\S]{0,180}(notarized|stapled)/i);
 
   const styles = readFileSync(
     new URL("../app/globals.css", import.meta.url),

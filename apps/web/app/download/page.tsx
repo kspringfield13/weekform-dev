@@ -21,7 +21,9 @@ export const metadata: Metadata = {
 };
 
 const SOURCE_REPO_URL = "https://github.com/kspringfield13/weekform-dev";
-const SOURCE_ARCHIVE_URL = `${SOURCE_REPO_URL}/archive/refs/heads/main.zip`;
+const SOURCE_CLONE_COMMAND =
+  "git clone --depth 1 https://github.com/kspringfield13/weekform-dev.git";
+const SOURCE_START_COMMAND = "cd weekform-dev && bash start.sh";
 
 type DownloadPageProps = {
   searchParams: Promise<{ error?: string }>;
@@ -215,12 +217,12 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
                   </div>
                   <div className="download-pending-actions">
                     <a
-                      href={SOURCE_ARCHIVE_URL}
+                      href="#source-install"
                       className="button button-primary download-source-action"
-                      aria-describedby="source-package-note"
+                      aria-describedby="source-install-note"
                     >
                       <DownloadGlyph />
-                      <span>Download source package</span>
+                      <span>Install from source</span>
                     </a>
                     <Link
                       href={releasePresentation.action.href}
@@ -229,10 +231,10 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
                       {releasePresentation.action.label}
                     </Link>
                   </div>
-                  <p id="source-package-note" className="download-source-note">
-                    This fallback builds Weekform locally, installs it in your
-                    Applications folder, and does not bypass macOS security.
-                    Unzip it, open Terminal in the folder, then run <code>bash start.sh</code>.
+                  <p id="source-install-note" className="download-source-note">
+                    This Apple-independent path clones the public source, builds
+                    Weekform locally, installs one copy in Applications, and
+                    opens it without bypassing macOS security.
                   </p>
                 </div>
                 <details className="download-release-disclosure">
@@ -259,6 +261,37 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
             </ol>
           </section>
         ) : null}
+
+        <section
+          id="source-install"
+          className="download-content-section"
+          aria-labelledby="source-install-title"
+        >
+          <div className="download-section-heading">
+            <p className="download-section-label">Local source install</p>
+            <h2 id="source-install-title">Clone once. Run one guided installer.</h2>
+            <p>
+              Open Terminal and run these two commands. The included launcher
+              checks the required Mac tools, builds the current public source,
+              replaces any older Weekform copy safely, and opens the app.
+            </p>
+          </div>
+          <ol className="download-tip-list download-source-note">
+            <li>
+              <span>1</span>
+              <p><code>{SOURCE_CLONE_COMMAND}</code></p>
+            </li>
+            <li>
+              <span>2</span>
+              <p><code>{SOURCE_START_COMMAND}</code></p>
+            </li>
+          </ol>
+          <p className="download-source-note">
+            This route compiles Weekform on your Mac, so it does not depend on
+            Apple notarization. Review the source on GitHub before running it;
+            no quarantine-disabling command is used.
+          </p>
+        </section>
 
         <section
           id="release-notes"

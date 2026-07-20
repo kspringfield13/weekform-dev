@@ -250,11 +250,12 @@ minting a short-lived private Storage URL.
 The code retains an isolated **Beta Version** route for authenticated internal
 evaluation, but production no longer configures or advertises it: the signed,
 unnotarized beta was rejected by Gatekeeper. While the official release is
-pending, the authenticated page offers the public source archive as a separate,
-honestly labeled fallback. Users unzip it and run `bash start.sh`; the reviewed
-installer builds locally and copies the result to Applications without removing
-quarantine or claiming Apple notarization. Beta or source availability can
-never satisfy or weaken the official signed/notarized/stapled release gate.
+pending, the authenticated page offers a transparent two-command public-source
+install as a separate, honestly labeled fallback. Users shallow-clone the
+repository and run the included `start.sh`; the reviewed installer builds
+locally and copies the result to Applications without removing quarantine or
+claiming Apple notarization. Beta or source availability can never satisfy or
+weaken the official signed/notarized/stapled release gate.
 
 **To publish a trusted private artifact:**
 
