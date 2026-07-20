@@ -2,9 +2,9 @@
 --
 -- Released clients continue to read public.review_commands and call the
 -- original complete_review_command v1 RPC. New clients use the isolated
--- public.review_commands_v2 queue and versioned RPC names. A private target
--- reservation prevents concurrent pending v1/v2 commands for the same block
--- revision without making v2 rows selectable by released clients.
+-- public.review_commands_v2 queue and versioned RPC names. A private per-target
+-- mutex serializes cross-protocol inserts; the command tables remain the
+-- authoritative pending-state check and v2 rows stay invisible to v1 clients.
 
 create schema if not exists private;
 
@@ -110,16 +110,6 @@ create table if not exists private.review_command_pending_targets (
 revoke all on private.review_command_pending_targets
   from public, anon, authenticated;
 
--- Seed reservations for requests that were already pending when the additive
--- v2 migration began. No v1 row is moved or reshaped.
-insert into private.review_command_pending_targets(
-  user_id, week_id, block_id, expected_revision, protocol_version, command_id
-)
-select user_id, week_id, block_id, expected_revision, 1, command_id
-from public.review_commands
-where status = 'pending'
-on conflict (user_id, week_id, block_id, expected_revision) do nothing;
-
 create or replace function private.reserve_review_command_pending_target()
 returns trigger
 language plpgsql
@@ -128,9 +118,6 @@ set search_path = ''
 as $$
 declare
   requested_protocol smallint := tg_argv[0]::smallint;
-  existing_protocol smallint;
-  existing_command uuid;
-  existing_is_pending boolean := false;
 begin
   if new.status <> 'pending' then return new; end if;
   if requested_protocol not in (1, 2) then
@@ -145,65 +132,48 @@ begin
   )
   on conflict (user_id, week_id, block_id, expected_revision) do nothing;
 
-  select protocol_version, command_id
-    into existing_protocol, existing_command
-  from private.review_command_pending_targets
+  -- The row is a durable mutex, not a mirror of command lifecycle state. It
+  -- intentionally survives terminalization so terminal updates never need to
+  -- acquire this lock in the opposite order from queue inserts.
+  perform 1 from private.review_command_pending_targets
   where user_id = new.user_id
     and week_id = new.week_id
     and block_id = new.block_id
     and expected_revision = new.expected_revision
   for update;
 
-  if existing_protocol is distinct from requested_protocol then
+  -- Cached mutex metadata is never authoritative. Re-check the opposite
+  -- protocol table while holding the shared target lock, including when a
+  -- mutex row was missing or carried stale/corrupted metadata.
+  if requested_protocol = 1 and exists (
+    select 1 from public.review_commands_v2
+    where user_id = new.user_id
+      and week_id = new.week_id
+      and block_id = new.block_id
+      and expected_revision = new.expected_revision
+      and status = 'pending'
+  ) then
+    raise exception 'another review protocol already has a pending request for this block revision';
+  elsif requested_protocol = 2 and exists (
+    select 1 from public.review_commands
+    where user_id = new.user_id
+      and week_id = new.week_id
+      and block_id = new.block_id
+      and expected_revision = new.expected_revision
+      and status = 'pending'
+  ) then
     raise exception 'another review protocol already has a pending request for this block revision';
   end if;
 
-  if existing_command is distinct from new.command_id then
-    if requested_protocol = 1 then
-      select exists (
-        select 1 from public.review_commands
-        where user_id = new.user_id and command_id = existing_command
-          and status = 'pending'
-      ) into existing_is_pending;
-    else
-      select exists (
-        select 1 from public.review_commands_v2
-        where user_id = new.user_id and command_id = existing_command
-          and status = 'pending'
-      ) into existing_is_pending;
-    end if;
-    if not existing_is_pending then
-      update private.review_command_pending_targets
-      set command_id = new.command_id
-      where user_id = new.user_id
-        and week_id = new.week_id
-        and block_id = new.block_id
-        and expected_revision = new.expected_revision
-        and protocol_version = requested_protocol;
-    end if;
-  end if;
-  return new;
-end;
-$$;
+  update private.review_command_pending_targets
+  set protocol_version = requested_protocol,
+      command_id = new.command_id
+  where user_id = new.user_id
+    and week_id = new.week_id
+    and block_id = new.block_id
+    and expected_revision = new.expected_revision;
 
-create or replace function private.release_review_command_pending_target()
-returns trigger
-language plpgsql
-security definer
-set search_path = ''
-as $$
-declare requested_protocol smallint := tg_argv[0]::smallint;
-begin
-  if old.status = 'pending' and (tg_op = 'DELETE' or new.status <> 'pending') then
-    delete from private.review_command_pending_targets
-    where user_id = old.user_id
-      and week_id = old.week_id
-      and block_id = old.block_id
-      and expected_revision = old.expected_revision
-      and protocol_version = requested_protocol
-      and command_id = old.command_id;
-  end if;
-  return case when tg_op = 'DELETE' then old else new end;
+  return new;
 end;
 $$;
 
@@ -214,9 +184,6 @@ before insert on public.review_commands
 for each row execute function private.reserve_review_command_pending_target('1');
 drop trigger if exists review_commands_v1_release_pending_target
   on public.review_commands;
-create trigger review_commands_v1_release_pending_target
-after update of status or delete on public.review_commands
-for each row execute function private.release_review_command_pending_target('1');
 
 drop trigger if exists review_commands_v2_reserve_pending_target
   on public.review_commands_v2;
@@ -225,9 +192,8 @@ before insert on public.review_commands_v2
 for each row execute function private.reserve_review_command_pending_target('2');
 drop trigger if exists review_commands_v2_release_pending_target
   on public.review_commands_v2;
-create trigger review_commands_v2_release_pending_target
-after update of status or delete on public.review_commands_v2
-for each row execute function private.release_review_command_pending_target('2');
+
+drop function if exists private.release_review_command_pending_target();
 
 create or replace function public.register_weekform_device(
   p_device_id uuid,
@@ -837,8 +803,6 @@ comment on function public.complete_review_command_v2(uuid,uuid,text,text) is
   'Versioned two-phase completion RPC. Applied requires a matching ack_pending claim.';
 
 revoke all on function private.reserve_review_command_pending_target()
-  from public, anon, authenticated;
-revoke all on function private.release_review_command_pending_target()
   from public, anon, authenticated;
 revoke all on function public.register_weekform_device(uuid,text)
   from public, anon, authenticated;

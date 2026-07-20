@@ -5,7 +5,7 @@ begin;
 set local role postgres;
 set local search_path = public, extensions;
 create extension if not exists pgtap;
-select plan(48);
+select plan(52);
 
 select has_table(
   'private',
@@ -137,6 +137,22 @@ insert into auth.users (
   )
 on conflict (id) do nothing;
 
+select set_config(
+  'app.settings.request_control_server_claim_sha256',
+  encode(extensions.digest(convert_to('synthetic-server-claim-that-is-long-enough','UTF8'),'sha256'),'hex'),
+  true
+);
+
+select set_config(
+  'app.settings.request_control_server_claim_sha256',
+  encode(extensions.digest(convert_to(repeat('x',257),'UTF8'),'sha256'),'hex'),
+  true
+);
+select is(
+  private.request_control_server_claim_valid(repeat('x',257)),
+  false,
+  'the server-claim validator rejects oversized input before hashing it'
+);
 select set_config(
   'app.settings.request_control_server_claim_sha256',
   encode(extensions.digest(convert_to('synthetic-server-claim-that-is-long-enough','UTF8'),'sha256'),'hex'),
@@ -399,6 +415,29 @@ select is(
 );
 
 set local role anon;
+select throws_ok(
+  $$ select * from public.acquire_webex_request_control(
+       '203.0.113.9', repeat('2',64), repeat('x',257)
+     ) $$,
+  'P0001', 'invalid keyed subject',
+  'cheap subject validation precedes protected-claim hashing'
+);
+select throws_ok(
+  $$ select * from public.acquire_webex_request_control(
+       repeat('1',64), 'raw-authorization-code', repeat('x',257)
+     ) $$,
+  'P0001', 'invalid idempotency key',
+  'cheap idempotency validation precedes protected-claim hashing'
+);
+select throws_ok(
+  $$ select public.complete_webex_request_control(
+       '84000000-0000-4000-8000-000000000001',
+       '84000000-0000-4000-8000-000000000002',
+       repeat('1',64), repeat('x',257), 'raw_provider_body'
+     ) $$,
+  'P0001', 'invalid request-control outcome',
+  'cheap completion validation precedes protected-claim hashing'
+);
 select throws_ok(
   $$ select * from public.acquire_webex_request_control(
        repeat('1',64), repeat('2',64), 'wrong-server-claim-that-is-long-enough'

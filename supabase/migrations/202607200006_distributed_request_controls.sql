@@ -110,7 +110,7 @@ begin
   if v_expected_hash is null
     or v_expected_hash !~ '^[a-f0-9]{64}$'
     or p_server_claim is null
-    or pg_catalog.octet_length(p_server_claim) < 32
+    or pg_catalog.octet_length(p_server_claim) not between 32 and 256
   then
     return false;
   end if;
@@ -461,9 +461,6 @@ declare
   v_ip_token_limit integer;
 begin
   if v_actor is null then raise exception 'authentication required'; end if;
-  if not private.request_control_server_claim_valid(p_server_claim) then
-    raise exception 'request controls unavailable';
-  end if;
   if p_scope = 'personal_agent' and p_reserved_token_units = 4096 then
     v_user_request_limit := 12;
     v_user_token_limit := 40960;
@@ -484,6 +481,9 @@ begin
   end if;
   if p_idempotency_key is null or p_idempotency_key !~ '^[a-f0-9]{64}$' then
     raise exception 'invalid idempotency key';
+  end if;
+  if not private.request_control_server_claim_valid(p_server_claim) then
+    raise exception 'request controls unavailable';
   end if;
   v_user_subject_hash := pg_catalog.encode(
     extensions.digest(pg_catalog.convert_to(v_actor::text, 'UTF8'), 'sha256'),
@@ -521,13 +521,13 @@ declare
   v_scope text;
 begin
   if v_actor is null then raise exception 'authentication required'; end if;
-  if not private.request_control_server_claim_valid(p_server_claim) then
-    raise exception 'request controls unavailable';
-  end if;
   if p_outcome_code not in (
     'ok','provider_timeout','provider_error','validation_error','internal_error'
   ) then
     raise exception 'invalid request-control outcome';
+  end if;
+  if not private.request_control_server_claim_valid(p_server_claim) then
+    raise exception 'request controls unavailable';
   end if;
   v_user_subject_hash := pg_catalog.encode(
     extensions.digest(pg_catalog.convert_to(v_actor::text, 'UTF8'), 'sha256'),
@@ -568,14 +568,14 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not private.request_control_server_claim_valid(p_server_claim) then
-    raise exception 'request controls unavailable';
-  end if;
   if p_subject_hash is null or p_subject_hash !~ '^[a-f0-9]{64}$' then
     raise exception 'invalid keyed subject';
   end if;
   if p_idempotency_key is null or p_idempotency_key !~ '^[a-f0-9]{64}$' then
     raise exception 'invalid idempotency key';
+  end if;
+  if not private.request_control_server_claim_valid(p_server_claim) then
+    raise exception 'request controls unavailable';
   end if;
   return query
   select * from private.acquire_request_control(
@@ -605,11 +605,16 @@ security definer
 set search_path = ''
 as $$
 begin
-  if not private.request_control_server_claim_valid(p_server_claim) then
-    raise exception 'request controls unavailable';
-  end if;
   if p_subject_hash is null or p_subject_hash !~ '^[a-f0-9]{64}$' then
     raise exception 'invalid keyed subject';
+  end if;
+  if p_outcome_code not in (
+    'ok','provider_timeout','provider_error','validation_error','internal_error'
+  ) then
+    raise exception 'invalid request-control outcome';
+  end if;
+  if not private.request_control_server_claim_valid(p_server_claim) then
+    raise exception 'request controls unavailable';
   end if;
   return private.complete_request_control(
     'webex_oauth',
