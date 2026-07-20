@@ -44,8 +44,8 @@ test("the Individual Web shell preserves the Desktop primary navigation and layo
     );
   }
 
-  assert.match(shellSource, /managerAccessAvailable\s*&&/);
-  assert.match(shellSource, /Manager Access/);
+  assert.match(shellSource, /teamAvailable\s*&&/);
+  assert.match(shellSource, /<strong>Team<\/strong>/);
 });
 
 test("the configured authenticated workspace replaces public site chrome with app chrome", () => {

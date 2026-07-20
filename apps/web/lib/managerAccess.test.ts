@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   getSingleManagerTeamPath,
+  getTeamWorkspacePath,
   managerAccessMemberships,
 } from "./managerAccess";
 
@@ -23,4 +24,17 @@ test("web Manager Access opens a sole managed team directly", () => {
   assert.equal(getSingleManagerTeamPath(memberships.slice(1, 2)), "/teams/managed-team");
   assert.equal(getSingleManagerTeamPath(memberships), null);
   assert.equal(getSingleManagerTeamPath(memberships.slice(0, 1)), null);
+});
+
+test("Team navigation is available to every active team member", () => {
+  assert.equal(getTeamWorkspacePath([]), null);
+  assert.equal(
+    getTeamWorkspacePath(memberships.slice(0, 1)),
+    "/teams/member-team",
+  );
+  assert.equal(
+    getTeamWorkspacePath(memberships.slice(1, 2)),
+    "/teams/managed-team",
+  );
+  assert.equal(getTeamWorkspacePath(memberships), "/manager-access");
 });

@@ -36,7 +36,7 @@ test("the authenticated dashboard exposes real workspace destinations", () => {
     assert.match(dashboardSource + shellSource, new RegExp(`(?:data-web-view=["']${view}["']|id:\\s*["']${view}["'])`));
   }
   assert.doesNotMatch(shellSource, /scrollIntoView|href=["']#/);
-  assert.match(shellSource, /managerHref/);
+  assert.match(shellSource, /teamHref/);
 });
 
 test("the authenticated workspace uses ephemeral route state instead of a stored intro", () => {

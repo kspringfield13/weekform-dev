@@ -29,7 +29,7 @@ import {
   type ReviewCommandsClient,
 } from "@/lib/personalReplica";
 import {
-  getSingleManagerTeamPath,
+  getTeamWorkspacePath,
   managerAccessMemberships,
 } from "@/lib/managerAccess";
 import { WorkspaceModeToggle } from "@/components/WorkspaceModeToggle";
@@ -96,8 +96,8 @@ export default async function DashboardPage({
             <h1>Weekform Web</h1>
           </div>
           <WorkspaceModeToggle
-            managerAvailable={false}
-            managerHref="/manager-access"
+            teamAvailable={false}
+            teamHref="/manager-access"
             mode="individual"
           />
           <div className="error-panel" role="alert">
@@ -149,7 +149,7 @@ export default async function DashboardPage({
     personalReplicas[0]?.weekId ?? null,
   );
   const managedTeams = managerAccessMemberships(teams);
-  const managerHref = getSingleManagerTeamPath(managedTeams) ?? "/manager-access";
+  const teamHref = getTeamWorkspacePath(teams) ?? "/manager-access";
   const currentReplica = personalReplicas[0] ?? null;
 
   return (
@@ -158,8 +158,9 @@ export default async function DashboardPage({
       reliableCapacity={currentReplica?.payload.capacity.reliableNewWorkCapacityPct ?? null}
       reviewCount={currentReplica?.payload.blocks.filter((block) => !block.userVerified).length ?? 0}
       activeWeekLabel={currentReplica?.weekId ?? null}
-      managerAccessAvailable={managedTeams.length > 0}
-      managerHref={managerHref}
+      teamAvailable={teams.length > 0}
+      teamHref={teamHref}
+      teamRole={teams.length === 1 ? teams[0]?.role : undefined}
       accountActions={(
         <>
           <span className="web-toolbar-identity">
@@ -354,18 +355,19 @@ export default async function DashboardPage({
           </div>
         </section>
 
-        {managedTeams.length > 0 ? (
+        {teams.length > 0 ? (
           <section id="manager-entry" className="settings-row account-manager-entry" aria-labelledby="manager-entry-title">
             <div>
-              <span className="badge">Manager Access</span>
-              <h2 id="manager-entry-title">Coordinate from approved signals—not raw activity.</h2>
+              <span className="badge">Team</span>
+              <h2 id="manager-entry-title">Your connected team workspace.</h2>
               <p>
-                Open the manager workspace for member-approved summaries, briefings,
-                scenarios, and approval-gated coordination actions.
+                {managedTeams.length > 0
+                  ? "Coordinate through member-approved summaries, briefings, scenarios, and approval-gated actions."
+                  : "Review your membership, sharing boundary, and the snapshot you approved for your team."}
               </p>
             </div>
-            <Link href="/manager-access" className="button button-primary">
-              Open Manager Access <span aria-hidden="true">→</span>
+            <Link href={teamHref} className="button button-primary">
+              Open Team <span aria-hidden="true">→</span>
             </Link>
           </section>
         ) : null}

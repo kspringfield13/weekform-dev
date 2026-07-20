@@ -1,37 +1,41 @@
 import Link from "next/link";
 
 interface WorkspaceModeToggleProps {
-  managerHref: string;
-  managerAvailable: boolean;
-  mode: "individual" | "manager";
+  teamHref: string;
+  teamAvailable: boolean;
+  mode: "individual" | "manager" | "team";
+  individualHref?: string;
+  teamLabel?: "Manager mode" | "Team";
 }
 
 export function WorkspaceModeToggle({
-  managerHref,
-  managerAvailable,
+  teamHref,
+  teamAvailable,
   mode,
+  individualHref = "/app",
+  teamLabel = mode === "team" ? "Team" : "Manager mode",
 }: WorkspaceModeToggleProps) {
   return (
     <nav className="workspace-mode-toggle" aria-label="Weekform workspace mode">
       <Link
-        href="/app"
+        href={individualHref}
         aria-current={mode === "individual" ? "page" : undefined}
       >
         <span aria-hidden="true">●</span>
         Individual
       </Link>
-      {managerAvailable ? (
+      {teamAvailable ? (
         <Link
-          href={managerHref}
-          aria-current={mode === "manager" ? "page" : undefined}
+          href={teamHref}
+          aria-current={mode === "manager" || mode === "team" ? "page" : undefined}
         >
           <span aria-hidden="true">●●</span>
-          Manager mode
+          {teamLabel}
         </Link>
       ) : (
-        <span aria-disabled="true" title="Manager mode requires an owner or manager team role">
+        <span aria-disabled="true" title="Team mode requires an active team membership">
           <span aria-hidden="true">●●</span>
-          Manager mode
+          {teamLabel}
         </span>
       )}
     </nav>

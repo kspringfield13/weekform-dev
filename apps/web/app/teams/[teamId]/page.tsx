@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, Mail, ShieldCheck, UsersRound } from "lucide-react";
+import { ArrowLeft, LogOut, Mail, ShieldCheck, UsersRound } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -69,6 +69,9 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
 import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
 import { WorkspaceModeToggle } from "@/components/WorkspaceModeToggle";
+import { IndividualWorkspaceShell } from "@/components/IndividualWorkspaceShell";
+import { signOut } from "@/app/auth/actions";
+import { resolveWebWindowSurface } from "@/lib/webCompactWindow";
 import { leaveTeam, updateTeamSharePolicy } from "@/app/teams/actions";
 import { InviteForm } from "./InviteForm";
 import {
@@ -81,7 +84,14 @@ export const dynamic = "force-dynamic";
 
 interface TeamPageProps {
   params: Promise<{ teamId: string }>;
-  searchParams: Promise<{ notice?: string; action_error?: string }>;
+  searchParams: Promise<{
+    notice?: string;
+    action_error?: string;
+    screen?: string;
+    mode?: string;
+    popup?: string;
+    window?: string;
+  }>;
 }
 
 function formatDate(iso: string): string {
@@ -266,10 +276,11 @@ function ForecastStat({
 }
 
 export default async function TeamPage({ params, searchParams }: TeamPageProps) {
-  const [{ teamId }, { notice, action_error: actionError }] = await Promise.all([
+  const [{ teamId }, query] = await Promise.all([
     params,
     searchParams,
   ]);
+  const { notice, action_error: actionError } = query;
   const supabase = await createClient();
 
   if (!supabase) {
@@ -333,29 +344,72 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
   }
 
   const manager = isManagerRole(membership.role);
+  const windowSearch = new URLSearchParams();
+  if (query.mode) windowSearch.set("mode", query.mode);
+  if (query.popup) windowSearch.set("popup", query.popup);
+  if (query.window) windowSearch.set("window", query.window);
 
-  return (
+  return manager ? (
+    <IndividualWorkspaceShell
+      greetingName={membership.teamName}
+      reliableCapacity={null}
+      reviewCount={0}
+      activeWeekLabel={null}
+      teamAvailable
+      teamHref={`/teams/${teamId}`}
+      teamRole={membership.role}
+      workspaceMode="manager"
+      accountActions={(
+        <>
+          <span className="web-toolbar-identity">
+            <span className="web-toolbar-account-avatar" aria-hidden="true">
+              {user.email?.slice(0, 1).toUpperCase() ?? "W"}
+            </span>
+            <span className="web-toolbar-account" title={user.email ?? undefined}>{user.email}</span>
+          </span>
+          <form action={signOut}>
+            <button className="web-toolbar-button web-sign-out-button" type="submit">
+              <LogOut aria-hidden="true" />
+              <span>Sign out</span>
+            </button>
+          </form>
+        </>
+      )}
+      initialScreen={query.screen}
+      initialWindowSurface={resolveWebWindowSurface(windowSearch.toString())}
+    >
+      <div className="container workspace-shell team-workspace-shell">
+        <div className="team-freshness-strip">
+          <RequestFreshnessRefresh />
+        </div>
+        {notice ? (
+          <div className="form-notice" role="status">{notice}</div>
+        ) : null}
+        <ManagerView
+          teamId={teamId}
+          teamName={membership.teamName}
+          viewerId={user.id}
+          role={membership.role}
+          actionError={actionError ?? null}
+        />
+      </div>
+    </IndividualWorkspaceShell>
+  ) : (
     <>
       <SiteHeader />
       <main className="container team-page-container">
         <header className="team-command-header">
           <div className="team-command-copy">
             <Link
-              href={manager ? "/manager-access" : "/app"}
+              href="/app"
               className="team-back-link"
             >
               <ArrowLeft aria-hidden="true" />
-              {manager ? "Manager Access" : "Individual workspace"}
+              Individual workspace
             </Link>
-            <span className="team-command-eyebrow">
-              {manager ? "Team coordination" : "Team membership"}
-            </span>
+            <span className="team-command-eyebrow">Your team space</span>
             <h1>{membership.teamName}</h1>
-            <p>
-              {manager
-                ? "Review member-approved workload signals, coordinate the next move, and keep consent visible."
-                : "Review exactly what this team can see from your approved sharing."}
-            </p>
+            <p>See your membership, what you chose to share, and the team&apos;s coordination boundary.</p>
           </div>
           <div className="team-command-actions">
             <span className="team-role-mark">
@@ -363,9 +417,10 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
               {membership.role === "owner" ? "Team owner" : membership.role}
             </span>
             <WorkspaceModeToggle
-              managerAvailable={manager}
-              managerHref={`/teams/${teamId}`}
-              mode={manager ? "manager" : "individual"}
+              teamAvailable
+              teamHref={`/teams/${teamId}`}
+              mode="team"
+              teamLabel="Team"
             />
           </div>
         </header>
@@ -380,16 +435,7 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
           </div>
         ) : null}
 
-        {manager ? (
-          <ManagerView
-            teamId={teamId}
-            viewerId={user.id}
-            role={membership.role}
-            actionError={actionError ?? null}
-          />
-        ) : (
-          <MemberView teamId={teamId} viewerId={user.id} />
-        )}
+        <MemberView teamId={teamId} viewerId={user.id} />
       </main>
       <SiteFooter />
     </>
@@ -493,11 +539,13 @@ async function MemberView({
 
 async function ManagerView({
   teamId,
+  teamName,
   viewerId,
   role,
   actionError,
 }: {
   teamId: string;
+  teamName: string;
   viewerId: string;
   role: TeamRole;
   actionError: string | null;
@@ -538,14 +586,13 @@ async function ManagerView({
   const fragmentation = metricStat(summary.fragmentation, summary.sharingCount);
 
   return (
-    <>
-      <div className="team-manager-workspace">
-        <nav className="team-section-nav" aria-label="Team workspace sections">
-          <a href="#overview">Overview</a>
-          <a href="#people">People</a>
-          <a href="#decisions">Decisions</a>
-          <a href="#controls">Controls</a>
-        </nav>
+    <div className="team-manager-workspace">
+      <section data-web-view="today" className="team-workspace-view" aria-labelledby="team-today-title">
+        <header className="team-workspace-view-header">
+          <span className="team-section-kicker">Manager view · approved signals</span>
+          <h1 id="team-today-title">Today across {teamName}</h1>
+          <p>See the current team pulse and who has chosen to share, without ranking people.</p>
+        </header>
 
       <section
         className="panel team-overview-panel"
@@ -781,6 +828,14 @@ async function ManagerView({
         )}
       </section>
 
+      </section>
+
+      <section data-web-view="week" className="team-workspace-view" aria-labelledby="team-week-title">
+      <header className="team-workspace-view-header">
+        <span className="team-section-kicker">Capacity and forecast</span>
+        <h1 id="team-week-title">Team capacity</h1>
+        <p>Test what fits against shared headroom, with unknown and stale signals kept explicit.</p>
+      </header>
       <div className="team-decision-grid">
       <section className="panel team-planning-panel" aria-labelledby="scenario-title">
         <h2 id="scenario-title">Planning scenario</h2>
@@ -822,6 +877,15 @@ async function ManagerView({
         )}
       </section>
 
+      </div>
+      </section>
+
+      <section data-web-view="history" className="team-workspace-view" aria-labelledby="team-history-title">
+      <header className="team-workspace-view-header">
+        <span className="team-section-kicker">Observed change</span>
+        <h1 id="team-history-title">Team history</h1>
+        <p>Compare shared weekly medians and keep changes in consent or coverage visible.</p>
+      </header>
       <section className="panel team-trend-panel" aria-labelledby="trend-title">
         <h2 id="trend-title">Weekly trend</h2>
         <p>
@@ -879,6 +943,9 @@ async function ManagerView({
         )}
       </section>
 
+      </section>
+
+      <section data-web-view="week" className="team-workspace-view team-workspace-view-continuation">
       <section className="panel team-forecast-panel" aria-labelledby="forecast-title">
         <h2 id="forecast-title">Next-week forecast</h2>
         <p>
@@ -948,8 +1015,20 @@ async function ManagerView({
           </>
         )}
       </section>
-      </div>
 
+      </section>
+
+      <section data-web-view="agent" className="team-workspace-view" aria-labelledby="team-agent-title">
+      <header className="team-workspace-view-header team-workspace-agent-header">
+        <div>
+          <span className="team-section-kicker">Evidence-grounded coordination</span>
+          <h1 id="team-agent-title">Team briefing</h1>
+          <p>Turn the current approved signals into a concise briefing, then propose actions that remain approval-gated.</p>
+        </div>
+        <Link href={`/teams/${teamId}/briefing`} className="button button-primary">
+          Open team briefing
+        </Link>
+      </header>
       <div id="decisions" className="team-actions-section">
       <ManagerActionsPanel
         teamId={teamId}
@@ -961,6 +1040,14 @@ async function ManagerView({
       />
       </div>
 
+      </section>
+
+      <section data-web-view="settings" className="team-workspace-view" aria-labelledby="team-settings-title">
+      <header className="team-workspace-view-header">
+        <span className="team-section-kicker">Membership and consent</span>
+        <h1 id="team-settings-title">Team controls</h1>
+        <p>Set the maximum sharing level, invite members, and inspect invite status.</p>
+      </header>
       <div className="team-controls-grid" id="controls">
       <section className="panel team-policy-panel" aria-labelledby="share-policy-title">
         <h2 id="share-policy-title">Team share policy</h2>
@@ -1077,7 +1164,7 @@ async function ManagerView({
         </p>
       </section>
       </div>
-      </div>
-    </>
+      </section>
+    </div>
   );
 }

@@ -14,11 +14,11 @@ const identityMigration = readFileSync(
   "utf8",
 );
 
-test("manager team page uses the coordination-ledger hierarchy", () => {
+test("manager team page uses the Desktop-parity workspace hierarchy", () => {
   for (const className of [
-    "team-command-header",
+    "IndividualWorkspaceShell",
+    "team-workspace-view",
     "team-status-rail",
-    "team-section-nav",
     "team-roster-section",
     "team-decision-grid",
     "team-controls-grid",

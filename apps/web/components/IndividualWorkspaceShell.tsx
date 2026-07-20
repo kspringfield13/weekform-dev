@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { WebCompactWindowHandoff } from "@/components/WebCompactWindowHandoff";
 import { WebCompactWorkspace } from "@/components/WebCompactWorkspace";
 import { WebEditionLabel } from "@/components/WebEditionLabel";
+import { WorkspaceModeToggle } from "@/components/WorkspaceModeToggle";
 import {
   resolveIndividualWorkspaceRoute,
   screenForIndividualWorkspaceRoute,
@@ -84,6 +85,11 @@ function pushWorkspaceRoute(route: IndividualWorkspaceRoute) {
   window.history.pushState(null, "", url);
 }
 
+function workspaceHref(baseHref: string, route: IndividualWorkspaceRoute): string {
+  const separator = baseHref.includes("?") ? "&" : "?";
+  return `${baseHref}${separator}screen=${encodeURIComponent(screenForIndividualWorkspaceRoute(route))}`;
+}
+
 function formatActiveWeekLabel(weekId: string): string {
   const match = /^(\d{4})-W(\d{2})$/.exec(weekId);
   if (!match) return weekId;
@@ -116,8 +122,10 @@ export function IndividualWorkspaceShell({
   reliableCapacity,
   reviewCount,
   activeWeekLabel,
-  managerAccessAvailable,
-  managerHref,
+  teamAvailable,
+  teamHref,
+  teamRole,
+  workspaceMode = "individual",
   accountActions,
   initialScreen,
   initialWindowSurface,
@@ -127,8 +135,10 @@ export function IndividualWorkspaceShell({
   reliableCapacity: number | null;
   reviewCount: number;
   activeWeekLabel: string | null;
-  managerAccessAvailable: boolean;
-  managerHref: string;
+  teamAvailable: boolean;
+  teamHref: string;
+  teamRole?: "member" | "manager" | "owner";
+  workspaceMode?: "individual" | "manager";
   accountActions: ReactNode;
   initialScreen: string | undefined;
   initialWindowSurface: WebWindowSurface;
@@ -147,6 +157,11 @@ export function IndividualWorkspaceShell({
   const sidebarOpenerRef = useRef<HTMLButtonElement | null>(null);
   const restoreSidebarFocusRef = useRef(false);
   const mobileNavigationOpen = isNarrowViewport && !sidebarCollapsed;
+  const activeRoute = { destination: active, subview: activeSubview } satisfies IndividualWorkspaceRoute;
+  const individualHref = workspaceHref("/app", activeRoute);
+  const activeTeamHref = workspaceHref(teamHref, activeRoute);
+  const managerWorkspace = workspaceMode === "manager";
+  const teamModeLabel = teamRole === "member" ? "Team" : "Manager mode";
 
   const closeMobileNavigation = () => {
     if (!mobileNavigationOpen) return;
@@ -271,7 +286,7 @@ export function IndividualWorkspaceShell({
     return () => window.removeEventListener("keydown", handlePrimaryShortcut);
   });
 
-  const baseContextViews = CONTEXT_VIEWS[active] ?? [];
+  const baseContextViews = managerWorkspace ? [] : (CONTEXT_VIEWS[active] ?? []);
   const contextViews = active === "history" && activeSubview === "sensitive"
     ? [...baseContextViews, { id: "sensitive" as const, label: "Flagged" }]
     : baseContextViews;
@@ -346,9 +361,10 @@ export function IndividualWorkspaceShell({
 
   return (
     <div
-      className={`app web-individual-app${viewportResolved ? " viewport-resolved" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${mobileNavigationOpen ? " mobile-navigation-open" : ""}`}
+      className={`app web-individual-app${managerWorkspace ? " web-manager-app" : ""}${viewportResolved ? " viewport-resolved" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${mobileNavigationOpen ? " mobile-navigation-open" : ""}`}
       data-active-view={active}
       data-active-subview={activeSubview}
+      data-workspace-mode={workspaceMode}
     >
       <header
         className="web-app-toolbar"
@@ -356,11 +372,11 @@ export function IndividualWorkspaceShell({
         aria-hidden={mobileNavigationOpen ? true : undefined}
       >
         <div className="web-toolbar-title">
-          <strong>Your week, ready to review</strong>
-          <span>Private evidence stays on your Mac</span>
+          <strong>{managerWorkspace ? "Your team, ready to coordinate" : "Your week, ready to review"}</strong>
+          <span>{managerWorkspace ? "Member-approved signals only" : "Private evidence stays on your Mac"}</span>
         </div>
         <div className="web-toolbar-state" role="status">
-          <i aria-hidden="true" /> API-connected · no workload cache
+          <i aria-hidden="true" /> {managerWorkspace ? "Synced team summaries" : "API-connected · no workload cache"}
         </div>
         <div className="web-toolbar-actions">
           <div
@@ -446,22 +462,30 @@ export function IndividualWorkspaceShell({
             </button>
           ))}
         </nav>
-        {managerAccessAvailable && (
-          <Link className="nav-item manager-access-entry" href={managerHref} onClick={closeMobileNavigation}>
+        {teamAvailable && (
+          <Link
+            className={`nav-item team-access-entry${managerWorkspace ? " is-active" : ""}`}
+            href={activeTeamHref}
+            aria-current={managerWorkspace ? "page" : undefined}
+            onClick={closeMobileNavigation}
+          >
             <NavIcon id="manager" />
-            <span><strong>Manager Access</strong><small>Approved team signals</small></span>
+            <span>
+              <strong>Team</strong>
+              <small>{teamRole === "member" ? "Membership and sharing" : "Workload and coordination"}</small>
+            </span>
           </Link>
         )}
         <div className="sidebar-intelligence">
-          <div className="side-metric-heading"><span>Reliable capacity</span><span aria-hidden="true">◌</span></div>
+          <div className="side-metric-heading"><span>{managerWorkspace ? "Team signals" : "Reliable capacity"}</span><span aria-hidden="true">◌</span></div>
           <div className="side-metric-value">
             <strong>{reliableCapacity === null ? "—" : `${Math.round(reliableCapacity)}%`}</strong>
-            <small>{reliableCapacity === null ? "Needs signal" : "This week"}</small>
+            <small>{managerWorkspace ? "Approved only" : reliableCapacity === null ? "Needs signal" : "This week"}</small>
           </div>
           <div className="side-capacity-track" aria-hidden="true">
             <span style={{ width: `${Math.max(0, Math.min(100, reliableCapacity ?? 0))}%` }} />
           </div>
-          <div className="web-private-state"><i aria-hidden="true" /> Review-safe fields only</div>
+          <div className="web-private-state"><i aria-hidden="true" /> {managerWorkspace ? "No raw activity" : "Review-safe fields only"}</div>
         </div>
         <button
           className={active === "settings" ? "settings-button is-active" : "settings-button"}
@@ -498,6 +522,15 @@ export function IndividualWorkspaceShell({
         inert={mobileNavigationOpen ? true : undefined}
         aria-hidden={mobileNavigationOpen ? true : undefined}
       >
+        <div className="web-workspace-mode-row">
+          <WorkspaceModeToggle
+            individualHref={individualHref}
+            teamAvailable={teamAvailable}
+            teamHref={activeTeamHref}
+            mode={workspaceMode}
+            teamLabel={teamModeLabel}
+          />
+        </div>
         {contextViews.length > 0 ? (
           <div className="page-context-navigation">
             <nav className="context-navigation" aria-label={`${active[0]?.toUpperCase()}${active.slice(1)} views`} role="tablist">

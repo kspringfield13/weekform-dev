@@ -5,7 +5,6 @@ import { signOut } from "@/app/auth/actions";
 import { WeekformMark } from "@/components/WeekformMark";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { WebEditionLabel } from "@/components/WebEditionLabel";
-import { managerAccessMemberships } from "@/lib/managerAccess";
 import { listUserTeams } from "@/lib/teams";
 import { productEntry } from "@/lib/productEntry";
 import { MacAppLink } from "@/components/MacAppLink";
@@ -29,7 +28,7 @@ export async function SiteHeader({
 }: SiteHeaderProps) {
   const supabase = await createClient();
   let signedIn = false;
-  let managerAccess = false;
+  let teamAccess = false;
 
   if (supabase) {
     const {
@@ -38,7 +37,7 @@ export async function SiteHeader({
     signedIn = Boolean(user);
     if (user) {
       const { teams, error } = await listUserTeams(supabase, user.id);
-      managerAccess = !error && managerAccessMemberships(teams).length > 0;
+      teamAccess = !error && teams.length > 0;
     }
   }
 
@@ -57,10 +56,10 @@ export async function SiteHeader({
                 <span className="nav-label-long">Web app</span>
                 <span className="nav-label-short">Web</span>
               </Link>
-              {managerAccess ? (
+              {teamAccess ? (
                 <Link href="/manager-access" className="button button-ghost nav-manager-access">
-                  <span className="nav-label-long">Manager Access</span>
-                  <span className="nav-label-short">Manager</span>
+                  <span className="nav-label-long">Team</span>
+                  <span className="nav-label-short">Team</span>
                 </Link>
               ) : null}
               <MacAppLink fallbackHref={MAC_ENTRY.href} className="button button-ghost nav-download-mac">
