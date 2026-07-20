@@ -60,13 +60,19 @@ OAuth token broker. Neither secret is bundled into browser or desktop code.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase publishable (anon) key |
 | `WEEKFORM_ARTIFACT_BUCKET` | Optional. Private Supabase Storage bucket holding the official packaged Mac artifact |
 | `WEEKFORM_ARTIFACT_PATH` | Optional. Object path within that bucket, e.g. `releases/Weekform_0.1.0_universal.dmg` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Optional, **secret**. Used only in `app/download/artifact/route.ts` to mint short-lived signed URLs; never sent to the browser |
+| `SUPABASE_SERVICE_ROLE_KEY` | Optional, **secret**. Used only in the server-owned official and beta artifact routes to mint short-lived signed URLs; never sent to the browser |
 | `WEEKFORM_ARTIFACT_DEVELOPER_ID_SIGNED` | Release proof. Must be exactly `true` only after Developer ID signature verification succeeds |
 | `WEEKFORM_ARTIFACT_NOTARIZED` | Release proof. Must be exactly `true` only after Apple notarization succeeds |
 | `WEEKFORM_ARTIFACT_STAPLED` | Release proof. Must be exactly `true` only after stapler validation succeeds |
 | `WEEKFORM_ARTIFACT_SHA256` | Lower- or uppercase 64-character SHA-256 for the exact uploaded DMG |
 | `WEEKFORM_ARTIFACT_VERIFIED_AT` | Canonical UTC timestamp (`YYYY-MM-DDTHH:mm:ss.sssZ`) for the completed release verification run |
 | `WEEKFORM_ARTIFACT_SIGNED_URL_TTL_SECONDS` | Optional. Signed-URL lifetime in seconds; defaults to 300, clamped to 30-3600 |
+| `WEEKFORM_BETA_ARTIFACT_BUCKET` | Optional. Private bucket for the temporary Beta Version channel; deliberately separate from the trusted release |
+| `WEEKFORM_BETA_ARTIFACT_PATH` | Optional. Content-addressed object path ending in `Weekform_0.1.0_universal_Beta.dmg` |
+| `WEEKFORM_BETA_ARTIFACT_DEVELOPER_ID_SIGNED` | Beta proof. Must be exactly `true` only after Developer ID signature verification succeeds; this does not attest notarization |
+| `WEEKFORM_BETA_ARTIFACT_SHA256` | SHA-256 for the exact private beta DMG |
+| `WEEKFORM_BETA_ARTIFACT_VERIFIED_AT` | Canonical UTC timestamp for the beta upload and checksum verification |
+| `WEEKFORM_BETA_ARTIFACT_SIGNED_URL_TTL_SECONDS` | Optional beta signed-URL lifetime; defaults to 300, clamped to 30-3600 |
 | `WEBEX_CHAT_CLIENT_ID` | Optional. Must match the public client ID configured in the Mac build |
 | `WEBEX_CHAT_CLIENT_SECRET` | Optional, **secret**. Used only in `app/api/oauth/webex/token/route.ts` for Webex token exchange/refresh |
 | `WEBEX_CHAT_REDIRECT_URI` | Optional. Exact registered loopback callback, normally `http://127.0.0.1:49323/chat-auth/callback` |
@@ -236,12 +242,18 @@ projection locally.
 
 `/download` is authenticated-session-required: signed-out visitors are
 redirected to `/login?next=/download` and returned here after signing in.
-The repository and Web deployment contain no public DMG fallback. On this
-machine there is no Developer ID Application identity, so no current local
-artifact is presented or claimed as Gatekeeper-trusted. `/download` remains in
-an honest pending state until private hosting and every release proof below are
-present. `/download/artifact` then re-checks the signed-in session before
+The repository and Web deployment contain no public DMG fallback. The official
+`/download/artifact` route remains fail-closed until private hosting and every
+release proof below are present, then re-checks the signed-in session before
 minting a short-lived private Storage URL.
+
+While Apple's notarization service processes the final DMG, `/download` may
+offer an explicitly separate **Beta Version** through `/download/beta`. The
+beta requires its own Developer ID signature, checksum, timestamp, private
+object, and server-side session re-check. Its disclosure states that Apple
+notarization is pending; beta configuration can never satisfy or weaken the
+official signed/notarized/stapled release gate. Once the official configuration
+is complete, the page always prefers the trusted release.
 
 **To publish a trusted private artifact:**
 
@@ -288,27 +300,33 @@ attestations true and for comparing the uploaded bytes with the checksum.
   fallback, TTL clamping, release copy, absence of a public DMG, and the
   one-action/no-developer-setup page contract) are covered by
   `lib/download.test.ts`, run the same way.
+- The separate beta gate, copy, authentication plan, forced filename, private
+  response, and official-release isolation are covered by
+  `lib/downloadBeta.test.ts`.
 - `npm run test:supabase:rls` executes the local pgTAP suite against the
   local Supabase database. A passing local result does not prove the linked or
   production project has the same migrations, configuration, or policies.
-- **The optional private signed-URL artifact path has NOT been exercised end-to-end.** There
-  is no verified signed/notarized/stapled private artifact on this machine, so
-  `/download/artifact`'s configured branch (session check -> bucket policy) is
-  real code but has only been verified through deterministic tests. Run the
-  private path against the deployed bucket and compare downloaded bytes before
-  claiming end-to-end release proof.
+- On July 20, 2026, the production Beta Version path was exercised end to end
+  with a synthetic account: authenticated page `200`, `/download/beta` `307`,
+  300-second signed URL, private/no-store headers, forced beta filename, public
+  object denial, and a `6,838,511`-byte fetch whose SHA-256
+  (`2dc0b16f473b73521a3c52280471cfdbb9fe56de3b47138f8ee1f565123d3154`)
+  matched the exact local Developer ID-signed beta DMG. The synthetic account
+  and temporary auth/download state were deleted after verification.
 
 ## Known limitations
 
 - Linked and production RLS behavior remains separately unverified (see
   "Testing status" above).
-- The optional private signed-URL artifact path is unexecuted end-to-end (see
-  "Testing status" above); the public release remains fail-closed.
+- The Beta Version is Developer ID signed but intentionally not presented as
+  Apple-notarized or stapled. macOS may prevent it from launching while the
+  official notarization submission is pending.
 - Invites are member-role only; manager-role invites, invite revocation UI,
   and role changes are not built yet (revocation is permitted by RLS but has
   no button).
-- No Mac download is published until Developer ID signing, Apple notarization,
-  stapling, checksum recording, and private hosting are explicitly attested.
+- The official "Download now" action remains unavailable until Developer ID
+  signing, Apple notarization, stapling, checksum recording, private hosting,
+  and a live downloaded-byte comparison are explicitly proven.
 - Sessions are standard Supabase cookie sessions; this is a prototype, not
   audited production auth.
 
