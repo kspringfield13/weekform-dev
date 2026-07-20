@@ -138,23 +138,21 @@ Seeded `auth.users` rows have `NULL encrypted_password`, so they **cannot be sig
 
 Weekform currently builds from source on your Mac. The [guided installer](scripts/install.command) is the easiest path for first-time users: it checks the required tools, asks before installing anything missing, builds the app locally, places **Weekform.app** in `/Applications`, and removes the redundant `target/release/bundle/macos/Weekform.app` build copy after installation succeeds.
 
-**Download and double-click:**
+**Download and install:**
 
 1. [Download the Weekform source](https://github.com/kspringfield13/weekform-dev/archive/refs/heads/main.zip) and unzip it.
-2. In Finder, open `weekform-dev-main`, then `scripts`.
-3. Double-click **`install.command`** and follow the prompts.
-
-If macOS says the installer is from an unidentified developer, right-click `install.command`, choose **Open**, then confirm **Open**. You can also allow it once under System Settings → Privacy & Security.
+2. Open Terminal in the extracted `weekform-dev-main` folder.
+3. Run **`bash start.sh`** and follow the prompts.
 
 **Clone and install from Terminal:**
 
 ```bash
 git clone https://github.com/kspringfield13/weekform-dev.git
 cd weekform-dev
-bash scripts/install.command
+bash start.sh
 ```
 
-Already have the repository? Run `bash scripts/install.command` from its root. Re-running the installer rebuilds and reinstalls the current checkout. If you used the source ZIP, you can move the extracted source folder to Trash after Weekform opens.
+Already have the repository? Run `bash start.sh` from its root. The launcher delegates to the reviewed guided installer. Re-running it rebuilds and reinstalls the current checkout. If you used the source ZIP, you can move the extracted source folder to Trash after Weekform opens.
 
 > [!NOTE]
 > Weekform lives in the macOS menu bar rather than the Dock. When you first resume tracking, macOS may ask for Accessibility permission so the app can identify the foreground application and window titles. Screen content is not captured unless you explicitly enable Visual Context.

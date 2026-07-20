@@ -3594,14 +3594,44 @@ button.text-link {
   line-height: 1.55;
 }
 
-.download-web-action {
+.download-pending-actions {
   grid-column: 2;
-  justify-self: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   min-height: 42px;
   margin-top: 10px;
+}
+
+.download-source-action,
+.download-web-action {
   padding: 9px 15px;
   border-radius: 10px;
   font-size: 12px;
+}
+
+.download-source-action svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.download-source-note {
+  grid-column: 2;
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.download-source-note code {
+  color: var(--text-muted);
+  font-family: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.95em;
 }
 
 .download-release-disclosure {
@@ -4091,10 +4121,18 @@ button.text-link {
     height: 34px;
     padding: 8px;
   }
-  .download-web-action {
+  .download-pending-actions,
+  .download-source-note {
     grid-column: 1 / -1;
-    justify-self: stretch;
+  }
+  .download-pending-actions {
+    align-items: stretch;
+    flex-direction: column;
     margin-top: 12px;
+  }
+  .download-source-action,
+  .download-web-action {
+    width: 100%;
   }
   .download-release-disclosure {
     margin-left: 0;

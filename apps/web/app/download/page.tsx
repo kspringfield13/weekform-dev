@@ -21,6 +21,7 @@ export const metadata: Metadata = {
 };
 
 const SOURCE_REPO_URL = "https://github.com/kspringfield13/weekform-dev";
+const SOURCE_ARCHIVE_URL = `${SOURCE_REPO_URL}/archive/refs/heads/main.zip`;
 
 type DownloadPageProps = {
   searchParams: Promise<{ error?: string }>;
@@ -201,23 +202,38 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
               </>
             ) : (
               <div className="download-pending-wrap">
-                <div className="download-pending-state" role="status">
+                <div className="download-pending-state">
                   <span className="download-pending-mark" aria-hidden="true">
                     <i />
                     <i />
                     <i />
                   </span>
-                  <div className="download-pending-copy">
+                  <div className="download-pending-copy" role="status">
                     <p className="download-section-label">Mac release</p>
                     <h2>{releasePresentation.title}</h2>
                     <p>{releasePresentation.body}</p>
                   </div>
-                  <Link
-                    href={releasePresentation.action.href}
-                    className="button button-primary download-web-action"
-                  >
-                    {releasePresentation.action.label}
-                  </Link>
+                  <div className="download-pending-actions">
+                    <a
+                      href={SOURCE_ARCHIVE_URL}
+                      className="button button-primary download-source-action"
+                      aria-describedby="source-package-note"
+                    >
+                      <DownloadGlyph />
+                      <span>Download source package</span>
+                    </a>
+                    <Link
+                      href={releasePresentation.action.href}
+                      className="button button-secondary download-web-action"
+                    >
+                      {releasePresentation.action.label}
+                    </Link>
+                  </div>
+                  <p id="source-package-note" className="download-source-note">
+                    This fallback builds Weekform locally, installs it in your
+                    Applications folder, and does not bypass macOS security.
+                    Unzip it, open Terminal in the folder, then run <code>bash start.sh</code>.
+                  </p>
                 </div>
                 <details className="download-release-disclosure">
                   <summary>Release status</summary>

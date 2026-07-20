@@ -231,17 +231,29 @@ test("download page keeps unavailable releases out of disabled-button limbo", ()
   );
 });
 
-test("pending Mac release never substitutes a source build for the trusted installer", () => {
+test("pending Mac release offers an honestly labeled source package beside Web", () => {
   const source = readFileSync(
     new URL("../app/download/page.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /releasePresentation\.kind !== "pending"/);
-  assert.doesNotMatch(source, /Download source ZIP/);
-  assert.doesNotMatch(source, /archive\/refs\/heads\/main\.zip/);
-  assert.doesNotMatch(source, /scripts\/install\.command/);
-  assert.doesNotMatch(source, /builds Weekform locally/i);
+  assert.match(source, /SOURCE_ARCHIVE_URL/);
+  assert.match(source, /archive\/refs\/heads\/main\.zip/);
+  assert.match(source, /Download source package/);
+  assert.match(source, /bash start\.sh/);
+  assert.match(source, /builds Weekform locally/i);
+  assert.match(source, /className="button button-secondary download-web-action"/);
+  assert.match(source, /releasePresentation\.action\.label/);
+  assert.doesNotMatch(source, /source package[\s\S]{0,180}(notarized|stapled)/i);
+
+  const styles = readFileSync(
+    new URL("../app/globals.css", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    styles,
+    /\.download-source-note\s*\{[\s\S]*?color:\s*var\(--text-muted\);[\s\S]*?font-size:\s*12px;/,
+  );
 });
 
 // --- planArtifactResponse: the full /download/artifact decision sequence ---

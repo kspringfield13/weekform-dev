@@ -249,10 +249,12 @@ minting a short-lived private Storage URL.
 
 The code retains an isolated **Beta Version** route for authenticated internal
 evaluation, but production no longer configures or advertises it: the signed,
-unnotarized beta was rejected by Gatekeeper. The download page does not
-substitute a source ZIP or a quarantine workaround for the trusted installer.
-Beta configuration can never satisfy or weaken the official
-signed/notarized/stapled release gate.
+unnotarized beta was rejected by Gatekeeper. While the official release is
+pending, the authenticated page offers the public source archive as a separate,
+honestly labeled fallback. Users unzip it and run `bash start.sh`; the reviewed
+installer builds locally and copies the result to Applications without removing
+quarantine or claiming Apple notarization. Beta or source availability can
+never satisfy or weaken the official signed/notarized/stapled release gate.
 
 **To publish a trusted private artifact:**
 
@@ -305,7 +307,7 @@ attestations true and for comparing the uploaded bytes with the checksum.
   with `npm run test:web`).
 - Pure download-config helpers (fail-closed proof parsing, missing/blank-var
   fallback, TTL clamping, release copy, absence of a public DMG, and the
-  one-action/no-developer-setup page contract) are covered by
+  separate source-build fallback contract) are covered by
   `lib/download.test.ts`, run the same way.
 - The separate beta gate, copy, authentication plan, forced filename, private
   response, and official-release isolation are covered by

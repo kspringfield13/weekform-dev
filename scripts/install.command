@@ -113,6 +113,7 @@ fi
 # ---------------------------------------------------------------------------
 step "Finding the Weekform project"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/lib/source-signature.sh"
 PROJECT_DIR=""
 
 is_weekform_checkout() {
@@ -275,6 +276,20 @@ EXPECTED_BUILD_APP="$PROJECT_DIR/apps/desktop/src-tauri/target/release/bundle/ma
 APP_PATH="$(find "$PROJECT_DIR/apps/desktop/src-tauri/target/release/bundle/macos" -maxdepth 1 -name 'Weekform.app' -print -quit 2>/dev/null || true)"
 [ -n "$APP_PATH" ] || die "Could not find the built app. Check the build output above for errors."
 [ "$APP_PATH" = "$EXPECTED_BUILD_APP" ] || die "The build returned an unexpected app path; nothing was installed or removed."
+
+# Some Tauri source builds carry an incomplete ad-hoc signature. Preserve a
+# valid Developer ID or local signature when present; otherwise repair only the
+# local bundle's integrity before copying it. This does not claim notarization
+# and does not remove quarantine or weaken Gatekeeper.
+if ! codesign --verify --deep --strict "$APP_PATH" >/dev/null 2>&1; then
+  APP_SIGNATURE="$(codesign -dv --verbose=4 "$APP_PATH" 2>&1 || true)"
+  is_repairable_local_signature "$APP_SIGNATURE" \
+    || die "The built app has an invalid identified or unknown signature; refusing to replace it with an ad-hoc signature."
+  info "Repairing the local build signature before installation."
+  codesign --force --deep --sign - "$APP_PATH"
+fi
+codesign --verify --deep --strict "$APP_PATH" || die "The built app did not pass its local signature integrity check."
+ok "Local app bundle integrity verified"
 
 # ---------------------------------------------------------------------------
 # 7. Install into /Applications
