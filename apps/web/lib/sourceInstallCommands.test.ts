@@ -14,7 +14,8 @@ test("pending Mac release presents a transparent two-command source install", ()
   );
   assert.match(downloadPage, /cd weekform-dev && bash start\.sh/);
   assert.match(downloadPage, /href="#source-install"/);
-  assert.match(downloadPage, />Install from source</);
+  assert.match(downloadPage, />Weekform Desktop</);
+  assert.doesNotMatch(downloadPage, /GitHub ZIP|Install from source/i);
   assert.match(downloadPage, /id="source-install"/);
   assert.doesNotMatch(downloadPage, /archive\/refs\/heads\/main\.zip/);
   assert.doesNotMatch(downloadPage, /curl[^\n]{0,80}\|\s*(?:ba|z)?sh/);

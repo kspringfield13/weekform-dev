@@ -231,14 +231,15 @@ test("download page keeps unavailable releases out of disabled-button limbo", ()
   );
 });
 
-test("pending Mac release offers an honestly labeled two-command source install beside Web", () => {
+test("pending Mac release offers Weekform Desktop beside Web", () => {
   const source = readFileSync(
     new URL("../app/download/page.tsx", import.meta.url),
     "utf8",
   );
 
   assert.match(source, /href="#source-install"/);
-  assert.match(source, /Install from source/);
+  assert.match(source, /<span>Weekform Desktop<\/span>/);
+  assert.doesNotMatch(source, /GitHub ZIP|Install from source/i);
   assert.match(source, /git clone --depth 1/);
   assert.match(source, /cd weekform-dev && bash start\.sh/);
   assert.match(source, /builds\s+Weekform locally/i);

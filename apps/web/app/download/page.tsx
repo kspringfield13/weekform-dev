@@ -222,7 +222,7 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
                       aria-describedby="source-install-note"
                     >
                       <DownloadGlyph />
-                      <span>Install from source</span>
+                      <span>Weekform Desktop</span>
                     </a>
                     <Link
                       href={releasePresentation.action.href}
