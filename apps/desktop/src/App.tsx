@@ -44,6 +44,11 @@ import {
 import type { AppTheme, GettingStartedStatus, PersistedAccelerationRecord, PersistedAccelerationSnapshot, PersistedAppState, PersistedForecastRecord, PersistedNarrativeRecord, PersistedSnapshotRecord } from "./services/localStore";
 import { createDemoState } from "./services/demoData";
 import { createDefaultAIConfig } from "./services/aiProviders";
+import {
+  createCodexAIConfig,
+  hasAIConnection,
+  isCodexConnection,
+} from "./services/aiConnection";
 import type { ConsentReceiptV1 } from "./services/consentReceipt";
 import {
   addDays,
@@ -90,7 +95,6 @@ import { ScreenRouter } from "./components/shell/ScreenRouter";
 import { buildOnboardingSteps } from "./components/common/OnboardingCard";
 import { WalkthroughOverlay } from "./components/onboarding/WalkthroughOverlay";
 import { GettingStartedModal } from "./components/onboarding/GettingStartedModal";
-import { WelcomeOverlay } from "./components/onboarding/WelcomeOverlay";
 import type { Screen, SettingsTab, WindowMode } from "./lib/types";
 import { ManagerAccessWorkspace } from "./admin/ManagerAccessWorkspace";
 import { createSimulationDemoState } from "./admin/simulationDemoData";
@@ -100,6 +104,7 @@ import {
   resolveSettingsTab,
 } from "./services/adminPortal";
 import { deriveWeeklyReviewState } from "./services/weeklyReview";
+import { resolveGettingStartedExit } from "./services/gettingStartedFlow";
 import {
   getInitialWindowMode,
   isTauriWindow,
@@ -310,9 +315,9 @@ export function App() {
   const [walkthroughCompleted, setWalkthroughCompleted] = useState<boolean>(
     () => persistedSnapshot?.walkthroughCompleted ?? false
   );
-  // Post-walkthrough "Getting started" (enable tracking) modal lifecycle:
-  // unseen → modal shows once the walkthrough finishes; skipped → the persistent
-  // enable-tracking reminder banner shows until tracking turns on; complete → done.
+  // First-run setup wizard lifecycle: unseen → the wizard opens with its branded
+  // introduction; skipped → the persistent enable-tracking reminder stays until
+  // tracking turns on; complete → setup is done.
   const [gettingStartedStatus, setGettingStartedStatus] = useState<GettingStartedStatus>(
     () => persistedSnapshot?.gettingStartedStatus ?? "unseen"
   );
@@ -1466,33 +1471,25 @@ export function App() {
     ].slice(-1000));
   }
 
-  // Branded first-launch welcome, acknowledged per session: it fronts the
-  // getting-started wizard on a genuine first run, and an interrupted
-  // onboarding greets the user again next launch (nothing persisted until the
-  // wizard is finished or deferred).
-  const [welcomeAcknowledged, setWelcomeAcknowledged] = useState(false);
-
-  // The guided tour is optional and explicitly requested — offered at the end
-  // of the getting-started wizard, or replayed from Settings. Session-scoped.
+  // The guided tour is optional and explicitly requested from Settings.
   const [tourRequested, setTourRequested] = useState(false);
 
-  // Let the user replay the guided tour from Settings (or start it from the
-  // wizard's final step). Resets the persisted flag so the outcome re-audits.
+  // Let the user replay the guided tour from Settings. Resets the persisted
+  // flag so the outcome re-audits.
   function replayWalkthrough() {
     setWalkthroughCompleted(false);
     setTourRequested(true);
   }
 
-  // Post-walkthrough "Getting started" modal closed. `outcome` records whether the
-  // user enabled tracking from it or deferred ("I'll do this later" — the reminder
-  // banner then persists until tracking turns on). The tracking toggle itself is
-  // separately audited by the privacy_pause/privacy_resume effect; this logs only
-  // the onboarding decision, mirroring endWalkthrough.
-  function finishGettingStarted(outcome: "enabled" | "skipped") {
+  // The setup wizard always hands off to Settings. Tracking state determines
+  // whether setup is complete or leaves the persistent resume reminder. The
+  // tracking toggle itself is audited separately; this records the onboarding
+  // decision only.
+  function finishGettingStarted() {
     if (gettingStartedStatus !== "unseen") return;
-    setGettingStartedStatus(outcome === "enabled" ? "complete" : "skipped");
-    // Land the user on Today — the home dashboard the modal points them at.
-    if (outcome === "enabled") setActive("daily");
+    const exit = resolveGettingStartedExit(paused);
+    setGettingStartedStatus(exit.status);
+    setActive(exit.screen);
     if (isDemoMode) return;
     setAuditEvents((current) => [
       ...current,
@@ -1500,16 +1497,17 @@ export function App() {
         type: "onboarding",
         source: "onboarding",
         title:
-          outcome === "enabled"
+          exit.auditOutcome === "enabled"
             ? "Getting-started setup completed"
             : "Getting-started setup deferred",
         summary:
-          outcome === "enabled"
-            ? "Activity tracking was enabled from the post-walkthrough getting-started screen."
-            : "The post-walkthrough getting-started screen was dismissed without enabling tracking.",
+          exit.auditOutcome === "enabled"
+            ? "The first-run setup was completed with activity tracking enabled, then Settings was opened."
+            : "The first-run setup was deferred without activity tracking, then Settings was opened.",
         privacy_level: "local_only",
         details: {
-          outcome,
+          outcome: exit.auditOutcome,
+          destination: exit.screen,
           stored_locally: true,
           sent_to_cloud: false
         }
@@ -1526,42 +1524,17 @@ export function App() {
     setAiConfig({ ...createDefaultAIConfig("openai"), apiKey: trimmed });
   }
 
-  // Connect OpenAI by signing in with a ChatGPT account in the browser. The
-  // Rust command runs the OAuth/PKCE flow (localhost callback, token exchange)
-  // and resolves to a plain platform API key, saved exactly like a pasted one.
-  async function connectViaChatGptFromWizard(): Promise<string> {
+  // Codex app-server owns the browser sign-in and refresh lifecycle. Weekform
+  // stores only the selected model/mode; it never receives or copies OAuth tokens.
+  async function connectViaCodexPlanFromWizard(): Promise<string> {
     if (!("__TAURI_INTERNALS__" in window)) {
-      throw new Error("Signing in with ChatGPT needs the desktop app — paste an API key instead.");
+      throw new Error("Using a ChatGPT/Codex plan needs the desktop app — paste an API key instead.");
     }
-    const result = await invoke<{ apiKey: string }>("connect_openai_via_chatgpt");
-    setAiConfig({ ...createDefaultAIConfig("openai"), apiKey: result.apiKey });
-    return "Connected with your ChatGPT sign-in.";
-  }
-
-  // Connect OpenAI by importing the API key from the Codex CLI's sign-in
-  // (~/.codex/auth.json). The Rust command rejects with user-facing copy when
-  // there's no sign-in or it's a subscription-only login without an API key.
-  async function connectViaCodexFromWizard(): Promise<string> {
-    // Mirrors SetupScreen's testConnection guard: the browser preview has no
-    // Tauri bridge, so fail with friendly copy instead of a raw invoke error.
-    if (!("__TAURI_INTERNALS__" in window)) {
-      throw new Error("Connecting via Codex needs the desktop app — paste an API key instead.");
-    }
-    const result = await invoke<{ apiKey: string }>("connect_openai_via_codex");
-    setAiConfig({ ...createDefaultAIConfig("openai"), apiKey: result.apiKey });
-    return "Connected with your Codex credentials.";
-  }
-
-  // "Play the simulated week" from the getting-started wizard: finish the wizard
-  // (recording the outcome the live tracking state implies), then reload into the
-  // seeded demo profile on the weekly screen. The short delay lets the persistence
-  // effect flush the finished status to disk before the reload tears the app down —
-  // otherwise the wizard would reappear when the user exits the demo.
-  function openDemoSimulation() {
-    finishGettingStarted(paused ? "skipped" : "enabled");
-    window.setTimeout(() => {
-      window.location.assign("?demo=1&screen=weekly");
-    }, 600);
+    const result = await invoke<{ model: string; planType: string; message: string }>(
+      "connect_codex_via_chatgpt"
+    );
+    setAiConfig(createCodexAIConfig(result.model));
+    return result.message;
   }
 
   // Once tracking gets enabled from ANYWHERE (reminder banner, toolbar, tray,
@@ -1924,6 +1897,10 @@ export function App() {
         invoke("disconnect_calendar_source", { provider }).then(() => true).catch(() => false)
       )),
     )).every(Boolean);
+    const codexCredentialsCleared =
+      !isTauriRuntime ||
+      !isCodexConnection(aiConfig) ||
+      await invoke("disconnect_codex").then(() => true).catch(() => false);
     setBlocks([]);
     setCalendarEvents([]);
     setActiveWindowSamples([]);
@@ -1934,7 +1911,7 @@ export function App() {
         type: "data_reset",
         source: "privacy_control",
         title: "Prototype data reset",
-        summary: cloudCredentialsCleared && captureJournalCleared && calendarCredentialsCleared
+        summary: cloudCredentialsCleared && captureJournalCleared && calendarCredentialsCleared && codexCredentialsCleared
           ? "All local activity, the encrypted capture journal, imports, calendar connections, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and Weekform Web session, replica queue, and sharing policies. Screenshot capture was turned off and tracking paused."
           : "Local app state was reset, but durable removal of a Keychain session, calendar connection, or encrypted capture journal could not be confirmed. Retry Reset Local Data before closing the app.",
         privacy_level: "local_only",
@@ -1942,7 +1919,9 @@ export function App() {
           visual_context_enabled: false,
           tracking_paused: true,
           retention_days: null,
-          ai_credentials_cleared: true,
+          ai_credentials_cleared: codexCredentialsCleared,
+          codex_credentials_cleared: codexCredentialsCleared,
+          codex_clear_requires_retry: !codexCredentialsCleared,
           cloud_session_cleared: cloudCredentialsCleared,
           cloud_sharing_policy_cleared: cloudCredentialsCleared,
           cloud_clear_requires_retry: !cloudCredentialsCleared,
@@ -2267,28 +2246,25 @@ export function App() {
       buildOnboardingSteps({
         trackingActive: !paused && activeWindowSamples.length > 0,
         calendarImported: calendarEvents.length > 0,
-        aiConfigured: Boolean(aiConfig?.apiKey),
+        aiConfigured: hasAIConnection(aiConfig, envOpenAiKeyPresent),
         classified: blocks.length > 0,
       }),
-    [paused, activeWindowSamples.length, calendarEvents.length, aiConfig?.apiKey, blocks.length]
+    [paused, activeWindowSamples.length, calendarEvents.length, aiConfig, envOpenAiKeyPresent, blocks.length]
   );
   const showOnboarding = !isDemoMode && !onboardingDismissed && blocks.length === 0;
   // The guided tour spotlights the sidebar nav, so it only runs in the full
   // window (the compact menu-bar widget has no nav) and never in demo mode.
-  // Whether AI-backed features can actually run: a key saved in Settings, or the
-  // OPENAI_API_KEY environment fallback the Rust commands use. Every AI-triggering
-  // button disables (with an explanatory tooltip) when this is false.
-  const aiAvailable = Boolean(aiConfig?.apiKey?.trim()) || envOpenAiKeyPresent;
-  // Onboarding sequence: branded welcome → getting-started wizard → optional
-  // guided tour (offered on the wizard's last step, replayable from Settings).
-  const showWelcome =
-    !isDemoMode && windowMode === "large" && gettingStartedStatus === "unseen" && !welcomeAcknowledged;
+  // Whether AI-backed features can run: a saved Codex-plan connection, provider
+  // key, or OPENAI_API_KEY environment fallback. AI-triggering controls disable
+  // with shared guidance when this is false.
+  const aiAvailable = hasAIConnection(aiConfig, envOpenAiKeyPresent);
+  // Onboarding sequence: one wizard with the branded introduction first, then
+  // Settings. The guided tour is replayable from Settings after that handoff.
   const showGettingStarted =
-    !isDemoMode && windowMode === "large" && gettingStartedStatus === "unseen" && welcomeAcknowledged;
-  // The tour renders only when explicitly requested, and never under the
-  // welcome/wizard layers so the full-screen surfaces don't stack.
+    !isDemoMode && windowMode === "large" && gettingStartedStatus === "unseen";
+  // The tour renders only when explicitly requested and never under the wizard.
   const showWalkthrough =
-    !isDemoMode && windowMode === "large" && tourRequested && !showWelcome && !showGettingStarted;
+    !isDemoMode && windowMode === "large" && tourRequested && !showGettingStarted;
   // Persistent nudge after "I'll do this later": stays until tracking is enabled
   // (the skipped→complete effect above then retires it for good).
   const showTrackingReminder =
@@ -2466,7 +2442,6 @@ export function App() {
         onDefaultWindowModeChange={setDefaultWindowMode}
         pushToast={pushToast}
       />
-      {showWelcome && <WelcomeOverlay onBegin={() => setWelcomeAcknowledged(true)} />}
       {showWalkthrough && (
         <WalkthroughOverlay
           onComplete={() => endWalkthrough("completed")}
@@ -2478,19 +2453,14 @@ export function App() {
         <GettingStartedModal
           paused={paused}
           retentionDays={retentionDays}
-          aiConfigured={Boolean(aiConfig?.apiKey?.trim())}
+          aiConfigured={hasAIConnection(aiConfig, false)}
+          usingCodexPlan={isCodexConnection(aiConfig)}
           envOpenAiKeyPresent={envOpenAiKeyPresent}
           onEnableTracking={() => setPaused(false)}
           onRetentionDaysChange={changeRetentionDays}
           onConnectOpenAiKey={connectOpenAiKeyFromWizard}
-          onConnectViaChatGpt={connectViaChatGptFromWizard}
-          onConnectViaCodex={connectViaCodexFromWizard}
-          onOpenDemo={openDemoSimulation}
-          onStartTour={() => {
-            finishGettingStarted(paused ? "skipped" : "enabled");
-            replayWalkthrough();
-          }}
-          onDismiss={() => finishGettingStarted(paused ? "skipped" : "enabled")}
+          onConnectViaCodexPlan={connectViaCodexPlanFromWizard}
+          onDismiss={finishGettingStarted}
         />
       )}
     </AppShell>

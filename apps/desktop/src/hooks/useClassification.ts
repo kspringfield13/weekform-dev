@@ -203,7 +203,7 @@ export function useClassification({
       classificationAsync.fail(message);
       return { ok: false, message };
     }
-    const auditSource = aiAuditSource(provider);
+    const auditSource = aiAuditSource(provider, "responses", aiConfig?.connectionMode);
     const startedAt = new Date().toISOString();
     const prompt = buildWorkBlockClassifierPrompt({
       weekId: currentWeekId,
@@ -251,7 +251,9 @@ export function useClassification({
               input_session_count: candidateSessions.length,
               output_work_block_count: 0,
               sent_to_provider: true,
-              store: false,
+              ...(aiConfig?.connectionMode === "codex"
+                ? { codex_thread_ephemeral: true }
+                : { store: false }),
             },
           }),
         ].slice(-1000));
@@ -280,7 +282,9 @@ export function useClassification({
               provider_work_block_count: data.work_blocks.length,
               output_work_block_count: 0,
               sent_to_provider: true,
-              store: false,
+              ...(aiConfig?.connectionMode === "codex"
+                ? { codex_thread_ephemeral: true }
+                : { store: false }),
             },
           }),
         ].slice(-1000));
@@ -313,7 +317,9 @@ export function useClassification({
             output_work_block_count: draftBlocks.length,
             work_block_ids: draftBlocks.map((block) => block.work_block_id),
             sent_to_provider: true,
-            store: false,
+            ...(aiConfig?.connectionMode === "codex"
+              ? { codex_thread_ephemeral: true }
+              : { store: false }),
           },
         }),
       ].slice(-1000));

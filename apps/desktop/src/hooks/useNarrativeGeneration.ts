@@ -79,7 +79,7 @@ export function useNarrativeGeneration({
       narrativeAsync.fail(message);
       return { ok: false, message };
     }
-    const auditSource = aiAuditSource(provider);
+    const auditSource = aiAuditSource(provider, "responses", aiConfig?.connectionMode);
     const generatedAt = new Date().toISOString();
     // Usage enters the prompt ONLY behind the manager-summary opt-in: the generated
     // narrative is manager-facing, so without the toggle token totals never leave
@@ -181,7 +181,9 @@ export function useNarrativeGeneration({
             calendar_event_count: calendarEvents.length,
             correction_count: corrections.length,
             sent_to_provider: true,
-            store: false,
+            ...(aiConfig?.connectionMode === "codex"
+              ? { codex_thread_ephemeral: true }
+              : { store: false }),
           },
         }),
       ].slice(-1000));

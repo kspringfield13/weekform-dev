@@ -89,7 +89,7 @@ export function useReviewCopilot({
       reviewCopilotAsync.fail(generationProviderUnsupportedMessage(provider));
       return;
     }
-    const auditSource = aiAuditSource(provider);
+    const auditSource = aiAuditSource(provider, "responses", aiConfig?.connectionMode);
     const startedAt = new Date().toISOString();
     const prompt = buildReviewCopilotPrompt({
       weekId: currentWeekId,
@@ -164,7 +164,9 @@ export function useReviewCopilot({
             review_queue_count: unverifiedBlocks.length,
             suggestion_count: suggestions.length,
             sent_to_provider: true,
-            store: false,
+            ...(aiConfig?.connectionMode === "codex"
+              ? { codex_thread_ephemeral: true }
+              : { store: false }),
           },
         }),
       ].slice(-1000));

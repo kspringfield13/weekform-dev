@@ -30,6 +30,7 @@ import type { AgentChatMessage, AppActionResult, Screen } from "../../lib/types"
 import type { PushToast } from "../../hooks/useToasts";
 import { agentTools, AGENT_INSTRUCTIONS } from "../../services/agentTools";
 import { getAIProviderPreset } from "../../services/aiProviders";
+import { hasAIConnection, isCodexConnection } from "../../services/aiConnection";
 import { normalizeWeekId } from "../../../../../packages/inference/src/capacity";
 import { getCurrentIsoWeekId, getLocalDateKey } from "../../lib/date";
 import { formatClockTime, formatCount } from "../../lib/format";
@@ -395,11 +396,11 @@ export function AgentScreen({
       };
     }
 
-    if (!aiConfig?.apiKey?.trim()) {
+    if (!hasAIConnection(aiConfig, false)) {
       return {
         status: "unavailable",
         action: kind,
-        message: "No AI provider key is saved. Guide the user to Settings → AI assistance before proposing this action.",
+        message: "No AI connection is saved. Guide the user to Settings → AI assistance before proposing this action.",
       };
     }
     if (kind === "classify_sessions" && unclassifiedSessionCount === 0) {
@@ -882,9 +883,42 @@ ${latestUserQuestion}`;
         setIsStreaming(false);
         setStreamingMessageId(null);
         return;
+      } else if (isCodexConnection(aiConfig)) {
+        const groundedPrompt = await buildGroundedAgentPrompt(history);
+        const assistantId = `asst-${Date.now()}`;
+        setMessages((prev) => [...prev, {
+          id: assistantId,
+          role: "assistant",
+          content: AGENT_PENDING_MESSAGE,
+          createdAt: new Date().toISOString(),
+        }]);
+        setStreamingMessageId(assistantId);
+        setIsStreaming(true);
+        const response = await withAiTimeout(
+          invoke<{ response: string }>("chat_with_agent", {
+            request: { prompt: groundedPrompt, ai_config: aiConfig },
+          }),
+          60_000,
+        );
+        if (controller.signal.aborted) {
+          finalizeAbortedStream(assistantId, "");
+          return;
+        }
+        setMessages((prev) => prev.map((message) =>
+          message.id === assistantId
+            ? {
+                ...message,
+                content: response.response,
+                interrupted: false,
+                analysisSummary: `Reviewed ${weekBlocks.length} work block${weekBlocks.length === 1 ? "" : "s"}, ${activeWindowSessions.length} session${activeWindowSessions.length === 1 ? "" : "s"}, ${weekCalendarEvents.length} calendar event${weekCalendarEvents.length === 1 ? "" : "s"}, and ${corrections.length} correction${corrections.length === 1 ? "" : "s"}.`,
+              }
+            : message
+        ));
+        setIsStreaming(false);
+        setStreamingMessageId(null);
       } else {
-        // Grounded fallback (no key)
-        const fallback = `I don't have an AI provider configured yet. ${buildDeterministicAgentFallback(latestUserQuestion, "Based on current local data")} Go to Settings → AI assistance to add a key (OpenAI, Grok, DeepSeek, or custom).`;
+        // Grounded fallback (no connection)
+        const fallback = `I don't have an AI connection configured yet. ${buildDeterministicAgentFallback(latestUserQuestion, "Based on current local data")} Go to Settings → AI assistance to use a ChatGPT/Codex plan or add a provider API key.`;
         setMessages((prev) => [...prev, {
           id: `asst-${Date.now()}`,
           role: "assistant",

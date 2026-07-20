@@ -323,6 +323,8 @@ const AUDIT_SOURCE_LABELS: Record<string, string> = {
   deepseek_vision: "DeepSeek Vision",
   custom_responses_api: "Custom provider Responses API",
   custom_vision: "Custom provider Vision",
+  codex_app_server: "Codex app-server",
+  codex_app_server_vision: "Codex app-server Vision",
   macos_active_window: "macOS active window",
   outlook_ics: "Outlook .ics",
   outlook_file_import: "Outlook Calendar import",

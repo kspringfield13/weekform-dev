@@ -61,7 +61,7 @@ export function useVisualContext({
       visualContextAsync.fail(generationProviderUnsupportedMessage(provider));
       return;
     }
-    const auditSource = aiAuditSource(provider, "vision");
+    const auditSource = aiAuditSource(provider, "vision", aiConfig?.connectionMode);
     const startedAt = new Date().toISOString();
     const prompt = buildVisualContextPrompt({
       session,
@@ -141,7 +141,9 @@ export function useVisualContext({
             max_daily_captures: MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY,
             sent_to_provider: true,
             raw_screenshot_retained: response.raw_screenshot_retained,
-            store: false,
+            ...(aiConfig?.connectionMode === "codex"
+              ? { codex_thread_ephemeral: true }
+              : { store: false }),
           },
         }),
       ].slice(-1000));

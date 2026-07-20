@@ -13,10 +13,11 @@ use std::{
     env, fs,
     fs::OpenOptions,
     io::{BufRead, BufReader, Write},
-    path::PathBuf,
-    process::Command,
+    path::{Path, PathBuf},
+    process::{Child, ChildStdin, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
+        mpsc::{self, Receiver},
         Arc,
     },
     thread,
@@ -96,6 +97,7 @@ struct NarrativeGenerationRequest {
 #[serde(rename_all = "camelCase")]
 struct AIConfigRequest {
     provider: Option<String>,
+    connection_mode: Option<String>,
     api_key: Option<String>,
     base_url: Option<String>,
     model: Option<String>,
@@ -826,68 +828,592 @@ fn get_env_ai_key_status() -> EnvAiKeyStatus {
     }
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CodexConnectResult {
-    api_key: String,
+const CODEX_APP_SERVER_TIMEOUT: Duration = Duration::from_secs(45);
+const CODEX_TURN_TIMEOUT: Duration = Duration::from_secs(180);
+const CODEX_LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
+
+const CODEX_FEATURE_OVERRIDES: &[&str] = &[
+    "features.apps=false",
+    "features.auth_elicitation=false",
+    "features.browser_use=false",
+    "features.browser_use_external=false",
+    "features.code_mode_host=false",
+    "features.computer_use=false",
+    "features.goals=false",
+    "features.hooks=false",
+    "features.image_generation=false",
+    "features.in_app_browser=false",
+    "features.multi_agent=false",
+    "features.plugins=false",
+    "features.plugin_sharing=false",
+    "features.remote_plugin=false",
+    "features.shell_snapshot=false",
+    "features.shell_tool=false",
+    "features.skill_mcp_dependency_install=false",
+    "features.skill_search=false",
+    "features.tool_suggest=false",
+    "features.unified_exec=false",
+    "features.workspace_dependencies=false",
+];
+
+fn uses_codex_app_server(config: Option<&AIConfigRequest>) -> bool {
+    config
+        .and_then(|value| value.connection_mode.as_deref())
+        == Some("codex")
 }
 
-/// Import an OpenAI API key from the Codex CLI's stored sign-in
-/// (`~/.codex/auth.json`). Errors are user-facing copy: each failure mode tells
-/// the user what to do instead (run `codex login`, or paste a key). A
-/// subscription-only sign-in (OAuth tokens, no API key) is rejected honestly —
-/// those tokens cannot call the OpenAI platform API that Weekform uses.
-#[tauri::command]
-fn connect_openai_via_codex() -> Result<CodexConnectResult, String> {
-    let home =
-        env::var("HOME").map_err(|_| "Could not resolve your home directory.".to_string())?;
-    let auth_path = std::path::Path::new(&home).join(".codex").join("auth.json");
-    if !auth_path.exists() {
+fn find_codex_binary() -> Result<PathBuf, String> {
+    if let Ok(configured) = env::var("WEEKFORM_CODEX_BINARY") {
+        let path = PathBuf::from(configured);
+        if path.is_file() {
+            return Ok(path);
+        }
         return Err(
-            "No Codex sign-in found on this Mac. Run `codex login` in a terminal first, or paste an API key instead."
+            "WEEKFORM_CODEX_BINARY does not point to a usable Codex executable.".to_string(),
+        );
+    }
+
+    let fixed_candidates = [
+        "/Applications/ChatGPT.app/Contents/Resources/codex",
+        "/opt/homebrew/bin/codex",
+        "/usr/local/bin/codex",
+    ];
+    for candidate in fixed_candidates {
+        let path = PathBuf::from(candidate);
+        if path.is_file() {
+            return Ok(path);
+        }
+    }
+    if let Some(path) = env::var_os("PATH") {
+        for directory in env::split_paths(&path) {
+            let candidate = directory.join("codex");
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+    }
+
+    Err(
+        "Weekform could not find a Codex app-server. Install the ChatGPT desktop app or Codex CLI, then try again."
+            .to_string(),
+    )
+}
+
+fn codex_data_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
+    let app_data = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("Could not resolve Weekform's local data folder: {error}"))?;
+    let codex_home = app_data.join("codex-app-server");
+    let workspace = app_data.join("codex-workspace");
+    fs::create_dir_all(&codex_home)
+        .map_err(|error| format!("Could not prepare Codex credentials storage: {error}"))?;
+    fs::create_dir_all(&workspace)
+        .map_err(|error| format!("Could not prepare the private Codex workspace: {error}"))?;
+    Ok((codex_home, workspace))
+}
+
+struct CodexAppServer {
+    child: Child,
+    stdin: ChildStdin,
+    messages: Receiver<Value>,
+    pending: Vec<Value>,
+    next_id: u64,
+}
+
+impl Drop for CodexAppServer {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl CodexAppServer {
+    fn start(codex_home: &Path, workspace: &Path) -> Result<Self, String> {
+        let fallback_auth = codex_home.join("auth.json");
+        if fallback_auth.exists() {
+            fs::remove_file(&fallback_auth).map_err(|_| {
+                "Weekform found Codex credentials outside macOS Keychain and could not remove them. Remove the Weekform Codex connection before continuing."
+                    .to_string()
+            })?;
+        }
+        let binary = find_codex_binary()?;
+        let mut command = Command::new(binary);
+        command
+            .env("CODEX_HOME", codex_home)
+            .env_remove("OPENAI_API_KEY")
+            .env_remove("CODEX_API_KEY")
+            .env_remove("CODEX_ACCESS_TOKEN")
+            .current_dir(workspace)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            // App-server diagnostics may contain local paths; Weekform neither logs nor retains them.
+            .stderr(Stdio::null())
+            .arg("-c")
+            .arg("cli_auth_credentials_store=\"keyring\"")
+            .arg("-c")
+            .arg("check_for_update_on_startup=false")
+            .arg("-c")
+            .arg("web_search=\"disabled\"");
+        for feature in CODEX_FEATURE_OVERRIDES {
+            command.arg("-c").arg(feature);
+        }
+        command.arg("app-server");
+
+        let mut child = command
+            .spawn()
+            .map_err(|error| format!("Could not start the Codex app-server: {error}"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Codex app-server input was unavailable.".to_string())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "Codex app-server output was unavailable.".to_string())?;
+        let (sender, messages) = mpsc::channel();
+        thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                let Ok(line) = line else { break };
+                let Ok(value) = serde_json::from_str::<Value>(&line) else {
+                    continue;
+                };
+                if sender.send(value).is_err() {
+                    break;
+                }
+            }
+        });
+
+        let mut server = Self {
+            child,
+            stdin,
+            messages,
+            pending: Vec::new(),
+            next_id: 1,
+        };
+        server.request(
+            "initialize",
+            json!({
+                "clientInfo": {
+                    "name": "weekform",
+                    "title": "Weekform",
+                    "version": env!("CARGO_PKG_VERSION")
+                },
+                "capabilities": {
+                    "experimentalApi": true,
+                    "optOutNotificationMethods": [
+                        "item/agentMessage/delta",
+                        "item/reasoning/summaryTextDelta",
+                        "item/reasoning/textDelta"
+                    ]
+                }
+            }),
+            CODEX_APP_SERVER_TIMEOUT,
+        )?;
+        server.notify("initialized", json!({}))?;
+        Ok(server)
+    }
+
+    fn write_value(&mut self, value: &Value) -> Result<(), String> {
+        serde_json::to_writer(&mut self.stdin, value)
+            .map_err(|error| format!("Could not encode a Codex app-server request: {error}"))?;
+        self.stdin
+            .write_all(b"\n")
+            .and_then(|_| self.stdin.flush())
+            .map_err(|error| format!("Could not send a Codex app-server request: {error}"))
+    }
+
+    fn notify(&mut self, method: &str, params: Value) -> Result<(), String> {
+        self.write_value(&json!({ "method": method, "params": params }))
+    }
+
+    fn request(&mut self, method: &str, params: Value, timeout: Duration) -> Result<Value, String> {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.write_value(&json!({ "method": method, "id": id, "params": params }))?;
+        let deadline = std::time::Instant::now() + timeout;
+
+        loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return Err(format!("Codex app-server timed out during {method}."));
+            }
+            let message = self
+                .messages
+                .recv_timeout(remaining)
+                .map_err(|_| format!("Codex app-server stopped during {method}."))?;
+            if message.get("id").and_then(Value::as_u64) == Some(id) {
+                if let Some(error) = message.get("error") {
+                    let detail = error
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Codex app-server returned an error.");
+                    return Err(detail.to_string());
+                }
+                return message
+                    .get("result")
+                    .cloned()
+                    .ok_or_else(|| "Codex app-server returned an empty response.".to_string());
+            }
+            // This integration never exposes tools. Deny any unexpected server request instead
+            // of leaving a model-initiated operation waiting for approval.
+            if message.get("id").is_some() && message.get("method").is_some() {
+                if let Some(request_id) = message.get("id").cloned() {
+                    self.write_value(&json!({
+                        "id": request_id,
+                        "error": { "code": -32601, "message": "Weekform does not expose tools." }
+                    }))?;
+                }
+            } else {
+                self.pending.push(message);
+            }
+        }
+    }
+
+    fn next_message(&mut self, timeout: Duration) -> Result<Value, String> {
+        if !self.pending.is_empty() {
+            return Ok(self.pending.remove(0));
+        }
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if remaining.is_zero() {
+                return Err("Codex app-server did not complete the operation in time.".to_string());
+            }
+            let message = self.messages.recv_timeout(remaining).map_err(|_| {
+                "Codex app-server did not complete the operation in time.".to_string()
+            })?;
+            if message.get("id").is_some() && message.get("method").is_some() {
+                if let Some(request_id) = message.get("id").cloned() {
+                    self.write_value(&json!({
+                        "id": request_id,
+                        "error": { "code": -32601, "message": "Weekform does not expose tools." }
+                    }))?;
+                }
+                continue;
+            }
+            return Ok(message);
+        }
+    }
+}
+
+fn codex_output_schema(response_format: &Value) -> Option<Value> {
+    (response_format.get("type").and_then(Value::as_str) == Some("json_schema"))
+        .then(|| response_format.get("schema").cloned())
+        .flatten()
+}
+
+fn codex_thread_start_params(model: &str, workspace: &Path, instructions: &str) -> Value {
+    json!({
+        "model": model,
+        "cwd": workspace,
+        "approvalPolicy": "never",
+        "sandbox": "read-only",
+        "ephemeral": true,
+        "serviceName": "weekform",
+        "baseInstructions": format!(
+            "{instructions}\n\nDo not use tools, browse, inspect files, run commands, modify state, or ask for approval. Use only the content supplied in the user turn. Return one bounded final answer."
+        )
+    })
+}
+
+fn codex_turn_start_params(
+    thread_id: &str,
+    prompt: &str,
+    output_schema: Option<Value>,
+    image_data_url: Option<&str>,
+) -> Value {
+    let mut input = vec![json!({ "type": "text", "text": prompt, "text_elements": [] })];
+    if let Some(url) = image_data_url {
+        input.push(json!({ "type": "image", "url": url, "detail": "low" }));
+    }
+    let mut params = json!({ "threadId": thread_id, "input": input });
+    if let Some(schema) = output_schema {
+        params["outputSchema"] = schema;
+    }
+    params
+}
+
+fn select_codex_model(preferred: Option<&str>, response: &Value) -> Option<String> {
+    let models = response.get("data")?.as_array()?;
+    if let Some(preferred) = preferred {
+        if let Some(model) = models.iter().find(|entry| {
+            entry.get("id").and_then(Value::as_str) == Some(preferred)
+                || entry.get("model").and_then(Value::as_str) == Some(preferred)
+        }) {
+            return model
+                .get("model")
+                .or_else(|| model.get("id"))
+                .and_then(Value::as_str)
+                .map(str::to_string);
+        }
+    }
+    models
+        .iter()
+        .find(|entry| entry.get("isDefault").and_then(Value::as_bool) == Some(true))
+        .or_else(|| models.iter().find(|entry| entry.get("hidden").and_then(Value::as_bool) != Some(true)))
+        .and_then(|model| model.get("model").or_else(|| model.get("id")))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn codex_account(server: &mut CodexAppServer, refresh: bool) -> Result<Value, String> {
+    server.request(
+        "account/read",
+        json!({ "refreshToken": refresh }),
+        CODEX_APP_SERVER_TIMEOUT,
+    )
+}
+
+fn require_codex_keyring_storage(codex_home: &Path) -> Result<(), String> {
+    let fallback_auth = codex_home.join("auth.json");
+    if !fallback_auth.exists() {
+        return Ok(());
+    }
+    let removed = fs::remove_file(&fallback_auth).is_ok();
+    Err(if removed {
+        "macOS Keychain was unavailable, so Weekform discarded the Codex sign-in instead of retaining OAuth credentials in a local file. Unlock Keychain and try again."
+            .to_string()
+    } else {
+        "macOS Keychain was unavailable and Weekform could not remove Codex's fallback credential file. Reset Local Data before continuing."
+            .to_string()
+    })
+}
+
+fn codex_model_catalog(server: &mut CodexAppServer) -> Result<Value, String> {
+    server.request(
+        "model/list",
+        json!({ "includeHidden": false, "limit": 100 }),
+        CODEX_APP_SERVER_TIMEOUT,
+    )
+}
+
+fn complete_with_codex_app_server(
+    app: &AppHandle,
+    preferred_model: Option<&str>,
+    instructions: &str,
+    prompt: &str,
+    response_format: &Value,
+    image_data_url: Option<&str>,
+) -> Result<(String, String), String> {
+    let (codex_home, workspace) = codex_data_paths(app)?;
+    let mut server = CodexAppServer::start(&codex_home, &workspace)?;
+    let account = codex_account(&mut server, true)?;
+    require_codex_keyring_storage(&codex_home)?;
+    if account
+        .pointer("/account/type")
+        .and_then(Value::as_str)
+        != Some("chatgpt")
+    {
+        return Err(
+            "Connect your ChatGPT/Codex plan in Weekform Settings before using AI features."
                 .to_string(),
         );
     }
-    let raw = fs::read_to_string(&auth_path)
-        .map_err(|error| format!("Could not read the Codex credentials: {error}"))?;
-    let parsed: Value = serde_json::from_str(&raw)
-        .map_err(|_| "The Codex credential file could not be parsed.".to_string())?;
-    let api_key = parsed
-        .get("OPENAI_API_KEY")
+    let catalog = codex_model_catalog(&mut server)?;
+    let model = select_codex_model(preferred_model, &catalog)
+        .ok_or_else(|| "Your ChatGPT workspace did not return an available Codex model.".to_string())?;
+    let thread = server.request(
+        "thread/start",
+        codex_thread_start_params(&model, &workspace, instructions),
+        CODEX_APP_SERVER_TIMEOUT,
+    )?;
+    let thread_id = thread
+        .pointer("/thread/id")
         .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    match api_key {
-        Some(key) => Ok(CodexConnectResult {
-            api_key: key.to_string(),
-        }),
-        None => Err(
-            "Your Codex sign-in uses a ChatGPT subscription without an API key, and subscription tokens can't call the OpenAI API Weekform uses. Create a key at platform.openai.com and paste it instead."
-                .to_string(),
+        .ok_or_else(|| "Codex app-server did not return a thread id.".to_string())?
+        .to_string();
+    let turn = server.request(
+        "turn/start",
+        codex_turn_start_params(
+            &thread_id,
+            prompt,
+            codex_output_schema(response_format),
+            image_data_url,
         ),
+        CODEX_APP_SERVER_TIMEOUT,
+    )?;
+    let turn_id = turn
+        .pointer("/turn/id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "Codex app-server did not return a turn id.".to_string())?
+        .to_string();
+    let deadline = std::time::Instant::now() + CODEX_TURN_TIMEOUT;
+    let mut output_text: Option<String> = None;
+
+    loop {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
+            return Err("Codex generation timed out.".to_string());
+        }
+        let message = server.next_message(remaining)?;
+        match message.get("method").and_then(Value::as_str) {
+            Some("item/completed")
+                if message.pointer("/params/turnId").and_then(Value::as_str)
+                    == Some(turn_id.as_str()) =>
+            {
+                if message.pointer("/params/item/type").and_then(Value::as_str)
+                    == Some("agentMessage")
+                {
+                    output_text = message
+                        .pointer("/params/item/text")
+                        .and_then(Value::as_str)
+                        .map(str::to_string);
+                }
+            }
+            Some("turn/completed")
+                if message.pointer("/params/turn/id").and_then(Value::as_str)
+                    == Some(turn_id.as_str()) =>
+            {
+                let status = message
+                    .pointer("/params/turn/status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("failed");
+                if status != "completed" {
+                    let detail = message
+                        .pointer("/params/turn/error/message")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Codex could not complete the generation.");
+                    return Err(detail.to_string());
+                }
+                return output_text
+                    .filter(|text| !text.trim().is_empty())
+                    .map(|text| (text, model))
+                    .ok_or_else(|| "Codex completed without a final answer.".to_string());
+            }
+            _ => {}
+        }
     }
 }
 
-// --- ChatGPT browser sign-in (OAuth + PKCE) -------------------------------
-//
-// Mirrors the Codex CLI login flow: open auth.openai.com in the browser with a
-// PKCE challenge, catch the redirect on a short-lived localhost listener, then
-// exchange the resulting id_token for a platform API key. The end product is a
-// plain OpenAI API key — the same thing the paste-a-key path saves — so every
-// downstream AI call works unchanged.
-
-const CHATGPT_OAUTH_ISSUER: &str = "https://auth.openai.com";
-// The Codex CLI's public OAuth client id; its localhost redirect below is the
-// registered callback for this client.
-const CHATGPT_OAUTH_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
-const CHATGPT_OAUTH_PORT: u16 = 1455;
-const CHATGPT_OAUTH_REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
-const CHATGPT_OAUTH_TIMEOUT_SECS: u64 = 300;
+async fn complete_with_codex_async(
+    app: AppHandle,
+    preferred_model: Option<String>,
+    instructions: String,
+    prompt: String,
+    response_format: Value,
+    image_data_url: Option<String>,
+) -> Result<(String, String), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        complete_with_codex_app_server(
+            &app,
+            preferred_model.as_deref(),
+            &instructions,
+            &prompt,
+            &response_format,
+            image_data_url.as_deref(),
+        )
+    })
+    .await
+    .map_err(|error| format!("Codex generation stopped unexpectedly: {error}"))?
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ChatGptConnectResult {
-    api_key: String,
+struct CodexPlanConnectResult {
+    model: String,
+    plan_type: String,
+    message: String,
+}
+
+#[tauri::command]
+async fn connect_codex_via_chatgpt(app: AppHandle) -> Result<CodexPlanConnectResult, String> {
+    let (codex_home, workspace) = codex_data_paths(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut server = CodexAppServer::start(&codex_home, &workspace)?;
+        let mut account = codex_account(&mut server, false)?;
+        if account.get("account").is_none() || account.get("account") == Some(&Value::Null) {
+            let login = server.request(
+                "account/login/start",
+                json!({
+                    "type": "chatgpt",
+                    "appBrand": "codex",
+                    "codexStreamlinedLogin": true,
+                    "useHostedLoginSuccessPage": true
+                }),
+                CODEX_APP_SERVER_TIMEOUT,
+            )?;
+            let auth_url = login
+                .get("authUrl")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Codex did not return a browser sign-in URL.".to_string())?;
+            let login_id = login
+                .get("loginId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Codex did not return a sign-in id.".to_string())?
+                .to_string();
+            tauri_plugin_opener::open_url(auth_url, None::<&str>)
+                .map_err(|error| format!("Could not open ChatGPT sign-in: {error}"))?;
+
+            let deadline = std::time::Instant::now() + CODEX_LOGIN_TIMEOUT;
+            loop {
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() {
+                    return Err("Timed out waiting for ChatGPT sign-in.".to_string());
+                }
+                let message = server.next_message(remaining)?;
+                if message.get("method").and_then(Value::as_str)
+                    != Some("account/login/completed")
+                    || message.pointer("/params/loginId").and_then(Value::as_str)
+                        != Some(login_id.as_str())
+                {
+                    continue;
+                }
+                if message.pointer("/params/success").and_then(Value::as_bool) != Some(true) {
+                    return Err(message
+                        .pointer("/params/error")
+                        .and_then(Value::as_str)
+                        .unwrap_or("ChatGPT sign-in was not completed.")
+                        .to_string());
+                }
+                break;
+            }
+            account = codex_account(&mut server, true)?;
+        }
+        require_codex_keyring_storage(&codex_home)?;
+
+        if account.pointer("/account/type").and_then(Value::as_str) != Some("chatgpt") {
+            return Err("The Codex app-server is not signed in with ChatGPT.".to_string());
+        }
+        let plan_type = account
+            .pointer("/account/planType")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string();
+        let catalog = codex_model_catalog(&mut server)?;
+        let model = select_codex_model(None, &catalog)
+            .ok_or_else(|| "Your ChatGPT workspace did not return an available Codex model.".to_string())?;
+        Ok(CodexPlanConnectResult {
+            model,
+            plan_type,
+            message: "Connected through the Codex app-server. No Platform API key was created or copied."
+                .to_string(),
+        })
+    })
+    .await
+    .map_err(|error| format!("Codex sign-in stopped unexpectedly: {error}"))?
+}
+
+#[tauri::command]
+async fn disconnect_codex(app: AppHandle) -> Result<(), String> {
+    let (codex_home, workspace) = codex_data_paths(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        {
+            let mut server = CodexAppServer::start(&codex_home, &workspace)?;
+            server.request("account/logout", json!({}), CODEX_APP_SERVER_TIMEOUT)?;
+        }
+        if codex_home.exists() {
+            fs::remove_dir_all(&codex_home)
+                .map_err(|error| format!("Codex signed out, but its local cache could not be cleared: {error}"))?;
+        }
+        if workspace.exists() {
+            fs::remove_dir_all(&workspace)
+                .map_err(|error| format!("Codex signed out, but its private workspace could not be cleared: {error}"))?;
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|error| format!("Codex sign-out stopped unexpectedly: {error}"))?
 }
 
 fn random_urlsafe(byte_len: usize) -> String {
@@ -913,200 +1439,6 @@ fn oauth_html_response(stream: &mut std::net::TcpStream, status: u16, message: &
         )
         .as_bytes(),
     );
-}
-
-/// Blocks until the browser hits the localhost callback with an authorization
-/// code (or the deadline passes). Non-callback requests (favicon probes and the
-/// like) get a 404 and the wait continues.
-fn wait_for_oauth_callback(
-    listener: std::net::TcpListener,
-    expected_state: &str,
-) -> Result<String, String> {
-    use std::io::Read;
-    listener
-        .set_nonblocking(true)
-        .map_err(|error| format!("Could not prepare the sign-in listener: {error}"))?;
-    let deadline = std::time::Instant::now() + Duration::from_secs(CHATGPT_OAUTH_TIMEOUT_SECS);
-
-    loop {
-        match listener.accept() {
-            Ok((mut stream, _)) => {
-                let _ = stream.set_nonblocking(false);
-                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
-                let mut buf = [0u8; 4096];
-                let read = stream.read(&mut buf).unwrap_or(0);
-                let request = String::from_utf8_lossy(&buf[..read]);
-                let path = request
-                    .lines()
-                    .next()
-                    .and_then(|line| line.split_whitespace().nth(1))
-                    .unwrap_or("");
-
-                let Some(query) = path.strip_prefix("/auth/callback?") else {
-                    oauth_html_response(&mut stream, 404, "Not found.");
-                    continue;
-                };
-
-                let mut code = None;
-                let mut callback_state = None;
-                let mut callback_error = None;
-                for pair in query.split('&') {
-                    let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-                    match key {
-                        "code" => code = Some(value.to_string()),
-                        "state" => callback_state = Some(value.to_string()),
-                        "error" => callback_error = Some(value.to_string()),
-                        _ => {}
-                    }
-                }
-
-                if let Some(error) = callback_error {
-                    oauth_html_response(
-                        &mut stream,
-                        200,
-                        "Sign-in was not completed. You can close this tab and try again from Weekform.",
-                    );
-                    return Err(format!("ChatGPT sign-in was not completed ({error})."));
-                }
-
-                match (code, callback_state) {
-                    (Some(code), Some(state)) if state == expected_state => {
-                        oauth_html_response(
-                            &mut stream,
-                            200,
-                            "You're signed in. Close this tab and return to Weekform.",
-                        );
-                        return Ok(code);
-                    }
-                    _ => {
-                        oauth_html_response(
-                            &mut stream,
-                            200,
-                            "This sign-in response could not be verified. Return to Weekform and try again.",
-                        );
-                        return Err(
-                            "The sign-in response could not be verified. Please try again."
-                                .to_string(),
-                        );
-                    }
-                }
-            }
-            Err(ref error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                if std::time::Instant::now() > deadline {
-                    return Err(
-                        "Timed out waiting for the browser sign-in. Try again, or paste an API key instead."
-                            .to_string(),
-                    );
-                }
-                thread::sleep(Duration::from_millis(120));
-            }
-            Err(error) => return Err(format!("The sign-in listener failed: {error}")),
-        }
-    }
-}
-
-/// Sign in with a ChatGPT account in the browser and come back with an OpenAI
-/// API key. Fails with user-facing copy at every step — port in use, cancelled
-/// sign-in, timeout, or an account whose sign-in can't mint a platform key.
-#[tauri::command]
-async fn connect_openai_via_chatgpt() -> Result<ChatGptConnectResult, String> {
-    use sha2::{Digest, Sha256};
-
-    let verifier = random_urlsafe(64);
-    let challenge = general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-    let state = random_urlsafe(32);
-
-    // Bind before opening the browser so a dead click can't race the listener.
-    let listener = std::net::TcpListener::bind(("127.0.0.1", CHATGPT_OAUTH_PORT)).map_err(|_| {
-        format!(
-            "Port {CHATGPT_OAUTH_PORT} is busy — close any other OpenAI sign-in window (or Codex login) and try again."
-        )
-    })?;
-
-    let authorize_url = format!(
-        "{CHATGPT_OAUTH_ISSUER}/oauth/authorize\
-         ?response_type=code\
-         &client_id={CHATGPT_OAUTH_CLIENT_ID}\
-         &redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fauth%2Fcallback\
-         &scope=openid%20profile%20email%20offline_access\
-         &code_challenge={challenge}\
-         &code_challenge_method=S256\
-         &id_token_add_organizations=true\
-         &codex_cli_simplified_flow=true\
-         &state={state}"
-    );
-    tauri_plugin_opener::open_url(&authorize_url, None::<&str>)
-        .map_err(|error| format!("Could not open your browser for sign-in: {error}"))?;
-
-    let expected_state = state.clone();
-    let code = tauri::async_runtime::spawn_blocking(move || {
-        wait_for_oauth_callback(listener, &expected_state)
-    })
-    .await
-    .map_err(|error| format!("The sign-in listener failed: {error}"))??;
-
-    let client = reqwest::Client::new();
-    let token_response = client
-        .post(format!("{CHATGPT_OAUTH_ISSUER}/oauth/token"))
-        .form(&[
-            ("grant_type", "authorization_code"),
-            ("code", code.as_str()),
-            ("redirect_uri", CHATGPT_OAUTH_REDIRECT_URI),
-            ("client_id", CHATGPT_OAUTH_CLIENT_ID),
-            ("code_verifier", verifier.as_str()),
-        ])
-        .send()
-        .await
-        .map_err(|error| format!("The sign-in token request failed: {error}"))?;
-    let token_value = token_response
-        .json::<Value>()
-        .await
-        .map_err(|error| format!("The sign-in token response could not be read: {error}"))?;
-    let id_token = token_value
-        .get("id_token")
-        .and_then(Value::as_str)
-        .ok_or_else(|| {
-            extract_provider_error(&token_value)
-                .map(str::to_string)
-                .unwrap_or_else(|| "The sign-in did not return the expected credentials.".to_string())
-        })?;
-
-    // Exchange the identity token for a platform API key (the same exchange
-    // `codex login` performs). Subscription-only accounts without platform
-    // access are rejected here with honest copy.
-    let exchange_response = client
-        .post(format!("{CHATGPT_OAUTH_ISSUER}/oauth/token"))
-        .form(&[
-            ("grant_type", "urn:ietf:params:oauth:grant-type:token-exchange"),
-            ("client_id", CHATGPT_OAUTH_CLIENT_ID),
-            ("requested_token", "openai-api-key"),
-            ("subject_token", id_token),
-            ("subject_token_type", "urn:ietf:params:oauth:token-type:id_token"),
-        ])
-        .send()
-        .await
-        .map_err(|error| format!("The API-key exchange failed: {error}"))?;
-    let exchange_status = exchange_response.status();
-    let exchange_value = exchange_response
-        .json::<Value>()
-        .await
-        .map_err(|error| format!("The API-key exchange response could not be read: {error}"))?;
-
-    let api_key = exchange_value
-        .get("access_token")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-
-    match api_key {
-        Some(key) if exchange_status.is_success() => Ok(ChatGptConnectResult {
-            api_key: key.to_string(),
-        }),
-        _ => Err(
-            "Signed in, but this ChatGPT account can't mint an OpenAI platform API key — that usually means a subscription without API access. Create a key at platform.openai.com and paste it instead."
-                .to_string(),
-        ),
-    }
 }
 
 // --- Weekform Web browser sign-in (Supabase OAuth + PKCE) ----------------
@@ -1369,6 +1701,7 @@ struct TestAIConnectionResponse {
 
 #[tauri::command]
 async fn test_ai_connection(
+    app: AppHandle,
     request: TestAIConnectionRequest,
 ) -> Result<TestAIConnectionResponse, String> {
     let config = &request.ai_config;
@@ -1379,6 +1712,29 @@ async fn test_ai_connection(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| "Enter a model before testing the connection.".to_string())?;
+    if uses_codex_app_server(Some(config)) {
+        let preferred_model = model.to_string();
+        let (codex_home, workspace) = codex_data_paths(&app)?;
+        let selected_model = tauri::async_runtime::spawn_blocking(move || {
+            let mut server = CodexAppServer::start(&codex_home, &workspace)?;
+            let account = codex_account(&mut server, true)?;
+            if account.pointer("/account/type").and_then(Value::as_str) != Some("chatgpt") {
+                return Err("The Weekform Codex connection is no longer signed in.".to_string());
+            }
+            let catalog = codex_model_catalog(&mut server)?;
+            select_codex_model(Some(&preferred_model), &catalog)
+                .ok_or_else(|| "Your ChatGPT workspace did not return an available Codex model.".to_string())
+        })
+        .await
+        .map_err(|error| format!("Codex connection test stopped unexpectedly: {error}"))??;
+        return Ok(TestAIConnectionResponse {
+            provider: "openai".to_string(),
+            model: selected_model.clone(),
+            message: format!(
+                "Connected through your ChatGPT/Codex plan. Model “{selected_model}” is available."
+            ),
+        });
+    }
     let (api_key, base_url) = get_ai_credentials(Some(config))?;
     let client = reqwest::Client::new();
     let url = format!("{}/models", base_url.trim_end_matches('/'));
@@ -1428,9 +1784,10 @@ async fn test_ai_connection(
 
 #[tauri::command]
 async fn generate_weekly_narrative_with_openai(
+    app: AppHandle,
     request: NarrativeGenerationRequest,
 ) -> Result<NarrativeGenerationResponse, String> {
-    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
+    let codex_connection = uses_codex_app_server(request.ai_config.as_ref());
     let model = request
         .model
         .or_else(|| request.ai_config.as_ref().and_then(|c| c.model.clone()))
@@ -1453,10 +1810,26 @@ async fn generate_weekly_narrative_with_openai(
         "manager_ready_summary": { "type": "string" }
       }
     });
+    const INSTRUCTIONS: &str = "You generate Weekform weekly workload narratives from structured local work context. Keep summary_text and key_drivers concrete, explainable, and careful not to overstate certainty. Write manager_ready_summary as a polished first-person update in the user's own voice, focused on projects, tasks, progress, interruptions, blockers, and next steps. The manager-ready text must never mention confidence, evidence, tracking, classification, sessions, work blocks, models, estimates, app mechanics, review status, or technical capacity terminology. Return only JSON matching the requested schema. Adapt to any model capabilities.";
+    if codex_connection {
+        let (output_text, model) = complete_with_codex_async(
+            app,
+            Some(model),
+            INSTRUCTIONS.to_string(),
+            request.prompt,
+            json!({ "type": "json_schema", "schema": schema }),
+            None,
+        )
+        .await?;
+        let narrative = serde_json::from_str::<GeneratedWeeklyNarrative>(&output_text)
+            .map_err(|error| format!("AI narrative JSON could not be parsed: {error}"))?;
+        return Ok(NarrativeGenerationResponse { narrative, model });
+    }
+    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
     let mut body = json!({
       "model": model,
       "store": false,
-      "instructions": "You generate Weekform weekly workload narratives from structured local work context. Keep summary_text and key_drivers concrete, explainable, and careful not to overstate certainty. Write manager_ready_summary as a polished first-person update in the user's own voice, focused on projects, tasks, progress, interruptions, blockers, and next steps. The manager-ready text must never mention confidence, evidence, tracking, classification, sessions, work blocks, models, estimates, app mechanics, review status, or technical capacity terminology. Return only JSON matching the requested schema. Adapt to any model capabilities.",
+      "instructions": INSTRUCTIONS,
       "input": request.prompt,
       "text": {
         "format": {
@@ -1502,9 +1875,10 @@ async fn generate_weekly_narrative_with_openai(
 
 #[tauri::command]
 async fn classify_active_window_sessions_with_openai(
+    app: AppHandle,
     request: WorkBlockClassificationRequest,
 ) -> Result<WorkBlockClassificationResponse, String> {
-    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
+    let codex_connection = uses_codex_app_server(request.ai_config.as_ref());
     let model = request
         .model
         .or_else(|| request.ai_config.as_ref().and_then(|c| c.model.clone()))
@@ -1588,10 +1962,26 @@ async fn classify_active_window_sessions_with_openai(
         }
       }
     });
+    const INSTRUCTIONS: &str = "You classify local macOS active-window sessions into Weekform draft work blocks. Be conservative, evidence-based, prefer high-confidence only when signals are clear. Return only JSON matching the requested schema.";
+    if codex_connection {
+        let (output_text, model) = complete_with_codex_async(
+            app,
+            Some(model),
+            INSTRUCTIONS.to_string(),
+            request.prompt,
+            json!({ "type": "json_schema", "schema": schema }),
+            None,
+        )
+        .await?;
+        let result = serde_json::from_str::<WorkBlockClassificationResult>(&output_text)
+            .map_err(|error| format!("AI classification JSON could not be parsed: {error}"))?;
+        return Ok(WorkBlockClassificationResponse { result, model });
+    }
+    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
     let mut body = json!({
       "model": model,
       "store": false,
-      "instructions": "You classify local macOS active-window sessions into Weekform draft work blocks. Be conservative, evidence-based, prefer high-confidence only when signals are clear. Return only JSON matching the requested schema.",
+      "instructions": INSTRUCTIONS,
       "input": request.prompt,
       "text": {
         "format": {
@@ -1637,9 +2027,10 @@ async fn classify_active_window_sessions_with_openai(
 
 #[tauri::command]
 async fn generate_review_copilot_suggestions_with_openai(
+    app: AppHandle,
     request: ReviewCopilotRequest,
 ) -> Result<ReviewCopilotResponse, String> {
-    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
+    let codex_connection = uses_codex_app_server(request.ai_config.as_ref());
     let model = request
         .model
         .or_else(|| request.ai_config.as_ref().and_then(|c| c.model.clone()))
@@ -1738,10 +2129,26 @@ async fn generate_review_copilot_suggestions_with_openai(
         }
       }
     });
+    const INSTRUCTIONS: &str = "You generate Weekform Daily Review Copilot suggestions. Be conservative, actionable, and return only JSON matching the requested schema.";
+    if codex_connection {
+        let (output_text, model) = complete_with_codex_async(
+            app,
+            Some(model),
+            INSTRUCTIONS.to_string(),
+            request.prompt,
+            json!({ "type": "json_schema", "schema": schema }),
+            None,
+        )
+        .await?;
+        let result = serde_json::from_str::<ReviewCopilotResult>(&output_text)
+            .map_err(|error| format!("AI review suggestions JSON could not be parsed: {error}"))?;
+        return Ok(ReviewCopilotResponse { result, model });
+    }
+    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
     let mut body = json!({
       "model": model,
       "store": false,
-      "instructions": "You generate Weekform Daily Review Copilot suggestions. Be conservative, actionable, and return only JSON matching the requested schema.",
+      "instructions": INSTRUCTIONS,
       "input": request.prompt,
       "text": {
         "format": {
@@ -1787,9 +2194,10 @@ async fn generate_review_copilot_suggestions_with_openai(
 
 #[tauri::command]
 async fn generate_forecast_agent_with_openai(
+    app: AppHandle,
     request: ForecastAgentRequest,
 ) -> Result<ForecastAgentResponse, String> {
-    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
+    let codex_connection = uses_codex_app_server(request.ai_config.as_ref());
     let model = request
         .model
         .or_else(|| request.ai_config.as_ref().and_then(|c| c.model.clone()))
@@ -1846,10 +2254,26 @@ async fn generate_forecast_agent_with_openai(
         "conservative_capacity_pct": pct_number()
       }
     });
+    const INSTRUCTIONS: &str = "You generate Weekform next-week capacity forecasts. Be conservative, explainable, planning-oriented, and return only JSON matching the requested schema.";
+    if codex_connection {
+        let (output_text, model) = complete_with_codex_async(
+            app,
+            Some(model),
+            INSTRUCTIONS.to_string(),
+            request.prompt,
+            json!({ "type": "json_schema", "schema": schema }),
+            None,
+        )
+        .await?;
+        let forecast = serde_json::from_str::<ForecastAgentResult>(&output_text)
+            .map_err(|error| format!("AI forecast JSON could not be parsed: {error}"))?;
+        return Ok(ForecastAgentResponse { forecast, model });
+    }
+    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
     let mut body = json!({
       "model": model,
       "store": false,
-      "instructions": "You generate Weekform next-week capacity forecasts. Be conservative, explainable, planning-oriented, and return only JSON matching the requested schema.",
+      "instructions": INSTRUCTIONS,
       "input": request.prompt,
       "text": {
         "format": {
@@ -1895,9 +2319,10 @@ async fn generate_forecast_agent_with_openai(
 
 #[tauri::command]
 async fn capture_visual_context_with_openai(
+    app: AppHandle,
     request: VisualContextRequest,
 ) -> Result<VisualContextResponse, String> {
-    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
+    let codex_connection = uses_codex_app_server(request.ai_config.as_ref());
     let model = request
         .model
         .or_else(|| {
@@ -1972,10 +2397,34 @@ async fn capture_visual_context_with_openai(
         }
       }
     });
+    const INSTRUCTIONS: &str = "You generate privacy-conscious Weekform Visual Context insights from consented screenshots. Avoid transcribing sensitive details and return only JSON matching the requested schema.";
+    if codex_connection {
+        let (output_text, model) = complete_with_codex_async(
+            app,
+            Some(model),
+            INSTRUCTIONS.to_string(),
+            request.prompt,
+            json!({ "type": "json_schema", "schema": schema }),
+            Some(data_url),
+        )
+        .await?;
+        let insight = serde_json::from_str::<VisualContextInsightOutput>(&output_text)
+            .map_err(|error| format!("AI visual context JSON could not be parsed: {error}"))?;
+        return Ok(VisualContextResponse {
+            insight,
+            model,
+            captured_at_ms,
+            app_name: request.app_name,
+            window_title: request.window_title,
+            session_id: request.session_id,
+            raw_screenshot_retained: false,
+        });
+    }
+    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
     let mut body = json!({
       "model": model,
       "store": false,
-      "instructions": "You generate privacy-conscious Weekform Visual Context insights from consented screenshots. Avoid transcribing sensitive details and return only JSON matching the requested schema.",
+      "instructions": INSTRUCTIONS,
       "input": [{
         "role": "user",
         "content": [
@@ -2041,20 +2490,37 @@ async fn capture_visual_context_with_openai(
 }
 
 #[tauri::command]
-async fn chat_with_agent(request: AgentChatRequest) -> Result<AgentChatResponse, String> {
-    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
+async fn chat_with_agent(
+    app: AppHandle,
+    request: AgentChatRequest,
+) -> Result<AgentChatResponse, String> {
+    let codex_connection = uses_codex_app_server(request.ai_config.as_ref());
     let model = request
         .ai_config
         .as_ref()
         .and_then(|c| c.model.clone())
         .or_else(|| env::var("OPENAI_MODEL").ok())
         .unwrap_or_else(|| "gpt-4o".to_string());
+    const INSTRUCTIONS: &str = "You are the Weekform Agent. Your focus is helping the user understand and explain their tracked capacity (reliable new-work %), current day/week workload (blocks, sessions, calendar, corrections), and primary focus/projects. Use only provided context and tool results. Be factual, concise, reference specific numbers/projects/times. If insufficient data say so.";
+    if codex_connection {
+        let (response, model) = complete_with_codex_async(
+            app,
+            Some(model),
+            INSTRUCTIONS.to_string(),
+            request.prompt,
+            json!({ "type": "text" }),
+            None,
+        )
+        .await?;
+        return Ok(AgentChatResponse { response, model });
+    }
+    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
 
     // Use text format for conversational agent (no json_schema).
     let body = json!({
       "model": model,
       "store": false,
-      "instructions": "You are the Weekform Agent. Your focus is helping the user understand and explain their tracked capacity (reliable new-work %), current day/week workload (blocks, sessions, calendar, corrections), and primary focus/projects. Use only provided context and tool results. Be factual, concise, reference specific numbers/projects/times. If insufficient data say so.",
+      "instructions": INSTRUCTIONS,
       "input": request.prompt,
       "text": {
         "format": { "type": "text" }
@@ -2098,8 +2564,11 @@ async fn chat_with_agent(request: AgentChatRequest) -> Result<AgentChatResponse,
 /// format/schema, and any sampling overrides, so prompt and schema tuning live
 /// entirely in TypeScript (the improvement loop's safe scope).
 #[tauri::command]
-async fn ai_complete(request: AiCompleteRequest) -> Result<AiCompleteResponse, String> {
-    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
+async fn ai_complete(
+    app: AppHandle,
+    request: AiCompleteRequest,
+) -> Result<AiCompleteResponse, String> {
+    let codex_connection = uses_codex_app_server(request.ai_config.as_ref());
     let vision_fallback = request.vision_model_fallback.unwrap_or(false);
     let model = request
         .model
@@ -2116,11 +2585,14 @@ async fn ai_complete(request: AiCompleteRequest) -> Result<AiCompleteResponse, S
 
     let mut captured_at_ms: Option<u64> = None;
     let mut raw_screenshot_retained: Option<bool> = None;
+    let mut image_data_url: Option<String> = None;
+    let codex_prompt = request.prompt.clone();
 
     let input = if request.capture_screen.unwrap_or(false) {
         let timestamp = now_ms();
         let image_base64 = capture_screen_png_base64()?;
         let data_url = format!("data:image/png;base64,{image_base64}");
+        image_data_url = Some(data_url.clone());
         captured_at_ms = Some(timestamp);
         raw_screenshot_retained = Some(false);
         json!([{
@@ -2133,6 +2605,25 @@ async fn ai_complete(request: AiCompleteRequest) -> Result<AiCompleteResponse, S
     } else {
         json!(request.prompt)
     };
+
+    if codex_connection {
+        let (output_text, model) = complete_with_codex_async(
+            app,
+            Some(model),
+            request.instructions,
+            codex_prompt,
+            request.response_format,
+            image_data_url,
+        )
+        .await?;
+        return Ok(AiCompleteResponse {
+            output_text,
+            model,
+            captured_at_ms,
+            raw_screenshot_retained,
+        });
+    }
+    let (api_key, base_url) = get_ai_credentials(request.ai_config.as_ref())?;
 
     let mut body = json!({
         "model": model,
@@ -2367,6 +2858,93 @@ mod cloud_oauth_tests {
     }
 }
 
+#[cfg(test)]
+mod codex_app_server_tests {
+    use super::{
+        codex_output_schema, codex_thread_start_params, codex_turn_start_params,
+        select_codex_model,
+    };
+    use serde_json::json;
+    use std::path::Path;
+
+    #[test]
+    fn extracts_only_responses_json_schemas_for_codex_turns() {
+        let schema = json!({
+            "type": "json_schema",
+            "name": "weekform_result",
+            "strict": true,
+            "schema": {
+                "type": "object",
+                "required": ["answer"],
+                "properties": { "answer": { "type": "string" } }
+            }
+        });
+
+        assert_eq!(
+            codex_output_schema(&schema),
+            Some(schema["schema"].clone())
+        );
+        assert_eq!(codex_output_schema(&json!({ "type": "text" })), None);
+    }
+
+    #[test]
+    fn codex_threads_are_ephemeral_and_cannot_write_or_request_approval() {
+        let params = codex_thread_start_params(
+            "gpt-5.6-sol",
+            Path::new("/tmp/weekform-codex-workspace"),
+            "Return a bounded Weekform result.",
+        );
+
+        assert_eq!(params["ephemeral"], true);
+        assert_eq!(params["approvalPolicy"], "never");
+        assert_eq!(params["sandbox"], "read-only");
+        assert_eq!(params["model"], "gpt-5.6-sol");
+        assert_eq!(params["serviceName"], "weekform");
+        assert!(params["baseInstructions"]
+            .as_str()
+            .expect("base instructions")
+            .contains("Do not use tools"));
+    }
+
+    #[test]
+    fn codex_turns_receive_the_existing_schema_and_optional_in_memory_image() {
+        let params = codex_turn_start_params(
+            "thread-1",
+            "Summarize only this supplied context.",
+            Some(json!({ "type": "object" })),
+            Some("data:image/png;base64,c3ludGhldGlj"),
+        );
+
+        assert_eq!(params["threadId"], "thread-1");
+        assert_eq!(params["outputSchema"], json!({ "type": "object" }));
+        assert_eq!(params["input"][0]["type"], "text");
+        assert_eq!(params["input"][1]["type"], "image");
+        assert_eq!(
+            params["input"][1]["url"],
+            "data:image/png;base64,c3ludGhldGlj"
+        );
+    }
+
+    #[test]
+    fn model_selection_prefers_the_saved_model_then_the_catalog_default() {
+        let models = json!({
+            "data": [
+                { "id": "gpt-5.4", "isDefault": false },
+                { "id": "gpt-5.6-sol", "isDefault": true }
+            ]
+        });
+
+        assert_eq!(
+            select_codex_model(Some("gpt-5.4"), &models).expect("saved model"),
+            "gpt-5.4"
+        );
+        assert_eq!(
+            select_codex_model(Some("retired-model"), &models).expect("default model"),
+            "gpt-5.6-sol"
+        );
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Load local development configuration without overriding exported variables.
@@ -2405,8 +2983,8 @@ pub fn run() {
             set_clear_capacity_window_mode,
             set_default_window_mode,
             get_env_ai_key_status,
-            connect_openai_via_codex,
-            connect_openai_via_chatgpt,
+            connect_codex_via_chatgpt,
+            disconnect_codex,
             start_cloud_oauth,
             calendar_sources::calendar_source_statuses,
             calendar_sources::connect_calendar_source,

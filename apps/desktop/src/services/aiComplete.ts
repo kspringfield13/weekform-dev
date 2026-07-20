@@ -7,12 +7,12 @@ import { withAiTimeout } from "../lib/aiTimeout";
  *
  * Every AI operation flows through this one Tauri command: the frontend owns
  * the operation-specific pieces (instructions, response schema, sampling) and
- * Rust keeps only the native concerns (credentials, HTTP). This keeps prompt
- * and schema tuning entirely in TypeScript.
+ * Rust keeps only the native concerns (credentials, direct HTTP or Codex
+ * app-server transport). This keeps prompt and schema tuning in TypeScript.
  *
  * Note: `aiConfig` is passed through verbatim. Rust accepts its camelCase
- * fields and resolves the provider-specific API key / base URL from env when
- * they are not supplied.
+ * fields. API-key mode resolves a provider-specific key/base URL; Codex mode
+ * delegates to the isolated native app-server and needs no Platform key.
  */
 export interface AiCompleteRequest {
   prompt: string;

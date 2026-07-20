@@ -352,9 +352,16 @@ export interface WeeklyNarrative {
 }
 
 export type AIProvider = "openai" | "grok" | "deepseek" | "custom";
+export type AIConnectionMode = "api_key" | "codex";
 
 export interface AIConfig {
   provider: AIProvider;
+  /**
+   * `api_key` uses the configured provider endpoint. `codex` delegates generation to
+   * a local Codex app-server authenticated with the user's ChatGPT workspace.
+   * Missing values are treated as `api_key` for persisted-state compatibility.
+   */
+  connectionMode?: AIConnectionMode;
   apiKey: string; // stored locally, not sent to cloud except for the chosen provider
   baseUrl?: string; // for custom or overrides
   model: string;

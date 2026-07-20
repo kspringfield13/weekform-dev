@@ -68,7 +68,7 @@ export function useAcceleration({
       accelerationAsync.fail(generationProviderUnsupportedMessage(provider));
       return;
     }
-    const auditSource = aiAuditSource(provider);
+    const auditSource = aiAuditSource(provider, "responses", aiConfig?.connectionMode);
     const startedAt = new Date().toISOString();
     const prompt = buildAccelerationPrompt({ weekRangeLabel: currentWeekRangeLabel, signals });
 

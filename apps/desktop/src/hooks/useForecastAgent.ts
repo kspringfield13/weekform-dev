@@ -83,7 +83,7 @@ export function useForecastAgent({
       forecastAsync.fail(message);
       return { ok: false, message };
     }
-    const auditSource = aiAuditSource(provider);
+    const auditSource = aiAuditSource(provider, "responses", aiConfig?.connectionMode);
     const startedAt = new Date().toISOString();
     const prompt = buildForecastAgentPrompt({
       currentWeekId,
@@ -200,7 +200,9 @@ export function useForecastAgent({
             reliable_new_work_capacity_pct: reliableNewWorkCapacityPct,
             confidence: normalizedConfidence,
             sent_to_provider: true,
-            store: false,
+            ...(aiConfig?.connectionMode === "codex"
+              ? { codex_thread_ephemeral: true }
+              : { store: false }),
           },
         }),
       ].slice(-1000));

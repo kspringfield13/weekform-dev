@@ -57,6 +57,10 @@ import {
   providerSupportsGeneration,
   upgradeRetiredAppDefault
 } from "../../services/aiProviders";
+import {
+  createCodexAIConfig,
+  isCodexConnection,
+} from "../../services/aiConnection";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { AgentMark } from "../common/AgentMark";
 import { CHAT_PROVIDERS } from "../../../../../packages/integrations/src/chat/chatSource";
@@ -192,7 +196,7 @@ export function SetupScreen({
   onDefaultWindowModeChange: (mode: WindowMode) => void;
   activeSettingsTab: SettingsTab;
   onActiveSettingsTabChange: (tab: SettingsTab) => void;
-  /** AI access exists (saved key or env fallback) — false grays the AI-dependent toggles. */
+  /** AI access exists (Codex plan, saved key, or env fallback). */
   aiAvailable: boolean;
   cloud: CloudController;
   resetConfirmationRequestId: number;
@@ -209,6 +213,7 @@ export function SetupScreen({
       : null
   );
   const [isTesting, setIsTesting] = useState(false);
+  const [isConnectingCodex, setIsConnectingCodex] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
   const settingsTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -243,7 +248,7 @@ export function SetupScreen({
   const isDirty = !aiConfig || JSON.stringify(draftConfig) !== JSON.stringify(aiConfig);
 
   const updateDraftConfig = (patch: Partial<AIConfig>) => {
-    const newConfig: AIConfig = { ...draftConfig, ...patch };
+    const newConfig: AIConfig = { ...draftConfig, connectionMode: "api_key", ...patch };
     if (patch.provider) {
       const preset = getAIProviderPreset(patch.provider);
       newConfig.baseUrl = preset.baseUrl;
@@ -263,6 +268,7 @@ export function SetupScreen({
   const saveAIConfig = () => {
     const config = {
       ...draftConfig,
+      connectionMode: "api_key" as const,
       apiKey: draftConfig.apiKey.trim(),
       baseUrl: draftConfig.baseUrl?.trim().replace(/\/+$/, ""),
       model: draftConfig.model.trim(),
@@ -278,7 +284,8 @@ export function SetupScreen({
   };
 
   const testConnection = async () => {
-    if (!draftConfig.apiKey.trim() || !draftConfig.baseUrl?.trim() || !draftConfig.model.trim()) {
+    const codexConnection = isCodexConnection(draftConfig);
+    if (!codexConnection && (!draftConfig.apiKey.trim() || !draftConfig.baseUrl?.trim() || !draftConfig.model.trim())) {
       setProviderStatus({ tone: "error", message: "Enter an API key, base URL, and model before testing." });
       return;
     }
@@ -292,13 +299,16 @@ export function SetupScreen({
 
     setIsTesting(true);
     setProviderStatus(null);
-    const testedConfig: AIConfig = {
-      ...draftConfig,
-      apiKey: draftConfig.apiKey.trim(),
-      baseUrl: draftConfig.baseUrl.trim().replace(/\/+$/, ""),
-      model: draftConfig.model.trim(),
-      visionModel: draftConfig.visionModel?.trim() || undefined
-    };
+    const testedConfig: AIConfig = codexConnection
+      ? draftConfig
+      : {
+          ...draftConfig,
+          connectionMode: "api_key",
+          apiKey: draftConfig.apiKey.trim(),
+          baseUrl: draftConfig.baseUrl!.trim().replace(/\/+$/, ""),
+          model: draftConfig.model.trim(),
+          visionModel: draftConfig.visionModel?.trim() || undefined
+        };
     try {
       const result = await invoke<TestConnectionResponse>("test_ai_connection", {
         request: {
@@ -316,6 +326,56 @@ export function SetupScreen({
     } finally {
       setIsTesting(false);
     }
+  };
+
+  const connectCodexPlan = async () => {
+    if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
+      setProviderStatus({
+        tone: "error",
+        message: "ChatGPT/Codex sign-in needs the desktop app."
+      });
+      return;
+    }
+    setIsConnectingCodex(true);
+    setProviderStatus(null);
+    try {
+      const result = await invoke<{ model: string; planType: string; message: string }>(
+        "connect_codex_via_chatgpt"
+      );
+      const config = createCodexAIConfig(result.model);
+      setDraftConfig(config);
+      setAiConfig(config);
+      setProviderStatus({ tone: "success", message: result.message });
+    } catch (error) {
+      setProviderStatus({
+        tone: "error",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      setIsConnectingCodex(false);
+    }
+  };
+
+  const switchToApiKey = async () => {
+    if (isCodexConnection(aiConfig) && "__TAURI_INTERNALS__" in window) {
+      setIsConnectingCodex(true);
+      setProviderStatus(null);
+      try {
+        await invoke("disconnect_codex");
+      } catch (error) {
+        setProviderStatus({
+          tone: "error",
+          message: `Could not clear the Weekform Codex sign-in: ${error instanceof Error ? error.message : String(error)}`
+        });
+        setIsConnectingCodex(false);
+        return;
+      }
+      setIsConnectingCodex(false);
+    }
+    const config = createDefaultAIConfig("openai");
+    setDraftConfig(config);
+    setAiConfig(null);
+    setProviderStatus({ tone: "info", message: "Codex sign-in cleared. Enter a provider API key to reconnect." });
   };
 
   const exportLedger = (format: ExportFormat) => {
@@ -533,7 +593,7 @@ export function SetupScreen({
         <div className="settings-row-icon"><Eye size={18} aria-hidden /></div>
         <div>
           <h3>Visual context</h3>
-          <p>Optional screenshot analysis for sustained sessions. Images are sent to your chosen AI provider with `store: false` (where supported), then deleted locally.</p>
+          <p>Optional screenshot analysis for sustained sessions. API-key requests use `store: false` where supported; Codex-plan requests use ephemeral threads. Temporary screenshots are deleted locally before the result is stored.</p>
         </div>
         <div className="settings-row-status">
           <strong>{visualContextEnabled ? "On" : "Off"}</strong>
@@ -665,15 +725,17 @@ export function SetupScreen({
         <div>
           <h2>AI assistance</h2>
           <span>
-            {aiConfig?.apiKey
-              ? `Configured — ${getAIProviderPreset(aiConfig.provider).label} · ${aiConfig.model}. Every AI feature stays reviewable.`
-              : "Optional. One provider key unlocks classification, the Review Copilot, forecasts, summaries, and the Agent."}
+            {isCodexConnection(aiConfig)
+              ? `Configured — ChatGPT/Codex plan · ${aiConfig?.model}. Every AI feature stays reviewable.`
+              : aiConfig?.apiKey
+                ? `Configured — ${getAIProviderPreset(aiConfig.provider).label} · ${aiConfig.model}. Every AI feature stays reviewable.`
+                : "Optional. Use a ChatGPT/Codex plan or provider API key for classification, forecasts, summaries, and the Agent."}
           </span>
         </div>
       </div>
 
       <div className="ai-assistance">
-          <p>Raw activity metadata stays in local storage. AI features send only the data required for classification, forecasts, and summaries to the provider you select.</p>
+          <p>Raw activity metadata stays in local storage. AI features send only the compact context required for the feature you invoke to the connection you select.</p>
           <p>Window titles and screenshots may include sensitive details. Pause tracking or disable visual context before handling confidential work.</p>
 
           <div className="ai-provider">
@@ -682,7 +744,7 @@ export function SetupScreen({
                 <span className="ai-provider-icon"><PlugZap size={17} aria-hidden /></span>
                 <div>
                   <strong>AI Provider</strong>
-                  <small><Lock size={12} aria-hidden /> API keys and endpoints are stored locally only.</small>
+                  <small><Lock size={12} aria-hidden /> API keys stay local; Codex-plan tokens remain managed by Codex.</small>
                 </div>
               </div>
               {selectedPreset.docsUrl && (
@@ -698,7 +760,43 @@ export function SetupScreen({
               )}
             </div>
 
-            <div className="ai-form">
+            {isCodexConnection(draftConfig) ? (
+              <div className="ai-form">
+                <div className="ai-field">
+                  <strong>ChatGPT/Codex plan</strong>
+                  <small>
+                    OpenAI manages browser sign-in and refresh through a Weekform-isolated Codex
+                    app-server. Weekform never receives or copies your OAuth token or a Platform API key.
+                  </small>
+                </div>
+                <div className="ai-field">
+                  <label htmlFor="ai-codex-model">Selected model</label>
+                  <input id="ai-codex-model" type="text" value={draftConfig.model} readOnly />
+                  <small>The available default comes from your ChatGPT workspace.</small>
+                </div>
+                <div className="ai-provider-actions">
+                  <button className="settings-control" type="button" onClick={testConnection} disabled={isTesting || isConnectingCodex} aria-busy={isTesting}>
+                    {isTesting ? <LoaderCircle className="spin" size={15} aria-hidden /> : <PlugZap size={15} aria-hidden />}
+                    {isTesting ? "Testing…" : "Test Connection"}
+                  </button>
+                  <button className="settings-control" type="button" onClick={() => void switchToApiKey()} disabled={isConnectingCodex}>
+                    {isConnectingCodex ? <LoaderCircle className="spin" size={15} aria-hidden /> : <RotateCcw size={15} aria-hidden />}
+                    Use an API key instead
+                  </button>
+                </div>
+              </div>
+            ) : (
+            <>
+              <div className="ai-field ai-codex-connect">
+                <strong>Already have a ChatGPT plan with Codex?</strong>
+                <small>Use your included Codex access without creating or pasting a Platform API key.</small>
+                <button className="settings-control" type="button" onClick={() => void connectCodexPlan()} disabled={isConnectingCodex} aria-busy={isConnectingCodex}>
+                  {isConnectingCodex ? <LoaderCircle className="spin" size={15} aria-hidden /> : <AgentMark />}
+                  {isConnectingCodex ? "Finish signing in your browser…" : "Use ChatGPT/Codex plan"}
+                </button>
+              </div>
+
+              <div className="ai-form">
               <div className="ai-field">
                 <label htmlFor="ai-provider">Provider</label>
                 <select
@@ -803,6 +901,8 @@ export function SetupScreen({
                 </button>
               </div>
             </div>
+            </>
+            )}
 
             <div
               className={`ai-provider-status${providerStatus ? ` is-${providerStatus.tone}` : ''}`}

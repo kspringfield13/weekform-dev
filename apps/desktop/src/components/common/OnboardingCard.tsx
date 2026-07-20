@@ -32,9 +32,9 @@ export function buildOnboardingSteps(status: OnboardingStatus): OnboardingStep[]
       hint: "Import an .ics export from Settings → Data sources",
     },
     {
-      label: "AI provider configured",
+      label: "AI connection configured",
       done: status.aiConfigured,
-      hint: "Add a provider key in Settings → AI assistance",
+      hint: "Use a ChatGPT/Codex plan or provider key in Settings → AI assistance",
     },
     {
       label: "First classification run",

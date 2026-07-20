@@ -238,7 +238,9 @@ const CURRENT_AI_AUDIT_SOURCES = new Set([
   "deepseek_responses_api",
   "deepseek_vision",
   "custom_responses_api",
-  "custom_vision"
+  "custom_vision",
+  "codex_app_server",
+  "codex_app_server_vision"
 ]);
 
 /** Drop retired audit variants and normalize usage-setting history to the current fields. */
@@ -317,8 +319,11 @@ function parseAIConfig(value: unknown): AIConfig | null {
   ) {
     return null;
   }
+  const connectionMode = value.connectionMode === "codex" ? "codex" : "api_key";
+  if (connectionMode === "codex" && value.provider !== "openai") return null;
   return {
     provider: value.provider as AIConfig["provider"],
+    connectionMode,
     apiKey: value.apiKey,
     model: value.model,
     ...(typeof value.baseUrl === "string" ? { baseUrl: value.baseUrl } : {}),

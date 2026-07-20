@@ -57,9 +57,14 @@ reset boundaries emit local audit records without storing credentials. Reset
 Local Data attempts to remove all three calendar connection records from
 Keychain in addition to clearing imported calendar events.
 
-## AI and OpenAI API Data
+## AI and OpenAI/Codex Data
 
-OpenAI is Weekform's default and recommended AI provider. A key can be configured in the app's local Settings, or through `OPENAI_API_KEY` in the repository's ignored `.env` file during development. Credentials are never compiled into the Vite bundle. Native classification, review, forecast, narrative, and visual-context requests are sent through the Tauri process. The conversational Agent may use its configured provider directly from the webview so its tools can access current in-memory workload state; in that path, the configured key is available to the running webview and remains stored only in local prototype state.
+OpenAI is Weekform's default and recommended AI provider. AI is optional and supports two distinct connection boundaries:
+
+- **Provider API key.** A key can be configured in local Settings, or through `OPENAI_API_KEY` in the repository's ignored `.env` file during development. Credentials are never compiled into the Vite bundle. Native classification, review, forecast, narrative, and visual-context requests are sent through the Tauri process. The conversational Agent may use its configured provider directly from the webview so its tools can access current in-memory workload state; in that path, the configured key is available to the running webview and remains stored only in local prototype state. These OpenAI Responses API requests set `store: false`.
+- **ChatGPT/Codex plan.** The native app starts OpenAI's Codex app-server and asks it to perform OpenAI-managed ChatGPT sign-in in the system browser. Weekform does not request a Platform API key and does not read, copy, return, log, export, or place OAuth tokens in React state. It uses a Weekform-owned `CODEX_HOME` and empty working directory rather than the user's normal Codex home or repository. macOS Keychain storage is required; if Codex falls back to a local `auth.json`, Weekform removes that file and rejects the connection. Reset Local Data and “Use an API key instead” ask that isolated app-server to sign out, then remove Weekform's Codex home and empty working directory.
+
+The Codex-plan app-server is discovered from `WEEKFORM_CODEX_BINARY`, the ChatGPT desktop app bundle, or a local Codex CLI installation. Weekform disables Codex apps, plugins, hooks, skills, browsing, shell/file tools, computer use, multi-agent features, and workspace dependency discovery. Each generation uses a new read-only, approval-free, ephemeral thread in the empty Weekform working directory, with only the feature prompt, optional in-memory image, and output schema. “Ephemeral” prevents Weekform's Codex thread from being retained in the local Codex session history; OpenAI still processes the request under the signed-in ChatGPT workspace's plan, data controls, retention, and usage limits. This route does not use or claim the Responses API `store: false` option.
 
 When an AI feature runs, Weekform sends the prompt context required by that feature to the selected provider. Classification, review suggestions, and forecasts are user-triggered; weekly narrative generation can run automatically after workload evidence exists.
 
@@ -73,7 +78,7 @@ Depending on the feature, prompt context can include:
 - capacity snapshots
 - manager-summary context
 
-Requests set `store: false`. Users should still avoid enabling or invoking AI features when the included work metadata is not permitted to leave their device or organization.
+Users should still avoid enabling or invoking AI features when the included work metadata is not permitted to leave their device or organization.
 
 ## Visual Context
 
@@ -83,7 +88,7 @@ When enabled, the app may:
 
 1. Capture the current macOS screen after a sustained activity session.
 2. Write the image to a temporary PNG.
-3. Read and encode the image for an OpenAI API request.
+3. Read and encode the image for the selected API-key or Codex-plan request.
 4. Attempt to delete the temporary local file immediately after a successful read and before the provider request.
 5. Store only the derived text insight and audit metadata locally.
 
@@ -231,7 +236,7 @@ has not been applied or verified against a live Supabase project here.
 - **Private mode / Pause Tracking** stops new active-window and visual-context capture.
 - **Visual Context** can be enabled or disabled independently.
 - **Exclude** removes a work block from the reviewed workload model.
-- **Reset Prototype Data** clears the app's persisted prototype state, encrypted capture journal and journal key, Keychain cloud session, replica queue/policy, and team-sharing policy. Cloud rows already received remain until the user deletes them through the corresponding cloud control.
+- **Reset Prototype Data** clears the app's persisted prototype state, encrypted capture journal and journal key, isolated Codex-plan sign-in when configured, Keychain cloud session, replica queue/policy, and team-sharing policy. Cloud rows already received remain until the user deletes them through the corresponding cloud control.
 
 ## Not Collected
 

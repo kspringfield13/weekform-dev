@@ -96,7 +96,14 @@ export function aiProviderLabel(provider: AIProvider): string {
  * historical `openai_responses_api`/`openai_vision` ids are preserved for OpenAI so existing
  * (and demo) audit rows stay consistent. Humanized for display by `sourceLabel` (`lib/format`).
  */
-export function aiAuditSource(provider: AIProvider, kind: "responses" | "vision" = "responses"): string {
+export function aiAuditSource(
+  provider: AIProvider,
+  kind: "responses" | "vision" = "responses",
+  connectionMode?: AIConfig["connectionMode"],
+): string {
+  if (connectionMode === "codex") {
+    return kind === "vision" ? "codex_app_server_vision" : "codex_app_server";
+  }
   return kind === "vision" ? `${provider}_vision` : `${provider}_responses_api`;
 }
 
@@ -128,6 +135,7 @@ export function createDefaultAIConfig(provider: AIProvider = "openai"): AIConfig
   const preset = getAIProviderPreset(provider);
   return {
     provider,
+    connectionMode: "api_key",
     apiKey: "",
     baseUrl: preset.baseUrl,
     model: preset.model,
@@ -145,6 +153,7 @@ const RETIRED_APP_DEFAULTS: Partial<Record<AIProvider, Record<string, string>>> 
 };
 
 export function upgradeRetiredAppDefault(config: AIConfig): AIConfig {
+  if (config.connectionMode === "codex") return config;
   const replacement = RETIRED_APP_DEFAULTS[config.provider]?.[config.model];
   if (!replacement) return config;
 

@@ -573,6 +573,37 @@ The hackathon-readiness and provenance task is supplemental evidence:
   provider client ids; no Apple permission grant is claimed without an installed
   app interaction.
 
+- **July 20 first-run wizard handoff:** The branded Weekform introduction is
+  now step one of a single six-step setup wizard instead of a separate overlay.
+  Completing or deferring the wizard consistently opens Settings, where the
+  user can review data sources, privacy controls, optional AI, notifications,
+  retention, export/reset behavior, and the Replay walkthrough action before
+  exploring the rest of the app. The wizard no longer bypasses that review with
+  direct demo, tour, or Today shortcuts. Focused tests were written red-first
+  and pass 3/3 for step order and both exit outcomes; the full desktop service
+  suite passes 160/160 and the authoritative root build passes. Rendered browser
+  verification covered the introduction, all six steps, the final Settings
+  handoff, the defer handoff, the visible Replay walkthrough control,
+  keyboard-focused primary actions, and a clean console.
+
+- **July 20 ChatGPT/Codex-plan connection:** Weekform can now use OpenAI's
+  Codex app-server with OpenAI-managed ChatGPT sign-in instead of trying to mint
+  or copy a Platform API key from a subscription account. The native boundary
+  uses a Weekform-owned Codex home and empty workspace, requires macOS Keychain
+  credential storage, disables apps/plugins/hooks/browsing/shell/file/computer-
+  use/multi-agent tools, and creates one read-only, approval-free, ephemeral
+  thread per generation. Existing API-key/provider behavior remains available.
+  Classification, Review Copilot, forecast, narrative, acceleration, Agent chat,
+  and opt-in Visual Context all route through the selected connection; reset and
+  switching back to an API key sign out the isolated Codex account. A synthetic
+  live protocol check discovered the managed default model, honored an exact
+  JSON schema, completed without a tool call, and left the thread ephemeral.
+  Focused native tests pass 4/4, the full native suite passes 11/11, the desktop
+  service suite passes 163/163, the authoritative build and packaged macOS
+  app/DMG build pass, and `npm audit --audit-level=moderate` reports zero
+  vulnerabilities. A fresh Weekform-specific browser sign-in remains a user-
+  performed authentication step and is not claimed as completed by automation.
+
 - **Codex Session ID:** `019f75f1-73fc-7850-98a4-c23ec0aae893`
 - **Task title:** `Prepare Weekform for Build Week`
 - **Started:** July 18, 2026 at 11:56:26 AM EDT (15:56:26Z)

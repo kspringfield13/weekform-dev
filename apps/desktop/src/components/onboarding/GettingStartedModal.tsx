@@ -9,22 +9,20 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
-  Compass,
   Lock,
-  LogIn,
-  MonitorPlay,
   Radio,
+  Settings,
   Sparkles,
   Timer,
 } from "lucide-react";
+import { WeekformMark } from "../common/WeekformMark";
+import { GETTING_STARTED_STEP_IDS } from "../../services/gettingStartedFlow";
 
 /**
- * Post-walkthrough "Getting started" wizard — the bridge between learning where
- * things live (WalkthroughOverlay) and actually using the app. Shown once, full
- * screen, right after the walkthrough finishes. Walks the user through the key
- * tracking settings (tracking on/off, retention window, the optional AI layer)
- * with the local-first privacy promise up front, then points them at the demo
- * simulation and the Today dashboard.
+ * First-run setup wizard. Its opening step is the branded introduction, followed
+ * by the key tracking settings (tracking on/off, retention window, and optional
+ * AI). The final step hands the user to Settings, where they can review the full
+ * product controls and choose whether to replay the guided walkthrough.
  *
  * The wizard is deliberately stateless about the settings it configures:
  * `paused`/`retentionDays` are the app's live values and the change handlers are
@@ -35,20 +33,16 @@ import {
 // Mirrors SetupScreen's RETENTION_OPTIONS so the wizard offers the same windows.
 const RETENTION_CHOICES = [7, 14, 30, 90] as const;
 
-const STEP_IDS = ["privacy", "tracking", "retention", "ai", "start"] as const;
-
 export function GettingStartedModal({
   paused,
   retentionDays,
   aiConfigured,
+  usingCodexPlan,
   envOpenAiKeyPresent,
   onEnableTracking,
   onRetentionDaysChange,
   onConnectOpenAiKey,
-  onConnectViaChatGpt,
-  onConnectViaCodex,
-  onOpenDemo,
-  onStartTour,
+  onConnectViaCodexPlan,
   onDismiss,
 }: {
   /** Live tracking state — the tracking step flips to its confirmation state when false. */
@@ -57,6 +51,8 @@ export function GettingStartedModal({
   retentionDays: number | null;
   /** Whether an AI provider is already connected in Settings. */
   aiConfigured: boolean;
+  /** Whether that connection uses OpenAI-managed Codex app-server auth. */
+  usingCodexPlan: boolean;
   /** An OPENAI_API_KEY was found in the environment (.env) — AI calls already work. */
   envOpenAiKeyPresent: boolean;
   /** Turn tracking on (same audited path as the toolbar toggle). */
@@ -65,23 +61,15 @@ export function GettingStartedModal({
   onRetentionDaysChange: (value: number | null) => void;
   /** Save a pasted OpenAI API key as the provider config (OpenAI defaults). */
   onConnectOpenAiKey: (apiKey: string) => void;
-  /** Sign in with ChatGPT in the browser (OAuth); resolves a success message. */
-  onConnectViaChatGpt: () => Promise<string>;
-  /** Import an API key from the Codex CLI sign-in; resolves a success message. */
-  onConnectViaCodex: () => Promise<string>;
-  /** Open the simulated-week demo (finishes the wizard first). */
-  onOpenDemo: () => void;
-  /** Start the optional guided tour (finishes the wizard first). */
-  onStartTour: () => void;
-  /** Close the wizard — Finish, "I'll do this later", or Escape all land here. */
+  /** Sign in through the Codex app-server; Weekform never receives OAuth tokens. */
+  onConnectViaCodexPlan: () => Promise<string>;
+  /** Close the wizard and continue to Settings. */
   onDismiss: () => void;
 }) {
   const [stepIndex, setStepIndex] = useState(0);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [codexBusy, setCodexBusy] = useState(false);
-  const [chatGptBusy, setChatGptBusy] = useState(false);
   const [aiConnectError, setAiConnectError] = useState<string | null>(null);
-  const connectBusy = codexBusy || chatGptBusy;
 
   const connectPastedKey = () => {
     const key = apiKeyDraft.trim();
@@ -91,23 +79,11 @@ export function GettingStartedModal({
     setApiKeyDraft("");
   };
 
-  const connectViaChatGpt = async () => {
-    setChatGptBusy(true);
-    setAiConnectError(null);
-    try {
-      await onConnectViaChatGpt();
-    } catch (error) {
-      setAiConnectError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setChatGptBusy(false);
-    }
-  };
-
-  const connectViaCodex = async () => {
+  const connectViaCodexPlan = async () => {
     setCodexBusy(true);
     setAiConnectError(null);
     try {
-      await onConnectViaCodex();
+      await onConnectViaCodexPlan();
     } catch (error) {
       setAiConnectError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -121,8 +97,8 @@ export function GettingStartedModal({
   const stepTitleId = `${baseId}-step-title`;
 
   const isFirst = stepIndex === 0;
-  const isLast = stepIndex === STEP_IDS.length - 1;
-  const step = STEP_IDS[stepIndex];
+  const isLast = stepIndex === GETTING_STARTED_STEP_IDS.length - 1;
+  const step = GETTING_STARTED_STEP_IDS[stepIndex];
 
   // Mirror WalkthroughOverlay's a11y baseline: move focus onto the primary
   // action on mount, restore it to whatever had focus on close.
@@ -181,17 +157,40 @@ export function GettingStartedModal({
     >
       <div className="getting-started-backdrop" aria-hidden="true" />
       <div ref={cardRef} className="getting-started-card" onKeyDown={handleCardKeyDown}>
-        <header className="getting-started-header">
-          <h1 className="getting-started-title" id={titleId}>
-            You&rsquo;re Ready to Begin
-          </h1>
-          <p className="getting-started-intro">
-            A quick setup — every choice here can be changed later in Settings.
-          </p>
-        </header>
+        {step !== "intro" && (
+          <header className="getting-started-header">
+            <h1 className="getting-started-title" id={titleId}>
+              You&rsquo;re Ready to Begin
+            </h1>
+            <p className="getting-started-intro">
+              A quick setup — every choice here can be changed later in Settings.
+            </p>
+          </header>
+        )}
 
         {/* Keyed by step so each pane re-mounts and plays its enter transition. */}
-        <div className="getting-started-step" key={step}>
+        <div
+          className={`getting-started-step${step === "intro" ? " is-intro" : ""}`}
+          key={step}
+        >
+          {step === "intro" && (
+            <>
+              <span className="welcome-mark" aria-hidden="true">
+                <WeekformMark className="welcome-mark-svg" />
+              </span>
+              <h1 className="welcome-title" id={titleId}>
+                Welcome to Weekform
+              </h1>
+              <p className="welcome-tagline" id={stepTitleId}>
+                Local-first workload intelligence. See where your week actually goes — your
+                activity stays on this Mac.
+              </p>
+              <p className="welcome-footnote">
+                A one-minute setup comes next. The guided walkthrough is available from Settings.
+              </p>
+            </>
+          )}
+
           {step === "privacy" && (
             <section className="getting-started-section">
               <span className="getting-started-icon" aria-hidden="true">
@@ -207,8 +206,9 @@ export function GettingStartedModal({
                 </p>
                 <p>
                   The one exception is optional AI assistance: if you connect a provider later,
-                  only compact derived context (like session summaries) is sent to it — never your
-                  raw activity, and only for features you explicitly turn on.
+                  the feature-specific prompt is sent only when that feature runs. Classification
+                  can include app names and window titles; opt-in Visual Context can include a
+                  screenshot. Review the privacy controls before enabling either.
                 </p>
               </div>
             </section>
@@ -296,10 +296,10 @@ export function GettingStartedModal({
                 <h2 id={stepTitleId}>Connect AI — Weekform works best with it</h2>
                 {aiConfigured ? (
                   <p>
-                    OpenAI is connected. Session classification, weekly summaries, and
-                    next-week forecasts are ready to go — and every AI call is recorded in the
-                    audit log. You can change the provider or key anytime under Settings &rarr;
-                    AI&nbsp;Assistance.
+                    {usingCodexPlan ? "Your ChatGPT/Codex plan" : "OpenAI"} is connected. Session
+                    classification, weekly summaries, and next-week forecasts are ready to go —
+                    and every AI call is recorded in the audit log. You can change the connection
+                    anytime under Settings &rarr; AI&nbsp;Assistance.
                   </p>
                 ) : envOpenAiKeyPresent ? (
                   <>
@@ -310,8 +310,8 @@ export function GettingStartedModal({
                       so this environment is already talking to OpenAI, with no setup needed here.
                     </p>
                     <p>
-                      Only compact derived context is ever sent, every call is recorded in the
-                      audit log, and you can save a different key under Settings &rarr;
+                      Only the context required by the feature is sent, every call is recorded in
+                      the audit log, and you can save a different key under Settings &rarr;
                       AI&nbsp;Assistance to override it.
                     </p>
                   </>
@@ -320,8 +320,8 @@ export function GettingStartedModal({
                     <p>
                       AI is what turns raw activity into a helpful week: sessions classified into
                       work blocks, a drafted weekly summary, and a forecast of next week&rsquo;s
-                      capacity. Connect OpenAI now — only compact derived context is ever sent, your
-                      key stays on this Mac, and every call is recorded in the audit log.
+                      capacity. Connect with a Platform API key or your ChatGPT/Codex plan. Only
+                      feature-specific prompt context is sent, and every call is recorded in the audit log.
                     </p>
                     <form
                       className="getting-started-connect"
@@ -353,24 +353,18 @@ export function GettingStartedModal({
                       <button
                         className="getting-started-btn"
                         type="button"
-                        onClick={() => void connectViaChatGpt()}
-                        disabled={connectBusy}
-                        aria-busy={chatGptBusy}
-                      >
-                        <LogIn size={14} aria-hidden="true" />
-                        {chatGptBusy ? "Finish signing in your browser…" : "Sign in with ChatGPT"}
-                      </button>
-                      <button
-                        className="getting-started-btn"
-                        type="button"
-                        onClick={() => void connectViaCodex()}
-                        disabled={connectBusy}
+                        onClick={() => void connectViaCodexPlan()}
+                        disabled={codexBusy}
                         aria-busy={codexBusy}
                       >
                         <Sparkles size={14} aria-hidden="true" />
-                        {codexBusy ? "Checking your Codex sign-in…" : "Use my Codex subscription"}
+                        {codexBusy ? "Finish signing in your browser…" : "Use ChatGPT/Codex plan"}
                       </button>
                     </div>
+                    <p className="getting-started-connect-note">
+                      OpenAI manages sign-in through Codex. Weekform does not create, read, or copy
+                      a Platform API key or OAuth token.
+                    </p>
                     {aiConnectError && (
                       <p className="getting-started-connect-error" role="alert">
                         {aiConnectError}
@@ -383,54 +377,28 @@ export function GettingStartedModal({
           )}
 
           {step === "start" && (
-            <>
-              <section className="getting-started-section">
-                <span className="getting-started-icon" aria-hidden="true">
-                  <MonitorPlay size={17} />
-                </span>
-                <div>
-                  <h2 id={stepTitleId}>See it in action</h2>
-                  <p>
-                    Curious what a filled-in week looks like? Open the interactive demo — a
-                    simulated typical workday and work week — to see how Weekform visualizes
-                    activity, capacity, and summaries. Your own data is untouched, and you can
-                    leave the demo anytime.
-                  </p>
-                  <button
-                    className="getting-started-btn getting-started-step-action"
-                    type="button"
-                    onClick={onOpenDemo}
-                  >
-                    <MonitorPlay size={14} aria-hidden="true" /> Play the simulated week
-                  </button>
-                </div>
-              </section>
-              <section className="getting-started-section">
-                <span className="getting-started-icon" aria-hidden="true">
-                  <Compass size={17} />
-                </span>
-                <div>
-                  <h2>Want a quick tour first?</h2>
-                  <p>
-                    Optional: a 60-second walkthrough of where things live — Today&rsquo;s review
-                    queue, the Week capacity view, the Agent, and your History. You can also replay
-                    it anytime from Settings.
-                  </p>
-                  <button
-                    className="getting-started-btn getting-started-step-action"
-                    type="button"
-                    onClick={onStartTour}
-                  >
-                    <Compass size={14} aria-hidden="true" /> Take the tour
-                  </button>
-                </div>
-              </section>
-            </>
+            <section className="getting-started-section">
+              <span className="getting-started-icon" aria-hidden="true">
+                <Settings size={17} />
+              </span>
+              <div>
+                <h2 id={stepTitleId}>Review Weekform in Settings</h2>
+                <p>
+                  Next, Weekform will open Settings so you can review how activity, privacy,
+                  optional AI, notifications, retention, export, and reset work before exploring
+                  the rest of the app.
+                </p>
+                <p>
+                  Settings also includes the Replay walkthrough button whenever you want a guided
+                  tour of Today, Week, Agent, and History.
+                </p>
+              </div>
+            </section>
           )}
         </div>
 
         <div className="getting-started-progress" aria-hidden="true">
-          {STEP_IDS.map((id, i) => (
+          {GETTING_STARTED_STEP_IDS.map((id, i) => (
             <span
               key={id}
               className={
@@ -444,7 +412,7 @@ export function GettingStartedModal({
           ))}
         </div>
         <span className="sr-only">
-          Step {stepIndex + 1} of {STEP_IDS.length}
+          Step {stepIndex + 1} of {GETTING_STARTED_STEP_IDS.length}
         </span>
 
         <footer className="getting-started-actions">
@@ -468,7 +436,7 @@ export function GettingStartedModal({
                 onClick={onDismiss}
                 ref={primaryButtonRef}
               >
-                Go to Today <ArrowRight size={14} aria-hidden="true" />
+                Review Settings <ArrowRight size={14} aria-hidden="true" />
               </button>
             ) : (
               <button
@@ -477,7 +445,7 @@ export function GettingStartedModal({
                 onClick={() => setStepIndex((i) => i + 1)}
                 ref={primaryButtonRef}
               >
-                Next <ArrowRight size={14} aria-hidden="true" />
+                {isFirst ? "Get started" : "Next"} <ArrowRight size={14} aria-hidden="true" />
               </button>
             )}
           </div>

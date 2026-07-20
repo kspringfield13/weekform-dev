@@ -16,7 +16,7 @@ export const MIN_PROACTIVE_ALERT_GAP_MS = 90 * 60 * 1000;
 export const AI_CALL_TIMEOUT_MS = 60 * 1000;
 
 // Hover explanation for every AI-triggering button that is grayed out because no
-// AI access exists (no key saved in Settings and no OPENAI_API_KEY in the
-// environment). One shared string so the guidance reads identically everywhere.
+// AI access exists (no saved provider/Codex connection and no OPENAI_API_KEY
+// environment fallback). One shared string keeps guidance identical everywhere.
 export const AI_UNAVAILABLE_HINT =
-  "Needs an AI connection — connect OpenAI under Settings → AI Assistance to use this";
+  "Needs an AI connection — use a ChatGPT/Codex plan or provider API key under Settings → AI Assistance";
