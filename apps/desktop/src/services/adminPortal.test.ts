@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_ADMIN_PORTAL_PREFERENCES,
   DEFAULT_WEEKFORM_WEB_APP_URL,
+  buildManagerRosterMember,
   getAdminPortalPreferencesStorage,
   getManagerAccessSignInUrl,
   getManagerModeMemberships,
@@ -63,7 +64,60 @@ test("Manager Access filters the roster by query, team, category, and risk", () 
   );
 });
 
-test("Manager Access opens briefings and answers prompts from synthetic approved evidence", () => {
+test("Manager Access derives honest live roster state without inventing missing metrics", () => {
+  const current = buildManagerRosterMember({
+    id: "team-1:user-1",
+    userId: "user-1",
+    teamId: "team-1",
+    teamName: "Delivery",
+    role: "manager",
+    joinedAt: "2026-07-01T00:00:00.000Z",
+    displayName: "Morgan Manager",
+    email: "manager@example.test",
+    isSelf: true,
+    snapshot: {
+      weekId: "2026-W30",
+      syncedAt: "2026-07-20T20:00:00.000Z",
+      shareLevel: "summary",
+      reliableCapacityPct: 12,
+      reactivePct: 44,
+      meetingPct: null,
+      fragmentedPct: 38,
+      summaryConfidence: 0.8,
+      reviewedBlocks: 7,
+      eligibleBlocks: 10,
+    },
+  }, "2026-07-20T22:00:00.000Z");
+
+  assert.equal(current.name, "Morgan Manager");
+  assert.equal(current.isSelf, true);
+  assert.equal(current.email, "manager@example.test");
+  assert.equal(current.risk, "attention");
+  assert.equal(current.capacity, 12);
+  assert.equal(current.meetings, null);
+  assert.equal(current.review, 70);
+  assert.equal(current.category, "Summary");
+
+  const notSharing = buildManagerRosterMember({
+    id: "team-1:user-2",
+    userId: "user-2",
+    teamId: "team-1",
+    teamName: "Delivery",
+    role: "member",
+    joinedAt: "2026-07-02T00:00:00.000Z",
+    displayName: null,
+    email: null,
+    isSelf: false,
+    snapshot: null,
+  }, "2026-07-20T22:00:00.000Z");
+
+  assert.equal(notSharing.name, "Team member");
+  assert.equal(notSharing.risk, "not-sharing");
+  assert.equal(notSharing.capacity, null);
+  assert.equal(notSharing.review, null);
+});
+
+test("Manager Access never answers a manager prompt from placeholder evidence", () => {
   const initial = createInitialManagerWorkspaceState();
   const briefing = managerWorkspaceReducer(initial, { type: "open-briefing" });
   assert.equal(briefing.page, "agent");
@@ -74,8 +128,8 @@ test("Manager Access opens briefings and answers prompts from synthetic approved
     prompt: "What can this team absorb next week?",
   });
   assert.equal(answered.agentPrompt, "What can this team absorb next week?");
-  assert.match(answered.agentAnswer ?? "", /approved snapshots/i);
-  assert.match(answered.agentAnswer ?? "", /small commitment/i);
+  assert.match(answered.agentAnswer ?? "", /live, RLS-scoped team workspace/i);
+  assert.doesNotMatch(answered.agentAnswer ?? "", /12 approved|small commitment/i);
 });
 
 test("Manager Access keeps coordination actions approval-gated and records the approved outcome", () => {

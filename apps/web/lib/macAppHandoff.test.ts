@@ -1,0 +1,62 @@
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import test from "node:test";
+
+const launcherUrl = new URL("../components/MacAppLink.tsx", import.meta.url);
+const tauriConfig = JSON.parse(
+  readFileSync(new URL("../../desktop/src-tauri/tauri.conf.json", import.meta.url), "utf8"),
+) as {
+  plugins?: { "deep-link"?: { desktop?: { schemes?: string[] } } };
+};
+const cargoSource = readFileSync(
+  new URL("../../desktop/src-tauri/Cargo.toml", import.meta.url),
+  "utf8",
+);
+const nativeSource = readFileSync(
+  new URL("../../desktop/src-tauri/src/lib.rs", import.meta.url),
+  "utf8",
+);
+const macActivationSourceUrl = new URL(
+  "../../desktop/src-tauri/src/macos_app_activation.m",
+  import.meta.url,
+);
+const buildSource = readFileSync(
+  new URL("../../desktop/src-tauri/build.rs", import.meta.url),
+  "utf8",
+);
+
+test("Mac calls to action attempt the installed app before their download fallback", () => {
+  assert.equal(existsSync(launcherUrl), true);
+  const source = existsSync(launcherUrl) ? readFileSync(launcherUrl, "utf8") : "";
+
+  assert.match(source, /weekform:\/\/open/);
+  assert.match(source, /window\.addEventListener\("blur"/);
+  assert.match(source, /visibilitychange/);
+  assert.match(source, /window\.location\.assign\(fallbackHref\)/);
+  assert.match(source, /href=\{fallbackHref\}/);
+});
+
+test("the packaged Mac app owns the Weekform scheme and focuses one existing instance", () => {
+  assert.deepEqual(
+    tauriConfig.plugins?.["deep-link"]?.desktop?.schemes,
+    ["weekform"],
+  );
+  assert.match(cargoSource, /tauri-plugin-deep-link\s*=\s*"2"/);
+  assert.match(
+    cargoSource,
+    /tauri-plugin-single-instance\s*=\s*\{[^}]*version\s*=\s*"2"[^}]*features\s*=\s*\["deep-link"\]/s,
+  );
+  assert.match(nativeSource, /tauri_plugin_single_instance::init/);
+  assert.match(nativeSource, /tauri_plugin_deep_link::init/);
+  assert.match(nativeSource, /show_large_dashboard/);
+  assert.equal(existsSync(macActivationSourceUrl), true);
+  const macActivationSource = existsSync(macActivationSourceUrl)
+    ? readFileSync(macActivationSourceUrl, "utf8")
+    : "";
+  assert.match(macActivationSource, /activateWithOptions/);
+  assert.match(macActivationSource, /currentApplication.+unhide/s);
+  assert.match(macActivationSource, /\[NSApp activate\]/);
+  assert.doesNotMatch(macActivationSource, /ActivateIgnoringOtherApps/);
+  assert.match(buildSource, /macos_app_activation\.m/);
+  assert.match(nativeSource, /weekform_activate_app/);
+});

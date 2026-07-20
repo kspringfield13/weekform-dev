@@ -349,6 +349,30 @@ session and adds no portal-specific browser storage or appearance cookie. It
 filters active team memberships to owner and manager roles before presenting a
 team workspace; authorization for team records still comes from RLS.
 
+Inside an authorized Web team workspace, active owners and managers can see
+each roster member's display name and account email address so they can identify
+the people they coordinate with. Email remains in Supabase Auth and is returned
+only through a security-definer roster RPC that rechecks the caller's active
+owner/manager membership for the requested team. Plain members, outsiders, and
+anonymous callers cannot execute that identity read. The address is not copied
+into a public profile or workload table, persisted in browser storage, included
+in the team briefing's AI input, or treated as a member-approved workload
+signal.
+
+Desktop Manager Mode uses the same persisted Weekform account session and the
+public Supabase configuration already used by Account & Sharing. On entry or a
+visible refresh, it reads only active memberships, team names, manager-authorized
+member display names and account emails, roles, and the allowlisted fields from each member's latest
+approved workload snapshot. The signed-in owner or manager remains in the team
+roster and is labeled as the current user; their workload values appear only if
+they approved and synced a snapshot under the same contract. RLS reauthorizes
+every read. A roster, profile, or snapshot read failure fails closed and clears
+the rendered team-data path instead of mixing partial results with cached or
+placeholder values. Today, Week, Agent, and History derive their local summary
+only from that response; approval-gated briefings, manager actions, and the full
+server audit trail remain in the authenticated Web workspace. Minimize, resize,
+appearance, and navigation controls do not change this data boundary.
+
 The sign-in page also supports passwordless email Magic Links through Supabase
 Auth. The submitted email address is processed by Supabase and the configured
 email-delivery service solely to deliver the one-time sign-in link; the flow
@@ -488,7 +512,7 @@ The Weekform portion of Live simulation uses the actual application components a
 
 Simulation JSON/CSV exports are prepared locally and repeat the synthetic provenance markers. An audit receipt records that an export was prepared; it does not claim the operating system completed the save. Archiving hides a run from the active simulation view without deleting it. Permanent run deletion cascades through generated members, artifacts, and week snapshots; a minimal deletion receipt remains without preserving the deleted payload. Personal backup/reset and simulation export/delete are separate controls and do not imply one another.
 
-The simulator migrations and RLS tests in this repository are review artifacts; they have not been applied to or verified against a live Supabase project here. Local Manager Access and Live simulation are available only in Vite development mode. Published synthetic demo credentials create a tab-scoped `sessionStorage` marker and grant no production or cloud access. The desktop Manager Mode entry is shown only while the cloud account is signed in and has an active owner or manager membership. Its current manager workspace remains visibly labeled as a synthetic preview: it uses synthetic, allowlisted summary metrics only, does not read personal `PersistedAppState`, and does not widen the production manager data contract. Its question responses are deterministic local demo copy and make no model or network request. Proposed coordination actions remain approval-gated and, when approved, are added only to the current in-memory synthetic history; they do not notify a person or mutate production data. Local workspace-only monochrome theme, density, and motion preferences are stored separately in browser `localStorage`; they contain no workload data and can be reset from the workspace. The authenticated Next.js `/manager-access` route is the production web entry for owner/manager team memberships; legacy `/admin` only redirects there. Production Simulation execution remains unconnected until the migrations, Supabase environment, real user, explicit simulator grant, and live RLS proof are in place. Browser-development Generate span runs use a simulator-only IndexedDB database rather than personal Weekform state; local prototype storage remains unencrypted. Live simulation's embedded Weekform state is not written to that database.
+The simulator migrations and RLS tests in this repository are review artifacts; they have not been applied to or verified against a live Supabase project here. Local Live simulation is available only in Vite development mode. Published synthetic demo credentials create a tab-scoped `sessionStorage` marker and grant no production or cloud access. The production desktop Manager Mode entry is separate from Simulation: it appears only while the cloud account is signed in with an active owner or manager membership and loads the RLS-scoped roster and approved snapshots described above. It never mixes simulator rows into real team totals. Local workspace-only monochrome theme, density, and motion preferences are stored separately in browser `localStorage`; they contain no workload data and can be reset from the workspace. The authenticated Next.js `/manager-access` route remains the production web entry for team briefings, approval-gated actions, and full team administration; legacy `/admin` only redirects there. Production Simulation execution remains unconnected until the migrations, Supabase environment, real user, explicit simulator grant, and live RLS proof are in place. Browser-development Generate span runs use a simulator-only IndexedDB database rather than personal Weekform state; local prototype storage remains unencrypted. Live simulation's embedded Weekform state is not written to that database.
 
 Current modeling limitations also matter to privacy and interpretation: capacity still uses a fixed 40-hour denominator, PTO does not redefine that denominator, and some time-of-day inference uses the host machine timezone rather than the configured scenario timezone. Simulation results are prototype planning evidence, not observed facts or organizational benchmarks.
 

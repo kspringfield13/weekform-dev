@@ -59,7 +59,7 @@ OAuth token broker. Neither secret is bundled into browser or desktop code.
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase publishable (anon) key |
 | `WEEKFORM_ARTIFACT_BUCKET` | Optional. Private Supabase Storage bucket holding the official packaged Mac artifact |
-| `WEEKFORM_ARTIFACT_PATH` | Optional. Object path within that bucket, e.g. `releases/Weekform_0.1.0_universal.dmg` |
+| `WEEKFORM_ARTIFACT_PATH` | Optional. Immutable object path within that bucket: `releases/stable/<sha256>/Weekform_0.1.0_universal.dmg` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Optional, **secret**. Used only in the server-owned official and beta artifact routes to mint short-lived signed URLs; never sent to the browser |
 | `WEEKFORM_ARTIFACT_DEVELOPER_ID_SIGNED` | Release proof. Must be exactly `true` only after Developer ID signature verification succeeds |
 | `WEEKFORM_ARTIFACT_NOTARIZED` | Release proof. Must be exactly `true` only after Apple notarization succeeds |
@@ -249,24 +249,28 @@ minting a short-lived private Storage URL.
 
 The code retains an isolated **Beta Version** route for authenticated internal
 evaluation, but production no longer configures or advertises it: the signed,
-unnotarized beta was rejected by Gatekeeper. While the official release remains
-pending, `/download` offers the public source ZIP and guided local-build
-installer instead. That installer places one copy in Applications and removes
-its redundant `target/release/bundle/macos/Weekform.app` build output after a
-successful install. Beta configuration can never satisfy or weaken the
-official signed/notarized/stapled release gate.
+unnotarized beta was rejected by Gatekeeper. The download page does not
+substitute a source ZIP or a quarantine workaround for the trusted installer.
+Beta configuration can never satisfy or weaken the official
+signed/notarized/stapled release gate.
 
 **To publish a trusted private artifact:**
 
-1. Build the universal DMG, sign the app with a Developer ID Application
-   identity, submit it to Apple's notarization service, staple the accepted
-   ticket, and verify the signature, Gatekeeper assessment, notarization ticket,
-   mounted contents, architectures, version, and minimum macOS requirement.
-2. Compute the SHA-256 of those exact verified bytes. Create a **private**
-   Supabase Storage bucket (for example `weekform-releases`) and upload the same
-   DMG at `releases/Weekform_0.1.0_universal.dmg`. Keep public/anon access
-   closed; only the server-side service role should read it.
-3. Set, in the deployment environment (never commit secrets or fabricated proof):
+1. Install the Developer ID Application certificate and save Apple notarization
+   credentials in Keychain under the `weekform-notary` profile. Do not put an
+   Apple password or App Store Connect private key in this repository.
+2. From a reviewed, clean worktree, run `./scripts/release-mac.command`. The
+   script builds the universal DMG, verifies Developer ID authority, Team ID,
+   hardened runtime, bundle ID, `weekform://` registration, both architecture
+   slices, and DMG integrity; submits to Apple; requires `Accepted`; staples and
+   validates the ticket; and requires Gatekeeper acceptance for the DMG and its
+   mounted app.
+3. The same script computes SHA-256 only after stapling, uploads the exact bytes
+   to the **private** Supabase Storage path
+   `releases/stable/<sha256>/Weekform_0.1.0_universal.dmg`, downloads them again,
+   and refuses to continue unless the remote checksum matches.
+4. Only after that byte comparison, the script sets these deployment values
+   (never commit secrets or fabricated proof):
    - `WEEKFORM_ARTIFACT_BUCKET` — the bucket name from step 2
    - `WEEKFORM_ARTIFACT_PATH` — the object path from step 2
    - `SUPABASE_SERVICE_ROLE_KEY` — from Project Settings -> API -> service
@@ -278,14 +282,16 @@ official signed/notarized/stapled release gate.
    - `WEEKFORM_ARTIFACT_VERIFIED_AT` — the verification run's ISO timestamp
    - optionally `WEEKFORM_ARTIFACT_SIGNED_URL_TTL_SECONDS` (default `300`,
      clamped to `30`-`3600`)
-4. Redeploy. The single "Download now" action hits
+5. The script then redeploys. The single official action hits
    `/download/artifact`, which re-checks the session server-side
    and 307-redirects to a signed URL minted with
    `storage.from(bucket).createSignedUrl(path, ttl)`. The service-role key is
    read only inside that route handler and is never sent to the browser or
    included in any client bundle.
-5. Smoke-test the deployed download, compare its bytes with the recorded
-   checksum, and update `RELEASE_INFO` in `apps/web/lib/download.ts` to match.
+6. Smoke-test the deployed authenticated download and a clean Mac install. The
+   installed-app handoff should open/focus one existing Weekform window; a Mac
+   without Weekform should fall back to the authenticated installer route.
+   Update `RELEASE_INFO` in `apps/web/lib/download.ts` for every later version.
 
 The Web app validates that proof metadata is complete and well-formed; the
 release operator or CI pipeline remains responsible for making those
@@ -321,7 +327,7 @@ attestations true and for comparing the uploaded bytes with the checksum.
   "Testing status" above).
 - The private Beta Version artifact is Developer ID signed but not
   Apple-notarized or stapled. Gatekeeper rejects it, so its production download
-  configuration is retired; the source-build fallback remains available.
+  configuration is retired and it is not a public installation path.
 - Invites are member-role only; manager-role invites, invite revocation UI,
   and role changes are not built yet (revocation is permitted by RLS but has
   no button).

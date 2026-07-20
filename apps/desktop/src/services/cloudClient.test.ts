@@ -19,6 +19,7 @@ import {
   deleteMySnapshotsForTeam,
   fetchPendingReviewCommandsV1,
   fetchPendingReviewCommandsV2,
+  fetchManagerTeamWorkspace,
   fetchTeamMemberships,
   getCloudEnv,
   isCloudConfigured,
@@ -475,6 +476,117 @@ test("fetchTeamMemberships parses server share_policy defensively (A6)", async (
         acceptedMetrics: null
       });
     }
+  );
+});
+
+test("fetchManagerTeamWorkspace includes the signed-in manager and joins approved snapshots", async () => {
+  const managerId = "10000000-0000-4000-8000-000000000001";
+  const memberId = "10000000-0000-4000-8000-000000000002";
+  const teamId = "20000000-0000-4000-8000-000000000001";
+  const session: PersistedCloudSession = {
+    ...makeSession(),
+    userId: managerId,
+    email: "manager@example.test",
+    displayName: "Morgan Manager",
+  };
+
+  await withFetch(
+    (url) => {
+      if (url.includes("/team_memberships?")) {
+        return jsonResponse([
+          { user_id: managerId, role: "manager", joined_at: "2026-07-01T12:00:00.000Z" },
+          { user_id: memberId, role: "member", joined_at: "2026-07-02T12:00:00.000Z" },
+        ]);
+      }
+      if (url.includes("/rpc/get_team_roster_identities")) {
+        return jsonResponse([
+          { user_id: managerId, display_name: "Morgan Manager", email: "manager@example.test" },
+          { user_id: memberId, display_name: "  Riley Member  ", email: "riley@example.test" },
+        ]);
+      }
+      if (url.includes("/latest_team_snapshots?")) {
+        return jsonResponse([
+          {
+            user_id: managerId,
+            team_id: teamId,
+            week_id: "2026-W30",
+            synced_at: "2026-07-20T21:10:00.000Z",
+            share_level: "summary",
+            reliable_new_work_capacity_pct: "32",
+            reactive_pct: "18",
+            meeting_pct: null,
+            fragmented_work_pct: "21",
+            summary_confidence: "0.84",
+            reviewed_blocks: 9,
+            eligible_blocks: 10,
+          },
+        ]);
+      }
+      return jsonResponse({ message: "unexpected request" }, 500);
+    },
+    async (requests) => {
+      const result = await fetchManagerTeamWorkspace(env, session, [{
+        teamId,
+        teamName: "Delivery",
+        role: "manager",
+        sharePolicy: null,
+      }]);
+
+      assert.ok(result.ok);
+      assert.equal(result.value.members.length, 2);
+      assert.deepEqual(result.value.members[0], {
+        id: `${teamId}:${managerId}`,
+        userId: managerId,
+        teamId,
+        teamName: "Delivery",
+        role: "manager",
+        joinedAt: "2026-07-01T12:00:00.000Z",
+        displayName: "Morgan Manager",
+        email: "manager@example.test",
+        isSelf: true,
+        snapshot: {
+          weekId: "2026-W30",
+          syncedAt: "2026-07-20T21:10:00.000Z",
+          shareLevel: "summary",
+          reliableCapacityPct: 32,
+          reactivePct: 18,
+          meetingPct: null,
+          fragmentedPct: 21,
+          summaryConfidence: 0.84,
+          reviewedBlocks: 9,
+          eligibleBlocks: 10,
+        },
+      });
+      assert.equal(result.value.members[1]?.displayName, "Riley Member");
+      assert.equal(result.value.members[1]?.email, "riley@example.test");
+      assert.equal(result.value.members[1]?.snapshot, null);
+      assert.equal(result.value.latestSyncedAt, "2026-07-20T21:10:00.000Z");
+      assert.equal(requests.length, 3);
+      assert.ok(requests.every((request) => request.headers.Authorization === `Bearer ${session.accessToken}`));
+      assert.ok(requests.some((request) => request.url.includes("select=user_id,role,joined_at")));
+      const identityRequest = requests.find((request) => request.url.includes("/rpc/get_team_roster_identities"));
+      assert.equal(identityRequest?.method, "POST");
+      assert.deepEqual(JSON.parse(identityRequest?.body ?? ""), { target_team_id: teamId });
+      assert.ok(requests.some((request) => request.url.includes("select=user_id,team_id,week_id,synced_at,share_level")));
+    },
+  );
+});
+
+test("fetchManagerTeamWorkspace fails closed instead of rendering a partial roster", async () => {
+  await withFetch(
+    (url) => url.includes("/rpc/get_team_roster_identities")
+      ? jsonResponse({ message: "roster identities denied" }, 403)
+      : jsonResponse([]),
+    async () => {
+      const result = await fetchManagerTeamWorkspace(env, makeSession(), [{
+        teamId: "20000000-0000-4000-8000-000000000001",
+        teamName: "Delivery",
+        role: "manager",
+        sharePolicy: null,
+      }]);
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.match(result.message, /roster identities denied/i);
+    },
   );
 });
 

@@ -127,7 +127,7 @@ test("Web History remains a truthful review-safe projection with an explicit loc
   assert.match(componentSource, /Local audit history stays on your Mac/);
   assert.match(componentSource, /Web shows completed derived syncs only/);
   assert.match(componentSource, /Web never receives the capture, screenshot, or sensitive summary/);
-  assert.match(componentSource, /href="\/download"/);
+  assert.match(componentSource, /<MacAppLink\b/);
   assert.doesNotMatch(componentSource, /localStorage|sessionStorage|fetch\(|createClient\(/);
 });
 

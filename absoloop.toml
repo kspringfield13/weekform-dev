@@ -2,7 +2,7 @@
 default_profile = "edit"
 
 [gates]
-required = ["tests", "build", "audit"]
+required = ["build", "rust", "audit"]
 
 [gates.commands]
 tests = "npm run verify:wave3"

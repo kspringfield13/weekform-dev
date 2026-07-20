@@ -2633,7 +2633,6 @@ export function App() {
     !isDemoMode && windowMode === "large" && gettingStartedStatus === "skipped" && paused;
 
   if (managerModeOpen && managerAccessAvailable) {
-    const primaryManagerTeam = managerMemberships[0];
     return (
       <main
         className="admin-portal-shell"
@@ -2642,7 +2641,8 @@ export function App() {
         data-admin-theme={theme}
       >
         <ManagerAccessWorkspace
-          managerTeamName={primaryManagerTeam?.teamName ?? "Managed team"}
+          managerTeams={managerMemberships}
+          getFreshSession={cloudAccount.getFreshSession}
           onOpenIndividualWorkspace={() => setManagerModeOpen(false)}
           onOpenPreferences={() => {
             setManagerModeOpen(false);

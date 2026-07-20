@@ -257,6 +257,38 @@ export interface CloudTeamMembership {
   sharePolicy: TeamSharePolicyV1 | null;
 }
 
+export interface CloudManagerSnapshot {
+  weekId: string;
+  syncedAt: string;
+  shareLevel: "summary" | "categories" | "projects";
+  reliableCapacityPct: number | null;
+  reactivePct: number | null;
+  meetingPct: number | null;
+  fragmentedPct: number | null;
+  summaryConfidence: number | null;
+  reviewedBlocks: number;
+  eligibleBlocks: number;
+}
+
+export interface CloudManagerMember {
+  /** Team-scoped identity: one account may appear in more than one managed team. */
+  id: string;
+  userId: string;
+  teamId: string;
+  teamName: string;
+  role: CloudTeamRole;
+  joinedAt: string;
+  displayName: string | null;
+  email: string | null;
+  isSelf: boolean;
+  snapshot: CloudManagerSnapshot | null;
+}
+
+export interface CloudManagerWorkspaceData {
+  members: CloudManagerMember[];
+  latestSyncedAt: string | null;
+}
+
 function asTeamRole(value: unknown): CloudTeamRole {
   return value === "owner" || value === "manager" ? value : "member";
 }
@@ -301,6 +333,163 @@ export async function fetchTeamMemberships(
   } catch {
     return { ok: false, message: NETWORK_ERROR_MESSAGE };
   }
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function managerMetric(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function managerShareLevel(value: unknown): CloudManagerSnapshot["shareLevel"] {
+  return value === "categories" || value === "projects" ? value : "summary";
+}
+
+function managerCount(value: unknown): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+async function fetchManagerTeam(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  team: CloudTeamMembership,
+): Promise<CloudResult<CloudManagerMember[]>> {
+  const teamFilter = encodeURIComponent(team.teamId);
+  const membershipQuery =
+    "select=user_id,role,joined_at" +
+    `&team_id=eq.${teamFilter}&status=eq.active&order=joined_at.asc`;
+  const snapshotQuery =
+    "select=user_id,team_id,week_id,synced_at,share_level," +
+    "reliable_new_work_capacity_pct,reactive_pct,meeting_pct,fragmented_work_pct," +
+    "summary_confidence,reviewed_blocks,eligible_blocks" +
+    `&team_id=eq.${teamFilter}&order=synced_at.desc`;
+
+  try {
+    const membershipResponse = await fetch(
+      `${env.url}/rest/v1/team_memberships?${membershipQuery}`,
+      { headers: authHeaders(env, session.accessToken) },
+    );
+    if (!membershipResponse.ok) {
+      return { ok: false, message: await failureMessage(membershipResponse, "Could not load the team roster") };
+    }
+    const rawMemberships: unknown = await membershipResponse.json();
+    if (!Array.isArray(rawMemberships)) {
+      return { ok: false, message: "The team roster response was incomplete." };
+    }
+
+    const memberships = rawMemberships.filter((value): value is Record<string, unknown> => (
+      typeof value === "object"
+      && value !== null
+      && typeof (value as Record<string, unknown>).user_id === "string"
+      && UUID_PATTERN.test((value as Record<string, unknown>).user_id as string)
+    ));
+    const [identitiesResponse, snapshotsResponse] = await Promise.all([
+      fetch(`${env.url}/rest/v1/rpc/get_team_roster_identities`, {
+        method: "POST",
+        headers: authHeaders(env, session.accessToken),
+        body: JSON.stringify({ target_team_id: team.teamId }),
+      }),
+      fetch(`${env.url}/rest/v1/latest_team_snapshots?${snapshotQuery}`, {
+        headers: authHeaders(env, session.accessToken),
+      }),
+    ]);
+    if (!identitiesResponse.ok) {
+      return { ok: false, message: await failureMessage(identitiesResponse, "Could not load team identities") };
+    }
+    if (!snapshotsResponse.ok) {
+      return { ok: false, message: await failureMessage(snapshotsResponse, "Could not load approved team snapshots") };
+    }
+
+    const rawIdentities: unknown = await identitiesResponse.json();
+    const rawSnapshots: unknown = await snapshotsResponse.json();
+    if (!Array.isArray(rawIdentities) || !Array.isArray(rawSnapshots)) {
+      return { ok: false, message: "The approved team data response was incomplete." };
+    }
+
+    const identities = new Map<string, { displayName: string | null; email: string | null }>();
+    for (const value of rawIdentities) {
+      if (typeof value !== "object" || value === null) continue;
+      const row = value as Record<string, unknown>;
+      const id = typeof row.user_id === "string" ? row.user_id : "";
+      const name = typeof row.display_name === "string" ? row.display_name.trim().slice(0, 120) : "";
+      const email = typeof row.email === "string" ? row.email.trim().toLocaleLowerCase().slice(0, 320) : "";
+      if (id) identities.set(id, { displayName: name || null, email: email || null });
+    }
+
+    const snapshots = new Map<string, CloudManagerSnapshot>();
+    for (const value of rawSnapshots) {
+      if (typeof value !== "object" || value === null) continue;
+      const row = value as Record<string, unknown>;
+      const userId = typeof row.user_id === "string" ? row.user_id : "";
+      const weekId = typeof row.week_id === "string" ? row.week_id : "";
+      const syncedAt = typeof row.synced_at === "string" ? row.synced_at : "";
+      if (!userId || !weekId || !syncedAt || snapshots.has(userId)) continue;
+      snapshots.set(userId, {
+        weekId,
+        syncedAt,
+        shareLevel: managerShareLevel(row.share_level),
+        reliableCapacityPct: managerMetric(row.reliable_new_work_capacity_pct),
+        reactivePct: managerMetric(row.reactive_pct),
+        meetingPct: managerMetric(row.meeting_pct),
+        fragmentedPct: managerMetric(row.fragmented_work_pct),
+        summaryConfidence: managerMetric(row.summary_confidence),
+        reviewedBlocks: managerCount(row.reviewed_blocks),
+        eligibleBlocks: managerCount(row.eligible_blocks),
+      });
+    }
+
+    return {
+      ok: true,
+      value: memberships.map((row) => {
+        const userId = row.user_id as string;
+        const isSelf = userId === session.userId;
+        const identity = identities.get(userId);
+        return {
+          id: `${team.teamId}:${userId}`,
+          userId,
+          teamId: team.teamId,
+          teamName: team.teamName,
+          role: asTeamRole(row.role),
+          joinedAt: typeof row.joined_at === "string" ? row.joined_at : "",
+          displayName: isSelf
+            ? (session.displayName?.trim() || identity?.displayName || session.email)
+            : (identity?.displayName ?? null),
+          email: isSelf ? session.email : (identity?.email ?? null),
+          isSelf,
+          snapshot: snapshots.get(userId) ?? null,
+        };
+      }),
+    };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
+/**
+ * RLS-scoped production data for Manager Mode. Every managed team is loaded as
+ * one fail-closed unit: Weekform never presents a partial roster as complete.
+ * The signed-in manager remains in the roster and can have their own approved
+ * snapshot, exactly like every other active team member.
+ */
+export async function fetchManagerTeamWorkspace(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  teams: CloudTeamMembership[],
+): Promise<CloudResult<CloudManagerWorkspaceData>> {
+  const managedTeams = teams.filter((team) => team.role === "owner" || team.role === "manager");
+  const results = await Promise.all(managedTeams.map((team) => fetchManagerTeam(env, session, team)));
+  const failed = results.find((result) => !result.ok);
+  if (failed && !failed.ok) return failed;
+
+  const members = results.flatMap((result) => result.ok ? result.value : []);
+  const latestSyncedAt = members.reduce<string | null>((latest, member) => {
+    const syncedAt = member.snapshot?.syncedAt ?? null;
+    return syncedAt && (!latest || syncedAt > latest) ? syncedAt : latest;
+  }, null);
+  return { ok: true, value: { members, latestSyncedAt } };
 }
 
 /**

@@ -15,7 +15,7 @@ import {
 
 const FULL_ENV = {
   WEEKFORM_ARTIFACT_BUCKET: "weekform-releases",
-  WEEKFORM_ARTIFACT_PATH: "releases/Weekform_0.1.0_universal.dmg",
+  WEEKFORM_ARTIFACT_PATH: `releases/stable/${"a".repeat(64)}/Weekform_0.1.0_universal.dmg`,
   NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-role-secret",
   WEEKFORM_ARTIFACT_DEVELOPER_ID_SIGNED: "true",
@@ -60,7 +60,7 @@ test("parseArtifactConfig returns a full config with the default TTL", () => {
   const config = parseArtifactConfig(FULL_ENV);
   assert.ok(config, "expected a parsed config");
   assert.equal(config.bucket, "weekform-releases");
-  assert.equal(config.path, "releases/Weekform_0.1.0_universal.dmg");
+  assert.equal(config.path, `releases/stable/${"a".repeat(64)}/Weekform_0.1.0_universal.dmg`);
   assert.equal(config.supabaseUrl, "https://example.supabase.co");
   assert.equal(config.serviceRoleKey, "service-role-secret");
   assert.equal(config.signedUrlTtlSeconds, 300);
@@ -85,6 +85,17 @@ test("release proof fails closed for false attestations or malformed metadata", 
   ]) {
     assert.equal(parseArtifactConfig(env), null);
   }
+});
+
+test("official artifacts use an immutable checksum-addressed storage path", () => {
+  assert.equal(parseArtifactConfig({
+    ...FULL_ENV,
+    WEEKFORM_ARTIFACT_PATH: "releases/Weekform_0.1.0_universal.dmg",
+  }), null);
+  assert.ok(parseArtifactConfig({
+    ...FULL_ENV,
+    WEEKFORM_ARTIFACT_PATH: `releases/stable/${"a".repeat(64)}/${RELEASE_INFO.artifactFilename}`,
+  }));
 });
 
 test("parseArtifactConfig trims incidental whitespace", () => {
@@ -220,19 +231,17 @@ test("download page keeps unavailable releases out of disabled-button limbo", ()
   );
 });
 
-test("pending Mac release offers the guided source ZIP without weakening the trusted DMG gate", () => {
+test("pending Mac release never substitutes a source build for the trusted installer", () => {
   const source = readFileSync(
     new URL("../app/download/page.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /releasePresentation\.kind === "pending"/);
-  assert.match(source, /Download source ZIP/);
-  assert.match(source, /archive\/refs\/heads\/main\.zip/);
-  assert.match(source, /scripts\/install\.command/);
-  assert.match(source, /builds Weekform locally/i);
-  assert.match(source, /installs one copy in Applications/i);
-  assert.doesNotMatch(source, /ZIP.{0,80}(notarized|Gatekeeper-trusted)/is);
+  assert.match(source, /releasePresentation\.kind !== "pending"/);
+  assert.doesNotMatch(source, /Download source ZIP/);
+  assert.doesNotMatch(source, /archive\/refs\/heads\/main\.zip/);
+  assert.doesNotMatch(source, /scripts\/install\.command/);
+  assert.doesNotMatch(source, /builds Weekform locally/i);
 });
 
 // --- planArtifactResponse: the full /download/artifact decision sequence ---

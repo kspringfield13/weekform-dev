@@ -21,7 +21,7 @@ begin;
 set local role postgres;
 set local search_path = public, extensions;
 create extension if not exists pgtap;
-select plan(80);
+select plan(85);
 
 -- ---------------------------------------------------------------------------
 -- Schema contract
@@ -37,6 +37,7 @@ select has_function('private', 'is_team_manager', array['uuid', 'uuid'], 'recurs
 select has_function('private', 'is_active_team_member', array['uuid', 'uuid'], 'recursion-safe membership helper exists');
 select has_function('public', 'create_team_with_owner', array['text'], 'atomic team creation RPC exists');
 select has_function('public', 'accept_team_invite', array['text'], 'atomic invite acceptance RPC exists');
+select has_function('public', 'get_team_roster_identities', array['uuid'], 'manager-only roster identity RPC exists');
 select has_function('public', 'create_team_action', array['uuid', 'text', 'text'], 'manager action creation RPC exists');
 select has_function('public', 'resolve_team_action', array['uuid', 'uuid', 'text'], 'manager action resolution RPC exists');
 select has_function('public', 'delete_team_action', array['uuid', 'uuid'], 'manager action deletion RPC exists');
@@ -173,6 +174,15 @@ select is(
    where team_id = '30000000-0000-4000-8000-000000000001'),
   3,
   'A (manager) can read the full active roster of a managed team'
+);
+
+select is(
+  (
+    select string_agg(identity.email, ',' order by identity.email)
+    from public.get_team_roster_identities('30000000-0000-4000-8000-000000000001') identity
+  ),
+  'clawfather-manager-a@example.test,clawfather-member-b@example.test,clawfather-member-c@example.test',
+  'A receives account emails for exactly the active managed-team roster'
 );
 
 select throws_ok(
@@ -534,6 +544,13 @@ select is(
   'B (member) sees only their own membership row, not the roster'
 );
 
+select throws_ok(
+  $$ select * from public.get_team_roster_identities('30000000-0000-4000-8000-000000000001') $$,
+  '42501',
+  'An active team manager or owner role is required',
+  'B cannot read team account identities as a plain member'
+);
+
 -- ---------------------------------------------------------------------------
 -- Member C (metadata claims "role":"owner"; must grant nothing)
 -- ---------------------------------------------------------------------------
@@ -667,6 +684,13 @@ select is((select count(*)::integer from public.team_invites), 0, 'D cannot enum
 select is((select count(*)::integer from public.latest_team_snapshots), 0, 'D sees nothing through the view');
 
 select throws_ok(
+  $$ select * from public.get_team_roster_identities('30000000-0000-4000-8000-000000000001') $$,
+  '42501',
+  'An active team manager or owner role is required',
+  'D cannot probe team account identities as an outsider'
+);
+
+select throws_ok(
   $$
     insert into public.team_invites (team_id, email, role, token_hash, invited_by, expires_at)
     values (
@@ -780,6 +804,13 @@ select throws_ok(
   '42501',
   'permission denied for function delete_team_action',
   'Anonymous callers cannot execute the manager action deletion RPC'
+);
+
+select throws_ok(
+  $$ select * from public.get_team_roster_identities('30000000-0000-4000-8000-000000000001') $$,
+  '42501',
+  'permission denied for function get_team_roster_identities',
+  'Anonymous callers cannot execute the roster identity RPC'
 );
 
 select throws_ok(

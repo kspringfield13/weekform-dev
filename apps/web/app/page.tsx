@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
+import { MacAppLink } from "@/components/MacAppLink";
 import { WeekformMark } from "@/components/WeekformMark";
 import { productEntry, type ProductEntry } from "@/lib/productEntry";
 
@@ -226,6 +227,10 @@ function ProductStage() {
 }
 
 function EntryChoice({ entry }: { entry: ProductEntry }) {
+  const actionClassName = entry.id === "web"
+    ? "button button-primary"
+    : "button button-secondary";
+
   return (
     <article className={`entry-choice is-${entry.id}`}>
       <div className="entry-choice-heading">
@@ -242,12 +247,15 @@ function EntryChoice({ entry }: { entry: ProductEntry }) {
         <span>Boundary</span>
         {entry.limitations}
       </p>
-      <Link
-        href={entry.href}
-        className={entry.id === "web" ? "button button-primary" : "button button-secondary"}
-      >
-        {entry.action} <span aria-hidden="true">→</span>
-      </Link>
+      {entry.id === "mac" ? (
+        <MacAppLink fallbackHref={entry.href} className={actionClassName}>
+          {entry.action} <span aria-hidden="true">→</span>
+        </MacAppLink>
+      ) : (
+        <Link href={entry.href} className={actionClassName}>
+          {entry.action} <span aria-hidden="true">→</span>
+        </Link>
+      )}
     </article>
   );
 }
@@ -274,9 +282,9 @@ export default function LandingPage() {
               <Link href={WEB_ENTRY.href} className="button button-primary button-large">
                 Open Web App
               </Link>
-              <Link href={MAC_ENTRY.href} className="button button-secondary button-large">
+              <MacAppLink fallbackHref={MAC_ENTRY.href} className="button button-secondary button-large">
                 {MAC_ENTRY.action}
-              </Link>
+              </MacAppLink>
             </div>
             <div className="hero-assurances" aria-label="Weekform product principles">
               <span><i aria-hidden="true">✓</i> Raw activity stays local</span>
@@ -445,7 +453,7 @@ export default function LandingPage() {
             </div>
             <div className="closing-actions">
               <Link href={WEB_ENTRY.href} className="button button-primary button-large">{WEB_ENTRY.action} <span aria-hidden="true">→</span></Link>
-              <Link href={MAC_ENTRY.href} className="button button-secondary button-large">{MAC_ENTRY.action}</Link>
+              <MacAppLink fallbackHref={MAC_ENTRY.href} className="button button-secondary button-large">{MAC_ENTRY.action}</MacAppLink>
             </div>
           </div>
         </section>

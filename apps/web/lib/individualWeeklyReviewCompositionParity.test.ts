@@ -62,7 +62,7 @@ test("Individual Web Review preserves the Desktop close-out composition and acce
     "Web must not present a dead duplicate completion control beside the truthful Mac handoff",
   );
   assert.match(webSource, /Mac remains authoritative|Get Weekform for Mac/);
-  assert.match(webSource, /href=["']\/download["']/);
+  assert.match(webSource, /<MacAppLink\b/);
 });
 
 test("Web Review remains inside the positive-allowlist boundary and has responsive layout", () => {

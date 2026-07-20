@@ -40,10 +40,10 @@ test("Web Settings mirrors desktop sections without exposing local-only controls
   assert.doesNotMatch(source, /localStorage|sessionStorage|fetch\(|createClient\(/);
 });
 
-test("Individual Settings Mac handoffs describe acquisition truthfully", () => {
+test("Individual Settings Mac handoffs use the installed-app launcher", () => {
   const source = existsSync(componentUrl) ? readFileSync(componentUrl, "utf8") : "";
   const downloadLabels = Array.from(
-    source.matchAll(/<Link\s+[^>]*href=["']\/download["'][^>]*>([\s\S]*?)<\/Link>/g),
+    source.matchAll(/<MacAppLink\b[^>]*>([\s\S]*?)<\/MacAppLink>/g),
     (match) => (match[1] ?? "")
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
@@ -54,6 +54,6 @@ test("Individual Settings Mac handoffs describe acquisition truthfully", () => {
   assert.deepEqual(
     downloadLabels,
     downloadLabels.map(() => "Get Weekform for Mac"),
-    "a /download link must describe acquisition, not claim Web can open an installed app or its review surface",
+    "every settings handoff should open an installed app before falling back to acquisition",
   );
 });

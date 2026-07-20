@@ -30,9 +30,15 @@ use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, State, WebviewUrl,
     WebviewWindowBuilder, WindowEvent, Wry,
 };
+use tauri_plugin_deep_link::DeepLinkExt;
 
 mod calendar_sources;
 mod chat_sources;
+
+#[cfg(target_os = "macos")]
+extern "C" {
+    fn weekform_activate_app();
+}
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const COMPACT_WINDOW_WIDTH: u32 = 620;
@@ -395,20 +401,42 @@ struct VisualContextResponse {
     raw_screenshot_retained: bool,
 }
 
+#[cfg(target_os = "macos")]
+fn activate_desktop_app() {
+    // The app intentionally uses Accessory activation policy for its menu-bar
+    // experience. Explicit activation is therefore required when a web deep
+    // link asks an already-running instance to present its main window.
+    unsafe { weekform_activate_app() };
+}
+
+#[cfg(not(target_os = "macos"))]
+fn activate_desktop_app() {}
+
 fn show_dashboard(app: &AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let _ = window.unminimize();
         let _ = window.show();
+        activate_desktop_app();
         let _ = window.set_focus();
         return;
     }
 
-    let _ = WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::default())
+    if let Ok(window) = WebviewWindowBuilder::new(app, MAIN_WINDOW_LABEL, WebviewUrl::default())
         .title("Weekform")
         .inner_size(1280.0, 860.0)
         .min_inner_size(1024.0, 720.0)
         .visible(true)
-        .build();
+        .build()
+    {
+        activate_desktop_app();
+        let _ = window.set_focus();
+    }
+}
+
+fn is_weekform_open_url(raw_url: &str) -> bool {
+    raw_url == "weekform://open"
+        || raw_url.starts_with("weekform://open?")
+        || raw_url.starts_with("weekform://open/")
 }
 
 fn apply_window_mode(app: &AppHandle, mode: &str) {
@@ -4509,13 +4537,25 @@ pub fn run() {
     // Default to no collection until the frontend restores an explicit user choice.
     let activity_capture_paused = Arc::new(AtomicBool::new(true));
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if args.iter().any(|arg| is_weekform_open_url(arg)) {
+                show_large_dashboard(app);
+            }
+        }));
+    }
+
+    builder
         .manage(ActivityCaptureState {
             paused: activity_capture_paused.clone(),
         })
         .manage(DefaultOpenState {
             compact: AtomicBool::new(false),
         })
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -4562,10 +4602,27 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
+            let opened_from_web = app
+                .deep_link()
+                .get_current()?
+                .is_some_and(|urls| urls.iter().any(|url| is_weekform_open_url(url.as_str())));
+            let app_handle = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                if event
+                    .urls()
+                    .iter()
+                    .any(|url| is_weekform_open_url(url.as_str()))
+                {
+                    show_large_dashboard(&app_handle);
+                }
+            });
+
             configure_tray(app)?;
             start_activity_capture(app.handle().clone(), activity_capture_paused.clone());
 
-            if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+            if opened_from_web {
+                show_large_dashboard(app.handle());
+            } else if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                 let _ = window.hide();
             }
 

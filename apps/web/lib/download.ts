@@ -64,7 +64,7 @@ export interface ReleaseProof {
 export interface ArtifactConfig {
   /** Supabase Storage bucket holding the official packaged artifact. */
   bucket: string;
-  /** Object path within that bucket, e.g. "releases/Weekform_0.1.0_universal.dmg". */
+  /** Immutable object path: releases/stable/<sha256>/Weekform_0.1.0_universal.dmg. */
   path: string;
   /** Supabase project URL (same project as the publishable client). */
   supabaseUrl: string;
@@ -150,7 +150,6 @@ export function parseArtifactConfig(
   if (
     !bucket
     || !path
-    || path.split("/").at(-1) !== RELEASE_INFO.artifactFilename
     || !supabaseUrl
     || !serviceRoleKey
     || !developerIdSigned
@@ -158,6 +157,7 @@ export function parseArtifactConfig(
     || !stapled
     || !sha256
     || !/^[a-f0-9]{64}$/.test(sha256)
+    || path !== `releases/stable/${sha256}/${RELEASE_INFO.artifactFilename}`
     || !verifiedAt
     || !isCanonicalUtcTimestamp(verifiedAt)
   ) {

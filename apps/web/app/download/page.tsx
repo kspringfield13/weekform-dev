@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
+import { MacAppLink } from "@/components/MacAppLink";
 import {
   RELEASE_INFO,
   getBetaReleasePresentation,
@@ -20,7 +21,6 @@ export const metadata: Metadata = {
 };
 
 const SOURCE_REPO_URL = "https://github.com/kspringfield13/weekform-dev";
-const SOURCE_ARCHIVE_URL = `${SOURCE_REPO_URL}/archive/refs/heads/main.zip`;
 
 type DownloadPageProps = {
   searchParams: Promise<{ error?: string }>;
@@ -181,14 +181,14 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
             {releasePresentation.kind !== "pending" ? (
               <>
                 <div className="download-action-row">
-                  <a
-                    href={releasePresentation.action.href}
+                  <MacAppLink
+                    fallbackHref={releasePresentation.action.href}
                     className="button button-primary download-primary-action"
                     aria-describedby="download-action-note"
                   >
                     <DownloadGlyph />
                     <span>{releasePresentation.action.label}</span>
-                  </a>
+                  </MacAppLink>
                   <span className="download-file-label">
                     {releasePresentation.filename}
                   </span>
@@ -223,26 +223,6 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
                   <summary>Release status</summary>
                   <p>{releasePresentation.detail}</p>
                 </details>
-                {releasePresentation.kind === "pending" ? (
-                  <div className="download-source-fallback">
-                    <div>
-                      <p className="download-section-label">Available now</p>
-                      <h3>Build the Mac app locally.</h3>
-                      <p>
-                        The source ZIP builds Weekform locally with the guided
-                        <span className="mono"> scripts/install.command</span>,
-                        installs one copy in Applications, and removes the
-                        temporary app bundle from the build folder.
-                      </p>
-                    </div>
-                    <a
-                      href={SOURCE_ARCHIVE_URL}
-                      className="button button-secondary download-source-action"
-                    >
-                      Download source ZIP
-                    </a>
-                  </div>
-                ) : null}
               </div>
             )}
           </div>

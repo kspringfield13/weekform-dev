@@ -22,6 +22,7 @@ export interface TeamRosterEntry {
   role: TeamRole;
   joinedAt: string;
   displayName: string | null;
+  email: string | null;
   isSelf: boolean;
 }
 
@@ -115,11 +116,10 @@ export async function getOwnMembership(
 }
 
 /**
- * Active roster of a team, with display names from profiles.
- * RLS only returns the full roster to owners/managers; profiles of active
- * members are visible to managers of that team. team_memberships has no FK
- * to profiles (both reference auth.users), so this is two explicit queries
- * rather than a PostgREST embed.
+ * Active roster of a team, with manager-authorized account identities.
+ * RLS returns the membership rows only to owners/managers. Email addresses
+ * remain in auth.users and cross that boundary only through the manager-only
+ * get_team_roster_identities RPC; they are not copied into a public table.
  */
 export async function listTeamRoster(
   supabase: SupabaseClient,
@@ -139,31 +139,45 @@ export async function listTeamRoster(
 
   const rows = memberships ?? [];
   const userIds = rows.map((row) => row.user_id as string);
-  const displayNames = new Map<string, string>();
+  const identities = new Map<
+    string,
+    { displayName: string | null; email: string | null }
+  >();
 
   if (userIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("id, display_name")
-      .in("id", userIds);
-    for (const profile of profiles ?? []) {
+    const { data: identityRows, error: identityError } = await supabase.rpc(
+      "get_team_roster_identities",
+      { target_team_id: teamId },
+    );
+    if (identityError) {
+      return { roster: [], error: identityError.message };
+    }
+    for (const identity of identityRows ?? []) {
       const name =
-        typeof profile.display_name === "string"
-          ? profile.display_name.trim()
+        typeof identity.display_name === "string"
+          ? identity.display_name.trim()
           : "";
-      if (name) {
-        displayNames.set(profile.id as string, name);
-      }
+      const email =
+        typeof identity.email === "string" ? identity.email.trim() : "";
+      identities.set(identity.user_id as string, {
+        displayName: name || null,
+        email: email || null,
+      });
     }
   }
 
-  const roster: TeamRosterEntry[] = rows.map((row) => ({
-    userId: row.user_id as string,
-    role: asTeamRole(row.role),
-    joinedAt: row.joined_at as string,
-    displayName: displayNames.get(row.user_id as string) ?? null,
-    isSelf: row.user_id === viewerId,
-  }));
+  const roster: TeamRosterEntry[] = rows.map((row) => {
+    const userId = row.user_id as string;
+    const identity = identities.get(userId);
+    return {
+      userId,
+      role: asTeamRole(row.role),
+      joinedAt: row.joined_at as string,
+      displayName: identity?.displayName ?? null,
+      email: identity?.email ?? null,
+      isSelf: userId === viewerId,
+    };
+  });
   return { roster, error: null };
 }
 

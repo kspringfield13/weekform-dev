@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ArrowLeft, Mail, ShieldCheck, UsersRound } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -106,6 +107,20 @@ function inviteStatus(invite: {
     return "expired";
   }
   return "pending";
+}
+
+function memberInitials(name: string, email: string | null): string {
+  const source = name.startsWith("member-") ? (email ?? name) : name;
+  const parts = source
+    .replace(/@.*$/, "")
+    .split(/[\s._-]+/)
+    .filter(Boolean);
+  return (
+    parts
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("") || "WF"
+  );
 }
 
 function metricStat(summary: MetricSummary | null, totalSharing: number) {
@@ -322,22 +337,42 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
   return (
     <>
       <SiteHeader />
-      <main className="container">
-        <div className="page-head">
-          <h1>{membership.teamName}</h1>
-          <p>
-            You are {membership.role === "owner" ? "the owner" : `a ${membership.role}`}{" "}
-            of this team.
-          </p>
+      <main className="container team-page-container">
+        <header className="team-command-header">
+          <div className="team-command-copy">
+            <Link
+              href={manager ? "/manager-access" : "/app"}
+              className="team-back-link"
+            >
+              <ArrowLeft aria-hidden="true" />
+              {manager ? "Manager Access" : "Individual workspace"}
+            </Link>
+            <span className="team-command-eyebrow">
+              {manager ? "Team coordination" : "Team membership"}
+            </span>
+            <h1>{membership.teamName}</h1>
+            <p>
+              {manager
+                ? "Review member-approved workload signals, coordinate the next move, and keep consent visible."
+                : "Review exactly what this team can see from your approved sharing."}
+            </p>
+          </div>
+          <div className="team-command-actions">
+            <span className="team-role-mark">
+              <ShieldCheck aria-hidden="true" />
+              {membership.role === "owner" ? "Team owner" : membership.role}
+            </span>
+            <WorkspaceModeToggle
+              managerAvailable={manager}
+              managerHref={`/teams/${teamId}`}
+              mode={manager ? "manager" : "individual"}
+            />
+          </div>
+        </header>
+
+        <div className="team-freshness-strip">
+          <RequestFreshnessRefresh />
         </div>
-
-        <WorkspaceModeToggle
-          managerAvailable={manager}
-          managerHref={`/teams/${teamId}`}
-          mode={manager ? "manager" : "individual"}
-        />
-
-        <RequestFreshnessRefresh />
 
         {notice ? (
           <div className="form-notice" role="status">
@@ -504,13 +539,66 @@ async function ManagerView({
 
   return (
     <>
-      <section className="panel" aria-labelledby="workload-title">
-        <h2 id="workload-title">Team workload</h2>
-        <p>
-          <Link href={`/teams/${teamId}/briefing`} className="text-link">
-            Generate an AI-assisted Team Briefing
+      <div className="team-manager-workspace">
+        <nav className="team-section-nav" aria-label="Team workspace sections">
+          <a href="#overview">Overview</a>
+          <a href="#people">People</a>
+          <a href="#decisions">Decisions</a>
+          <a href="#controls">Controls</a>
+        </nav>
+
+      <section
+        className="panel team-overview-panel"
+        id="overview"
+        aria-labelledby="workload-title"
+      >
+        <div className="team-section-heading">
+          <div>
+            <span className="team-section-kicker">Current team pulse</span>
+            <h2 id="workload-title">Workload overview</h2>
+            <p>
+              Team medians from the latest member-approved snapshots. Missing
+              signals stay unknown and never become zero.
+            </p>
+          </div>
+          <Link
+            href={`/teams/${teamId}/briefing`}
+            className="button button-secondary team-briefing-link"
+          >
+            Generate briefing
           </Link>
-        </p>
+        </div>
+
+        <div className="team-status-rail" aria-label="Team sharing status">
+          <div>
+            <span>Active roster</span>
+            <strong>{rosterError ? "—" : roster.length}</strong>
+            <small>members</small>
+          </div>
+          <div>
+            <span>Sharing now</span>
+            <strong>{snapshotsError ? "—" : summary.sharingCount}</strong>
+            <small>approved snapshots</small>
+          </div>
+          <div>
+            <span>Coverage</span>
+            <strong>
+              {rosterError || snapshotsError || roster.length === 0
+                ? "—"
+                : `${Math.round((summary.sharingCount / roster.length) * 100)}%`}
+            </strong>
+            <small>of roster</small>
+          </div>
+          <div>
+            <span>Open actions</span>
+            <strong>
+              {actionsError
+                ? "—"
+                : actions.filter((action) => action.status === "open").length}
+            </strong>
+            <small>to revisit</small>
+          </div>
+        </div>
         {snapshotsError ? (
           <div className="form-alert" role="alert">
             Shared snapshots could not be loaded right now. Reload the page to
@@ -585,7 +673,116 @@ async function ManagerView({
         )}
       </section>
 
-      <section className="panel" aria-labelledby="scenario-title">
+      <section
+        className="panel team-roster-section"
+        id="people"
+        aria-labelledby="members-title"
+      >
+        <div className="team-section-heading">
+          <div>
+            <span className="team-section-kicker">People and consent</span>
+            <h2 id="members-title">Team roster</h2>
+            <p>
+              Account identity and each member&apos;s latest sharing state. Workload
+              details appear only when that member has approved a snapshot.
+            </p>
+          </div>
+          <span className="team-section-count">
+            <UsersRound aria-hidden="true" />
+            {roster.length} {roster.length === 1 ? "member" : "members"}
+          </span>
+        </div>
+        {rosterError ? (
+          <div className="form-alert" role="alert">
+            The member list could not be loaded right now. Reload the page to
+            try again.
+          </div>
+        ) : roster.length === 0 ? (
+          <div className="empty-state">No active members yet.</div>
+        ) : (
+          <ul className="member-grid team-member-grid">
+            {roster.map((entry) => {
+              const snapshot = snapshotByUser.get(entry.userId) ?? null;
+              const name =
+                entry.displayName ?? `member-${entry.userId.slice(0, 8)}`;
+              return (
+                <li
+                  className={`member-card team-member-card${snapshot ? " is-sharing" : " is-private"}`}
+                  key={entry.userId}
+                >
+                  <div className="team-member-identity">
+                    <span className="team-member-avatar" aria-hidden="true">
+                      {memberInitials(name, entry.email)}
+                    </span>
+                    <div>
+                      <h3>
+                        {name}
+                        {entry.isSelf ? <span className="badge">You</span> : null}
+                      </h3>
+                      {entry.email ? (
+                        <a
+                          className="member-card-email mono"
+                          href={`mailto:${entry.email}`}
+                        >
+                          <Mail aria-hidden="true" />
+                          {entry.email}
+                        </a>
+                      ) : (
+                        <span className="member-card-email is-unavailable">
+                          Account email unavailable
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="member-card-badges">
+                    <span className="badge">{entry.role}</span>
+                    {snapshot ? (
+                      <>
+                        <span className="badge badge-ok">
+                          {shareLevelLabel(snapshot.shareLevel)}
+                        </span>
+                        <FreshnessBadge
+                          freshness={snapshotFreshness(snapshot, nowIso)}
+                        />
+                      </>
+                    ) : (
+                      <span className="badge">Not sharing</span>
+                    )}
+                  </div>
+
+                  <div className="team-member-consent-line">
+                    <span aria-hidden="true" />
+                    {snapshot
+                      ? "Member-approved snapshot"
+                      : "No workload data shared"}
+                  </div>
+
+                  {snapshot ? (
+                    <>
+                      <p className="team-member-snapshot-meta">
+                        Week <span className="mono">{snapshot.weekId}</span> ·
+                        synced {formatDateTime(snapshot.observedAt)}
+                      </p>
+                      <SnapshotMetricList snapshot={snapshot} />
+                      <SnapshotRiskFlags snapshot={snapshot} nowIso={nowIso} />
+                    </>
+                  ) : (
+                    <p className="team-member-private-note">
+                      Joined {formatDate(entry.joinedAt)}. Sharing is opt-in from
+                      Weekform for Mac; absence of data says nothing about this
+                      member&apos;s workload.
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      <div className="team-decision-grid">
+      <section className="panel team-planning-panel" aria-labelledby="scenario-title">
         <h2 id="scenario-title">Planning scenario</h2>
         <p>
           &quot;What can the team absorb?&quot; — each preset asks whether that
@@ -625,7 +822,7 @@ async function ManagerView({
         )}
       </section>
 
-      <section className="panel" aria-labelledby="trend-title">
+      <section className="panel team-trend-panel" aria-labelledby="trend-title">
         <h2 id="trend-title">Weekly trend</h2>
         <p>
           How the team&apos;s shared metrics moved between its two most recent
@@ -682,7 +879,7 @@ async function ManagerView({
         )}
       </section>
 
-      <section className="panel" aria-labelledby="forecast-title">
+      <section className="panel team-forecast-panel" aria-labelledby="forecast-title">
         <h2 id="forecast-title">Next-week forecast</h2>
         <p>
           What the team&apos;s own shared history suggests next week looks
@@ -751,7 +948,9 @@ async function ManagerView({
           </>
         )}
       </section>
+      </div>
 
+      <div id="decisions" className="team-actions-section">
       <ManagerActionsPanel
         teamId={teamId}
         actions={actions}
@@ -760,71 +959,10 @@ async function ManagerView({
         loadError={actionsError}
         actionError={actionError}
       />
+      </div>
 
-      <section className="panel" aria-labelledby="members-title">
-        <h2 id="members-title">Members</h2>
-        {rosterError ? (
-          <div className="form-alert" role="alert">
-            The member list could not be loaded right now. Reload the page to
-            try again.
-          </div>
-        ) : roster.length === 0 ? (
-          <p>No active members yet.</p>
-        ) : (
-          <ul className="member-grid" style={{ listStyle: "none", padding: 0 }}>
-            {roster.map((entry) => {
-              const snapshot = snapshotByUser.get(entry.userId) ?? null;
-              const name =
-                entry.displayName ?? `member-${entry.userId.slice(0, 8)}`;
-              return (
-                <li className="member-card" key={entry.userId}>
-                  <h3>
-                    {name}
-                    {entry.isSelf ? (
-                      <span className="badge" style={{ marginLeft: 8 }}>
-                        You
-                      </span>
-                    ) : null}
-                  </h3>
-                  <div className="member-card-badges">
-                    <span className="badge">{entry.role}</span>
-                    {snapshot ? (
-                      <>
-                        <span className="badge">
-                          {shareLevelLabel(snapshot.shareLevel)}
-                        </span>
-                        <FreshnessBadge
-                          freshness={snapshotFreshness(snapshot, nowIso)}
-                        />
-                      </>
-                    ) : (
-                      <span className="badge">Not sharing</span>
-                    )}
-                  </div>
-                  {snapshot ? (
-                    <>
-                      <p style={{ margin: 0, fontSize: 13 }}>
-                        Week <span className="mono">{snapshot.weekId}</span> ·
-                        synced {formatDateTime(snapshot.observedAt)}
-                      </p>
-                      <SnapshotMetricList snapshot={snapshot} />
-                      <SnapshotRiskFlags snapshot={snapshot} nowIso={nowIso} />
-                    </>
-                  ) : (
-                    <p style={{ margin: 0, fontSize: 13 }}>
-                      No shared snapshot yet. Joined {formatDate(entry.joinedAt)}
-                      . Sharing is opt-in from Weekform for Mac; absence of data
-                      says nothing about this member&apos;s workload.
-                    </p>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className="panel" aria-labelledby="share-policy-title">
+      <div className="team-controls-grid" id="controls">
+      <section className="panel team-policy-panel" aria-labelledby="share-policy-title">
         <h2 id="share-policy-title">Team share policy</h2>
         <p>
           Cap how much structure this team receives from members&apos; future
@@ -879,7 +1017,7 @@ async function ManagerView({
         )}
       </section>
 
-      <section className="panel" aria-labelledby="invite-title">
+      <section className="panel team-invite-panel" aria-labelledby="invite-title">
         <h2 id="invite-title">Invite a teammate</h2>
         <p>
           Invites are member-role, single-use links tied to one email address.
@@ -888,7 +1026,7 @@ async function ManagerView({
         <InviteForm teamId={teamId} />
       </section>
 
-      <section className="panel" aria-labelledby="invites-title">
+      <section className="panel team-invites-panel" aria-labelledby="invites-title">
         <h2 id="invites-title">Sent invites</h2>
         {invitesError ? (
           <div className="form-alert" role="alert">
@@ -898,6 +1036,7 @@ async function ManagerView({
         ) : invites.length === 0 ? (
           <p>No invites sent yet.</p>
         ) : (
+          <div className="team-table-scroll">
           <table className="data-table">
             <caption className="visually-hidden">
               Invites sent for this team
@@ -930,12 +1069,15 @@ async function ManagerView({
               })}
             </tbody>
           </table>
+          </div>
         )}
         <p style={{ marginTop: 12 }}>
           Invite links are shown once, at creation. If a link is lost or
           expired, create a new invite for the same email.
         </p>
       </section>
+      </div>
+      </div>
     </>
   );
 }

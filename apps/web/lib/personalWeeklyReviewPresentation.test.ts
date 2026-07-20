@@ -121,7 +121,7 @@ test("every Weekly Review Mac target truthfully describes the download acquisiti
     assert.ok(macTargets.length > 0);
     assert.ok(
       macTargets.every((item) => item.actionLabel === "Get Weekform for Mac"),
-      "ReviewAction routes Mac targets to /download, so their labels must describe acquisition rather than execution",
+      "ReviewAction uses the installed-app launcher with a download fallback, so labels remain truthful for both states",
     );
   }
 });

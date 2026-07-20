@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { WeekformMark } from "@/components/WeekformMark";
 import { WebEditionLabel } from "@/components/WebEditionLabel";
+import { MacAppLink } from "@/components/MacAppLink";
 import { productEntry } from "@/lib/productEntry";
 
 const WEB_ENTRY = productEntry("web");
@@ -22,7 +23,7 @@ export function SiteFooter() {
           <Link href="/#product">Product</Link>
           <Link href="/#privacy">Privacy</Link>
           <Link href={WEB_ENTRY.href}>Web app</Link>
-          <Link href={MAC_ENTRY.href}>Download for Mac</Link>
+          <MacAppLink fallbackHref={MAC_ENTRY.href}>Download for Mac</MacAppLink>
           <Link href="/login">Sign in</Link>
         </nav>
       </div>

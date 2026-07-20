@@ -9,7 +9,7 @@ import {
   UsersRound,
   Play,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { WeeklyCapacitySnapshot } from "../../../../../packages/domain/src/models";
 import type { Screen } from "../../lib/types";
 import { AppToolbar } from "./AppToolbar";
@@ -17,9 +17,11 @@ import { ContextNavigation } from "./ContextNavigation";
 import { ToastHost } from "../common/ToastHost";
 import { WeekformMark } from "../common/WeekformMark";
 import { AgentMark } from "../common/AgentMark";
+import { CapacityDetailModal } from "../common/CapacityDetailModal";
 import type { Toast } from "../../hooks/useToasts";
 import { MAIN_TABPANEL_ID, primarySectionForScreen, sectionViews, tabId } from "../../lib/ui";
 import { pct } from "../../lib/format";
+import { buildIndividualCapacityDetail } from "../../services/capacityDetail";
 
 export function AppShell({
   active,
@@ -73,6 +75,8 @@ export function AppShell({
 }) {
   // Context navigation is shown inside the page column when a primary section
   // has multiple views. Today, Settings, and compact mode stay single-view.
+  const [capacityDetailOpen, setCapacityDetailOpen] = useState(false);
+  const capacityDetail = buildIndividualCapacityDetail(snapshot, hasWorkBlocks);
   const sectionTabCount = sectionViews(primarySectionForScreen(active), {
     includeFlagged: showFlaggedTab || active === "sensitive"
   }).length;
@@ -158,7 +162,13 @@ export function AppShell({
             </span>
           </button>
         )}
-        <div className="sidebar-intelligence">
+        <button
+          className="sidebar-intelligence capacity-summary-trigger"
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={capacityDetailOpen}
+          onClick={() => setCapacityDetailOpen(true)}
+        >
           <div className="side-metric-heading">
             <span>Reliable capacity</span>
             <Gauge size={14} aria-hidden />
@@ -180,7 +190,7 @@ export function AppShell({
             <Radio size={12} aria-hidden="true" />
             <span>{paused ? "Tracking paused" : "Tracking locally"}</span>
           </div>
-        </div>
+        </button>
         <button className={active === "setup" ? "settings-button is-active" : "settings-button"} type="button" onClick={() => setActive("setup")} title="Settings (⌘9)" aria-keyshortcuts="Meta+9" aria-current={active === "setup" ? "page" : undefined} data-tour="setup">
           <Settings size={17} aria-hidden />
           <span>Settings</span>
@@ -247,6 +257,9 @@ export function AppShell({
           children
         )}
       </main>
+      {capacityDetailOpen && (
+        <CapacityDetailModal model={capacityDetail} onClose={() => setCapacityDetailOpen(false)} />
+      )}
       <ToastHost toasts={toasts} onDismiss={onDismissToast} />
     </div>
   );

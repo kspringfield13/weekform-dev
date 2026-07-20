@@ -28,6 +28,7 @@ interface QueryResult {
 
 interface QueryCall {
   table: string;
+  rpc: [string, Record<string, unknown>] | null;
   select: string | null;
   eq: Array<[string, unknown]>;
   order: [string, { ascending: boolean }] | null;
@@ -45,6 +46,7 @@ function mockSupabase(results: QueryResult[]): {
     from(table: string) {
       const call: QueryCall = {
         table,
+        rpc: null,
         select: null,
         eq: [],
         order: null,
@@ -82,6 +84,20 @@ function mockSupabase(results: QueryResult[]): {
         },
       };
       return builder;
+    },
+    rpc(name: string, args: Record<string, unknown>) {
+      const call: QueryCall = {
+        table: "rpc",
+        rpc: [name, args],
+        select: null,
+        eq: [],
+        order: null,
+        in: null,
+        maybeSingle: false,
+      };
+      calls.push(call);
+      const result = results[next++] ?? { data: null, error: null };
+      return Promise.resolve(result);
     },
   };
   return { client: client as unknown as SupabaseClient, calls };
@@ -251,8 +267,27 @@ test("listTeamRoster joins memberships with trimmed profile names", async () => 
       { user_id: "user-3", role: "member", joined_at: "2026-07-03T00:00:00.000Z" },
     ]),
     ok([
-      { id: "user-1", display_name: "  Ada Lovelace  " },
-      { id: "user-2", display_name: "   " },
+      {
+        user_id: "user-1",
+        role: "owner",
+        joined_at: "2026-07-01T00:00:00.000Z",
+        display_name: "  Ada Lovelace  ",
+        email: "ada@example.test",
+      },
+      {
+        user_id: "user-2",
+        role: "member",
+        joined_at: "2026-07-02T00:00:00.000Z",
+        display_name: "   ",
+        email: "grace@example.test",
+      },
+      {
+        user_id: "user-3",
+        role: "member",
+        joined_at: "2026-07-03T00:00:00.000Z",
+        display_name: null,
+        email: "linus@example.test",
+      },
     ]),
   ]);
   const { roster, error } = await listTeamRoster(client, "team-1", "user-2");
@@ -263,6 +298,7 @@ test("listTeamRoster joins memberships with trimmed profile names", async () => 
       role: "owner",
       joinedAt: "2026-07-01T00:00:00.000Z",
       displayName: "Ada Lovelace",
+      email: "ada@example.test",
       isSelf: false,
     },
     {
@@ -270,6 +306,7 @@ test("listTeamRoster joins memberships with trimmed profile names", async () => 
       role: "member",
       joinedAt: "2026-07-02T00:00:00.000Z",
       displayName: null, // blank display name stays null
+      email: "grace@example.test",
       isSelf: true,
     },
     {
@@ -277,24 +314,27 @@ test("listTeamRoster joins memberships with trimmed profile names", async () => 
       role: "member",
       joinedAt: "2026-07-03T00:00:00.000Z",
       displayName: null, // no profile row at all
+      email: "linus@example.test",
       isSelf: false,
     },
   ]);
   assert.equal(calls.length, 2);
-  const [membershipCall, profilesCall] = calls;
+  const [membershipCall, rosterIdentityCall] = calls;
   assert.ok(membershipCall);
-  assert.ok(profilesCall);
+  assert.ok(rosterIdentityCall);
   assert.equal(membershipCall.table, "team_memberships");
-  assert.equal(profilesCall.table, "profiles");
-  assert.deepEqual(profilesCall.in, ["id", ["user-1", "user-2", "user-3"]]);
+  assert.deepEqual(rosterIdentityCall.rpc, [
+    "get_team_roster_identities",
+    { target_team_id: "team-1" },
+  ]);
 });
 
-test("listTeamRoster skips the profiles query for an empty roster", async () => {
+test("listTeamRoster skips the identity RPC for an empty roster", async () => {
   const { client, calls } = mockSupabase([ok([])]);
   const { roster, error } = await listTeamRoster(client, "team-1", "user-1");
   assert.equal(error, null);
   assert.deepEqual(roster, []);
-  assert.equal(calls.length, 1, "no profiles query for an empty roster");
+  assert.equal(calls.length, 1, "no identity RPC for an empty roster");
 });
 
 test("listTeamRoster returns the error message and no roster on failure", async () => {

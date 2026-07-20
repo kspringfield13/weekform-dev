@@ -8,6 +8,7 @@ import { WebEditionLabel } from "@/components/WebEditionLabel";
 import { managerAccessMemberships } from "@/lib/managerAccess";
 import { listUserTeams } from "@/lib/teams";
 import { productEntry } from "@/lib/productEntry";
+import { MacAppLink } from "@/components/MacAppLink";
 
 const WEB_ENTRY = productEntry("web");
 const MAC_ENTRY = productEntry("mac");
@@ -62,9 +63,9 @@ export async function SiteHeader({
                   <span className="nav-label-short">Manager</span>
                 </Link>
               ) : null}
-              <Link href={MAC_ENTRY.href} className="button button-ghost nav-download-mac">
+              <MacAppLink fallbackHref={MAC_ENTRY.href} className="button button-ghost nav-download-mac">
                 Download Mac
-              </Link>
+              </MacAppLink>
             </>
           ) : (
             <>

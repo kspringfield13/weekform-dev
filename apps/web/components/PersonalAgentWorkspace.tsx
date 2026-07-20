@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { FormEvent, KeyboardEvent, useState } from "react";
 
 import type { PersonalWorkloadReplicaV1 } from "../../../packages/domain/src/personalCloud";
+import { MacAppLink } from "@/components/MacAppLink";
 import styles from "./PersonalAgentWorkspace.module.css";
 
 function pct(value: number | undefined): string {
@@ -263,7 +263,7 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
               </p>
             </div>
             <div className="personal-agent-actions">
-              <Link className="button button-primary" href="/download">Get Weekform for Mac</Link>
+              <MacAppLink className="button button-primary">Get Weekform for Mac</MacAppLink>
             </div>
           </div> : null}
           {turns.length ? <div className={styles.messages}>
@@ -281,7 +281,7 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
                           <p className={styles.actionBoundary}>Web Ask cannot approve or run changes. Review the action and its evidence on your Mac.</p>
                         </div>
                         <div className={styles.actionControls}>
-                          <Link className={styles.macLink} href="/download">Get Weekform for Mac <span aria-hidden="true">→</span></Link>
+                          <MacAppLink className={styles.macLink}>Get Weekform for Mac <span aria-hidden="true">→</span></MacAppLink>
                         </div>
                       </div> : <article className={styles.agentMessage} aria-label="Weekform Agent answer">
                   <span className={styles.avatar}><AgentSignalMark size={15} /></span>

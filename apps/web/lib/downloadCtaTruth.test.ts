@@ -13,25 +13,21 @@ function tsxFiles(directory: URL): URL[] {
   });
 }
 
-test("every Web /download CTA describes acquisition instead of claiming a Mac action", () => {
-  const misleading: string[] = [];
+test("every Web Mac CTA uses the installed-app launcher instead of a raw download link", () => {
+  const rawDownloadLinks: string[] = [];
+  const launcherFiles: string[] = [];
 
   for (const file of tsxFiles(webRoot)) {
     const source = readFileSync(file, "utf8");
-    for (const match of source.matchAll(/<Link\s+[^>]*href=["']\/download["'][^>]*>([\s\S]*?)<\/Link>/g)) {
-      const label = (match[1] ?? "")
-        .replace(/<[^>]+>/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-      if (/^(?:Open|Review|Generate|Finish)\b/i.test(label)) {
-        misleading.push(`${relative(webRoot.pathname, file.pathname)}: ${label}`);
-      }
+    const relativePath = relative(webRoot.pathname, file.pathname);
+    if (/<Link\s+[^>]*href=["']\/download["']/.test(source)) {
+      rawDownloadLinks.push(relativePath);
+    }
+    if (relativePath !== "components/MacAppLink.tsx" && /<MacAppLink\b/.test(source)) {
+      launcherFiles.push(relativePath);
     }
   }
 
-  assert.deepEqual(
-    misleading,
-    [],
-    "the download route can acquire Weekform for Mac but cannot launch it or complete a local action",
-  );
+  assert.deepEqual(rawDownloadLinks, []);
+  assert.ok(launcherFiles.length >= 10, "Mac handoffs across marketing and the Web app must share the launcher");
 });

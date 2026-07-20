@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode, SVGProps } from "react";
 
+import { MacAppLink } from "@/components/MacAppLink";
 import type { PersonalWorkloadReplicaV1 } from "../../../packages/domain/src/personalCloud";
 import {
   buildPersonalAccelerationPresentation,
@@ -82,7 +83,7 @@ export function PersonalAccelerationScreen({
           <strong>Nothing high-impact to accelerate yet.</strong>
           <p>{presentation.context}</p>
           <div className={styles.emptyActions}>
-            <Link className="button button-primary" href="/download">Get Weekform for Mac</Link>
+            <MacAppLink className="button button-primary">Get Weekform for Mac</MacAppLink>
             <span className={styles.handoffNote}>After installing, review today on Mac to surface new plays.</span>
           </div>
         </div>
@@ -119,7 +120,7 @@ export function PersonalAccelerationScreen({
           <p>No private evidence or local acceleration state was moved into the browser while the connection failed.</p>
           <div className={styles.emptyActions}>
             <Link className="button button-primary" href="/dashboard?screen=accelerate">Try again</Link>
-            <Link className="button button-secondary" href="/download">Get Weekform for Mac</Link>
+            <MacAppLink className="button button-secondary">Get Weekform for Mac</MacAppLink>
           </div>
         </div>
       </section>
@@ -144,14 +145,13 @@ export function PersonalAccelerationScreen({
       <ConnectionAnnouncement presentation={presentation} />
 
       <section className={styles.synthesis} aria-labelledby="personal-acceleration-synthesis-title">
-        <Link
+        <MacAppLink
           className="button button-primary"
-          href="/download"
           title="Skill generation requires private local evidence and your locally configured AI"
         >
           <AccelerationIcon name="sparkles" size={16} aria-hidden="true" />
           Get Weekform for Mac
-        </Link>
+        </MacAppLink>
         <div>
           <h2 id="personal-acceleration-synthesis-title">Generate Skills on Mac.</h2>
           <p>Web receives no raw window titles, workflow evidence, prompts, saved recipes, or AI credentials.</p>
@@ -192,7 +192,7 @@ export function PersonalAccelerationScreen({
           </details>
           <div className={styles.actions}>
             <p className={styles.localOnly}><AccelerationIcon name="lock" size={13} aria-hidden="true" /> Play actions stay on Mac.</p>
-            <Link className="button button-primary" href="/download">Get Weekform for Mac</Link>
+            <MacAppLink className="button button-primary">Get Weekform for Mac</MacAppLink>
           </div>
         </article>
       </section>

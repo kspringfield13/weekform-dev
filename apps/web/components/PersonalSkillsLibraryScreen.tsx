@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
 import type { ReactNode, SVGProps } from "react";
 
+import { MacAppLink } from "@/components/MacAppLink";
 import styles from "./PersonalSkillsLibraryScreen.module.css";
 
 type SkillsIconName = "library" | "lock";
@@ -112,9 +112,9 @@ export function PersonalSkillsLibraryScreen() {
               <SkillsIcon name="lock" size={13} aria-hidden="true" />
               Copy, export, and remove stay local. This Web view has no workload cache.
             </p>
-            <Link className="button button-secondary" href="/download">
+            <MacAppLink className="button button-secondary">
               Get Weekform for Mac
-            </Link>
+            </MacAppLink>
           </div>
         </article>
       </section>

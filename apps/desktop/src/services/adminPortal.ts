@@ -1,6 +1,6 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { SettingsTab } from "../lib/types";
-import type { CloudTeamMembership } from "./cloudClient";
+import type { CloudManagerMember, CloudTeamMembership, CloudTeamRole } from "./cloudClient";
 
 export const DEFAULT_WEEKFORM_WEB_APP_URL = "https://weekform.dev";
 export const LOCAL_ADMIN_PORTAL_SESSION_KEY = "weekform.admin-portal.local-session.v1";
@@ -13,7 +13,23 @@ export interface ManagerRosterMember {
   name: string;
   team: string;
   category: string;
-  risk: "stable" | "watch" | "attention";
+  risk: "stable" | "watch" | "attention" | "stale" | "not-sharing";
+}
+
+export interface LiveManagerRosterMember extends ManagerRosterMember {
+  teamId: string;
+  initials: string;
+  isSelf: boolean;
+  role: CloudTeamRole;
+  email: string | null;
+  capacity: number | null;
+  reactive: number | null;
+  fragmented: number | null;
+  meetings: number | null;
+  review: number | null;
+  confidence: number | null;
+  syncedAt: string | null;
+  weekId: string | null;
 }
 
 export interface ManagerRosterFilters {
@@ -55,14 +71,7 @@ export type ManagerWorkspaceEvent =
   | { type: "approve-action" }
   | { type: "set-history-period"; period: ManagerWorkspaceHistoryPeriod };
 
-const INITIAL_MANAGER_ACTIVITY: ManagerWorkspaceActivity[] = [
-  { id: "proposed-focus", time: "Today · 10:42", title: "Manager action proposed", detail: "Protect Thursday focus block", status: "Awaiting approval" },
-  { id: "snapshots-refreshed", time: "Today · 09:15", title: "Team snapshots refreshed", detail: "12 of 14 members sharing", status: "Completed" },
-  { id: "weekly-review", time: "Friday · 16:30", title: "Weekly review closed", detail: "Median capacity rose 3 points", status: "Observed" },
-  { id: "policy-updated", time: "Thursday · 14:05", title: "Share policy updated", detail: "Projects narrowed to categories", status: "Audited" },
-  { id: "intake-reviewed", time: "3 weeks ago", title: "Platform intake reviewed", detail: "One reporting request moved to the next cycle", status: "Observed" },
-  { id: "support-rotated", time: "7 weeks ago", title: "Launch support rotated", detail: "Reactive coverage moved across Operations", status: "Completed" },
-];
+const INITIAL_MANAGER_ACTIVITY: ManagerWorkspaceActivity[] = [];
 
 export function createInitialManagerWorkspaceState(): ManagerWorkspaceState {
   return {
@@ -81,7 +90,7 @@ export function getManagerWorkspaceAgentAnswer(
   mode: ManagerWorkspaceMode,
 ): string {
   const normalized = prompt.trim().toLocaleLowerCase();
-  if (!normalized) return "Ask a specific workload question to inspect the synthetic reviewed evidence.";
+  if (!normalized) return "Ask a specific workload question about your reviewed evidence.";
 
   if (mode === "individual") {
     if (normalized.includes("commit")) {
@@ -96,19 +105,7 @@ export function getManagerWorkspaceAgentAnswer(
     return "Your reviewed week shows 31% reliable capacity, 24% reactive load, and 96% review coverage. Refine the question to compare a commitment, focus pattern, or allocation change.";
   }
 
-  if (normalized.includes("absorb") || normalized.includes("next week")) {
-    return "Across 12 approved snapshots, the median supports one small commitment. Keep Thursday focus protected and do not treat the two non-sharing members as available capacity.";
-  }
-  if (normalized.includes("reactive")) {
-    return "Reactive load is highest in Operations and has the widest spread in Insights. Review the two low-headroom signals before changing ownership or intake.";
-  }
-  if (normalized.includes("compare")) {
-    return "The selected contributors differ most in reactive load and protected focus. Use the side-by-side table as context, not a ranking, and ask each person before proposing a change.";
-  }
-  if (normalized.includes("summary") || normalized.includes("draft")) {
-    return "Twelve approved snapshots show 27% median reliable capacity, 28% reactive load, and two fresh signals needing attention. Unknown values from non-sharing members remain excluded.";
-  }
-  return "The available manager evidence is limited to approved summary metrics from 12 members. It supports a coordination conversation, not a conclusion about individual performance.";
+  return "Manager answers are generated only from the live, RLS-scoped team workspace. Open the authenticated briefing to inspect current evidence and approve any resulting action.";
 }
 
 export function managerWorkspaceReducer(
@@ -232,6 +229,83 @@ export function filterManagerMembers<T extends ManagerRosterMember>(
     && (filters.category === "all" || member.category === filters.category)
     && (filters.risk === "all" || member.risk === filters.risk)
   ));
+}
+
+function rosterInitials(name: string): string {
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toLocaleUpperCase() ?? "")
+    .join("");
+  return initials || "TM";
+}
+
+function managerRisk(
+  member: CloudManagerMember,
+  nowIso: string,
+): LiveManagerRosterMember["risk"] {
+  const snapshot = member.snapshot;
+  if (!snapshot) return "not-sharing";
+  const synced = Date.parse(snapshot.syncedAt);
+  const now = Date.parse(nowIso);
+  if (Number.isNaN(synced) || Number.isNaN(now) || now - synced > 7 * 24 * 60 * 60 * 1000) {
+    return "stale";
+  }
+  if (
+    (snapshot.reliableCapacityPct !== null && snapshot.reliableCapacityPct < 15)
+    || (snapshot.reactivePct !== null && snapshot.reactivePct >= 40)
+    || (snapshot.fragmentedPct !== null && snapshot.fragmentedPct >= 35)
+    || (snapshot.meetingPct !== null && snapshot.meetingPct >= 50)
+  ) {
+    return "attention";
+  }
+  if (
+    (snapshot.reliableCapacityPct !== null && snapshot.reliableCapacityPct < 25)
+    || (snapshot.reactivePct !== null && snapshot.reactivePct >= 30)
+    || (snapshot.fragmentedPct !== null && snapshot.fragmentedPct >= 25)
+    || (snapshot.meetingPct !== null && snapshot.meetingPct >= 40)
+  ) {
+    return "watch";
+  }
+  return "stable";
+}
+
+/** Maps the RLS-approved cloud contract into the Manager Mode view model. */
+export function buildManagerRosterMember(
+  member: CloudManagerMember,
+  nowIso: string,
+): LiveManagerRosterMember {
+  const name = member.displayName?.trim() || "Team member";
+  const eligible = member.snapshot?.eligibleBlocks ?? 0;
+  const reviewed = member.snapshot?.reviewedBlocks ?? 0;
+  const shareLevel = member.snapshot?.shareLevel;
+  return {
+    id: member.id,
+    teamId: member.teamId,
+    name,
+    initials: rosterInitials(name),
+    team: member.teamName,
+    category: shareLevel === "projects"
+      ? "Projects"
+      : shareLevel === "categories"
+        ? "Categories"
+        : shareLevel === "summary"
+          ? "Summary"
+          : "Not sharing",
+    risk: managerRisk(member, nowIso),
+    isSelf: member.isSelf,
+    role: member.role,
+    email: member.email,
+    capacity: member.snapshot?.reliableCapacityPct ?? null,
+    reactive: member.snapshot?.reactivePct ?? null,
+    fragmented: member.snapshot?.fragmentedPct ?? null,
+    meetings: member.snapshot?.meetingPct ?? null,
+    review: eligible > 0 ? Math.round(Math.min(reviewed, eligible) / eligible * 100) : null,
+    confidence: member.snapshot?.summaryConfidence ?? null,
+    syncedAt: member.snapshot?.syncedAt ?? null,
+    weekId: member.snapshot?.weekId ?? null,
+  };
 }
 
 export type AdminPortalTheme = "system" | "dark" | "light";

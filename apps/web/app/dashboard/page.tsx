@@ -19,6 +19,7 @@ import { describeCloudRetention } from "@/lib/retention";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
+import { MacAppLink } from "@/components/MacAppLink";
 import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
 import { PersonalReplicaRealtime } from "@/components/PersonalReplicaRealtime";
 import {
@@ -346,9 +347,9 @@ export default async function DashboardPage({
                 <p>Review local evidence and approve what this Web workspace may display. Raw activity remains on your Mac.</p>
               </div>
               <div className="settings-row-status"><strong>Local source of truth</strong><span>Release status shown on download page</span></div>
-              <Link href="/download" className="button button-primary">
+              <MacAppLink className="button button-primary">
                 View Mac download
-              </Link>
+              </MacAppLink>
             </article>
           </div>
         </section>
@@ -438,7 +439,7 @@ function PersonalCapacityScreen({
           )}
         </div>
       ) : !current ? (
-        <div className="panel web-screen-empty"><h2>No review-safe week is connected</h2><p>Enable Private Web workspace in Weekform for Mac to publish the derived capacity fields this screen can display.</p><Link href="/download" className="button button-primary">Get Weekform for Mac</Link></div>
+        <div className="panel web-screen-empty"><h2>No review-safe week is connected</h2><p>Enable Private Web workspace in Weekform for Mac to publish the derived capacity fields this screen can display.</p><MacAppLink className="button button-primary">Get Weekform for Mac</MacAppLink></div>
       ) : (
         <div className="web-capacity-panel">
           <PersonalWeekOverview replica={current.payload} />
@@ -625,9 +626,9 @@ function SharedWorkloadSection({
             <p>
               Deleting cloud history removes only what you shared to the cloud
               — the data on your Mac is untouched. Need the app again?{" "}
-              <Link href="/download" className="text-link">
+              <MacAppLink className="text-link">
                 Download or reinstall Weekform for Mac
-              </Link>
+              </MacAppLink>
               .
             </p>
           </>

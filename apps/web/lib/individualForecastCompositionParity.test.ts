@@ -48,7 +48,7 @@ test("Web Forecast keeps local capabilities explicit and the header free of a pe
   assert.doesNotMatch(header, /Get Weekform for Mac/);
   assert.match(source, /AI forecast generation stays on your Mac/);
   assert.match(source, /Not included in the review-safe replica/);
-  assert.match(source, /href="\/download"/);
+  assert.match(source, /<MacAppLink\b/);
   assert.doesNotMatch(source, /fetch\(|localStorage|sessionStorage|supabase/i);
 });
 

@@ -281,22 +281,28 @@ the alignment QA.
   hosting is accompanied by explicit Developer ID-signature, notarization,
   stapling, checksum, and verification-time metadata. This is a release gate,
   not evidence that signing or notarization occurred.
-- **July 20 Gatekeeper and source fallback follow-through:** a Developer ID
+- **July 20 Gatekeeper and installed-app handoff follow-through:** a Developer ID
   Application identity later became available and produced a correctly signed
   universal beta, but live `spctl` and `stapler` checks proved it remained
   unnotarized and unstapled; Gatekeeper rejected it and macOS launched it through
   App Translocation. The beta's production download configuration was removed
   rather than asking users to bypass macOS security. The authenticated download
-  page now offers the public source ZIP and guided local-build installer while
-  the trusted DMG gate remains pending. The installer removes only its exact
-  redundant `target/release/bundle/macos/Weekform.app` after the Applications
-  copy succeeds. Web Inspector traced the packaged white window to Tauri's
+  page no longer substitutes a source ZIP for a trusted Mac installer while the
+  release gate remains pending. Web Inspector traced the packaged white window to Tauri's
   `freezePrototype` hardening: freezing `Object.prototype.toString` caused Zod's
   namespace initialization to throw before React could mount. The incompatible
   freeze is now disabled while the production CSP remains enforced, and the
   desktop root also renders a local-data-safe recovery screen for later React
   failures. A source install rendered the full Capacity surface and two
   menu-bar reopen passes each moved the native window count from zero to one.
+  Every Web and authenticated-app Mac CTA now attempts the registered
+  `weekform://` scheme first, with single-instance native handling that restores,
+  activates, and focuses the full dashboard; Macs without the app retain the
+  authenticated download fallback. A fail-closed publisher now encodes the
+  signed universal build, Apple notarization, stapling, Gatekeeper, immutable
+  private upload, hosted-byte checksum, proof-env, and production deployment
+  sequence. The local Keychain notarization profile is still absent, so no
+  official artifact or trusted-download claim has been published yet.
   Focused red-first regressions, the root build, desktop/web suites, optimized
   Web build, shell syntax check, and both dependency audits passed before
   deployment.
@@ -711,6 +717,23 @@ The hackathon-readiness and provenance task is supplemental evidence:
   package audit refresh was blocked by registry DNS, and rendered authenticated
   proof was not claimed because the managed runner rejected local port binding.
 
+- **July 20 Team coordination workspace redesign (not yet deployed):** the
+  authenticated Web team page now follows a coordination-ledger hierarchy:
+  current sharing coverage, an identity-first roster, planning evidence,
+  approval-gated actions, and team controls. Member cards show display name,
+  manager-authorized account email, role, consent state, freshness, and only the
+  workload metrics that member approved. Account email remains in Supabase Auth
+  and crosses the boundary through an additive security-definer RPC that
+  reauthorizes the active owner/manager role; plain members, outsiders, and
+  anonymous callers are denied, and email is excluded from Team Briefing model
+  input. Focused roster and presentation contracts pass 19/19, the live local
+  Team Cloud pgTAP boundary passes 85/85, its dedicated roster-identity proof
+  passes 6/6, and both optimized Web and authoritative root builds pass.
+  Authenticated synthetic-data browser review covered the
+  1440×1000 desktop and 390×844 narrow layouts with all roster emails visible
+  and no page errors. No hosted migration or weekform.dev deployment is claimed
+  by this entry.
+
 - **July 20 Chat-source intelligence:** Native Data Sources now follows Calendar
   with a truthful unavailable Email row and then one bounded, manual Chat
   connection path for exactly Slack, Google Chat, and Webex.
@@ -758,6 +781,20 @@ The hackathon-readiness and provenance task is supplemental evidence:
   covered all three missing-setup guides, modal focus entry and wrapping, Escape,
   and focus trapping with no console or page errors; it does not claim a live
   provider authorization, native Keychain exercise, or packaged-app proof.
+
+- **July 20 production Manager Mode:** The desktop Manager Mode replaced its
+  synthetic roster, metrics, briefing, history, and coordination queue with
+  RLS-scoped Supabase reads of active team membership, profile display names,
+  and members' latest approved workload snapshots. The signed-in owner or
+  manager is retained in the roster and labeled as the current user. Missing,
+  stale, unshared, and failed reads remain explicit and never become zero or
+  placeholder data. Today and Week derive only from live approved fields;
+  Agent and History provide a deterministic live summary and hand off generated
+  briefings, approval-gated actions, and full audit history to authenticated
+  Web. Manager Mode also restores draggable native chrome with minimize and
+  resize controls. Focused desktop cloud/manager tests, the root production
+  build, and live Supabase/browser proof are recorded separately; repository
+  code alone is not claimed as deployed production evidence.
 
 - **Codex Session ID:** `019f75f1-73fc-7850-98a4-c23ec0aae893`
 - **Task title:** `Prepare Weekform for Build Week`
