@@ -100,6 +100,12 @@ email-delivery service solely to deliver the one-time sign-in link; the flow
 does not send Mac activity, workload evidence, replicas, snapshots, or team
 records to the email service.
 
+Google and GitHub sign-in use Supabase OAuth. Choosing one sends the account
+authorization request to that provider and returns through Supabase Auth; the
+provider and Supabase may process the account identity needed to authenticate
+the user. Weekform does not include Mac activity, workload evidence, replicas,
+snapshots, or team records in the OAuth request.
+
 Raw Mac activity never reaches the website. Private derived replicas, approved workload snapshots, and
 explicit multi-user coordination records (accounts, teams, memberships,
 invites, and manager actions) persist in Supabase because other authorized

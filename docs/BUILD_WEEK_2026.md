@@ -217,20 +217,20 @@ the alignment QA.
   `/app`, and rendered desktop plus 390px browser checks confirm both choices,
   responsive layout, and a clean development console.
 
-### Supabase passwordless sign-in
+### Layered Supabase sign-in
 
 - **Date:** July 19, 2026
-- **Outcome:** the existing Weekform sign-in card now offers a passwordless
-  email Magic Link alongside email/password. It uses Supabase's built-in email
-  auth, returns through the existing `/auth/callback`, preserves the protected
-  destination, and requires no external social-provider application.
+- **Outcome:** the Weekform sign-in card prioritizes Google and GitHub, keeps a
+  passwordless email Magic Link directly below them, and collapses the legacy
+  email/password form by default. Every path returns through the existing
+  `/auth/callback` or server action and preserves the protected destination.
 - **Boundary:** production email delivery still depends on the Supabase email
-  provider and its configured SMTP/rate limits. The flow does not claim Google
-  or GitHub identity.
-- **Evidence:** four focused email/callback tests and the full 208-test web
-  suite pass. The optimized Next.js build and authoritative root build pass;
-  browser verification at 1024×720 confirmed the two accessible provider
-  controls, the email fallback, no error overlay, and no runtime errors.
+  provider and its configured SMTP/rate limits; Google and GitHub depend on
+  their Supabase provider configuration. No auth path sends Mac activity or
+  workload evidence to an identity provider.
+- **Evidence:** focused OAuth, email/callback, order, disclosure, and visual
+  contract tests cover the layered sign-in hierarchy. The optimized Next.js
+  build and browser verification remain separate release gates.
 
 The hackathon-readiness and provenance task is supplemental evidence:
 
