@@ -75,8 +75,8 @@ export function PersonalWeeklyReviewScreen({
           </p>
         </div>
         <div className="weekly-review-summary" role="status" aria-live="polite">
-          <strong>{presentation.doneCount}</strong>
-          <span>of {presentation.items.length} checks ready</span>
+          <strong>{error ? "—" : presentation.doneCount}</strong>
+          <span>{error ? "checks unavailable" : <>of {presentation.items.length} checks ready</>}</span>
         </div>
       </header>
 
@@ -127,12 +127,13 @@ export function PersonalWeeklyReviewScreen({
                 <span>Web cannot record the local completion audit event or mark omitted private checks ready.</span>
               </p>
             </div>
-            <div className="weekly-review-footer-actions">
-              <button className="button button-secondary" type="button" disabled title="Completion requires the local audit trail">
-                Finish weekly review
-              </button>
-              <Link className="button button-primary" href="/download">Get Weekform for Mac</Link>
-            </div>
+            <Link
+              className="button button-primary weekly-review-finish-action"
+              href="/download"
+              title="Get the Mac app to finish with the local audit trail"
+            >
+              Get Weekform for Mac
+            </Link>
           </footer>
         </>
       )}

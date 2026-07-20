@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type {
   AuditEvent,
   WorkBlock,
@@ -36,7 +37,31 @@ export function useBlocksLedger(params: UseBlocksLedgerParams) {
     addAuditEvent,
   } = params;
 
-  const [blocks, setBlocks] = useState<WorkBlock[]>(() => initialBlocks);
+  const [blocks, setBlocksRaw] = useState<WorkBlock[]>(() => initialBlocks);
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
+  // Evaluate every functional update against the latest in-memory ledger and
+  // advance the ref in the same JavaScript turn. This preserves React's public
+  // setter shape while giving command application a true compare-and-swap edge
+  // that cannot observe a render-stale array after a network await.
+  const setBlocks = useCallback<Dispatch<SetStateAction<WorkBlock[]>>>((update) => {
+    const current = blocksRef.current;
+    const next = typeof update === "function"
+      ? (update as (value: WorkBlock[]) => WorkBlock[])(current)
+      : update;
+    blocksRef.current = next;
+    setBlocksRaw(next);
+  }, []);
+  const mutateBlocksAtomically = useCallback(<Result,>(
+    mutation: (current: WorkBlock[]) => { blocks: WorkBlock[]; result: Result },
+  ): Result => {
+    const outcome = mutation(blocksRef.current);
+    if (outcome.blocks !== blocksRef.current) {
+      blocksRef.current = outcome.blocks;
+      setBlocksRaw(outcome.blocks);
+    }
+    return outcome.result;
+  }, []);
   const [calendarEvents, setCalendarEvents] = useState<OutlookCalendarEvent[]>(() => initialCalendarEvents);
   const [corrections, setCorrections] = useState<UserCorrection[]>(() => initialCorrections);
   const [reviewSuggestions, setReviewSuggestions] = useState<ReviewCopilotSuggestion[]>(() => initialReviewSuggestions);
@@ -158,6 +183,7 @@ export function useBlocksLedger(params: UseBlocksLedgerParams) {
   return {
     blocks,
     setBlocks,
+    mutateBlocksAtomically,
     calendarEvents,
     setCalendarEvents,
     corrections,

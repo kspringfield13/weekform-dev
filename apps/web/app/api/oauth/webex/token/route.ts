@@ -2,9 +2,19 @@ import "server-only";
 
 import { NextResponse } from "next/server";
 import {
+  acquireWebexRequestControl,
+  completeWebexRequestControl,
+  createAnonymousRequestControlClient,
+  requestControlFailure,
+  type RequestControlOutcomeCode,
+} from "../../../../../lib/distributedRequestControl";
+import {
   buildWebexTokenExchange,
+  keyWebexIpSubject,
   projectWebexTokenResponse,
   resolveWebexBrokerReadiness,
+  webexExchangeIdempotencyKey,
+  type WebexTokenProjection,
 } from "../../../../../lib/webexTokenBroker";
 
 export const runtime = "nodejs";
@@ -22,11 +32,23 @@ function brokerReadiness() {
     clientSecret: process.env.WEBEX_CHAT_CLIENT_SECRET,
     redirectUri: process.env.WEBEX_CHAT_REDIRECT_URI,
     securityVerified: process.env.WEBEX_CHAT_BROKER_SECURITY_VERIFIED,
+    controlClaim: process.env.REQUEST_CONTROL_SERVER_CLAIM,
+    ipHashSecret: process.env.REQUEST_CONTROL_IP_HASH_SECRET,
+    trustedIpHeader: process.env.REQUEST_CONTROL_TRUSTED_IP_HEADER,
+    trustedProxy: process.env.REQUEST_CONTROL_TRUSTED_PROXY,
+    vercelDeployment: process.env.VERCEL,
   });
 }
 
-function response(body: Record<string, unknown>, status: number): NextResponse {
-  return NextResponse.json(body, { status, headers: NO_STORE_HEADERS });
+function response(
+  body: Record<string, unknown>,
+  status: number,
+  extraHeaders: Record<string, string> = {},
+): NextResponse {
+  return NextResponse.json(body, {
+    status,
+    headers: { ...NO_STORE_HEADERS, ...extraHeaders },
+  });
 }
 
 /**
@@ -50,7 +72,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         : "The Webex OAuth broker is not configured.",
     }, 503);
   }
-  const { config } = readiness;
+  const { config, control } = readiness;
 
   const raw = await request.text();
   if (new TextEncoder().encode(raw).byteLength > MAX_REQUEST_BYTES) {
@@ -70,6 +92,36 @@ export async function POST(request: Request): Promise<NextResponse> {
     return response({ error: "The Webex exchange request did not pass validation." }, 400);
   }
 
+  const controlClient = createAnonymousRequestControlClient();
+  const subjectHash = keyWebexIpSubject(
+    request.headers,
+    control.trustedIpHeader,
+    control.ipHashSecret,
+  );
+  if (!controlClient || !subjectHash) {
+    return response({
+      error: "Distributed request controls are unavailable, so no Webex request was sent.",
+    }, 503);
+  }
+  const acquired = await acquireWebexRequestControl(controlClient, {
+    subjectHash,
+    idempotencyKey: webexExchangeIdempotencyKey(exchange, control.ipHashSecret),
+    serverClaim: control.serverClaim,
+  });
+  if (acquired.decision !== "acquired") {
+    const failure = requestControlFailure(acquired);
+    return response(
+      { error: failure.message },
+      failure.status,
+      failure.retryAfterSeconds > 0
+        ? { "Retry-After": String(failure.retryAfterSeconds) }
+        : {},
+    );
+  }
+
+  let projected: WebexTokenProjection | null = null;
+  let outcome: RequestControlOutcomeCode = "provider_error";
+  let publicError = "The Webex OAuth exchange could not be completed.";
   try {
     const upstream = await fetch(exchange.endpoint, {
       method: "POST",
@@ -81,11 +133,35 @@ export async function POST(request: Request): Promise<NextResponse> {
     });
     if (!upstream.ok) {
       // Never relay provider bodies: they may contain request/account detail.
-      return response({ error: "Webex rejected the OAuth exchange." }, 502);
+      publicError = "Webex rejected the OAuth exchange.";
+    } else {
+      try {
+        projected = projectWebexTokenResponse(await upstream.json());
+        outcome = "ok";
+      } catch {
+        outcome = "validation_error";
+        publicError = "Webex returned an invalid OAuth response.";
+      }
     }
-    const projected = projectWebexTokenResponse(await upstream.json());
-    return NextResponse.json(projected, { headers: NO_STORE_HEADERS });
-  } catch {
-    return response({ error: "The Webex OAuth exchange could not be completed." }, 502);
+  } catch (error) {
+    outcome = error instanceof Error
+      && (error.name === "TimeoutError" || error.name === "AbortError")
+      ? "provider_timeout"
+      : "provider_error";
   }
+
+  const completed = await completeWebexRequestControl(controlClient, {
+    receiptId: acquired.receiptId,
+    leaseToken: acquired.leaseToken,
+    subjectHash,
+    serverClaim: control.serverClaim,
+  }, outcome);
+  if (!completed) {
+    return response({
+      error: "The Webex response could not be safely finalized. Try again shortly.",
+    }, 503);
+  }
+  return projected
+    ? NextResponse.json(projected, { headers: NO_STORE_HEADERS })
+    : response({ error: publicError }, 502);
 }

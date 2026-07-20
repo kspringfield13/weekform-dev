@@ -15,6 +15,7 @@ import type { TeamSharePolicyV1 } from "../../../../packages/domain/src/cloud";
 import type {
   PersonalReplicaSyncQueueItemV1,
   PersonalSyncReceiptV1,
+  ReviewCommandApplicationPhase,
   ReviewCommandStatus,
   ReviewCommandV1,
 } from "../../../../packages/domain/src/personalCloud";
@@ -135,7 +136,7 @@ function sessionFromTokenResponse(body: AuthTokenResponse, now: number): Persist
   };
 }
 
-/** Email/password sign-in with the SAME account created on weekform.com. */
+/** Email/password sign-in with the SAME account created on weekform.dev. */
 export async function signInWithPassword(
   env: CloudEnv,
   email: string,
@@ -454,11 +455,47 @@ function parseReviewCommand(value: unknown): ReviewCommandV1 | null {
   if (typeof value !== "object" || value === null) return null;
   const row = value as Record<string, unknown>;
   if (
-    typeof row.command_id !== "string" || typeof row.block_id !== "string"
-    || typeof row.week_id !== "string" || typeof row.expected_revision !== "string"
+    typeof row.command_id !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.command_id)
+    || typeof row.block_id !== "string" || row.block_id.length === 0 || row.block_id.length > 160
+    || typeof row.week_id !== "string" || !/^[0-9]{4}-W(0[1-9]|[1-4][0-9]|5[0-3])$/.test(row.week_id)
+    || typeof row.expected_revision !== "string" || !/^[0-9a-f]{16}$/.test(row.expected_revision)
     || (row.action !== "confirm" && row.action !== "exclude" && row.action !== "relabel")
     || row.status !== "pending" || typeof row.created_at !== "string"
   ) return null;
+  const applicationPhase = row.application_phase === null
+    ? null
+    : row.application_phase === "apply_pending" || row.application_phase === "ack_pending"
+      ? row.application_phase
+      : undefined;
+  const claimedByDevice = row.claimed_by_device === null
+    ? null
+    : typeof row.claimed_by_device === "string"
+      && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.claimed_by_device)
+      ? row.claimed_by_device
+      : undefined;
+  const claimedAt = row.claimed_at === null
+    ? null
+    : typeof row.claimed_at === "string" && Number.isFinite(Date.parse(row.claimed_at))
+      ? new Date(row.claimed_at).toISOString()
+      : undefined;
+  const rawClaimOwner = Array.isArray(row.claim_owner)
+    ? row.claim_owner[0]
+    : row.claim_owner;
+  const claimOwnerRecord = typeof rawClaimOwner === "object" && rawClaimOwner !== null
+    ? rawClaimOwner as Record<string, unknown>
+    : null;
+  const claimOwnerRevoked = applicationPhase === null
+    ? null
+    : claimOwnerRecord?.revoked_at === null
+      ? false
+      : typeof claimOwnerRecord?.revoked_at === "string"
+        && Number.isFinite(Date.parse(claimOwnerRecord.revoked_at))
+        ? true
+        : undefined;
+  if (applicationPhase === undefined || claimedByDevice === undefined || claimedAt === undefined
+    || claimOwnerRevoked === undefined
+    || (applicationPhase === null) !== (claimedByDevice === null)
+    || (applicationPhase === null) !== (claimedAt === null)) return null;
   const rawPatch = typeof row.patch === "object" && row.patch !== null
     ? row.patch as Record<string, unknown>
     : null;
@@ -490,28 +527,108 @@ function parseReviewCommand(value: unknown): ReviewCommandV1 | null {
     createdAt: row.created_at,
     decidedAt: null,
     decisionReason: null,
+    applicationPhase,
+    claimedByDevice,
+    claimedAt,
+    claimOwnerRevoked,
   };
 }
 
-export async function fetchPendingReviewCommands(
+export async function fetchPendingReviewCommandsV2(
   env: CloudEnv,
   session: PersistedCloudSession,
 ): Promise<CloudResult<ReviewCommandV1[]>> {
-  const query = "select=command_id,block_id,week_id,expected_revision,action,patch,status,created_at"
-    + "&status=eq.pending&order=created_at.asc&limit=50";
+  const pageSize = 200;
+  const select = "command_id,block_id,week_id,expected_revision,action,patch,status,created_at,application_phase,claimed_by_device,claimed_at,claim_owner:weekform_devices!review_commands_v2_claimed_device_fkey(revoked_at)";
   try {
-    const response = await fetch(`${env.url}/rest/v1/review_commands?${query}`, {
-      headers: authHeaders(env, session.accessToken),
-    });
-    if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not load Web review requests"), status: response.status };
-    const rows: unknown = await response.json();
-    return { ok: true, value: (Array.isArray(rows) ? rows : []).map(parseReviewCommand).filter((value): value is ReviewCommandV1 => value !== null) };
+    const commands: ReviewCommandV1[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const query = `select=${select}&status=eq.pending&order=created_at.asc&limit=${pageSize}&offset=${offset}`;
+      const response = await fetch(`${env.url}/rest/v1/review_commands_v2?${query}`, {
+        headers: authHeaders(env, session.accessToken),
+      });
+      if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not load Web review requests"), status: response.status };
+      const body: unknown = await response.json();
+      const rows = Array.isArray(body) ? body : [];
+      commands.push(...rows.map(parseReviewCommand).filter((value): value is ReviewCommandV1 => value !== null));
+      if (rows.length < pageSize) break;
+    }
+    return { ok: true, value: commands };
   } catch {
     return { ok: false, message: NETWORK_ERROR_MESSAGE };
   }
 }
 
-export async function completeReviewCommand(
+export async function claimReviewCommandV2(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  deviceId: string,
+  commandId: string,
+): Promise<CloudResult<ReviewCommandApplicationPhase | Exclude<ReviewCommandStatus, "pending">>> {
+  try {
+    const response = await fetch(`${env.url}/rest/v1/rpc/claim_review_command_v2`, {
+      method: "POST",
+      headers: authHeaders(env, session.accessToken),
+      body: JSON.stringify({ p_device_id: deviceId, p_command_id: commandId }),
+    });
+    if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not claim the Web review request"), status: response.status };
+    const phase: unknown = await response.json();
+    if (phase !== "apply_pending" && phase !== "ack_pending"
+      && phase !== "applied" && phase !== "rejected" && phase !== "conflict") {
+      return { ok: false, message: "Review request claim receipt was incomplete." };
+    }
+    return { ok: true, value: phase };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
+export async function markReviewCommandAppliedLocallyV2(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  deviceId: string,
+  commandId: string,
+): Promise<CloudResult<boolean>> {
+  try {
+    const response = await fetch(`${env.url}/rest/v1/rpc/mark_review_command_applied_locally_v2`, {
+      method: "POST",
+      headers: authHeaders(env, session.accessToken),
+      body: JSON.stringify({ p_device_id: deviceId, p_command_id: commandId }),
+    });
+    if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not record the local review application"), status: response.status };
+    const applied: unknown = await response.json();
+    return typeof applied === "boolean"
+      ? { ok: true, value: applied }
+      : { ok: false, message: "Review application receipt was incomplete." };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
+/** Confirm whether an outbox command still exists after a false lifecycle receipt. */
+export async function reviewCommandExistsV2(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  commandId: string,
+): Promise<CloudResult<boolean>> {
+  const query = `select=command_id&command_id=eq.${encodeURIComponent(commandId)}&limit=1`;
+  try {
+    const response = await fetch(`${env.url}/rest/v1/review_commands_v2?${query}`, {
+      headers: authHeaders(env, session.accessToken),
+    });
+    if (!response.ok) return {
+      ok: false,
+      message: await failureMessage(response, "Could not verify the Web review request"),
+      status: response.status,
+    };
+    const rows: unknown = await response.json();
+    return { ok: true, value: Array.isArray(rows) && rows.length > 0 };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
+export async function completeReviewCommandV2(
   env: CloudEnv,
   session: PersistedCloudSession,
   deviceId: string,
@@ -520,7 +637,7 @@ export async function completeReviewCommand(
   reason: string | null,
 ): Promise<CloudResult<boolean>> {
   try {
-    const response = await fetch(`${env.url}/rest/v1/rpc/complete_review_command`, {
+    const response = await fetch(`${env.url}/rest/v1/rpc/complete_review_command_v2`, {
       method: "POST",
       headers: authHeaders(env, session.accessToken),
       body: JSON.stringify({

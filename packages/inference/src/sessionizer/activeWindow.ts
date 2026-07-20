@@ -14,6 +14,10 @@ function sameWindowContext(left: ActiveWindowSample, right: ActiveWindowSample) 
   return left.app_name === right.app_name && (left.window_title ?? "") === (right.window_title ?? "");
 }
 
+function sameSessionContext(left: ActivitySession, right: ActivitySession) {
+  return left.app_name === right.app_name && (left.window_title ?? "") === (right.window_title ?? "");
+}
+
 function toSession(samples: ActiveWindowSample[]): ActivitySession {
   const first = samples[0];
   const last = samples[samples.length - 1];
@@ -70,5 +74,59 @@ export function sessionizeActiveWindowSamples(
 
   return groups.map(toSession).sort(
     (left, right) => new Date(right.start_time).getTime() - new Date(left.start_time).getTime()
+  );
+}
+
+/**
+ * Joins a bounded native journal rollup with sessions created from samples that
+ * arrived after that rollup's cutoff. The two sides may split one real session
+ * at the cutoff, so adjacent matching contexts are rejoined deterministically.
+ */
+export function mergeActivitySessionWindows(
+  historical: ActivitySession[],
+  live: ActivitySession[],
+  sessionGapMs = DEFAULT_SESSION_GAP_MS,
+): ActivitySession[] {
+  const ordered = [...historical, ...live].sort(
+    (left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime(),
+  );
+  const merged: ActivitySession[] = [];
+
+  for (const session of ordered) {
+    const previous = merged[merged.length - 1];
+    const previousEnd = previous ? new Date(previous.end_time).getTime() : Number.NaN;
+    const currentStart = new Date(session.start_time).getTime();
+    const gapMs = currentStart - previousEnd;
+    if (
+      previous
+      && Number.isFinite(gapMs)
+      && gapMs >= 0
+      && gapMs <= sessionGapMs
+      && sameSessionContext(previous, session)
+    ) {
+      const startMs = new Date(previous.start_time).getTime();
+      const endMs = new Date(session.end_time).getTime();
+      const spanMinutes = Math.round((endMs - startMs) / 60_000);
+      const sampleCount = previous.sample_count + session.sample_count;
+      merged[merged.length - 1] = {
+        ...previous,
+        end_time: session.end_time,
+        duration_minutes: Number.isFinite(spanMinutes) ? Math.max(1, spanMinutes) : 1,
+        sample_count: sampleCount,
+        evidence: [
+          `Observed ${previous.app_name} as the active app`,
+          previous.window_title
+            ? `Front window title: ${previous.window_title}`
+            : "Window title unavailable or redacted",
+          `${sampleCount} active-window samples grouped locally`,
+        ],
+      };
+      continue;
+    }
+    merged.push({ ...session });
+  }
+
+  return merged.sort(
+    (left, right) => new Date(right.start_time).getTime() - new Date(left.start_time).getTime(),
   );
 }

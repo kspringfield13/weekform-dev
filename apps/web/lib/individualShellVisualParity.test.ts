@@ -6,6 +6,10 @@ const stylesSource = readFileSync(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+const shellSource = readFileSync(
+  new URL("../components/IndividualWorkspaceShell.tsx", import.meta.url),
+  "utf8",
+);
 
 function rule(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -14,7 +18,7 @@ function rule(selector: string): string {
   return match[1] ?? "";
 }
 
-test("the authenticated Individual shell uses the current Desktop light token contract", () => {
+test("the authenticated Individual shell keeps the Desktop geometry while allowing both themes", () => {
   const app = rule(".web-individual-app.app");
 
   assert.match(app, /color-scheme:\s*light\s*;/);
@@ -24,7 +28,11 @@ test("the authenticated Individual shell uses the current Desktop light token co
   assert.match(app, /--text:\s*#171717\s*;/);
   assert.match(app, /--radius:\s*6px\s*;/);
   assert.match(app, /grid-template-columns:\s*224px\s+minmax\(0,\s*1fr\)\s*;/);
-  assert.doesNotMatch(app, /color-scheme:\s*dark|--background:\s*#111210|236px/);
+  assert.doesNotMatch(app, /236px/);
+  assert.match(
+    stylesSource,
+    /:root\[data-theme="dark"\]\s+\.web-individual-app\.app\s*\{[^}]*color-scheme:\s*dark\s*;[^}]*--background:\s*#111210\s*;/,
+  );
 });
 
 test("the authenticated sidebar matches the current Desktop hierarchy and geometry", () => {
@@ -46,8 +54,21 @@ test("collapsing the sidebar also collapses the toolbar sidebar column", () => {
 
   assert.match(
     toolbar,
-    /grid-template-columns:\s*0\s+minmax\(180px,\s*1fr\)\s+auto\s*;/,
+    /grid-template-columns:\s*0\s+minmax\(180px,\s*1fr\)\s+auto\s+auto\s*;/,
   );
+});
+
+test("the Web toolbar leads with the review purpose and ends with the product lockup", () => {
+  assert.match(shellSource, /Your week, ready to review/);
+  assert.match(shellSource, /Private evidence stays on your Mac/);
+  assert.match(
+    shellSource,
+    /className="web-toolbar-actions"[\s\S]*className="web-toolbar-product"[\s\S]*<strong>Weekform<\/strong>[\s\S]*<span>Web<\/span>/,
+  );
+
+  const product = rule(".web-toolbar-product");
+  assert.match(product, /justify-self:\s*end\s*;/);
+  assert.match(product, /font-family:\s*"Geist Variable"/);
 });
 
 test("context tabs and page content use the current Desktop strip and content frame", () => {

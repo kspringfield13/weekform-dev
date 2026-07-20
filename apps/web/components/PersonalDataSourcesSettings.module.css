@@ -34,9 +34,9 @@
   grid-template-columns: 34px minmax(220px, 1fr) minmax(150px, 0.45fr) auto;
   align-items: center;
   gap: 14px;
-  min-height: 78px;
+  min-height: 80px;
   border-top: 1px solid var(--border);
-  padding: 11px 10px;
+  padding: 12px 8px;
 }
 
 .icon {
@@ -62,7 +62,7 @@
   max-width: 620px;
   margin: 4px 0 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 18px;
 }
 
@@ -79,37 +79,7 @@
 
 .status span {
   color: var(--text-subtle);
-  font-size: 10px;
-}
-
-.localBadge {
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  color: var(--text-muted);
-  background: var(--surface);
-  padding: 4px 8px;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-.handoff {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin-top: 14px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--surface);
-  padding: 12px 13px;
-}
-
-.handoff > div {
-  display: grid;
-  gap: 3px;
+  font-size: 11px;
 }
 
 @media (max-width: 880px) {
@@ -128,17 +98,12 @@
     grid-template-columns: 34px minmax(0, 1fr);
   }
 
-  .localBadge {
+  .row > :global([aria-disabled="true"]) {
     grid-column: 2;
     justify-self: start;
   }
 
   .status {
     grid-column: 2;
-  }
-
-  .handoff {
-    align-items: stretch;
-    flex-direction: column;
   }
 }

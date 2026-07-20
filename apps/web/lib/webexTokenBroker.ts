@@ -1,3 +1,8 @@
+import {
+  deriveSecretKeyedRequestHash,
+  keyRequestIpSubject,
+} from "./distributedRequestControl";
+
 export interface WebexBrokerConfig {
   clientId: string;
   clientSecret: string;
@@ -9,11 +14,26 @@ export interface WebexBrokerEnvironment {
   clientSecret?: string;
   redirectUri?: string;
   securityVerified?: string;
+  controlClaim?: string;
+  ipHashSecret?: string;
+  trustedIpHeader?: string;
+  trustedProxy?: string;
+  vercelDeployment?: string;
+}
+
+export interface WebexBrokerControlConfig {
+  serverClaim: string;
+  ipHashSecret: string;
+  trustedIpHeader: "x-forwarded-for";
+  trustedProxy: "vercel";
 }
 
 export type WebexBrokerReadiness =
-  | { ready: true; config: WebexBrokerConfig }
-  | { ready: false; reason: "security_unverified" | "configuration_missing" };
+  | { ready: true; config: WebexBrokerConfig; control: WebexBrokerControlConfig }
+  | {
+    ready: false;
+    reason: "security_unverified" | "configuration_missing" | "controls_missing";
+  };
 
 export interface WebexTokenExchange {
   endpoint: "https://webexapis.com/v1/access_token";
@@ -28,8 +48,8 @@ export interface WebexTokenProjection {
 }
 
 /**
- * Fail closed until operators explicitly attest that the deployed broker has
- * rate limiting and credential-safe request/observability logging in place.
+ * The operational attestation is necessary but insufficient: readiness also
+ * requires the secrets used by the implemented distributed control path.
  */
 export function resolveWebexBrokerReadiness(
   environment: WebexBrokerEnvironment,
@@ -43,10 +63,43 @@ export function resolveWebexBrokerReadiness(
   if (!clientId || !clientSecret || !redirectUri) {
     return { ready: false, reason: "configuration_missing" };
   }
+  const serverClaim = environment.controlClaim?.trim();
+  const ipHashSecret = environment.ipHashSecret?.trim();
+  const trustedIpHeader = environment.trustedIpHeader?.trim().toLowerCase();
+  const trustedProxy = environment.trustedProxy?.trim().toLowerCase();
+  if (
+    !serverClaim
+    || new TextEncoder().encode(serverClaim).byteLength < 32
+    || !ipHashSecret
+    || new TextEncoder().encode(ipHashSecret).byteLength < 32
+    || trustedIpHeader !== "x-forwarded-for"
+    || trustedProxy !== "vercel"
+    || environment.vercelDeployment !== "1"
+  ) {
+    return { ready: false, reason: "controls_missing" };
+  }
   return {
     ready: true,
     config: { clientId, clientSecret, redirectUri },
+    control: {
+      serverClaim,
+      ipHashSecret,
+      trustedIpHeader,
+      trustedProxy,
+    },
   };
+}
+
+/** Return an HMAC subject only; the raw trusted-proxy IP is never persisted. */
+export function keyWebexIpSubject(
+  headers: Pick<Headers, "get">,
+  trustedIpHeader: WebexBrokerControlConfig["trustedIpHeader"],
+  secret: string,
+): string | null {
+  return keyRequestIpSubject(headers, {
+    ipHashSecret: secret,
+    trustedIpHeader,
+  });
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -129,6 +182,28 @@ export function buildWebexTokenExchange(
   }
 
   return { endpoint: "https://webexapis.com/v1/access_token", form };
+}
+
+/** Key the one-time code/refresh token in memory without retaining it in a receipt. */
+export function webexExchangeIdempotencyKey(
+  exchange: WebexTokenExchange,
+  secret: string,
+): string {
+  const grantType = exchange.form.get("grant_type");
+  const credential = grantType === "authorization_code"
+    ? exchange.form.get("code")
+    : grantType === "refresh_token"
+      ? exchange.form.get("refresh_token")
+      : null;
+  if (!grantType || !credential) {
+    throw new Error("The Webex exchange has no idempotency material.");
+  }
+  return deriveSecretKeyedRequestHash(secret, [
+    "webex_oauth",
+    grantType,
+    exchange.form.get("client_id") ?? "",
+    credential,
+  ]);
 }
 
 function optionalSeconds(value: unknown): number | undefined {

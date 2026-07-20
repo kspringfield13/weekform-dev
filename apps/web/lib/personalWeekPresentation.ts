@@ -33,6 +33,27 @@ export interface ReplicaModeSummary {
   sharePct: number;
 }
 
+// Keep the self-contained Web bundle aligned with the canonical Desktop
+// taxonomy. The parity test compares every entry to packages/domain at build
+// time; importing that runtime module would cross the app's Turbopack root.
+const replicaCategoryColors: Record<string, string> = {
+  "Planned analysis / project work": "#2563eb",
+  "Ad hoc stakeholder requests": "#dc2626",
+  "Recurring reporting": "#0891b2",
+  "Dashboard development / edits": "#7c3aed",
+  "SQL / data modeling / query work": "#0f766e",
+  "QA / data validation": "#ca8a04",
+  "Debugging / issue investigation": "#ea580c",
+  "Documentation / requirement clarification": "#6b7280",
+  "Meetings / stakeholder syncs": "#16a34a",
+  "Admin / coordination": "#64748b",
+  "Blocked / waiting / dependency delay": "#be185d",
+};
+
+export function categoryColor(category: string): string {
+  return replicaCategoryColors[category] ?? "#64748b";
+}
+
 export function capacityForPresentation(
   input: PersonalReplicaCapacityV1,
   hasCurrentWeekSignal: boolean,

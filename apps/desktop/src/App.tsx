@@ -29,6 +29,7 @@ import type {
   AccelerationPlay,
   AccelerationSignal,
   ActiveWindowSample,
+  ActivitySession,
   AuditEvent,
   CalendarEvent,
   RawEvent,
@@ -66,7 +67,14 @@ import {
 } from "./lib/date";
 import { unionSpanMs } from "./lib/meetingLoad";
 import { fieldLabel, formatDurationMinutes, formatIsoWeekLabel, humanizeCorrectionValue } from "./lib/format";
-import { downloadTextFile, exportFilename, exportMimeType, serializeFullBackup, type FullBackup } from "./lib/dataExport";
+import {
+  downloadTextFile,
+  exportFilename,
+  exportMimeType,
+  prepareNativeFullBackup,
+  serializeFullBackup,
+  type FullBackup,
+} from "./lib/dataExport";
 import { createAccelerationPlayAuditEvent, createAuditEvent, createCalendarImportAuditEvent, createChatImportAuditEvent, createChatSyncAuditEvent, createUsageImportAuditEvent, createUsageSettingsAuditEvent, createWeeklyReviewAuditEvent } from "./lib/audit";
 import { removeSeededCorrections, removeSeededWorkBlocks } from "./lib/blocks";
 import { useDateContext } from "./hooks/useDateContext";
@@ -121,6 +129,10 @@ import {
 } from "./services/adminPortal";
 import { deriveWeeklyReviewState } from "./services/weeklyReview";
 import { resolveGettingStartedExit } from "./services/gettingStartedFlow";
+import {
+  clearAgentSessionStorage,
+  readAgentSessionStorage,
+} from "./services/agentSessionStorage";
 import {
   getInitialWindowMode,
   isTauriWindow,
@@ -189,7 +201,7 @@ export function App() {
               capture_error: null,
             }];
           }),
-        }).catch(() => undefined);
+        });
       }
       // The read/migration resolved, so it's now safe to persist regardless of
       // whether data was found.
@@ -242,13 +254,15 @@ export function App() {
         setConsentReceipts(data.consentReceipts ?? []);
       }
       if (isTauriRuntime) {
+        const sessionCutoffMs = Date.now();
+        const sessionSinceMs = sessionCutoffMs - 8 * 24 * 60 * 60 * 1000;
         void invoke<Array<{
           sample_id: string;
           timestamp_ms: number;
           app_name: string | null;
           window_title: string | null;
           capture_error: string | null;
-        }>>("read_capture_journal").then((journal) => {
+        }>>("read_capture_journal", { limit: 2000 }).then((journal) => {
           const recovered: ActiveWindowSample[] = journal.flatMap((entry) => {
             if (entry.capture_error || !entry.app_name || !Number.isFinite(entry.timestamp_ms)) return [];
             return [{
@@ -267,6 +281,19 @@ export function App() {
         }).catch((error) => {
           setCaptureError(error instanceof Error ? error.message : "The encrypted capture journal could not be read.");
         });
+        void invoke<ActivitySession[]>("read_capture_journal_sessions", {
+          sinceMs: sessionSinceMs,
+          untilMs: sessionCutoffMs,
+          maxSessions: 10_000,
+        }).then((sessions) => {
+          setJournalSessionWindow({ cutoffMs: sessionCutoffMs, sessions });
+        }).catch((error) => {
+          setCaptureError(
+            error instanceof Error
+              ? error.message
+              : "The recent encrypted activity window could not be reconstructed.",
+          );
+        });
       }
 
       // Every launch: bring the main window forward maximized in the full
@@ -274,7 +301,14 @@ export function App() {
       // users land on their dashboard). The menu-bar icon stays available
       // either way; closing the window returns the app to tray-only.
       void invoke("present_main_window").catch(() => undefined);
-    }).catch(() => {});
+    }).catch((error) => {
+      // Never reinterpret a read, Keychain, or legacy-journal migration failure
+      // as an empty first launch: that would let a later save overwrite data we
+      // failed to hydrate. Keep persistence gated and make recovery visible.
+      const detail = error instanceof Error ? error.message : String(error);
+      setCaptureError(`Saved Weekform data could not be loaded: ${detail}`);
+      void invoke("present_main_window").catch(() => undefined);
+    });
   }, [isDemoMode, isTauriRuntime]);
 
   const initialBlocks = removeSeededWorkBlocks(persistedSnapshot?.blocks ?? []);
@@ -298,6 +332,10 @@ export function App() {
   const [activeWindowSamples, setActiveWindowSamples] = useState<ActiveWindowSample[]>(
     () => persistedSnapshot?.activeWindowSamples ?? []
   );
+  const [journalSessionWindow, setJournalSessionWindow] = useState<{
+    cutoffMs: number;
+    sessions: ActivitySession[];
+  } | null>(null);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>(() => persistedSnapshot?.auditEvents ?? []);
   const [generatedForecast, setGeneratedForecast] = useState<PersistedForecastRecord | null>(
     () => persistedSnapshot?.generatedForecast ?? null
@@ -419,6 +457,9 @@ export function App() {
     getInitialWindowMode({ search: window.location.search, isTauriRuntime })
   );
   const [resetConfirmationRequestId, setResetConfirmationRequestId] = useState(0);
+  const [agentResetGeneration, setAgentResetGeneration] = useState(0);
+  const [isResettingLocalData, setIsResettingLocalData] = useState(false);
+  const resetInProgressRef = useRef(false);
 
   // Transient app-level feedback (success/error/retry). Queue lives here so any
   // handler or effect can emit one; the visual stack is rendered once in AppShell.
@@ -443,7 +484,7 @@ export function App() {
     addAuditEvent: (event) => setAuditEvents((current) => [...current, createAuditEvent(event)].slice(-1000)),
   });
 
-  const { blocks, setBlocks, calendarEvents, setCalendarEvents, corrections, setCorrections, reviewSuggestions, setReviewSuggestions, updateBlock, confirmBlock, excludeBlock, addCorrection } = ledger;
+  const { blocks, setBlocks, mutateBlocksAtomically, calendarEvents, setCalendarEvents, corrections, setCorrections, reviewSuggestions, setReviewSuggestions, updateBlock, confirmBlock, excludeBlock, addCorrection } = ledger;
   const calendarEventsRef = useRef(calendarEvents);
   calendarEventsRef.current = calendarEvents;
   const chatEventsRef = useRef(chatEvents);
@@ -692,7 +733,7 @@ export function App() {
     }
   }, [persistedSnapshot, isDemoMode]);
 
-  usePersistence({
+  const appPersistence = usePersistence({
     blocks,
     calendarEvents,
     chatEvents,
@@ -739,7 +780,6 @@ export function App() {
   useActiveWindow({
     isDemoMode,
     setActiveWindowSamples,
-    setAuditEvents,
     setCaptureError,
   });
 
@@ -747,6 +787,7 @@ export function App() {
     blocks,
     chatEvents,
     activeWindowSamples,
+    journalSessionWindow,
     calendarEvents,
     generatedNarrative,
     forecastHistory,
@@ -806,8 +847,9 @@ export function App() {
     account: cloudAccount,
     snapshot,
     workBlocks: blocks,
-    setBlocks,
+    mutateBlocksAtomically,
     addCorrection,
+    persistLatestLocalState: appPersistence.flushLatest,
   });
   const cloud: CloudController = useMemo(
     () => ({ account: cloudAccount, sync: cloudSync, personal: personalCloud }),
@@ -946,11 +988,33 @@ export function App() {
     });
   }, [accelerationSignals, currentWeekId, isDemoMode]);
 
+  // Native retention compacts the encrypted journal at most once per local day
+  // (and immediately after the policy changes). Sample arrival every five seconds
+  // must not trigger a full-history read/rewrite. Failures remain visible because
+  // retention is a consequential privacy control, not background housekeeping.
+  useEffect(() => {
+    if (isDemoMode || !isTauriRuntime || retentionDays === null) return;
+    const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+    void invoke("prune_capture_journal", { cutoffMs: Math.max(0, Math.floor(cutoff)) })
+      .then(() => {
+        setCaptureError((current) => (
+          current?.startsWith("Could not apply the capture retention policy") ? null : current
+        ));
+      })
+      .catch((error) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        const message = `Could not apply the capture retention policy: ${detail}`;
+        setCaptureError(message);
+        pushToast({ tone: "error", message });
+      });
+  }, [isDemoMode, isTauriRuntime, retentionDays, todayKey, pushToast]);
+
   // Retention policy: auto-expire raw activity older than the user-chosen window
   // (null = keep everything). This covers both the raw active-window samples and the
   // retained chat `RawEvent` store (each grows one-row-per-event, so both must be
-  // pruned or the chat history would accumulate forever). Sessions and work blocks
-  // already derived from these are untouched — only the raw rows expire. The effect
+  // pruned or the chat history would accumulate forever). The transient native
+  // session rollup is filtered to the same boundary; durable reviewed work blocks
+  // remain untouched. The effect
   // re-runs as rows accrue; each functional update returns the same reference when
   // nothing crosses the cutoff, so this never loops. The discrete policy change is
   // audited in `changeRetentionDays`; the per-row expiry is not logged (it would
@@ -958,13 +1022,16 @@ export function App() {
   useEffect(() => {
     if (isDemoMode || retentionDays === null) return;
     const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
-    if (isTauriRuntime) {
-      void invoke("prune_capture_journal", { cutoffMs: Math.max(0, Math.floor(cutoff)) })
-        .catch(() => undefined);
-    }
     setActiveWindowSamples((current) => {
       const kept = current.filter((sample) => new Date(sample.timestamp).getTime() >= cutoff);
       return kept.length === current.length ? current : kept;
+    });
+    setJournalSessionWindow((current) => {
+      if (!current) return current;
+      const sessions = current.sessions.filter(
+        (session) => new Date(session.end_time).getTime() >= cutoff,
+      );
+      return sessions.length === current.sessions.length ? current : { ...current, sessions };
     });
     setChatEvents((current) => {
       const kept = current.filter((event) => new Date(event.timestamp_end).getTime() >= cutoff);
@@ -974,7 +1041,7 @@ export function App() {
       const kept = current.filter((event) => new Date(event.timestamp).getTime() >= cutoff);
       return kept.length === current.length ? current : kept;
     });
-  }, [isDemoMode, isTauriRuntime, retentionDays, activeWindowSamples, chatEvents, chatEvidence]);
+  }, [isDemoMode, retentionDays, activeWindowSamples, chatEvents, chatEvidence]);
 
   const { classificationStatus, classificationError, classifyActiveWindowSessions, resetClassification } =
     useClassification({
@@ -1974,12 +2041,22 @@ export function App() {
   }
 
   // The pre-reset "Export my data first" affordance. Snapshots every data class the
-  // reset destroys into one local JSON backup so the irreversible wipe is recoverable
-  // from a file — the earlier version only exported the ledger + audit, silently
+  // reset destroys into one portable local JSON record before the irreversible wipe —
+  // the earlier version only exported the ledger + audit, silently
   // omitting the corrections, forecasts, narratives, imports, and skills the confirm
   // dialog itself lists. Downloads always (harmless in demo); audits only for real data
   // (mirrors the retention/visual-context privacy handlers' demo guard).
-  function exportFullBackup() {
+  async function exportFullBackup() {
+    let agentSession;
+    try {
+      agentSession = readAgentSessionStorage();
+    } catch {
+      pushToast({
+        tone: "error",
+        message: "Backup could not read the local Agent conversation. No incomplete backup was created.",
+      });
+      return;
+    }
     const backup: FullBackup = {
       blocks,
       calendarEvents,
@@ -2016,12 +2093,41 @@ export function App() {
       consentReceipts,
       // Field-by-field projection: sharing policy + sync bookkeeping, never tokens.
       cloudSharing: cloudAccount.backupMetadata(),
+      agentSession,
     };
-    downloadTextFile(
-      exportFilename("full-backup", "json"),
-      serializeFullBackup(backup),
-      exportMimeType("json")
-    );
+    const fileName = exportFilename("full-backup", "json");
+    let exportedActivitySampleCount = activeWindowSamples.length;
+    if (isTauriRuntime) {
+      pushToast({ tone: "info", message: "Preparing your complete local backup…" });
+      try {
+        const result = await invoke<{
+          file_name: string;
+          journal_record_count: number;
+        }>("export_full_backup_with_journal", {
+          backup: prepareNativeFullBackup(backup),
+          fileName,
+        });
+        exportedActivitySampleCount = result.journal_record_count;
+        pushToast({
+          tone: "success",
+          message: `Backup saved to Downloads as ${result.file_name}. It contains plaintext activity evidence; store it securely.`,
+        });
+      } catch (error) {
+        pushToast({
+          tone: "error",
+          message: error instanceof Error
+            ? `Backup could not be completed: ${error.message}`
+            : "Backup could not be completed. No partial export was kept.",
+        });
+        return;
+      }
+    } else {
+      downloadTextFile(
+        fileName,
+        serializeFullBackup(backup),
+        exportMimeType("json")
+      );
+    }
     if (isDemoMode) return;
     setAuditEvents((current) => [
       ...current,
@@ -2031,13 +2137,13 @@ export function App() {
         title: "Full data backup exported",
         summary: `Saved a local JSON backup of ${backup.blocks.length} work ${
           backup.blocks.length === 1 ? "block" : "blocks"
-        }, the audit trail, imports, and every AI output.`,
+        }, the audit trail, imports, every AI output, and the saved Agent conversation.`,
         privacy_level: "local_only",
         details: {
           stored_locally: true,
           sent_to_cloud: false,
           work_blocks: backup.blocks.length,
-          activity_samples: backup.activeWindowSamples.length,
+          activity_samples: exportedActivitySampleCount,
           calendar_events: backup.calendarEvents.length,
           chat_events: backup.chatEvents.length,
           chat_evidence_events: backup.chatEvidence?.length ?? 0,
@@ -2045,7 +2151,9 @@ export function App() {
           audit_events: backup.auditEvents.length,
           consent_receipts: backup.consentReceipts.length,
           saved_skills: backup.savedSkills.length,
-          visual_context_insights: backup.visualContextInsights.length
+          visual_context_insights: backup.visualContextInsights.length,
+          agent_messages: backup.agentSession.messages.length,
+          agent_draft_included: backup.agentSession.draft.length > 0,
         }
       })
     ].slice(-1000));
@@ -2056,13 +2164,42 @@ export function App() {
       window.location.reload();
       return;
     }
-    clearPersistedState().catch(() => {});
-    // Cloud session, sharing policy, sync bookkeeping, and the reserved snapshot id
-    // are wiped too — a reset must leave no active upload path behind.
-    const cloudCredentialsCleared = await cloudAccount.clearAll();
-    const captureJournalCleared = !isTauriRuntime || await invoke("clear_capture_journal")
+    if (resetInProgressRef.current) return;
+    resetInProgressRef.current = true;
+    setIsResettingLocalData(true);
+    setAgentResetGeneration((current) => current + 1);
+    const agentSessionStorageCleared = clearAgentSessionStorage();
+    // Invalidate every AI operation before the first asynchronous deletion.
+    // Provider calls that cannot be cancelled may finish, but their epoch can no
+    // longer commit output into freshly reset state.
+    resetNarrative();
+    resetClassification();
+    resetReviewCopilot();
+    resetForecast();
+    resetAcceleration();
+    resetVisualContext();
+    try {
+      // Stop the native writer before touching its journal. The Rust journal lock
+      // protects individual operations; this pause prevents a fresh post-clear
+      // sample from recreating data while the rest of Reset is still running.
+      setPaused(true);
+      lastAuditedPausedRef.current = true;
+    const capturePaused = !isTauriRuntime || await invoke("set_activity_capture_paused", { paused: true })
       .then(() => true)
       .catch(() => false);
+    const persistedStateCleared = await clearPersistedState()
+      .then(() => true)
+      .catch(() => false);
+    // Cloud session, sharing policy, sync bookkeeping, and the reserved snapshot id
+    // are wiped too — first quiesce every personal sync edge so no late receipt,
+    // queue write, or refreshed session can recreate state after deletion.
+    const personalSyncQuiesced = await personalCloud.quiesceForReset()
+      .then(() => true)
+      .catch(() => false);
+    const cloudCredentialsCleared = await cloudAccount.clearAll().catch(() => false);
+    const captureJournalCleared = !isTauriRuntime || (capturePaused && await invoke("clear_capture_journal")
+      .then(() => true)
+      .catch(() => false));
     const calendarCredentialsCleared = !isTauriRuntime || (await Promise.all(
       (["outlook", "google", "apple"] as CalendarProviderId[]).map((provider) => (
         invoke("disconnect_calendar_source", { provider }).then(() => true).catch(() => false)
@@ -2075,9 +2212,21 @@ export function App() {
     const chatCredentialsCleared = !isTauriRuntime || await invoke("clear_chat_source_storage")
       .then(() => true)
       .catch(() => false);
+    const aiCredentialsCleared = persistedStateCleared && codexCredentialsCleared;
+    const allDurableDataCleared =
+      persistedStateCleared &&
+      capturePaused &&
+      personalSyncQuiesced &&
+      cloudCredentialsCleared &&
+      captureJournalCleared &&
+      calendarCredentialsCleared &&
+      aiCredentialsCleared &&
+      chatCredentialsCleared &&
+      agentSessionStorageCleared;
     setBlocks([]);
     setCalendarEvents([]);
     setActiveWindowSamples([]);
+    setJournalSessionWindow(null);
     // The reset wipes every stored event, but leaves one record of the reset
     // itself and its privacy effects — a user-visible action must stay auditable.
     setAuditEvents([
@@ -2085,26 +2234,35 @@ export function App() {
         type: "data_reset",
         source: "privacy_control",
         title: "Prototype data reset",
-        summary: cloudCredentialsCleared && captureJournalCleared && calendarCredentialsCleared && codexCredentialsCleared && chatCredentialsCleared
+        summary: allDurableDataCleared
           ? "All local activity, the encrypted capture journal, imports, calendar and chat connections, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and Weekform Web session, replica queue, and sharing policies. Screenshot capture was turned off and tracking paused."
-          : "Local app state was reset, but durable removal of a Keychain session, calendar or chat connection, or encrypted capture journal could not be confirmed. Retry Reset Local Data before closing the app.",
+          : "The in-memory workspace was reset, but durable removal of Store data, Agent browser storage, a Keychain credential, a connection, or the encrypted capture journal could not be confirmed. Retry Reset Local Data before closing the app.",
         privacy_level: "local_only",
         details: {
           visual_context_enabled: false,
           tracking_paused: true,
           retention_days: null,
-          ai_credentials_cleared: codexCredentialsCleared,
+          persisted_state_cleared: persistedStateCleared,
+          persisted_state_clear_requires_retry: !persistedStateCleared,
+          provider_api_key_cleared: persistedStateCleared,
+          ai_credentials_cleared: aiCredentialsCleared,
           codex_credentials_cleared: codexCredentialsCleared,
           codex_clear_requires_retry: !codexCredentialsCleared,
+          capture_paused_before_reset: capturePaused,
+          capture_pause_requires_retry: !capturePaused,
           cloud_session_cleared: cloudCredentialsCleared,
           cloud_sharing_policy_cleared: cloudCredentialsCleared,
           cloud_clear_requires_retry: !cloudCredentialsCleared,
+          personal_sync_quiesced_before_clear: personalSyncQuiesced,
+          personal_sync_quiesce_requires_retry: !personalSyncQuiesced,
           encrypted_capture_journal_cleared: captureJournalCleared,
           capture_journal_clear_requires_retry: !captureJournalCleared,
           calendar_credentials_cleared: calendarCredentialsCleared,
           calendar_clear_requires_retry: !calendarCredentialsCleared,
           chat_credentials_cursors_and_hash_salt_cleared: chatCredentialsCleared,
           chat_clear_requires_retry: !chatCredentialsCleared,
+          agent_session_storage_cleared: agentSessionStorageCleared,
+          agent_session_storage_clear_requires_retry: !agentSessionStorageCleared,
           stored_locally: true,
           sent_to_cloud: false
         }
@@ -2147,21 +2305,25 @@ export function App() {
     setConsentReceipts([]);
     setUsageImportError(null);
     setLastUsageImportSummary(null);
-    resetNarrative();
-    resetClassification();
-    resetReviewCopilot();
-    resetForecast();
-    resetAcceleration();
-    resetVisualContext();
     setImportError(null);
     setLastCalendarImportSummary(null);
     setChatImportError(null);
-    setCaptureError(null);
-    setPaused(true);
+    if (allDurableDataCleared) {
+      setCaptureError(null);
+      pushToast({ tone: "success", message: "Local data reset and durable deletion verified." });
+    } else {
+      const message = "Reset finished in memory, but durable deletion could not be verified. Retry before closing Weekform.";
+      setCaptureError(message);
+      pushToast({ tone: "error", message });
+    }
     // The single data_reset event above already records that tracking was paused,
     // so keep the ref in step and let the audit effect skip its own pause row —
     // preserving the "reset leaves exactly one audit event" invariant.
     lastAuditedPausedRef.current = true;
+    } finally {
+      resetInProgressRef.current = false;
+      setIsResettingLocalData(false);
+    }
   }
 
   function importCalendarFile(
@@ -2605,9 +2767,11 @@ export function App() {
         onClassifySessions={classifyActiveWindowSessions}
         corrections={corrections}
         onResetLocalData={resetLocalData}
+        isResettingLocalData={isResettingLocalData}
         resetConfirmationRequestId={resetConfirmationRequestId}
         onResetConfirmationRequestHandled={() => setResetConfirmationRequestId(0)}
         onExportBackup={exportFullBackup}
+        agentResetGeneration={agentResetGeneration}
         reviewSuggestions={reviewSuggestions}
         reviewCopilotStatus={reviewCopilotStatus}
         reviewCopilotError={reviewCopilotError}

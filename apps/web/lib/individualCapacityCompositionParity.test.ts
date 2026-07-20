@@ -28,7 +28,7 @@ test("Individual Web Capacity follows the Desktop's visible dashboard hierarchy"
     { desktop: "Capacity summary", web: "Capacity summary" },
     { desktop: "Commitment and headroom", web: "Commitment and headroom" },
     { desktop: "Top categories", web: "Top categories" },
-    { desktop: "How tracked time is spent", web: "Derived work patterns" },
+    { desktop: "How tracked time is spent", web: "How tracked time is spent" },
     { desktop: "How this estimate is built", web: "How this estimate is built" },
   ];
 
@@ -96,11 +96,8 @@ test("Capacity semantics remain inspectable and avoid a competing Web-only hero"
     /Reviewed block modes/,
     "the replica contains review-safe blocks, not exclusively user-verified blocks",
   );
-  assert.doesNotMatch(
-    webCapacitySource,
-    /How tracked time is spent/,
-    "the positive-allowlist Web replica must not claim overlapping capacity fields are tracked-time allocation",
-  );
+  assert.match(webCapacitySource, /aggregateReplicaModes\(replica\.blocks\)/);
+  assert.doesNotMatch(webCapacitySource, /aggregateReplicaTrackedModes/);
 
   const capacityScreen = dashboardSource.slice(
     position(dashboardSource, "function PersonalCapacityScreen"),

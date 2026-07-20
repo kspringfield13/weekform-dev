@@ -13,10 +13,15 @@ import assert from "node:assert/strict";
 import type { PersistedCloudSession } from "./cloudPolicy";
 import type { WorkloadSnapshotRow } from "./cloudPolicy";
 import {
+  claimReviewCommandV2,
+  completeReviewCommandV2,
   deleteMySnapshotsForTeam,
+  fetchPendingReviewCommandsV2,
   fetchTeamMemberships,
   getCloudEnv,
   isCloudConfigured,
+  markReviewCommandAppliedLocallyV2,
+  reviewCommandExistsV2,
   refreshSession,
   signInWithOAuth,
   signInWithPassword,
@@ -546,5 +551,146 @@ test("delete/upsert failures surface the server message without throwing", async
       assert.equal(del.ok, false);
       if (!del.ok) assert.match(del.message, /permission denied/);
     }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Review command two-phase claim/application lifecycle
+// ---------------------------------------------------------------------------
+
+test("fetchPendingReviewCommandsV2 accepts only allowlisted isolated-v2 lifecycle fields", async () => {
+  const row = {
+    command_id: "81000000-0000-4000-8000-000000000001",
+    block_id: "block-1",
+    week_id: "2026-W29",
+    expected_revision: "0123456789abcdef",
+    action: "confirm",
+    patch: null,
+    status: "pending",
+    created_at: "2026-07-20T12:00:00.000Z",
+    application_phase: "apply_pending",
+    claimed_by_device: "82000000-0000-4000-8000-000000000001",
+    claimed_at: "2026-07-20T12:00:01.000Z",
+    claim_owner: { revoked_at: null },
+  };
+  await withFetch(
+    () => jsonResponse([row, { ...row, command_id: "bad", application_phase: "unknown" }]),
+    async (requests) => {
+      const result = await fetchPendingReviewCommandsV2(env, makeSession());
+      assert.ok(result.ok);
+      assert.equal(result.value.length, 1);
+      assert.equal(result.value[0].applicationPhase, "apply_pending");
+      assert.equal(result.value[0].claimedByDevice, row.claimed_by_device);
+      assert.equal(result.value[0].claimedAt, row.claimed_at);
+      assert.equal(result.value[0].claimOwnerRevoked, false);
+      assert.match(requests[0].url, /application_phase,claimed_by_device,claimed_at/);
+      assert.match(requests[0].url, /\/rest\/v1\/review_commands_v2\?/);
+    },
+  );
+});
+
+test("fetchPendingReviewCommandsV2 paginates so claimed rows cannot starve later requests", async () => {
+  const row = (index: number) => ({
+    command_id: `${(0x81000000 + index).toString(16).padStart(8, "0")}-0000-4000-8000-000000000001`,
+    block_id: `block-${index}`,
+    week_id: "2026-W29",
+    expected_revision: "0123456789abcdef",
+    action: "confirm",
+    patch: null,
+    status: "pending",
+    created_at: "2026-07-20T12:00:00.000Z",
+    application_phase: null,
+    claimed_by_device: null,
+    claimed_at: null,
+    claim_owner: null,
+  });
+  await withFetch(
+    (url) => jsonResponse(url.includes("offset=200") ? [row(200)] : Array.from({ length: 200 }, (_, index) => row(index))),
+    async (requests) => {
+      const result = await fetchPendingReviewCommandsV2(env, makeSession());
+      assert.ok(result.ok);
+      assert.equal(result.value.length, 201);
+      assert.equal(requests.length, 2);
+      assert.match(requests[1].url, /offset=200/);
+    },
+  );
+});
+
+test("reviewCommandExistsV2 distinguishes a deleted command from a live isolated-v2 row", async () => {
+  let call = 0;
+  await withFetch(
+    () => jsonResponse(call++ === 0 ? [{ command_id: "81000000-0000-4000-8000-000000000001" }] : []),
+    async (requests) => {
+      assert.deepEqual(
+        await reviewCommandExistsV2(env, makeSession(), "81000000-0000-4000-8000-000000000001"),
+        { ok: true, value: true },
+      );
+      assert.deepEqual(
+        await reviewCommandExistsV2(env, makeSession(), "81000000-0000-4000-8000-000000000002"),
+        { ok: true, value: false },
+      );
+      assert.match(requests[0].url, /command_id=eq\.81000000-0000-4000-8000-000000000001/);
+      assert.match(requests[0].url, /\/rest\/v1\/review_commands_v2\?/);
+    },
+  );
+});
+
+test("claimReviewCommandV2 obtains server acknowledgement before local application", async () => {
+  await withFetch(
+    () => jsonResponse("apply_pending"),
+    async (requests) => {
+      const result = await claimReviewCommandV2(
+        env,
+        makeSession(),
+        "82000000-0000-4000-8000-000000000001",
+        "81000000-0000-4000-8000-000000000001",
+      );
+      assert.deepEqual(result, { ok: true, value: "apply_pending" });
+      assert.equal(requests[0].url, `${env.url}/rest/v1/rpc/claim_review_command_v2`);
+      assert.deepEqual(JSON.parse(requests[0].body ?? ""), {
+        p_device_id: "82000000-0000-4000-8000-000000000001",
+        p_command_id: "81000000-0000-4000-8000-000000000001",
+      });
+    },
+  );
+});
+
+test("claimReviewCommandV2 recognizes an idempotent terminal conflict receipt", async () => {
+  await withFetch(
+    () => jsonResponse("conflict"),
+    async () => {
+      assert.deepEqual(await claimReviewCommandV2(
+        env,
+        makeSession(),
+        "82000000-0000-4000-8000-000000000001",
+        "81000000-0000-4000-8000-000000000001",
+      ), { ok: true, value: "conflict" });
+    },
+  );
+});
+
+test("application recording and terminal completion are separate idempotent acknowledgements", async () => {
+  await withFetch(
+    () => jsonResponse(true),
+    async (requests) => {
+      const marked = await markReviewCommandAppliedLocallyV2(
+        env,
+        makeSession(),
+        "82000000-0000-4000-8000-000000000001",
+        "81000000-0000-4000-8000-000000000001",
+      );
+      const completed = await completeReviewCommandV2(
+        env,
+        makeSession(),
+        "82000000-0000-4000-8000-000000000001",
+        "81000000-0000-4000-8000-000000000001",
+        "applied",
+        "Approved on this Mac.",
+      );
+      assert.deepEqual(marked, { ok: true, value: true });
+      assert.deepEqual(completed, { ok: true, value: true });
+      assert.equal(requests[0].url, `${env.url}/rest/v1/rpc/mark_review_command_applied_locally_v2`);
+      assert.equal(requests[1].url, `${env.url}/rest/v1/rpc/complete_review_command_v2`);
+    },
   );
 });

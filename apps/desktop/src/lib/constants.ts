@@ -8,11 +8,9 @@ export const MIN_VISUAL_CONTEXT_GAP_MS = 45 * 60 * 1000;
 export const MAX_PROACTIVE_ALERTS_PER_DAY = 4;
 export const MIN_PROACTIVE_ALERT_GAP_MS = 90 * 60 * 1000;
 
-// Bounded timeout for every Rust-mediated AI call. The native `reqwest` clients
-// have no read timeout and the `invoke` promises can't be cancelled, so a hung
-// provider would otherwise pin an AI hook at "generating" forever. `withAiTimeout`
-// (lib/aiTimeout.ts) races each invoke against this ceiling and rejects with a
-// clear message instead. See STATUS.md for the native follow-up (reqwest timeouts).
+// Bounded fallback for every Rust-mediated AI call. Native connect/read/total
+// limits end provider HTTP work before this 60-second UI ceiling; the frontend
+// race still protects state if invocation/serialization itself ever stalls.
 export const AI_CALL_TIMEOUT_MS = 60 * 1000;
 
 // Hover explanation for every AI-triggering button that is grayed out because no

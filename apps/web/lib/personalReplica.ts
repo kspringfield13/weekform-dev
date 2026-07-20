@@ -5,22 +5,15 @@ import type {
   ReviewCommandPatchV1,
   ReviewCommandStatus,
 } from "../../../packages/domain/src/personalCloud";
+import {
+  reviewCategories,
+  reviewPlannedStatuses,
+  reviewWorkModes,
+} from "./personalReviewTaxonomy";
 
-const CATEGORIES = new Set([
-  "Planned analysis / project work",
-  "Ad hoc stakeholder requests",
-  "Recurring reporting",
-  "Dashboard development / edits",
-  "SQL / data modeling / query work",
-  "QA / data validation",
-  "Debugging / issue investigation",
-  "Documentation / requirement clarification",
-  "Meetings / stakeholder syncs",
-  "Admin / coordination",
-  "Blocked / waiting / dependency delay",
-]);
-const MODES = new Set(["Deep work", "Reactive", "Collaborative", "Fragmented", "Blocked"]);
-const PLANNED = new Set(["planned", "unplanned", "fixed", "blocked"]);
+const CATEGORIES = new Set<string>(reviewCategories);
+const MODES = new Set<string>(reviewWorkModes);
+const PLANNED = new Set<string>(reviewPlannedStatuses);
 const ROW_KEYS = new Set(["replica_id", "week_id", "revision", "synced_at", "payload"]);
 const PAYLOAD_KEYS = new Set([
   "schemaVersion", "replicaId", "weekId", "generatedAt", "sourceUpdatedAt", "blocks", "capacity",

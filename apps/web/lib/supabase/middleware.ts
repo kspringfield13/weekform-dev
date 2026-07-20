@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 import { isProtectedWebPath } from "../protectedPaths";
+import { buildContentSecurityPolicy } from "../securityPolicy";
 import { getSupabaseEnv } from "./config";
 
 const AUTH_REDIRECT_PAGES = ["/signup"];
@@ -14,7 +15,30 @@ const AUTH_REDIRECT_PAGES = ["/signup"];
  * so the browser and server never hold divergent sessions.
  */
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
+  // A unique request nonce lets Next apply a strict script policy to framework
+  // and application scripts. The same policy is forwarded into rendering and
+  // returned to the browser; no nonce is persisted or logged.
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const contentSecurityPolicy = buildContentSecurityPolicy({
+    development: process.env.NODE_ENV !== "production",
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    nonce,
+  });
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set("Content-Security-Policy", contentSecurityPolicy);
+
+  const nextResponse = () => {
+    const response = NextResponse.next({ request: { headers: requestHeaders } });
+    response.headers.set("Content-Security-Policy", contentSecurityPolicy);
+    return response;
+  };
+  const secureResponse = <T extends NextResponse>(response: T): T => {
+    response.headers.set("Content-Security-Policy", contentSecurityPolicy);
+    return response;
+  };
+
+  let supabaseResponse = nextResponse();
 
   const env = getSupabaseEnv();
   if (!env) {
@@ -32,7 +56,7 @@ export async function updateSession(request: NextRequest) {
         cookiesToSet.forEach(({ name, value }) =>
           request.cookies.set(name, value),
         );
-        supabaseResponse = NextResponse.next({ request });
+        supabaseResponse = nextResponse();
         cookiesToSet.forEach(({ name, value, options }) =>
           supabaseResponse.cookies.set(name, value, options),
         );
@@ -62,7 +86,7 @@ export async function updateSession(request: NextRequest) {
     supabaseResponse.cookies.getAll().forEach((cookie) => {
       redirect.cookies.set(cookie.name, cookie.value);
     });
-    return redirect;
+    return secureResponse(redirect);
   }
 
   if (user && isAuthRedirectPage) {
@@ -73,7 +97,7 @@ export async function updateSession(request: NextRequest) {
     supabaseResponse.cookies.getAll().forEach((cookie) => {
       redirect.cookies.set(cookie.name, cookie.value);
     });
-    return redirect;
+    return secureResponse(redirect);
   }
 
   return supabaseResponse;

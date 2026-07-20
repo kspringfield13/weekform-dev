@@ -18,6 +18,7 @@ const desktopScreenMappings = [
   ["skills", { destination: "agent", subview: "skills" }],
   ["ledger", { destination: "history", subview: "activity" }],
   ["audit", { destination: "history", subview: "audit" }],
+  ["sensitive", { destination: "history", subview: "sensitive" }],
   ["setup", { destination: "settings", subview: "settings" }],
 ] as const;
 
@@ -33,10 +34,10 @@ test("Individual Web routes serialize back to canonical Desktop screen names", (
   }
 });
 
-test("unknown and intentionally local-only screens fail closed to Week Capacity", () => {
+test("unknown screens fail closed to Week Capacity", () => {
   const fallback = { destination: "week", subview: "capacity" };
 
-  for (const input of [undefined, null, "", "unknown", "sensitive", 42]) {
+  for (const input of [undefined, null, "", "unknown", 42]) {
     assert.deepEqual(resolveIndividualWorkspaceRoute(input), fallback);
   }
 });

@@ -18,7 +18,8 @@ import {
 import {
   clearPersistedCloudState,
   readPersistedCloudState,
-  writePersistedCloudState
+  writePersistedCloudState,
+  writePersistedCloudStateStrict,
 } from "./cloudStore";
 
 const CLOUD_STORAGE_KEY = "clear-capacity:cloud:v1"; // must match cloudStore.ts
@@ -181,6 +182,7 @@ test("a throwing localStorage degrades every operation gracefully", async () => 
   await withWindow(hostile, async () => {
     assert.equal(await readPersistedCloudState(), null);
     await assert.doesNotReject(writePersistedCloudState(createDefaultCloudState()));
+    await assert.rejects(writePersistedCloudStateStrict(createDefaultCloudState()), /quota/);
     await assert.doesNotReject(clearPersistedCloudState());
   });
 });

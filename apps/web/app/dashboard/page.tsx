@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { Download, UserPlus, UsersRound } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import { getOrCreateProfile } from "@/lib/profile";
@@ -44,6 +45,7 @@ import { PersonalSkillsLibraryScreen } from "@/components/PersonalSkillsLibraryS
 import { PersonalWebDataControl } from "@/components/PersonalWebDataControl";
 import {
   IndividualHistoryView,
+  IndividualSensitiveBoundaryView,
   IndividualSettingsView,
 } from "@/components/IndividualHistorySettings";
 import { signOut } from "@/app/auth/actions";
@@ -154,6 +156,7 @@ export default async function DashboardPage({
       greetingName={greetingName}
       reliableCapacity={currentReplica?.payload.capacity.reliableNewWorkCapacityPct ?? null}
       reviewCount={currentReplica?.payload.blocks.filter((block) => !block.userVerified).length ?? 0}
+      activeWeekLabel={currentReplica?.weekId ?? null}
       managerAccessAvailable={managedTeams.length > 0}
       managerHref={managerHref}
       accountActions={(
@@ -168,21 +171,6 @@ export default async function DashboardPage({
       initialWindowSurface={resolveWebWindowSurface(windowSearch.toString())}
     >
       <div className="container workspace-shell">
-        {personalReplicaError ? (
-          <div className="form-alert web-replica-alert" role="alert">
-            {personalReplicaErrorKind === "integrity" ? (
-              <>
-                <strong>Your private Web data could not be validated.</strong>
-                <p>No workload replica is being shown. Resync from Weekform for Mac, then reload this page.</p>
-              </>
-            ) : personalReplicaErrorKind === "load" ? (
-              <>
-                <strong>Your private Web data could not be loaded.</strong>
-                <p>No workload replica is being shown. Reload this page or check your connection.</p>
-              </>
-            ) : null}
-          </div>
-        ) : null}
         {params.notice ? (
           <div className="form-notice" role="status">
             {params.notice}
@@ -240,11 +228,11 @@ export default async function DashboardPage({
             />
           )}
           accountAndSharing={(
-        <>
-        <section id="teams" className="workspace-section" aria-labelledby="teams-title">
-          <div className="workspace-section-heading">
+        <div className="individual-account-sharing">
+        <section id="teams" className="account-sharing-section" aria-labelledby="teams-title">
+          <div className="settings-row account-sharing-overview-row">
             <span>Optional coordination</span>
-            <h2>Teams</h2>
+            <h2 id="teams-title">Teams</h2>
             <p>Create or join a team only when shared planning improves the decision.</p>
           </div>
           {teamsError ? (
@@ -257,7 +245,7 @@ export default async function DashboardPage({
             </div>
           ) : teams.length > 0 ? (
             <div className="panel">
-              <h2 id="teams-title">Your teams</h2>
+              <h2>Your teams</h2>
               <table className="data-table">
                 <caption className="visually-hidden">
                   Teams you belong to, with your role in each
@@ -289,7 +277,7 @@ export default async function DashboardPage({
             </div>
           ) : (
             <div className="panel">
-              <h2 id="teams-title">You&apos;re not part of a team yet</h2>
+              <h2>You&apos;re not part of a team yet</h2>
               <p>
                 Weekform works fully on your own — teams are optional. If you
                 coordinate work for others, or someone invited you, start here.
@@ -303,18 +291,17 @@ export default async function DashboardPage({
             </div>
           ) : null}
 
-          <div className="card-grid">
-            <article className="choice-card">
-              <span className="badge">Teams</span>
-              <h2>Create a team</h2>
-              <p>
-                Set up a team, invite teammates with a link, and see the
-                capacity signals they choose to share. You become the
-                team&apos;s owner.
-              </p>
-              <form action={createTeam}>
+          <div className="individual-account-sharing" aria-label="Account and team actions">
+            <article className="settings-row account-sharing-operation-row">
+              <div className="settings-row-icon" aria-hidden="true"><UsersRound size={18} /></div>
+              <div className="settings-row-copy">
+                <h3>Create a team</h3>
+                <p>Coordinate through member-approved capacity signals. You become the team owner.</p>
+              </div>
+              <div className="settings-row-status"><strong>Optional</strong><span>Approval-safe sharing</span></div>
+              <form action={createTeam} className="individual-team-form">
                 <div className="field">
-                  <label htmlFor="team-name">Team name</label>
+                  <label className="visually-hidden" htmlFor="team-name">Team name</label>
                   <input
                     id="team-name"
                     name="team_name"
@@ -333,35 +320,33 @@ export default async function DashboardPage({
                 </FormSubmitButton>
               </form>
             </article>
-            <article className="choice-card">
-              <span className="badge">Teams</span>
-              <h2>Accept an invite</h2>
-              <p>
-                Got an invite link from a manager? Open it directly, or paste
-                it on the invite page. Invites are single-use, tied to your
-                email, and expire after 7 days.
-              </p>
+            <article className="settings-row account-sharing-operation-row">
+              <div className="settings-row-icon" aria-hidden="true"><UserPlus size={18} /></div>
+              <div className="settings-row-copy">
+                <h3>Accept an invite</h3>
+                <p>Join through a single-use invite tied to your signed-in address. Invites expire after seven days.</p>
+              </div>
+              <div className="settings-row-status"><strong>Invite required</strong><span>Identity checked</span></div>
               <Link href="/invite" className="button button-secondary">
                 Enter an invite link
               </Link>
             </article>
-            <article className="choice-card">
-              <span className="badge">Available now</span>
-              <h2>Use Weekform personally</h2>
-              <p>
-                Download the Mac app and get private workload intelligence for
-                your own week. Nothing is shared with anyone unless you later
-                join a team and approve it.
-              </p>
+            <article className="settings-row account-sharing-operation-row">
+              <div className="settings-row-icon" aria-hidden="true"><Download size={18} /></div>
+              <div className="settings-row-copy">
+                <h3>Weekform for Mac</h3>
+                <p>Review local evidence and approve what this Web workspace may display. Raw activity remains on your Mac.</p>
+              </div>
+              <div className="settings-row-status"><strong>Local source of truth</strong><span>Release status shown on download page</span></div>
               <Link href="/download" className="button button-primary">
-                Get the Mac app
+                View Mac download
               </Link>
             </article>
           </div>
         </section>
 
         {managedTeams.length > 0 ? (
-          <section id="manager-entry" className="manager-entry" aria-labelledby="manager-entry-title">
+          <section id="manager-entry" className="settings-row account-manager-entry" aria-labelledby="manager-entry-title">
             <div>
               <span className="badge">Manager Access</span>
               <h2 id="manager-entry-title">Coordinate from approved signals—not raw activity.</h2>
@@ -380,7 +365,7 @@ export default async function DashboardPage({
           snapshots={ownSnapshots}
           snapshotsError={snapshotsError}
         />
-        </>
+        </div>
         )} />
         </div>
 
@@ -390,6 +375,9 @@ export default async function DashboardPage({
           </div>
           <div data-web-subview="audit">
             <IndividualHistoryView replicas={personalReplicas} error={personalReplicaError} initialTab="audit" showTabs={false} />
+          </div>
+          <div data-web-subview="sensitive">
+            <IndividualSensitiveBoundaryView />
           </div>
         </div>
 
@@ -424,6 +412,9 @@ function PersonalCapacityScreen({
   const current = replicas[0] ?? null;
   return (
     <section className="web-desktop-screen capacity-screen" aria-label="Weekly capacity">
+      <div className="screen-header capacity-dashboard-header">
+        <p className="eyebrow">Weekly capacity</p>
+      </div>
       {error ? (
         <div className="form-alert web-screen-empty" role="alert">
           {errorKind === "integrity" ? (

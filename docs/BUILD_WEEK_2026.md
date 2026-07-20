@@ -275,6 +275,12 @@ the alignment QA.
   public website-hosted preview path carries an explicit unsigned-preview
   disclosure and is not presented as private or Gatekeeper-trusted
   distribution.
+- **July 20 release hardening:** because this machine has no Developer ID
+  Application identity, the two public preview DMGs and the static redirect
+  fallback were removed. The public release now fails closed unless private
+  hosting is accompanied by explicit Developer ID-signature, notarization,
+  stapling, checksum, and verification-time metadata. This is a release gate,
+  not evidence that signing or notarization occurred.
 
 ### Layered Supabase sign-in
 

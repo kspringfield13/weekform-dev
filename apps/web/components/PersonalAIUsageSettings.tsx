@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { LocalSettingsControl, LocalSettingsHandoff } from "./PersonalSettingsLocalControl";
 import styles from "./PersonalAISettings.module.css";
 
 type UsageIconName = "estimate" | "share" | "import" | "pricing";
@@ -78,7 +79,7 @@ export function PersonalAIUsageSettings() {
               <p>{row.description}</p>
             </div>
             <div className={styles.status}><strong>Mac only</strong><span>{row.detail}</span></div>
-            <Link className={`button button-secondary ${styles.localAction}`} href="/download">Get Weekform for Mac</Link>
+            <LocalSettingsControl />
           </section>
         ))}
         <section className={`${styles.row} ${styles.webRow}`} aria-labelledby="web-ai-usage-boundary">
@@ -91,6 +92,13 @@ export function PersonalAIUsageSettings() {
           <Link className={`button button-primary ${styles.localAction}`} href="/app?screen=usage">Review Web boundary</Link>
         </section>
       </div>
+
+      <LocalSettingsHandoff
+        actionLabel="Get Weekform for Mac"
+        href="/download"
+        title="Keep AI usage measurement beside its local source"
+        description="Weekform for Mac owns observed estimates, imports, pricing overrides, and sharing preferences. Web keeps these controls read-only and never reconstructs private usage totals."
+      />
 
       <p className={styles.footnote}>Web shows no inferred usage totals, provider imports, budgets, prices, or sharing preference. Use Weekform for Mac to review or change them.</p>
     </section>

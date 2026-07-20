@@ -21,16 +21,18 @@ import {
   createEmptyCloudSyncState,
   type CloudBackupMetadata,
   type CloudPendingSnapshot,
+  type PersistedCloudStateV1,
   type PersistedCloudSession
 } from "../services/cloudPolicy";
 import {
   createDefaultPersonalReplicaPolicy,
   createDefaultPersonalSyncState,
+  personalSyncDisconnectBlockReason,
 } from "../services/personalSync";
 import {
   clearPersistedCloudState,
   readPersistedCloudState,
-  writePersistedCloudState
+  writePersistedCloudStateStrict
 } from "../services/cloudStore";
 import {
   fetchTeamMemberships,
@@ -65,7 +67,7 @@ export interface CloudAccountController {
   authError: string | null;
   signIn: (email: string, password: string) => Promise<boolean>;
   signInWithOAuth: (provider: CloudOAuthProvider) => Promise<boolean>;
-  signOut: () => Promise<void>;
+  signOut: () => Promise<boolean>;
   refreshTeams: () => Promise<void>;
   updatePolicy: (patch: Partial<CloudSharePolicyV1>) => void;
   /** Records "I reviewed what will be shared with this team" with a timestamp. */
@@ -75,6 +77,10 @@ export interface CloudAccountController {
   setPendingSnapshot: (value: CloudPendingSnapshot | null) => void;
   updatePersonalReplicaPolicy: (patch: Partial<PersonalReplicaPolicyV1>) => void;
   setPersonalSyncState: (updater: (current: PersonalReplicaSyncStateV1) => PersonalReplicaSyncStateV1) => void;
+  setPersonalSyncStateDurably: (
+    updater: (current: PersonalReplicaSyncStateV1) => PersonalReplicaSyncStateV1,
+  ) => Promise<PersonalReplicaSyncStateV1>;
+  flushPersonalSyncState: () => Promise<void>;
   /** Session for an authenticated call, refreshed when near expiry; null = signed out. */
   getFreshSession: () => Promise<PersistedCloudSession | null>;
   /** Fail-closed recipient/policy refresh immediately before a snapshot upload. */
@@ -96,6 +102,9 @@ const CONSENT_SENSITIVE_FIELDS = [
   "metrics",
   "allowedProjectNames"
 ] as const;
+
+const PERSONAL_SYNC_PERSISTENCE_ERROR =
+  "Weekform could not save the pending Web review receipt. Keep Weekform open and retry; no server acknowledgement was sent.";
 
 export function useCloudAccount({
   isDemoMode,
@@ -120,8 +129,37 @@ export function useCloudAccount({
   const [teamsError, setTeamsError] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const accountEpochRef = useRef(0);
+  const accountClearInFlightRef = useRef(false);
   // Serialize refresh attempts so parallel callers don't burn the one-time refresh token.
   const refreshInFlight = useRef<Promise<PersistedCloudSession | null> | null>(null);
+  const personalSyncStateRef = useRef(personalSyncState);
+  personalSyncStateRef.current = personalSyncState;
+  const cloudEnvelopeRef = useRef<PersistedCloudStateV1>({
+    version: 1,
+    session,
+    policy,
+    syncState,
+    pendingSnapshot,
+    personalReplicaPolicy,
+    personalSyncState,
+  });
+  cloudEnvelopeRef.current = {
+    version: 1,
+    session,
+    policy,
+    syncState,
+    pendingSnapshot,
+    personalReplicaPolicy,
+    personalSyncState,
+  };
+  const cloudWriteTailRef = useRef<Promise<void>>(Promise.resolve());
+
+  const enqueueCloudWrite = useCallback((state: PersistedCloudStateV1): Promise<void> => {
+    const operation = cloudWriteTailRef.current.then(() => writePersistedCloudStateStrict(state));
+    cloudWriteTailRef.current = operation.catch(() => undefined);
+    return operation;
+  }, []);
 
   const emitAudit = useCallback(
     (action: CloudSharingAuditAction, summary: string, details?: Record<string, unknown>) => {
@@ -130,10 +168,15 @@ export function useCloudAccount({
     [onAuditEvent]
   );
 
-  const loadTeams = useCallback(async (activeSession: PersistedCloudSession) => {
+  const loadTeams = useCallback(async (
+    activeSession: PersistedCloudSession,
+    epoch: number = accountEpochRef.current,
+  ) => {
+    if (accountClearInFlightRef.current) return;
     const env = getCloudEnv();
     if (!env) return;
     const result = await fetchTeamMemberships(env, activeSession);
+    if (epoch !== accountEpochRef.current) return;
     if (result.ok) {
       setTeams(result.value);
       setTeamsError(null);
@@ -150,8 +193,9 @@ export function useCloudAccount({
       return;
     }
     let cancelled = false;
+    const epoch = accountEpochRef.current;
     readPersistedCloudState().then((state) => {
-      if (cancelled) return;
+      if (cancelled || epoch !== accountEpochRef.current) return;
       if (state) {
         setSession(state.session);
         setPolicy(state.policy);
@@ -159,7 +203,7 @@ export function useCloudAccount({
         setPendingSnapshot(state.pendingSnapshot);
         setPersonalReplicaPolicy(state.personalReplicaPolicy);
         setPersonalSyncStateRaw(state.personalSyncState);
-        if (state.session) void loadTeams(state.session);
+        if (state.session) void loadTeams(state.session, epoch);
       }
       setHydrated(true);
     });
@@ -171,25 +215,19 @@ export function useCloudAccount({
   // Persist after hydration; a failed write leaves in-memory state working.
   useEffect(() => {
     if (isDemoMode || !configured || !hydrated) return;
-    void writePersistedCloudState({
-      version: 1,
-      session,
-      policy,
-      syncState,
-      pendingSnapshot,
-      personalReplicaPolicy,
-      personalSyncState,
-    });
-  }, [isDemoMode, configured, hydrated, session, policy, syncState, pendingSnapshot, personalReplicaPolicy, personalSyncState]);
+    void enqueueCloudWrite(cloudEnvelopeRef.current).catch(() => undefined);
+  }, [isDemoMode, configured, hydrated, session, policy, syncState, pendingSnapshot, personalReplicaPolicy, personalSyncState, enqueueCloudWrite]);
 
   const signIn = useCallback(
     async (email: string, password: string): Promise<boolean> => {
       const env = getCloudEnv();
-      if (!env || isDemoMode) return false;
+      if (!env || isDemoMode || accountClearInFlightRef.current) return false;
+      const epoch = accountEpochRef.current;
       setAuthBusy(true);
       setAuthError(null);
       try {
         const result = await signInWithPassword(env, email.trim(), password);
+        if (epoch !== accountEpochRef.current) return false;
         if (!result.ok) {
           setAuthError(result.message);
           return false;
@@ -198,7 +236,7 @@ export function useCloudAccount({
         emitAudit("connect", `Signed in to Weekform Web as ${result.value.email}`, {
           user_id: result.value.userId
         });
-        void loadTeams(result.value);
+        void loadTeams(result.value, epoch);
         return true;
       } finally {
         setAuthBusy(false);
@@ -210,11 +248,13 @@ export function useCloudAccount({
   const signInWithOAuthProvider = useCallback(
     async (provider: CloudOAuthProvider): Promise<boolean> => {
       const env = getCloudEnv();
-      if (!env || isDemoMode) return false;
+      if (!env || isDemoMode || accountClearInFlightRef.current) return false;
+      const epoch = accountEpochRef.current;
       setAuthBusy(true);
       setAuthError(null);
       try {
         const result = await signInWithOAuth(env, provider);
+        if (epoch !== accountEpochRef.current) return false;
         if (!result.ok) {
           setAuthError(result.message);
           return false;
@@ -225,7 +265,7 @@ export function useCloudAccount({
           `Signed in to Weekform Web with ${provider === "github" ? "GitHub" : "Google"}`,
           { user_id: result.value.userId, auth_provider: provider }
         );
-        void loadTeams(result.value);
+        void loadTeams(result.value, epoch);
         return true;
       } finally {
         setAuthBusy(false);
@@ -234,23 +274,46 @@ export function useCloudAccount({
     [isDemoMode, emitAudit, loadTeams]
   );
 
-  const signOut = useCallback(async () => {
+  const signOut = useCallback(async (): Promise<boolean> => {
+    const disconnectBlockReason = personalSyncDisconnectBlockReason(personalSyncStateRef.current);
+    if (disconnectBlockReason) {
+      setAuthError(disconnectBlockReason);
+      return false;
+    }
+    accountEpochRef.current += 1;
     const env = getCloudEnv();
     const active = session;
+    const nextPolicy = {
+      ...cloudEnvelopeRef.current.policy,
+      enabled: false,
+      autoSyncEnabled: false,
+      consentedAt: null,
+    };
+    const nextSyncState = {
+      ...cloudEnvelopeRef.current.syncState,
+      status: "idle" as const,
+      nextScheduledAt: null,
+    };
+    const nextPersonalPolicy = createDefaultPersonalReplicaPolicy();
+    const nextPersonalSyncState = createDefaultPersonalSyncState();
+    personalSyncStateRef.current = nextPersonalSyncState;
+    cloudEnvelopeRef.current = {
+      ...cloudEnvelopeRef.current,
+      session: null,
+      policy: nextPolicy,
+      syncState: nextSyncState,
+      personalReplicaPolicy: nextPersonalPolicy,
+      personalSyncState: nextPersonalSyncState,
+    };
     // Local clear first — disconnect must stop future syncs even offline.
     setSession(null);
     setTeams([]);
     setTeamsError(null);
     setAuthError(null);
-    setPolicy((current) => ({
-      ...current,
-      enabled: false,
-      autoSyncEnabled: false,
-      consentedAt: null
-    }));
-    setSyncStateRaw((current) => ({ ...current, status: "idle", nextScheduledAt: null }));
-    setPersonalReplicaPolicy(createDefaultPersonalReplicaPolicy());
-    setPersonalSyncStateRaw(createDefaultPersonalSyncState());
+    setPolicy(nextPolicy);
+    setSyncStateRaw(nextSyncState);
+    setPersonalReplicaPolicy(nextPersonalPolicy);
+    setPersonalSyncStateRaw(nextPersonalSyncState);
     emitAudit("disconnect", "Signed out of Weekform Web; sharing disabled and future syncs stopped");
     const cleared = await clearPersistedCloudState();
     if (!cleared) {
@@ -259,6 +322,7 @@ export function useCloudAccount({
       );
     }
     if (env && active) await signOutSession(env, active.accessToken);
+    return true;
   }, [session, emitAudit]);
 
   const refreshTeams = useCallback(async () => {
@@ -328,14 +392,15 @@ export function useCloudAccount({
 
   const getFreshSession = useCallback(async (): Promise<PersistedCloudSession | null> => {
     const env = getCloudEnv();
-    if (!env || !session) return null;
+    if (!env || !session || accountClearInFlightRef.current) return null;
+    const epoch = accountEpochRef.current;
     const nearExpiry =
       typeof session.expiresAt === "number" && session.expiresAt - Date.now() < 60_000;
     if (!nearExpiry) return session;
     if (!refreshInFlight.current) {
-      refreshInFlight.current = (async () => {
+      const refreshAttempt = (async () => {
         const result = await refreshSession(env, session.refreshToken);
-        refreshInFlight.current = null;
+        if (epoch !== accountEpochRef.current) return null;
         if (!result.ok) {
           setSession(null);
           setTeams([]);
@@ -349,6 +414,10 @@ export function useCloudAccount({
         setSession(refreshed);
         return refreshed;
       })();
+      refreshInFlight.current = refreshAttempt;
+      void refreshAttempt.finally(() => {
+        if (refreshInFlight.current === refreshAttempt) refreshInFlight.current = null;
+      });
     }
     return refreshInFlight.current;
   }, [session]);
@@ -358,6 +427,14 @@ export function useCloudAccount({
       activeSession: PersistedCloudSession,
       cachedEffectivePolicy: CloudSharePolicyV1
     ): Promise<FreshUploadBoundaryResult> => {
+      const epoch = accountEpochRef.current;
+      if (accountClearInFlightRef.current) {
+        return {
+          ok: false,
+          reason: "refresh_failed",
+          message: "Local account data is being cleared. Try again after Reset finishes.",
+        };
+      }
       const env = getCloudEnv();
       if (!env) {
         return {
@@ -372,6 +449,13 @@ export function useCloudAccount({
         cachedEffectivePolicy,
         fetchMemberships: (freshSession) => fetchTeamMemberships(env, freshSession)
       });
+      if (epoch !== accountEpochRef.current) {
+        return {
+          ok: false,
+          reason: "refresh_failed",
+          message: "The account changed while Weekform rechecked sharing. Review and try again.",
+        };
+      }
       if (result.teams) {
         setTeams(result.teams);
       }
@@ -390,22 +474,44 @@ export function useCloudAccount({
   );
 
   const clearAll = useCallback(async () => {
+    accountClearInFlightRef.current = true;
+    accountEpochRef.current += 1;
+    refreshInFlight.current = null;
+    const nextPolicy = createDefaultCloudSharePolicy();
+    const nextSyncState = createEmptyCloudSyncState();
+    const nextPersonalPolicy = createDefaultPersonalReplicaPolicy();
+    const nextPersonalSyncState = createDefaultPersonalSyncState();
+    personalSyncStateRef.current = nextPersonalSyncState;
+    cloudEnvelopeRef.current = {
+      version: 1,
+      session: null,
+      policy: nextPolicy,
+      syncState: nextSyncState,
+      pendingSnapshot: null,
+      personalReplicaPolicy: nextPersonalPolicy,
+      personalSyncState: nextPersonalSyncState,
+    };
     setSession(null);
     setTeams([]);
     setTeamsError(null);
     setAuthError(null);
-    setPolicy(createDefaultCloudSharePolicy());
-    setSyncStateRaw(createEmptyCloudSyncState());
+    setPolicy(nextPolicy);
+    setSyncStateRaw(nextSyncState);
     setPendingSnapshot(null);
-    setPersonalReplicaPolicy(createDefaultPersonalReplicaPolicy());
-    setPersonalSyncStateRaw(createDefaultPersonalSyncState());
-    const cleared = await clearPersistedCloudState();
-    if (!cleared) {
-      setAuthError(
-        "Local state was cleared in this session, but durable credential removal could not be confirmed. Retry Reset Local Data before closing the app."
-      );
+    setPersonalReplicaPolicy(nextPersonalPolicy);
+    setPersonalSyncStateRaw(nextPersonalSyncState);
+    try {
+      const cleared = await clearPersistedCloudState();
+      if (!cleared) {
+        setAuthError(
+          "Local state was cleared in this session, but durable credential removal could not be confirmed. Retry Reset Local Data before closing the app."
+        );
+      }
+      return cleared;
+    } finally {
+      accountEpochRef.current += 1;
+      accountClearInFlightRef.current = false;
     }
-    return cleared;
   }, []);
 
   const account = useMemo<CloudAccountSummary | null>(() => {
@@ -431,10 +537,47 @@ export function useCloudAccount({
 
   const setPersonalSyncState = useCallback(
     (updater: (current: PersonalReplicaSyncStateV1) => PersonalReplicaSyncStateV1) => {
-      setPersonalSyncStateRaw(updater);
+      const next = updater(personalSyncStateRef.current);
+      personalSyncStateRef.current = next;
+      cloudEnvelopeRef.current = { ...cloudEnvelopeRef.current, personalSyncState: next };
+      setPersonalSyncStateRaw(next);
     },
     [],
   );
+
+  const setPersonalSyncStateDurably = useCallback(async (
+    updater: (current: PersonalReplicaSyncStateV1) => PersonalReplicaSyncStateV1,
+  ): Promise<PersonalReplicaSyncStateV1> => {
+    const next = updater(personalSyncStateRef.current);
+    personalSyncStateRef.current = next;
+    const envelope = { ...cloudEnvelopeRef.current, personalSyncState: next };
+    cloudEnvelopeRef.current = envelope;
+    // Retain the outbox in memory even if the backend is temporarily unavailable.
+    setPersonalSyncStateRaw(next);
+    try {
+      await enqueueCloudWrite(envelope);
+      setAuthError((current) => current === PERSONAL_SYNC_PERSISTENCE_ERROR ? null : current);
+      return next;
+    } catch (error) {
+      setAuthError(PERSONAL_SYNC_PERSISTENCE_ERROR);
+      throw error;
+    }
+  }, [enqueueCloudWrite]);
+
+  const flushPersonalSyncState = useCallback(async (): Promise<void> => {
+    const envelope = {
+      ...cloudEnvelopeRef.current,
+      personalSyncState: personalSyncStateRef.current,
+    };
+    cloudEnvelopeRef.current = envelope;
+    try {
+      await enqueueCloudWrite(envelope);
+      setAuthError((current) => current === PERSONAL_SYNC_PERSISTENCE_ERROR ? null : current);
+    } catch (error) {
+      setAuthError(PERSONAL_SYNC_PERSISTENCE_ERROR);
+      throw error;
+    }
+  }, [enqueueCloudWrite]);
 
   const backupMetadata = useCallback(
     () => buildCloudBackupMetadata(policy, syncState, personalReplicaPolicy, personalSyncState),
@@ -468,6 +611,8 @@ export function useCloudAccount({
       setSyncState,
       setPendingSnapshot,
       setPersonalSyncState,
+      setPersonalSyncStateDurably,
+      flushPersonalSyncState,
       getFreshSession,
       checkFreshUpload,
       emitAudit,
@@ -497,6 +642,8 @@ export function useCloudAccount({
       setSyncState,
       setPendingSnapshot,
       setPersonalSyncState,
+      setPersonalSyncStateDurably,
+      flushPersonalSyncState,
       getFreshSession,
       checkFreshUpload,
       emitAudit,

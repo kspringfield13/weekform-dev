@@ -2,6 +2,7 @@ import type { AuditEvent, SavedSkill, WorkBlock } from "../../../../packages/dom
 import type { PersistedAppState } from "../services/localStore";
 import type { CloudBackupMetadata } from "../services/cloudPolicy";
 import type { ConsentReceiptV1 } from "../services/consentReceipt";
+import type { AgentSessionBackup } from "../services/agentSessionStorage";
 import { formatDurationMinutes } from "./format";
 
 // Local-first data portability: serialize the work ledger and audit trail to
@@ -221,23 +222,38 @@ export function serializeSavedSkillsAsSkillBundle(skills: SavedSkill[], now = ne
 // ---------------------------------------------------------------------------
 
 /**
- * A complete backup of the destroyable local state: the work ledger, activity
- * samples, calendar/chat imports, corrections, the audit trail, every AI output
+ * A complete backup base for destroyable local state: the work ledger, recent
+ * activity cache (browser/demo only), calendar/chat imports, corrections, the audit trail, every AI output
  * (forecasts, narratives, acceleration plays, saved skills, visual-context
  * insights) and the derived history/settings. Derived from `PersistedAppState`
  * so a newly-persisted field can't silently fall out of the backup — tsc forces
  * the App-side assembler to cover it. Excludes `aiConfig`: credentials never
- * belong in a plaintext export, and a reset leaves them intact anyway.
+ * belong in a plaintext export. Reset removes the Keychain credential and the
+ * in-memory/provider preferences; users intentionally reconfigure AI afterward.
  *
- * `cloudSharing` carries the Account & Sharing policy + sync bookkeeping via the
+ * `agentSession` carries the saved Agent conversation/draft. `cloudSharing`
+ * carries the Account & Sharing policy + sync bookkeeping via the
  * field-by-field `buildCloudBackupMetadata` projection — auth tokens/session are
  * excluded by construction and must never be added to any export.
  */
 export type FullBackup = Omit<PersistedAppState, "version" | "aiConfig"> & {
   cloudSharing: CloudBackupMetadata;
+  agentSession: AgentSessionBackup;
 };
 
-/** Serialize the full destroyable local state as one JSON document (the pre-reset backup). */
+export type NativeFullBackupBase = Omit<FullBackup, "activeWindowSamples">;
+
+/**
+ * The native exporter streams the complete decrypted capture journal directly
+ * to disk. Remove the 2,000-row UI cache so it cannot masquerade as complete or
+ * duplicate sensitive titles in the resulting backup.
+ */
+export function prepareNativeFullBackup(backup: FullBackup): NativeFullBackupBase {
+  const { activeWindowSamples: _recentSampleCache, ...nativeBase } = backup;
+  return nativeBase;
+}
+
+/** Browser/demo serializer. Native uses a streaming command for the complete encrypted journal. */
 export function serializeFullBackup(backup: FullBackup, now = new Date()): string {
   const payload = {
     app: "Weekform" as const,

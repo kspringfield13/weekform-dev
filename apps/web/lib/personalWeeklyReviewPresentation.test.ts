@@ -79,7 +79,7 @@ test("Weekly Review has deterministic Desktop order and never invents omitted lo
 
   assert.deepEqual(
     presentation.items.map((item) => item.id),
-    ["work_blocks", "forecast_accuracy", "narrative", "completion"],
+    ["work_blocks", "sensitive_captures", "forecast_accuracy", "narrative"],
   );
   assert.equal(presentation.items[0]?.status, "ready");
   for (const item of presentation.items.slice(1)) {
@@ -93,7 +93,7 @@ test("Weekly Review has deterministic Desktop order and never invents omitted lo
   assert.equal(presentation.pendingCount, 3);
   assert.deepEqual(
     presentation.items.map((item) => item.target),
-    ["today", "forecast", "summary", "mac"],
+    ["today", "mac", "forecast", "summary"],
   );
 });
 

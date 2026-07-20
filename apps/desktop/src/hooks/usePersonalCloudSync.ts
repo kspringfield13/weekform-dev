@@ -10,17 +10,25 @@ import {
   replicaContentFingerprint,
 } from "../../../../packages/inference/src/personalReplica";
 import {
-  completeReviewCommand,
-  fetchPendingReviewCommands,
+  claimReviewCommandV2,
+  completeReviewCommandV2,
+  fetchPendingReviewCommandsV2,
   getCloudEnv,
+  markReviewCommandAppliedLocallyV2,
   registerWeekformDevice,
+  reviewCommandExistsV2,
   syncPersonalReplicaBatch,
 } from "../services/cloudClient";
 import {
-  applyApprovedReviewCommand,
-  enqueueReplicaBatch,
-  findLocalBlockForReviewCommand,
+  applyReviewCommandToCurrentBlocks,
+  enqueueReviewCommandApplication,
+  enqueueReplicaBatchWithClock,
+  markReviewCommandApplicationAttempt,
+  markReviewCommandApplicationPhase,
   markReplicaBatchAttempt,
+  nextReviewCommandApplication,
+  removeReviewCommandApplication,
+  reviewCommandClaimIsRecoverable,
   shouldFlushPersonalQueue,
 } from "../services/personalSync";
 import type { CloudAccountController } from "./useCloudAccount";
@@ -35,25 +43,72 @@ export interface PersonalCloudSyncController {
   refreshCommands: () => Promise<void>;
   approveCommand: (commandId: string) => Promise<boolean>;
   rejectCommand: (commandId: string) => Promise<boolean>;
+  /** Invalidate new work and await every active network/persistence edge before Reset. */
+  quiesceForReset: () => Promise<void>;
 }
 
 export function usePersonalCloudSync(input: {
   account: CloudAccountController;
   snapshot: WeeklyCapacitySnapshot;
   workBlocks: WorkBlock[];
-  setBlocks: React.Dispatch<React.SetStateAction<WorkBlock[]>>;
+  mutateBlocksAtomically: <Result>(
+    mutation: (current: WorkBlock[]) => { blocks: WorkBlock[]; result: Result },
+  ) => Result;
   addCorrection: (correction: Omit<UserCorrection, "correction_id" | "timestamp">) => void;
+  persistLatestLocalState: () => Promise<void>;
 }): PersonalCloudSyncController {
-  const { account, snapshot, workBlocks, setBlocks, addCorrection } = input;
+  const {
+    account,
+    snapshot,
+    workBlocks,
+    mutateBlocksAtomically,
+    addCorrection,
+    persistLatestLocalState,
+  } = input;
   const [syncBusy, setSyncBusy] = useState(false);
   const [pendingCommands, setPendingCommands] = useState<ReviewCommandV1[]>([]);
   const inFlight = useRef(false);
+  const commandInFlight = useRef(false);
+  const operationEpochRef = useRef(0);
+  const quiescingRef = useRef(false);
+  const activeOperationCompletionsRef = useRef(new Set<Promise<void>>());
   const accountRef = useRef(account);
   accountRef.current = account;
   const enabled = account.personalReplicaPolicy.enabled
     && account.personalReplicaPolicy.consentedAt !== null
     && account.account !== null
     && !account.isDemoMode;
+
+  const beginOperation = useCallback(() => {
+    if (quiescingRef.current) return null;
+    const epoch = operationEpochRef.current;
+    let resolve!: () => void;
+    const completion = new Promise<void>((next) => { resolve = next; });
+    activeOperationCompletionsRef.current.add(completion);
+    let finished = false;
+    return {
+      epoch,
+      isCurrent: () => !quiescingRef.current && operationEpochRef.current === epoch,
+      finish: () => {
+        if (finished) return;
+        finished = true;
+        activeOperationCompletionsRef.current.delete(completion);
+        resolve();
+      },
+    };
+  }, []);
+
+  const quiesceForReset = useCallback(async (): Promise<void> => {
+    quiescingRef.current = true;
+    operationEpochRef.current += 1;
+    await Promise.allSettled([...activeOperationCompletionsRef.current]);
+  }, []);
+
+  // Reset leaves the account disabled. Reopen the operation lane only after
+  // that disabled state has rendered, so a later explicit reconnect can work.
+  useEffect(() => {
+    if (!enabled) quiescingRef.current = false;
+  }, [enabled]);
 
   const replica = useMemo(() => buildPersonalWorkloadReplica({
     weekId: snapshot.week_id,
@@ -67,14 +122,11 @@ export function usePersonalCloudSync(input: {
   // same week, while other weeks remain queued. Nothing queues before explicit consent.
   useEffect(() => {
     if (!enabled) return;
-    account.setPersonalSyncState((current) => ({
-      ...current,
-      queue: enqueueReplicaBatch(current.queue, {
+    account.setPersonalSyncState((current) => enqueueReplicaBatchWithClock(current, {
         fingerprint,
         payload: replica,
         now: new Date().toISOString(),
-      }),
-    }));
+      }));
   }, [enabled, fingerprint, replica, account.setPersonalSyncState]);
 
   const ensureDevice = useCallback(async () => {
@@ -93,28 +145,45 @@ export function usePersonalCloudSync(input: {
   }, []);
 
   const syncNow = useCallback(async (): Promise<boolean> => {
-    if (!enabled || inFlight.current) return false;
+    const operation = beginOperation();
+    if (!operation) return false;
+    if (!enabled || inFlight.current) {
+      operation.finish();
+      return false;
+    }
     const currentAccount = accountRef.current;
     inFlight.current = true;
     setSyncBusy(true);
     const attemptedAt = new Date().toISOString();
     currentAccount.setPersonalSyncState((current) => ({ ...current, lastAttemptAt: attemptedAt, lastError: null }));
     try {
+      // Queue payload + hybrid logical clock must be durable before the server
+      // can accept the batch. A crash after acceptance therefore cannot restart
+      // from an older clock or forget the accepted batch identity.
+      try {
+        await currentAccount.flushPersonalSyncState();
+      } catch {
+        return false;
+      }
+      if (!operation.isCurrent()) return false;
       const ready = await ensureDevice();
+      if (!operation.isCurrent()) return false;
       if (!ready.ok) {
         currentAccount.setPersonalSyncState((current) => ({ ...current, lastError: ready.message }));
         return false;
       }
-      let queue = currentAccount.personalSyncState.queue;
-      let cursor = currentAccount.personalSyncState.cursor;
-      let lastSuccessAt = currentAccount.personalSyncState.lastSuccessAt;
+      const durableAccount = accountRef.current;
+      let queue = durableAccount.personalSyncState.queue;
+      let cursor = durableAccount.personalSyncState.cursor;
+      let lastSuccessAt = durableAccount.personalSyncState.lastSuccessAt;
       for (const item of queue) {
         const result = await syncPersonalReplicaBatch(
           ready.env,
           ready.session,
-          currentAccount.personalSyncState.deviceId,
+          durableAccount.personalSyncState.deviceId,
           item,
         );
+        if (!operation.isCurrent()) return false;
         if (!result.ok) {
           queue = markReplicaBatchAttempt(queue, item.batchId, result.message);
           currentAccount.setPersonalSyncState((current) => ({
@@ -152,80 +221,409 @@ export function usePersonalCloudSync(input: {
     } finally {
       inFlight.current = false;
       setSyncBusy(false);
+      operation.finish();
     }
-  }, [enabled, ensureDevice, replica]);
+  }, [beginOperation, enabled, ensureDevice, replica]);
 
   const refreshCommands = useCallback(async () => {
-    if (!enabled) {
-      setPendingCommands([]);
-      return;
+    const operation = beginOperation();
+    if (!operation) return;
+    try {
+      if (!enabled) {
+        setPendingCommands([]);
+        return;
+      }
+      const ready = await ensureDevice();
+      if (!operation.isCurrent() || !ready.ok) return;
+      const result = await fetchPendingReviewCommandsV2(ready.env, ready.session);
+      if (!operation.isCurrent() || !result.ok) return;
+      const current = accountRef.current;
+      const ownedClaims = result.value.filter((command) => command.applicationPhase
+        && command.claimedByDevice === current.personalSyncState.deviceId);
+      if (ownedClaims.length > 0) {
+        const now = new Date().toISOString();
+        await current.setPersonalSyncStateDurably((state) => ({
+          ...state,
+          reviewOutbox: ownedClaims.reduce(
+            (outbox, command) => enqueueReviewCommandApplication(outbox, {
+              command,
+              phase: command.applicationPhase!,
+              now,
+            }),
+            state.reviewOutbox ?? [],
+          ),
+        }));
+        if (!operation.isCurrent()) return;
+      }
+      const nowMs = Date.now();
+      setPendingCommands(result.value.filter((command) => (
+        command.applicationPhase === null && command.claimedByDevice === null
+      ) || reviewCommandClaimIsRecoverable(command, nowMs)));
+    } catch {
+      // Strict cloud persistence exposes its actionable error on the account.
+    } finally {
+      operation.finish();
     }
-    const ready = await ensureDevice();
-    if (!ready.ok) return;
-    const result = await fetchPendingReviewCommands(ready.env, ready.session);
-    if (result.ok) setPendingCommands(result.value);
-  }, [enabled, ensureDevice]);
+  }, [beginOperation, enabled, ensureDevice]);
 
   const finishCommand = useCallback(async (
     command: ReviewCommandV1,
     status: "applied" | "rejected" | "conflict",
     reason: string | null,
   ) => {
-    const ready = await ensureDevice();
-    if (!ready.ok) return false;
-    const result = await completeReviewCommand(
-      ready.env,
-      ready.session,
-      accountRef.current.personalSyncState.deviceId,
-      command.commandId,
-      status,
-      reason,
-    );
-    if (!result.ok || !result.value) return false;
-    setPendingCommands((current) => current.filter((entry) => entry.commandId !== command.commandId));
-    return true;
-  }, [ensureDevice]);
+    const operation = beginOperation();
+    if (!operation) return false;
+    try {
+      const ready = await ensureDevice();
+      if (!operation.isCurrent() || !ready.ok) return false;
+      const result = await completeReviewCommandV2(
+        ready.env,
+        ready.session,
+        accountRef.current.personalSyncState.deviceId,
+        command.commandId,
+        status,
+        reason,
+      );
+      if (!operation.isCurrent() || !result.ok || !result.value) return false;
+      setPendingCommands((current) => current.filter((entry) => entry.commandId !== command.commandId));
+      return true;
+    } finally {
+      operation.finish();
+    }
+  }, [beginOperation, ensureDevice]);
 
   const approveCommand = useCallback(async (commandId: string): Promise<boolean> => {
-    const command = pendingCommands.find((entry) => entry.commandId === commandId);
-    if (!command) return false;
-    const block = findLocalBlockForReviewCommand(workBlocks, command);
-    if (!block) return finishCommand(command, "conflict", "The local block no longer exists.");
-    const applied = applyApprovedReviewCommand(block, command);
-    if (!applied.ok) return finishCommand(command, "conflict", "The local block changed after this request was created.");
-    if (applied.block === null) {
-      setBlocks((current) => current.filter((entry) => entry.work_block_id !== block.work_block_id));
-      addCorrection({
-        work_block_id: block.work_block_id,
-        field: "exclude",
-        old_value: block.project_name,
-        new_value: "excluded",
-        reason: "User approved a Weekform Web review request on this Mac",
-      });
-    } else {
-      setBlocks((current) => current.map((entry) => entry.work_block_id === block.work_block_id ? applied.block! : entry));
-      for (const field of applied.changedFields) {
-        if (field === "verification") {
-          addCorrection({ work_block_id: block.work_block_id, field: "verification", old_value: "unverified", new_value: "verified", reason: "User approved a Weekform Web review request on this Mac" });
-          continue;
-        }
-        const modelField = field === "planned_status" ? "planned_status" : field as keyof WorkBlock;
-        addCorrection({
-          work_block_id: block.work_block_id,
-          field: field as UserCorrection["field"],
-          old_value: String(block[modelField]),
-          new_value: String(applied.block[modelField]),
-          reason: "User approved a Weekform Web review request on this Mac",
-        });
+    const operation = beginOperation();
+    if (!operation) return false;
+    try {
+      const command = pendingCommands.find((entry) => entry.commandId === commandId);
+      if (!command) return false;
+      const ready = await ensureDevice();
+      if (!operation.isCurrent() || !ready.ok) return false;
+      // This durable server claim is the acknowledgement boundary. Local reviewed
+      // truth is not touched in this callback; the persisted outbox resumes it.
+      const claimed = await claimReviewCommandV2(
+        ready.env,
+        ready.session,
+        accountRef.current.personalSyncState.deviceId,
+        command.commandId,
+      );
+      if (!operation.isCurrent() || !claimed.ok) return false;
+      if (claimed.value === "applied" || claimed.value === "rejected" || claimed.value === "conflict") {
+        setPendingCommands((current) => current.filter((entry) => entry.commandId !== command.commandId));
+        return true;
       }
+      const claimedPhase = claimed.value;
+      const now = new Date().toISOString();
+      await accountRef.current.setPersonalSyncStateDurably((state) => ({
+        ...state,
+        reviewOutbox: enqueueReviewCommandApplication(state.reviewOutbox ?? [], {
+          command,
+          phase: claimedPhase,
+          now,
+        }),
+      }));
+      if (!operation.isCurrent()) return false;
+      setPendingCommands((current) => current.filter((entry) => entry.commandId !== command.commandId));
+      return true;
+    } catch {
+      return false;
+    } finally {
+      operation.finish();
     }
-    return finishCommand(command, "applied", "Approved on this Mac.");
-  }, [addCorrection, finishCommand, pendingCommands, setBlocks, workBlocks]);
+  }, [beginOperation, ensureDevice, pendingCommands]);
 
   const rejectCommand = useCallback(async (commandId: string): Promise<boolean> => {
     const command = pendingCommands.find((entry) => entry.commandId === commandId);
     return command ? finishCommand(command, "rejected", "Rejected on this Mac.") : false;
   }, [finishCommand, pendingCommands]);
+
+  const resumeReviewApplications = useCallback(async (): Promise<void> => {
+    const operation = beginOperation();
+    if (!operation) return;
+    const currentAccount = accountRef.current;
+    const item = nextReviewCommandApplication(
+      currentAccount.personalSyncState.reviewOutbox ?? [],
+      Date.now(),
+    )?.item;
+    if (!enabled || !item || commandInFlight.current) {
+      operation.finish();
+      return;
+    }
+    commandInFlight.current = true;
+    try {
+      const ready = await ensureDevice();
+      if (!operation.isCurrent()) return;
+      if (!ready.ok) {
+        await currentAccount.setPersonalSyncStateDurably((state) => ({
+          ...state,
+          reviewOutbox: markReviewCommandApplicationAttempt(
+            state.reviewOutbox ?? [], item.command.commandId, ready.message, new Date().toISOString(),
+          ),
+        }));
+        return;
+      }
+
+      // Reconfirm/renew apply_pending ownership before every retry. The server
+      // may lease-reclaim only a never-recorded application; ack_pending can
+      // never move to another device.
+      const confirmedClaim = await claimReviewCommandV2(
+        ready.env,
+        ready.session,
+        currentAccount.personalSyncState.deviceId,
+        item.command.commandId,
+      );
+      if (!operation.isCurrent()) return;
+      if (!confirmedClaim.ok) {
+        const exists = await reviewCommandExistsV2(
+          ready.env,
+          ready.session,
+          item.command.commandId,
+        );
+        if (!operation.isCurrent()) return;
+        if (exists.ok && !exists.value) {
+          await currentAccount.setPersonalSyncStateDurably((state) => ({
+            ...state,
+            reviewOutbox: removeReviewCommandApplication(
+              state.reviewOutbox ?? [], item.command.commandId,
+            ),
+            lastError: "A pending Web review request was deleted before this Mac could finish it.",
+          }));
+          currentAccount.emitAudit(
+            "personal_sync_failure",
+            "A deleted Web review request was removed from the Mac retry outbox",
+            { command_id: item.command.commandId, terminally_deleted: true },
+          );
+          return;
+        }
+        await currentAccount.setPersonalSyncStateDurably((state) => ({
+          ...state,
+          reviewOutbox: markReviewCommandApplicationAttempt(
+            state.reviewOutbox ?? [], item.command.commandId,
+            confirmedClaim.message, new Date().toISOString(),
+          ),
+        }));
+        return;
+      }
+      if (confirmedClaim.value === "applied"
+        || confirmedClaim.value === "rejected"
+        || confirmedClaim.value === "conflict") {
+        await currentAccount.setPersonalSyncStateDurably((state) => ({
+          ...state,
+          reviewOutbox: removeReviewCommandApplication(
+            state.reviewOutbox ?? [], item.command.commandId,
+          ),
+        }));
+        return;
+      }
+      if (confirmedClaim.value === "ack_pending" && item.phase === "apply_pending") {
+        await currentAccount.setPersonalSyncStateDurably((state) => ({
+          ...state,
+          reviewOutbox: markReviewCommandApplicationPhase(
+            state.reviewOutbox ?? [], item.command.commandId, "ack_pending", new Date().toISOString(),
+          ),
+        }));
+        return;
+      }
+
+      // The network wait above may span a local edit. Re-read and compare the
+      // expected revision inside the ledger's synchronous CAS edge; only that
+      // edge may produce a local mutation result and subsequent corrections.
+      const application = mutateBlocksAtomically((currentBlocks) =>
+        applyReviewCommandToCurrentBlocks(currentBlocks, item.command));
+      if (application.kind === "conflict") {
+        const completed = await completeReviewCommandV2(
+          ready.env,
+          ready.session,
+          currentAccount.personalSyncState.deviceId,
+          item.command.commandId,
+          "conflict",
+          "The local block changed before the claimed review request could be applied.",
+        );
+        if (!operation.isCurrent()) return;
+        await currentAccount.setPersonalSyncStateDurably((state) => ({
+          ...state,
+          reviewOutbox: completed.ok && completed.value
+            ? removeReviewCommandApplication(state.reviewOutbox ?? [], item.command.commandId)
+            : markReviewCommandApplicationAttempt(
+                state.reviewOutbox ?? [], item.command.commandId,
+                completed.ok ? "The review conflict acknowledgement was not accepted." : completed.message,
+                new Date().toISOString(),
+              ),
+        }));
+        return;
+      }
+
+      if (application.kind === "applied") {
+        const block = application.before;
+        if (application.block === null) {
+          addCorrection({
+            work_block_id: block.work_block_id,
+            field: "exclude",
+            old_value: block.project_name,
+            new_value: "excluded",
+            reason: "User approved a server-claimed Weekform Web review request on this Mac",
+          });
+        } else {
+          for (const field of application.changedFields) {
+            if (field === "verification") {
+              addCorrection({
+                work_block_id: block.work_block_id,
+                field: "verification",
+                old_value: "unverified",
+                new_value: "verified",
+                reason: "User approved a server-claimed Weekform Web review request on this Mac",
+              });
+              continue;
+            }
+            const modelField = field === "planned_status" ? "planned_status" : field as keyof WorkBlock;
+            addCorrection({
+              work_block_id: block.work_block_id,
+              field: field as UserCorrection["field"],
+              old_value: String(block[modelField]),
+              new_value: String(application.block[modelField]),
+              reason: "User approved a server-claimed Weekform Web review request on this Mac",
+            });
+          }
+        }
+        // A separate render/effect performs the network acknowledgements. This
+        // makes retries observe the applied local outcome instead of applying twice.
+        await currentAccount.setPersonalSyncStateDurably((state) => ({
+          ...state,
+          reviewOutbox: markReviewCommandApplicationPhase(
+            state.reviewOutbox ?? [], item.command.commandId, "ack_pending", new Date().toISOString(),
+          ),
+        }));
+        return;
+      }
+
+      if (item.phase === "apply_pending") {
+        await currentAccount.setPersonalSyncStateDurably((state) => ({
+          ...state,
+          reviewOutbox: markReviewCommandApplicationPhase(
+            state.reviewOutbox ?? [], item.command.commandId, "ack_pending", new Date().toISOString(),
+          ),
+        }));
+        return;
+      }
+
+      try {
+        await persistLatestLocalState();
+        if (!operation.isCurrent()) return;
+        await currentAccount.flushPersonalSyncState();
+        if (!operation.isCurrent()) return;
+      } catch {
+        if (!operation.isCurrent()) return;
+        await currentAccount.setPersonalSyncStateDurably((state) => ({
+          ...state,
+          reviewOutbox: markReviewCommandApplicationAttempt(
+            state.reviewOutbox ?? [], item.command.commandId,
+            "The local review result could not be confirmed on disk.", new Date().toISOString(),
+          ),
+        })).catch(() => undefined);
+        return;
+      }
+
+      const marked = await markReviewCommandAppliedLocallyV2(
+        ready.env,
+        ready.session,
+        currentAccount.personalSyncState.deviceId,
+        item.command.commandId,
+      );
+      if (!operation.isCurrent()) return;
+      if (!marked.ok || !marked.value) {
+        if (marked.ok) {
+          const exists = await reviewCommandExistsV2(
+            ready.env,
+            ready.session,
+            item.command.commandId,
+          );
+          if (!operation.isCurrent()) return;
+          if (exists.ok && !exists.value) {
+            await currentAccount.setPersonalSyncStateDurably((state) => ({
+              ...state,
+              reviewOutbox: removeReviewCommandApplication(
+                state.reviewOutbox ?? [], item.command.commandId,
+              ),
+              lastError: "A Web review request was deleted after local approval; the local reviewed change was retained.",
+            }));
+            currentAccount.emitAudit(
+              "personal_sync_failure",
+              "A deleted Web review request could not receive its local application receipt; the reviewed Mac change was retained",
+              { command_id: item.command.commandId, terminally_deleted: true },
+            );
+            return;
+          }
+        }
+        const message = marked.ok ? "The review application receipt was not accepted." : marked.message;
+        await currentAccount.setPersonalSyncStateDurably((state) => ({
+          ...state,
+          reviewOutbox: markReviewCommandApplicationAttempt(
+            state.reviewOutbox ?? [], item.command.commandId, message, new Date().toISOString(),
+          ),
+        }));
+        return;
+      }
+      const completed = await completeReviewCommandV2(
+        ready.env,
+        ready.session,
+        currentAccount.personalSyncState.deviceId,
+        item.command.commandId,
+        "applied",
+        "Approved on this Mac.",
+      );
+      if (!operation.isCurrent()) return;
+      if (completed.ok && !completed.value) {
+        const exists = await reviewCommandExistsV2(
+          ready.env,
+          ready.session,
+          item.command.commandId,
+        );
+        if (!operation.isCurrent()) return;
+        if (exists.ok && !exists.value) {
+          await currentAccount.setPersonalSyncStateDurably((state) => ({
+            ...state,
+            reviewOutbox: removeReviewCommandApplication(
+              state.reviewOutbox ?? [], item.command.commandId,
+            ),
+            lastError: "A Web review request was deleted after local approval; the local reviewed change was retained.",
+          }));
+          currentAccount.emitAudit(
+            "personal_sync_failure",
+            "A deleted Web review request could not receive its terminal acknowledgement; the reviewed Mac change was retained",
+            { command_id: item.command.commandId, terminally_deleted: true },
+          );
+          return;
+        }
+      }
+      await currentAccount.setPersonalSyncStateDurably((state) => ({
+        ...state,
+        reviewOutbox: completed.ok && completed.value
+          ? removeReviewCommandApplication(state.reviewOutbox ?? [], item.command.commandId)
+          : markReviewCommandApplicationAttempt(
+              state.reviewOutbox ?? [], item.command.commandId,
+              completed.ok ? "The review completion acknowledgement was not accepted." : completed.message,
+              new Date().toISOString(),
+            ),
+      }));
+    } catch {
+      // Strict persistence helpers retain the outbox in memory and expose the
+      // storage failure through Account & Sharing. No server edge runs afterward.
+    } finally {
+      commandInFlight.current = false;
+      operation.finish();
+    }
+  }, [addCorrection, beginOperation, enabled, ensureDevice, mutateBlocksAtomically, persistLatestLocalState]);
+
+  useEffect(() => {
+    const scheduled = nextReviewCommandApplication(
+      account.personalSyncState.reviewOutbox ?? [],
+      Date.now(),
+    );
+    if (!enabled || !scheduled) return;
+    const timer = window.setTimeout(() => { void resumeReviewApplications(); }, scheduled.delayMs);
+    return () => window.clearTimeout(timer);
+  }, [account.personalSyncState.reviewOutbox, enabled, resumeReviewApplications]);
 
   // Flush as soon as the durable queue receives a new batch. The in-flight
   // guard prevents this from competing with the polling/reconnect paths.
@@ -261,5 +659,6 @@ export function usePersonalCloudSync(input: {
     refreshCommands,
     approveCommand,
     rejectCommand,
-  }), [account.personalSyncState, approveCommand, enabled, pendingCommands, refreshCommands, rejectCommand, syncBusy, syncNow]);
+    quiesceForReset,
+  }), [account.personalSyncState, approveCommand, enabled, pendingCommands, quiesceForReset, refreshCommands, rejectCommand, syncBusy, syncNow]);
 }

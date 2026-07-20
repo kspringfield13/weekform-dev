@@ -69,7 +69,7 @@ export function useVisualContext({
       maxDailyCaptures: MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY,
     });
 
-    visualContextAsync.start("capturing");
+    const operationEpoch = visualContextAsync.start("capturing");
 
     try {
       const response = await withAiTimeout(
@@ -83,6 +83,7 @@ export function useVisualContext({
           },
         })
       );
+      if (!visualContextAsync.isCurrent(operationEpoch)) return;
       // Guard the native `captured_at_ms` before ISO-formatting it: a missing / NaN /
       // out-of-range value makes `new Date(x).toISOString()` throw a RangeError, which
       // (inside this try) would be caught and MISREPORTED as a "capture failed" — silently
@@ -148,6 +149,7 @@ export function useVisualContext({
         }),
       ].slice(-1000));
     } catch (error) {
+      if (!visualContextAsync.isCurrent(operationEpoch)) return;
       const message = error instanceof Error ? error.message : String(error);
       visualContextAsync.fail(message);
       setAuditEvents((current) => [
@@ -177,6 +179,6 @@ export function useVisualContext({
     visualContextStatus,
     visualContextError,
     captureVisualContext,
-    resetVisualContext: visualContextAsync.reset,
+    resetVisualContext: () => visualContextAsync.reset(),
   };
 }

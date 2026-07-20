@@ -100,7 +100,7 @@ The team layer connects the web app (`apps/web`) and the desktop app:
 
 1. **Manager** signs up at the web app with email/password, creates a team from the dashboard, and sees their role and roster.
 2. **Manager invites a member** by generating a one-time, hashed-token invite link and sharing it out of band (copy-link only — no email delivery is built).
-3. **Member accepts** at `/invite` with an explicit confirmation button (a GET never consumes the token), joins the team, and reaches the account-gated `/download` page for the Mac app. The download links to a signed private-bucket artifact when configured, and otherwise honestly falls back to the public source archive.
+3. **Member accepts** at `/invite` with an explicit confirmation button (a GET never consumes the token), joins the team, and reaches the account-gated `/download` page for the Mac app. The download appears only for a private artifact carrying complete signed, notarized, stapled, checksum, and verification-time metadata; otherwise the page fails closed and routes the member to Weekform Web.
 4. **Member reviews their week locally** in the desktop app — confirming, relabeling, or excluding inferred work blocks as usual.
 5. **Member opts in to sharing** in Account & Sharing: selects the team, picks share level and metric toggles, previews the exact payload (no raw titles or evidence appear in it), records consent, and presses **Sync Now**.
 6. **Manager's team dashboard** shows the shared weekly aggregates per member.
@@ -222,7 +222,7 @@ capture → sessionize → classify → review → model → summarize
 | **Week** | Understand capacity, forecast next week, inspect AI usage, and prepare a weekly summary. |
 | **Agent** | Ask questions about your workload and find evidence-cited opportunities to reclaim time. |
 | **History** | Review the activity ledger, corrections, privacy events, and flagged visual captures. |
-| **Account & Sharing** | Connect a weekform.com account, preview the exact shared payload, and control team sync. |
+| **Account & Sharing** | Connect a weekform.dev account, preview the exact shared payload, and control team sync. |
 | **Web dashboard** | Create teams, invite members, view shared aggregates, and generate the Team Briefing. |
 
 ### Current capabilities
@@ -311,6 +311,11 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 
 `npm run build` is the authoritative type and bundle gate for the desktop web bundle. Focused test suites cover the cloud and team surfaces: `npm run test:cloud` (shared-snapshot privacy allowlist), `npm run test:desktop-cloud` (desktop cloud client, policy, scheduler, and store), `npm run test:web` (web workload, snapshot, team, invite, briefing, and download helpers), and `npm run test:simulator`. `npm run verify:wave2` / `verify:wave3` chain the desktop-cloud and web suites with the web build. Focused tests for import parsing, session grouping, capacity calculations, and native command boundaries remain a project priority.
 
+Before a Web release, run `npm run verify:web:release`; it separates static
+source checks from the executable local Supabase pgTAP authorization gate and
+then builds the production Next.js app. A local pass does not prove linked or
+production database state.
+
 ## Architecture
 
 | Path | Responsibility |
@@ -330,13 +335,13 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 Desktop prototype:
 
 - macOS is the only native platform currently supported.
-- Raw native foreground samples are written to an AES-256-GCM journal whose key is stored in macOS Keychain. Cloud account state uses the native Keychain-backed adapter. Other prototype state remains in unencrypted Tauri Store (or browser storage in web/demo mode), so Weekform is not an encrypted application database.
+- Raw native foreground samples are written to a serialized AES-256-GCM journal whose v2 records authenticate envelope time/version and whose key is stored in macOS Keychain. Weekform keeps a small UI cache but reconstructs the recent workload window natively, and its explicit full backup streams the complete decrypted journal to a plaintext local file. Cloud account state and binding-addressed provider credentials use native Keychain adapters. Other prototype state remains in unencrypted Tauri Store (or browser storage in web/demo mode), so Weekform is not an encrypted application database.
 - Outlook integration requires a manual `.ics` export.
 - Window titles can contain sensitive information and should be reviewed or excluded.
 - AI features require network access and may incur provider costs.
 - Visual Context captures the current screen, not only the active application window.
 - Capacity weights and thresholds are prototype heuristics, not validated organizational benchmarks.
-- A bundled universal preview DMG is available, but it is not Developer ID signed or Apple-notarized.
+- The public Mac download fails closed until the exact DMG is Developer ID signed, Apple-notarized, stapled, checksummed, and uploaded to private release storage with explicit verification metadata.
 - The largest React and Rust modules still need further decomposition.
 
 Chat connections:
@@ -351,18 +356,20 @@ Chat connections:
   deletion.
 - Production Google Chat access can require OAuth verification for its
   restricted read scope. Production Webex access requires a deployed HTTPS
-  token broker with the integration secret, credential-safe monitoring, and
-  deployment-level rate limiting. The broker returns 503 unless operators set
-  `WEBEX_CHAT_BROKER_SECURITY_VERIFIED=true` after verifying both controls.
+  token broker with the integration secret and credential-safe monitoring. The
+  broker implements distributed keyed-IP quotas, leases, and idempotency, but
+  still returns 503 unless its Supabase control migration/secrets and exact
+  trusted-Vercel proxy boundary are present and operators set
+  `WEBEX_CHAT_BROKER_SECURITY_VERIFIED=true` after verifying deployed logging.
   All three still require registered provider applications and account-level
   acceptance tests.
-- The browser demo and weekform.com Settings handoff do not prove native OAuth,
+- The browser demo and weekform.dev Settings handoff do not prove native OAuth,
   Keychain storage, provider pagination, disconnect cleanup, or live transfer
   behavior.
 
 Team cloud layer:
 
-- **Live RLS behavior is unproven.** The policies were written and reviewed, an RLS test script and four-actor matrix exist, but they have not been executed against a live Supabase stack in this development environment. This is the single largest untested claim.
+- Local RLS behavior is executable through `npm run test:supabase:rls`; production/linked-project behavior still requires a separate deployment verification and must not be inferred from the local pgTAP result.
 - The private Web replica, its review-command RLS/RPCs, private Broadcast invalidation, live Supabase auth/sync/storage-signing, the live OpenAI briefing model, and a live desktop soak are likewise unexercised against production here; deterministic contract tests and local build gates are the demonstrated paths.
 - Invites are copy-link only; no email delivery is integrated.
 - Scheduled sync runs only while the desktop app is open — there is no background sync while the app is closed — and a sync that exhausts its retry ladder pauses until re-arm, reconnect, or manual sync.

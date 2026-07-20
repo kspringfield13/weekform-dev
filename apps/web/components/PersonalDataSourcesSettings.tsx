@@ -1,6 +1,6 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { LocalSettingsControl, LocalSettingsHandoff } from "./PersonalSettingsLocalControl";
 import styles from "./PersonalDataSourcesSettings.module.css";
 
 type DataSourceIconId = "activity" | "calendar" | "email" | "chat" | "visual";
@@ -98,18 +98,17 @@ export function PersonalDataSourcesSettings() {
               <strong>{source.statusTitle}</strong>
               <span>{source.localDetail}</span>
             </div>
-            <span className={styles.localBadge}>{source.badge}</span>
+            <LocalSettingsControl label={source.badge} />
           </section>
         ))}
       </div>
 
-      <div className={styles.handoff}>
-        <div>
-          <strong>Change source access on the device holding the evidence</strong>
-          <span>Open Weekform for Mac Settings to connect, sync, disconnect, retain, or reset Slack, Google Chat, or Webex alongside your other local sources. The Mac initiates source OAuth and performs provider transfers; this Web workspace has no source OAuth controls, credentials, or connection controls.</span>
-        </div>
-        <Link href="/download" className="button button-primary">Get Weekform for Mac</Link>
-      </div>
+      <LocalSettingsHandoff
+        actionLabel="Get Weekform for Mac"
+        href="/download"
+        title="Change source access on the device holding the evidence"
+        description="Open Weekform for Mac Settings to connect, sync, disconnect, retain, or reset Slack, Google Chat, or Webex alongside your other local sources. The Mac initiates source OAuth and performs provider transfers; this Web workspace has no source OAuth controls, credentials, or connection controls."
+      />
     </section>
   );
 }

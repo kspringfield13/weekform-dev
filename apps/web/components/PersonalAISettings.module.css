@@ -53,9 +53,9 @@
   grid-template-columns: 34px minmax(220px, 1fr) minmax(145px, 0.4fr) auto;
   align-items: center;
   gap: 14px;
-  min-height: 82px;
+  min-height: 80px;
   border-top: 1px solid var(--border);
-  padding: 11px 10px;
+  padding: 12px 8px;
 }
 
 .leadRow {
@@ -91,7 +91,7 @@
   max-width: 650px;
   margin: 4px 0 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 18px;
 }
 
@@ -109,7 +109,7 @@
 .status span,
 .footnote {
   color: var(--text-subtle);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .localAction {
@@ -144,7 +144,8 @@
   }
 
   .status,
-  .localAction {
+  .localAction,
+  .row > :global([aria-disabled="true"]) {
     grid-column: 2;
     justify-self: start;
   }

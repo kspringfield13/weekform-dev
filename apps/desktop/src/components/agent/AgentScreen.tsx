@@ -37,13 +37,16 @@ import { formatClockTime, formatCount } from "../../lib/format";
 import { withAiTimeout } from "../../lib/aiTimeout";
 import { AI_UNAVAILABLE_HINT } from "../../lib/constants";
 import { scrollBehavior } from "../../lib/motion";
+import {
+  AGENT_CHAT_STORAGE_KEY,
+  AGENT_DRAFT_STORAGE_KEY,
+  clearAgentSessionStorage,
+} from "../../services/agentSessionStorage";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { AgentMark } from "../common/AgentMark";
 import type { tool as AiToolFn } from "ai";
 
 const AgentMarkdown = lazy(() => import("./AgentMarkdown"));
-const CHAT_STORAGE_KEY = "clear-capacity.agent-chat.v2";
-const DRAFT_STORAGE_KEY = "clear-capacity.agent-draft.v1";
 const INITIAL_MESSAGE_COUNT = 24;
 const MESSAGE_PAGE_SIZE = 20;
 const FINAL_AGENT_TEXT_TIMEOUT_MS = 5000;
@@ -140,6 +143,8 @@ interface AgentScreenProps {
   onGenerateForecast: () => Promise<AppActionResult>;
   onGenerateNarrative: () => Promise<AppActionResult>;
   pushToast: PushToast;
+  /** Increments only after Reset Local Data is confirmed. */
+  resetGeneration: number;
 }
 
 function AgentThinkingText() {
@@ -235,10 +240,11 @@ export function AgentScreen({
   onGenerateForecast,
   onGenerateNarrative,
   pushToast,
+  resetGeneration,
 }: AgentScreenProps) {
   const [messages, setMessages] = useState<AgentChatMessage[]>(() => {
     try {
-      const cached = window.localStorage.getItem(CHAT_STORAGE_KEY);
+      const cached = window.localStorage.getItem(AGENT_CHAT_STORAGE_KEY);
       const parsed = cached ? JSON.parse(cached) : [];
       return Array.isArray(parsed)
         ? parsed.filter((message) => {
@@ -252,7 +258,7 @@ export function AgentScreen({
   });
   const [input, setInput] = useState(() => {
     try {
-      return window.localStorage.getItem(DRAFT_STORAGE_KEY) || "";
+      return window.localStorage.getItem(AGENT_DRAFT_STORAGE_KEY) || "";
     } catch {
       return "";
     }
@@ -271,6 +277,7 @@ export function AgentScreen({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const pendingActionRef = useRef<PendingAgentAction | null>(null);
+  const agentOperationEpochRef = useRef(0);
 
   const topProjects = useMemo(() => {
     const totals = new Map<string, number>();
@@ -462,7 +469,11 @@ export function AgentScreen({
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-200)));
+      if (messages.length > 0) {
+        window.localStorage.setItem(AGENT_CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-200)));
+      } else {
+        window.localStorage.removeItem(AGENT_CHAT_STORAGE_KEY);
+      }
     } catch {
       // Keep the in-memory conversation if storage is full or disabled.
     }
@@ -470,12 +481,37 @@ export function AgentScreen({
 
   useEffect(() => {
     try {
-      if (input) window.localStorage.setItem(DRAFT_STORAGE_KEY, input);
-      else window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+      if (input) window.localStorage.setItem(AGENT_DRAFT_STORAGE_KEY, input);
+      else window.localStorage.removeItem(AGENT_DRAFT_STORAGE_KEY);
     } catch {
       // Draft persistence is best effort.
     }
   }, [input]);
+
+  useEffect(() => {
+    if (resetGeneration <= 0) return;
+    agentOperationEpochRef.current += 1;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    pendingActionRef.current = null;
+    setMessages([]);
+    setInput("");
+    setIsSending(false);
+    setIsStreaming(false);
+    setStreamingMessageId(null);
+    setVisibleMessageCount(INITIAL_MESSAGE_COUNT);
+    setPendingAction(null);
+    setConfirmingClear(false);
+    clearAgentSessionStorage();
+  }, [resetGeneration]);
+
+  useEffect(() => () => {
+    // Screen routing unmounts inactive screens. Invalidate any provider result
+    // before aborting so an uncancellable native request cannot repopulate state.
+    agentOperationEpochRef.current += 1;
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+  }, []);
 
   useEffect(() => {
     const textarea = inputRef.current;
@@ -719,14 +755,19 @@ ${latestUserQuestion}`;
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    const operationEpoch = agentOperationEpochRef.current + 1;
+    agentOperationEpochRef.current = operationEpoch;
+    const isCurrentOperation = () => agentOperationEpochRef.current === operationEpoch;
     // Drives the Rust fallback prompt below if the SDK + grounded paths both fail.
     const latestUserQuestion = [...history].reverse().find((m) => m.role === "user")?.content ?? "";
 
     try {
       const sdkModel = await resolveAgentModel(aiConfig);
+      if (!isCurrentOperation()) return;
 
       if (sdkModel) {
         const [{ generateText, streamText, tool: createTool, stepCountIs }] = await Promise.all([import("ai")]);
+        if (!isCurrentOperation()) return;
         const boundTools = createBoundTools(context, createTool);
 
         const historyForModel = history
@@ -742,6 +783,7 @@ ${latestUserQuestion}`;
           stopWhen: stepCountIs(6),
           abortSignal: controller.signal,
         });
+        if (!isCurrentOperation()) return;
 
         const assistantId = `asst-${Date.now()}`;
         setMessages((prev) => [...prev, {
@@ -780,6 +822,7 @@ ${latestUserQuestion}`;
           ]);
 
           if (streamStatus === "timeout") {
+            if (!isCurrentOperation()) return;
             streamed = buildDeterministicAgentFallback(latestUserQuestion, AGENT_STREAM_TIMEOUT_MESSAGE);
             setMessages((prev) =>
               prev.map((m) => (m.id === assistantId ? { ...m, content: streamed, interrupted: false } : m))
@@ -790,6 +833,7 @@ ${latestUserQuestion}`;
             return;
           }
         } catch {
+          if (!isCurrentOperation()) return;
           if (streamTimedOut) {
             streamed = buildDeterministicAgentFallback(latestUserQuestion, AGENT_STREAM_TIMEOUT_MESSAGE);
             setMessages((prev) =>
@@ -835,6 +879,7 @@ ${latestUserQuestion}`;
         } catch {
           finalText = "";
         }
+        if (!isCurrentOperation()) return;
         if (finalText && finalText !== streamed.trim()) {
           streamed = finalText;
         }
@@ -845,6 +890,7 @@ ${latestUserQuestion}`;
         if (!streamed.trim()) {
           try {
             const groundedPrompt = await buildGroundedAgentPrompt(history);
+            if (!isCurrentOperation()) return;
             const retry = await withAiTimeout(
               generateText({
                 model: sdkModel,
@@ -854,6 +900,7 @@ ${latestUserQuestion}`;
               }),
               AGENT_STREAM_TIMEOUT_MS
             );
+            if (!isCurrentOperation()) return;
             streamed = retry.text.trim();
           } catch {
             streamed = "";
@@ -864,6 +911,8 @@ ${latestUserQuestion}`;
           }
 
         }
+
+        if (!isCurrentOperation()) return;
 
         // Commit the completed answer once so the reveal animates the formatted Markdown
         // tree. Rendering token deltas as plain lines made Markdown syntax flash before
@@ -885,6 +934,7 @@ ${latestUserQuestion}`;
         return;
       } else if (isCodexConnection(aiConfig)) {
         const groundedPrompt = await buildGroundedAgentPrompt(history);
+        if (!isCurrentOperation()) return;
         const assistantId = `asst-${Date.now()}`;
         setMessages((prev) => [...prev, {
           id: assistantId,
@@ -900,6 +950,7 @@ ${latestUserQuestion}`;
           }),
           60_000,
         );
+        if (!isCurrentOperation()) return;
         if (controller.signal.aborted) {
           finalizeAbortedStream(assistantId, "");
           return;
@@ -931,7 +982,7 @@ ${latestUserQuestion}`;
       // An abort that surfaced here (rather than inside the stream loop) is a user Stop,
       // not a failure — don't run the fallback or surface an error. The finally block
       // resets the streaming flags.
-      if (controller.signal.aborted) return;
+      if (!isCurrentOperation() || controller.signal.aborted) return;
       // Best effort fallback via the Rust path, then pure data
       try {
         const historyStr = history.map((m) => `${m.role}: ${m.content}`).join("\n");
@@ -941,6 +992,7 @@ ${latestUserQuestion}`;
             request: { prompt: fallbackPrompt, ai_config: aiConfig || undefined },
           })
         );
+        if (!isCurrentOperation()) return;
         const text =
           resp?.response ||
           `Capacity snapshot: ${snapshot ? snapshot.reliable_new_work_capacity_pct + "% reliable new-work" : "n/a"}. Focus projects: ${blocks.slice(0, 2).map((b) => b.project_name).join(", ") || "n/a"}.`;
@@ -952,6 +1004,7 @@ ${latestUserQuestion}`;
           analysisSummary: `Reviewed available capacity and workload context through the local agent bridge.`,
         }]);
       } catch {
+        if (!isCurrentOperation()) return;
         const errText = `Sorry, the Agent hit an error: ${e?.message || e}. Make sure your AI provider is set in Settings → AI assistance and you have data for the week.`;
         setMessages((prev) => [...prev, {
           id: `err-${Date.now()}`,
@@ -961,10 +1014,12 @@ ${latestUserQuestion}`;
         }]);
       }
     } finally {
-      setIsSending(false);
-      setIsStreaming(false);
-      setStreamingMessageId(null);
-      abortControllerRef.current = null;
+      if (isCurrentOperation()) {
+        setIsSending(false);
+        setIsStreaming(false);
+        setStreamingMessageId(null);
+      }
+      if (abortControllerRef.current === controller) abortControllerRef.current = null;
     }
   }
 
@@ -1047,7 +1102,7 @@ ${latestUserQuestion}`;
     setIsStreaming(false);
     setStreamingMessageId(null);
     try {
-      window.localStorage.removeItem(CHAT_STORAGE_KEY);
+      window.localStorage.removeItem(AGENT_CHAT_STORAGE_KEY);
     } catch {
       // The current view is still cleared.
     }

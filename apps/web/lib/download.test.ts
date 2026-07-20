@@ -3,11 +3,9 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 
 import {
-  BUNDLED_ARTIFACT,
   RELEASE_INFO,
   formatTtl,
   getReleasePresentation,
@@ -20,10 +18,26 @@ const FULL_ENV = {
   WEEKFORM_ARTIFACT_PATH: "releases/Weekform_0.1.0_universal.dmg",
   NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-role-secret",
+  WEEKFORM_ARTIFACT_DEVELOPER_ID_SIGNED: "true",
+  WEEKFORM_ARTIFACT_NOTARIZED: "true",
+  WEEKFORM_ARTIFACT_STAPLED: "true",
+  WEEKFORM_ARTIFACT_SHA256: "a".repeat(64),
+  WEEKFORM_ARTIFACT_VERIFIED_AT: "2026-07-20T16:00:00.000Z",
+};
+
+const HOSTING_ONLY_ENV = {
+  WEEKFORM_ARTIFACT_BUCKET: FULL_ENV.WEEKFORM_ARTIFACT_BUCKET,
+  WEEKFORM_ARTIFACT_PATH: FULL_ENV.WEEKFORM_ARTIFACT_PATH,
+  NEXT_PUBLIC_SUPABASE_URL: FULL_ENV.NEXT_PUBLIC_SUPABASE_URL,
+  SUPABASE_SERVICE_ROLE_KEY: FULL_ENV.SUPABASE_SERVICE_ROLE_KEY,
 };
 
 test("parseArtifactConfig returns null when unconfigured (documented fallback)", () => {
   assert.equal(parseArtifactConfig({}), null);
+});
+
+test("private artifact hosting alone cannot publish an unverified Mac release", () => {
+  assert.equal(parseArtifactConfig(HOSTING_ONLY_ENV), null);
 });
 
 test("parseArtifactConfig returns null when any single var is missing", () => {
@@ -50,6 +64,27 @@ test("parseArtifactConfig returns a full config with the default TTL", () => {
   assert.equal(config.supabaseUrl, "https://example.supabase.co");
   assert.equal(config.serviceRoleKey, "service-role-secret");
   assert.equal(config.signedUrlTtlSeconds, 300);
+  assert.deepEqual(config.releaseProof, {
+    developerIdSigned: true,
+    notarized: true,
+    stapled: true,
+    sha256: "a".repeat(64),
+    verifiedAt: "2026-07-20T16:00:00.000Z",
+  });
+});
+
+test("release proof fails closed for false attestations or malformed metadata", () => {
+  for (const env of [
+    { ...FULL_ENV, WEEKFORM_ARTIFACT_DEVELOPER_ID_SIGNED: "false" },
+    { ...FULL_ENV, WEEKFORM_ARTIFACT_NOTARIZED: "false" },
+    { ...FULL_ENV, WEEKFORM_ARTIFACT_STAPLED: "false" },
+    { ...FULL_ENV, WEEKFORM_ARTIFACT_SHA256: "not-a-checksum" },
+    { ...FULL_ENV, WEEKFORM_ARTIFACT_VERIFIED_AT: "not-a-date" },
+    { ...FULL_ENV, WEEKFORM_ARTIFACT_VERIFIED_AT: "July 20, 2026" },
+    { ...FULL_ENV, WEEKFORM_ARTIFACT_PATH: "releases/Weekform_0.0.9_universal.dmg" },
+  ]) {
+    assert.equal(parseArtifactConfig(env), null);
+  }
 });
 
 test("parseArtifactConfig trims incidental whitespace", () => {
@@ -106,8 +141,8 @@ test("formatTtl renders whole minutes and singular/plural seconds", () => {
   assert.equal(formatTtl(1), "1 second");
 });
 
-test("an unpublished DMG keeps the default website release fail-closed", () => {
-  const presentation = getReleasePresentation(null, null);
+test("an unverified DMG keeps the default website release fail-closed", () => {
+  const presentation = getReleasePresentation(null);
 
   assert.equal(presentation.kind, "pending");
   assert.equal(presentation.title, "Mac release is being finalized");
@@ -115,51 +150,24 @@ test("an unpublished DMG keeps the default website release fail-closed", () => {
   assert.equal(presentation.action.href, "/app");
   assert.doesNotMatch(
     JSON.stringify(presentation),
-    /bucket|credentials|Developer ID|notarization/i,
+    /bucket|credentials/i,
   );
+  assert.match(presentation.detail, /Developer ID signing/i);
+  assert.match(presentation.detail, /notarization/i);
+  assert.match(presentation.detail, /stapler validation/i);
 });
 
-test("the bundled DMG is presented as the active website release", () => {
-  const presentation = getReleasePresentation(null);
+test("the website does not ship a directly addressable public DMG", () => {
+  const publicRoot = new URL("../public", import.meta.url);
+  const dmgs = existsSync(publicRoot)
+    ? readdirSync(publicRoot, { recursive: true })
+      .map(String)
+      .filter((path) => path.toLowerCase().endsWith(".dmg"))
+    : [];
+  assert.deepEqual(dmgs, []);
 
-  assert.equal(presentation.kind, "available");
-  assert.equal(presentation.action.label, "Download now");
-  assert.equal(presentation.action.href, "/download/artifact");
-  assert.equal(presentation.filename, BUNDLED_ARTIFACT.filename);
-  assert.match(presentation.note, /6\.4 MiB/);
-  assert.match(presentation.note, /not Developer ID signed or Apple-notarized/i);
-  assert.match(presentation.note, /expected to block/i);
-});
-
-test("bundled DMG metadata identifies the current universal release and matches shipped bytes", () => {
-  assert.equal(RELEASE_INFO.generatedDate, "2026-07-20");
-
-  const artifact = readFileSync(
-    new URL(`../public${BUNDLED_ARTIFACT.href}`, import.meta.url),
-  );
-  const actualSha256 = createHash("sha256").update(artifact).digest("hex");
-
-  assert.equal(BUNDLED_ARTIFACT.sha256, actualSha256);
-  assert.equal(
-    BUNDLED_ARTIFACT.href,
-    `/downloads/${actualSha256.slice(0, 16)}/${RELEASE_INFO.artifactFilename}`,
-  );
-  assert.equal(
-    BUNDLED_ARTIFACT.sizeLabel,
-    `${(artifact.byteLength / (1024 * 1024)).toFixed(1)} MiB`,
-  );
-});
-
-test("download CDN headers cover every content-addressed universal release", () => {
-  const source = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
-
-  assert.match(
-    source,
-    /source: "\/downloads\/:release\/Weekform_0\.1\.0_universal\.dmg"/,
-  );
-  assert.match(source, /Content-Disposition/);
-  assert.match(source, /application\/x-apple-diskimage/);
-  assert.match(source, /max-age=31536000, immutable/);
+  const configSource = readFileSync(new URL("../next.config.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(configSource, /application\/x-apple-diskimage|\/downloads\//i);
 });
 
 test("configured artifact becomes an active, filename-specific download", () => {
@@ -172,6 +180,10 @@ test("configured artifact becomes an active, filename-specific download", () => 
   assert.equal(presentation.action.href, "/download/artifact");
   assert.equal(presentation.filename, RELEASE_INFO.artifactFilename);
   assert.match(presentation.note, /5 minutes/);
+  assert.match(presentation.note, /Developer ID signed/i);
+  assert.match(presentation.note, /notarized/i);
+  assert.match(presentation.note, /stapled/i);
+  assert.match(presentation.note, /verified July 20, 2026/i);
 });
 
 test("RELEASE_INFO carries non-empty version, date, and macOS requirement copy", () => {
@@ -199,8 +211,9 @@ test("download page keeps unavailable releases out of disabled-button limbo", ()
   assert.match(source, /RELEASE_INFO\.features/);
   assert.match(source, /RELEASE_INFO\.tips/);
   assert.match(source, /Open the DMG/);
-  assert.match(source, /Preview Mac install/);
-  assert.match(source, /Expect a Gatekeeper warning/);
+  assert.match(source, /Verified Mac install/);
+  assert.match(source, /releasePresentation\.kind === "available"[\s\S]*download-install-strip/);
+  assert.doesNotMatch(source, /Expect a Gatekeeper warning|unsigned preview/i);
   assert.doesNotMatch(
     source,
     /aria-disabled|is-disabled|private release bucket credentials|Developer ID certificate|notarization pending|npm ci|desktop:dev|xattr -dr|Download source archive|git clone/,
@@ -217,6 +230,13 @@ const CONFIG: ArtifactConfig = {
   supabaseUrl: "https://example.supabase.co",
   serviceRoleKey: "service-role-secret",
   signedUrlTtlSeconds: 300,
+  releaseProof: {
+    developerIdSigned: true,
+    notarized: true,
+    stapled: true,
+    sha256: "a".repeat(64),
+    verifiedAt: "2026-07-20T16:00:00.000Z",
+  },
 };
 
 const REQUEST_URL = "https://weekform.example/download/artifact";
@@ -239,7 +259,6 @@ function trackedDeps(overrides: Partial<PlanDeps>) {
   const deps: PlanDeps = {
     supabaseConfigured: overrides.supabaseConfigured ?? true,
     config: "config" in overrides ? (overrides.config ?? null) : CONFIG,
-    bundledArtifactUrl: overrides.bundledArtifactUrl ?? null,
     requestUrl: REQUEST_URL,
     getUser: async () => {
       calls.getUser += 1;
@@ -282,6 +301,14 @@ test("artifact plan: signed in but no verified artifact host → honest 503", as
   assert.equal(plan.body.error, "artifact_not_configured");
   assert.equal(calls.getUser, 1);
   assert.equal(calls.createSignedUrl, 0, "service-key step must not run");
+});
+
+test("artifact route has no bundled public-DMG fallback", () => {
+  const source = readFileSync(
+    new URL("../app/download/artifact/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /BUNDLED_ARTIFACT|bundledArtifactUrl|\/downloads\//);
 });
 
 test("artifact plan: storage signing failure → 303 back to the styled /download page", async () => {

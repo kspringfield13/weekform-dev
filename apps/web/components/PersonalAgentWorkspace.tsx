@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, KeyboardEvent, useState } from "react";
 
 import type { PersonalWorkloadReplicaV1 } from "../../../packages/domain/src/personalCloud";
 import styles from "./PersonalAgentWorkspace.module.css";
@@ -116,7 +116,7 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
   const [failedQuestion, setFailedQuestion] = useState<string | null>(null);
   const [copiedTurnIndex, setCopiedTurnIndex] = useState<number | null>(null);
 
-  async function ask(nextQuestion: string) {
+  async function ask(nextQuestion: string, requestId = crypto.randomUUID()) {
     const cleanQuestion = nextQuestion.trim();
     if (!hasSignal || isSending || !cleanQuestion || cleanQuestion.length > 600) return;
     setError(null);
@@ -126,7 +126,7 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
       const response = await fetch("/api/personal-agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: cleanQuestion }),
+        body: JSON.stringify({ question: cleanQuestion, requestId }),
       });
       const payload: unknown = await response.json().catch(() => null);
       if (!response.ok) {
@@ -155,6 +155,13 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void ask(question);
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && (!event.shiftKey || event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      void ask(question);
+    }
   }
 
   function clearConversation() {
@@ -214,7 +221,12 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
               <span>No review-safe week is connected yet — open Weekform for Mac to publish a derived summary.</span>
             )}
           </p>
-          <span className="personal-agent-briefing-boundary">Private supporting evidence stays local</span>
+          {hasSignal ? (
+            <div className={styles.briefingActions}>
+              <button type="button" disabled={isSending} onClick={() => void ask("Explain why my reliable capacity is at its current level.")}>Explain forecast <span aria-hidden="true">→</span></button>
+              <button type="button" disabled={isSending} onClick={() => void ask("Help me plan my week around my current reliable capacity.")}>Plan my week <span aria-hidden="true">→</span></button>
+            </div>
+          ) : <span className="personal-agent-briefing-boundary">Private supporting evidence stays local</span>}
         </section>
 
         {turns.length === 0 && !isSending ? <section className="personal-agent-starters" aria-label="Suggested agent actions">
@@ -222,7 +234,7 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
             <span>Common questions</span>
             <p>Grounded only in the review-safe summary published by your Mac. Raw supporting evidence stays local.</p>
           </div>
-          <div className="personal-agent-starter-grid">
+          <div className={`personal-agent-starter-grid ${styles.starterGrid}`}>
             {STARTER_ACTIONS.map((action) => (
               <button
                 key={action.title}
@@ -240,7 +252,7 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
           </div>
         </section> : null}
 
-        <div className={`personal-agent-chat-shell${turns.length ? ` ${styles.hasConversation}` : ""}`} aria-live="polite">
+        <div className={`personal-agent-chat-shell ${turns.length === 0 && !isSending ? styles.emptyChat : styles.hasConversation}`} aria-live="polite">
           {!hasSignal ? <div className="personal-agent-boundary" role="status">
             <span className="personal-agent-boundary-mark"><AgentSignalMark size={18} /></span>
             <div>
@@ -254,31 +266,26 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
               <Link className="button button-primary" href="/download">Get Weekform for Mac</Link>
             </div>
           </div> : null}
-          {hasSignal && turns.length === 0 ? (
-            <div className={styles.emptyState} role="status">
-              <span className="personal-agent-boundary-mark"><AgentSignalMark size={18} /></span>
-              <div>
-                <h2>Ask this published week.</h2>
-                <p>Questions go to Weekform&apos;s authenticated server and, when configured, its AI provider. Each request includes your typed question and a minimized review-safe evidence catalog. The conversation is temporary on this page, requests use no-store processing, and you should not enter sensitive, confidential, or regulated information.</p>
-              </div>
-            </div>
-          ) : null}
           {turns.length ? <div className={styles.messages}>
             {turns.map((turn, index) => (
               <div className={styles.turn} key={`${index}-${turn.question}`}>
                 <article className={styles.userMessage} aria-label="Your question">
                   <p>{turn.question}</p>
                 </article>
-                <article className={styles.agentMessage} aria-label="Weekform Agent answer">
+                {turn.mode === "mac_handoff" ? <div className={styles.macActionCard} role="group" aria-label="Mac approval required">
+                        <span className={styles.actionIcon}><AgentSignalMark size={15} /></span>
+                        <div className={styles.actionCopy}>
+                          <span className={styles.actionEyebrow}>{responseLabel(turn)}</span>
+                          <strong>Continue this action in Weekform for Mac</strong>
+                          <p>{turn.answer}</p>
+                          <p className={styles.actionBoundary}>Web Ask cannot approve or run changes. Review the action and its evidence on your Mac.</p>
+                        </div>
+                        <div className={styles.actionControls}>
+                          <Link className={styles.macLink} href="/download">Get Weekform for Mac <span aria-hidden="true">→</span></Link>
+                        </div>
+                      </div> : <article className={styles.agentMessage} aria-label="Weekform Agent answer">
                   <span className={styles.avatar}><AgentSignalMark size={15} /></span>
                   <div>
-                    {turn.mode === "mac_handoff" ? <div className={styles.macActionCard} role="group" aria-label="Mac approval required">
-                        <span className={styles.actionEyebrow}>{responseLabel(turn)}</span>
-                        <strong>Continue this action in Weekform for Mac</strong>
-                        <p>{turn.answer}</p>
-                        <p className={styles.actionBoundary}>Web Ask cannot approve or run changes. Review the action and its evidence on your Mac.</p>
-                        <Link className={styles.macLink} href="/download">Get Weekform for Mac <span aria-hidden="true">→</span></Link>
-                      </div> : (
                       <>
                         <p className={styles.answer}>{turn.answer}</p>
                         <div className={styles.messageMeta}>
@@ -306,31 +313,45 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
                           </div>
                         ) : null}
                       </>
-                    )}
                   </div>
-                </article>
+                </article>}
               </div>
             ))}
           </div> : null}
-          {isSending ? <div className={styles.thinking} role="status"><AgentSignalMark size={15} /> Reviewing published signals…</div> : null}
+          {isSending ? <div className={styles.progress} role="status">
+            <div className={styles.progressHead}>
+              <span className={styles.progressMark}><AgentSignalMark size={15} /></span>
+              <div><strong>Working through your workload</strong><small>Using only the published review-safe summary</small></div>
+            </div>
+            <div className={styles.progressSteps}>
+              <div className={styles.activeStep}><span>1</span>Reading review-safe context</div>
+              <div><span>2</span>Comparing planned and reactive work</div>
+              <div><span>3</span>Preparing a grounded answer</div>
+            </div>
+          </div> : null}
         </div>
 
         {error ? <div className={styles.error} role="alert">
           <span>{error}</span>
           {failedQuestion ? <button type="button" disabled={isSending} onClick={() => void ask(failedQuestion)}>Retry</button> : null}
         </div> : null}
-        <form className="personal-agent-composer" onSubmit={submit}>
+        <form className={`personal-agent-composer ${styles.composer}`} onSubmit={submit}>
           <textarea
             rows={1}
             value={question}
             maxLength={600}
             disabled={!hasSignal || isSending}
             onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={handleComposerKeyDown}
             aria-label="Ask about your capacity, focus, or what to do next"
             placeholder="Ask about your capacity, focus, or what to do next…"
           />
           <button type="submit" aria-label="Send question" aria-disabled={!hasSignal || isSending || !question.trim()} disabled={!hasSignal || isSending || !question.trim()}>↑</button>
         </form>
+        <p className={styles.requestBoundary}>
+          Questions go to Weekform&apos;s authenticated server and, when configured, its AI provider. Each request includes
+          your typed question and a minimized review-safe evidence catalog. Do not enter sensitive, confidential, or regulated information.
+        </p>
       </div>
     </section>
   );

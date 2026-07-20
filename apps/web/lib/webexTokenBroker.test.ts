@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   buildWebexTokenExchange,
+  keyWebexIpSubject,
   projectWebexTokenResponse,
   resolveWebexBrokerReadiness,
+  webexExchangeIdempotencyKey,
   type WebexBrokerConfig,
 } from "./webexTokenBroker";
 
@@ -12,6 +14,12 @@ const config: WebexBrokerConfig = {
   clientId: "synthetic-webex-client",
   clientSecret: "SERVER_ONLY_SYNTHETIC_SECRET",
   redirectUri: "http://127.0.0.1:49323/chat-auth/callback",
+};
+const control = {
+  serverClaim: "synthetic-control-claim-that-is-long-enough",
+  ipHashSecret: "i".repeat(32),
+  trustedIpHeader: "x-forwarded-for",
+  trustedProxy: "vercel",
 };
 
 test("broker stays unavailable until deployment security controls are explicitly verified", () => {
@@ -21,6 +29,11 @@ test("broker stays unavailable until deployment security controls are explicitly
       clientSecret: config.clientSecret,
       redirectUri: config.redirectUri,
       securityVerified,
+      controlClaim: control.serverClaim,
+      ipHashSecret: control.ipHashSecret,
+      trustedIpHeader: control.trustedIpHeader,
+      trustedProxy: control.trustedProxy,
+      vercelDeployment: "1",
     }), {
       ready: false,
       reason: "security_unverified",
@@ -32,9 +45,27 @@ test("broker stays unavailable until deployment security controls are explicitly
     clientSecret: config.clientSecret,
     redirectUri: config.redirectUri,
     securityVerified: "true",
+    controlClaim: control.serverClaim,
+    ipHashSecret: control.ipHashSecret,
+    trustedIpHeader: control.trustedIpHeader,
+    trustedProxy: control.trustedProxy,
+    vercelDeployment: "1",
   }), {
     ready: true,
     config,
+    control,
+  });
+});
+
+test("the legacy security attestation alone cannot enable the broker", () => {
+  assert.deepEqual(resolveWebexBrokerReadiness({
+    clientId: config.clientId,
+    clientSecret: config.clientSecret,
+    redirectUri: config.redirectUri,
+    securityVerified: "true",
+  }), {
+    ready: false,
+    reason: "controls_missing",
   });
 });
 
@@ -44,10 +75,43 @@ test("security verification does not make an incomplete broker configuration rea
     clientSecret: "",
     redirectUri: config.redirectUri,
     securityVerified: "true",
+    controlClaim: control.serverClaim,
+    ipHashSecret: control.ipHashSecret,
+    trustedIpHeader: control.trustedIpHeader,
+    trustedProxy: control.trustedProxy,
+    vercelDeployment: "1",
   }), {
     ready: false,
     reason: "configuration_missing",
   });
+});
+
+test("client IP subjects are canonical, secret-keyed, and reject ambiguous proxy chains", () => {
+  const ipv4 = keyWebexIpSubject(
+    new Headers({ "x-forwarded-for": "203.0.113.7" }),
+    control.trustedIpHeader,
+    control.ipHashSecret,
+  );
+  const ipv6Expanded = keyWebexIpSubject(
+    new Headers({ "x-forwarded-for": "2001:0db8:0:0:0:0:0:1" }),
+    control.trustedIpHeader,
+    control.ipHashSecret,
+  );
+  const ipv6Compressed = keyWebexIpSubject(
+    new Headers({ "x-forwarded-for": "2001:db8::1" }),
+    control.trustedIpHeader,
+    control.ipHashSecret,
+  );
+
+  assert.match(ipv4 ?? "", /^[a-f0-9]{64}$/);
+  assert.equal(ipv4?.includes("203.0.113.7"), false);
+  assert.equal(ipv6Expanded, ipv6Compressed);
+  assert.equal(keyWebexIpSubject(
+    new Headers({ "x-forwarded-for": "203.0.113.7, 198.51.100.4" }),
+    control.trustedIpHeader,
+    control.ipHashSecret,
+  ), null);
+  assert.equal(keyWebexIpSubject(new Headers(), control.trustedIpHeader, control.ipHashSecret), null);
 });
 
 test("authorization-code exchange is fixed to the configured client and redirect", () => {
@@ -76,6 +140,21 @@ test("refresh exchange accepts only the configured client and a bounded token", 
   assert.equal(exchange.form.get("grant_type"), "refresh_token");
   assert.equal(exchange.form.get("refresh_token"), "synthetic-refresh-token");
   assert.equal(exchange.form.has("redirect_uri"), false);
+});
+
+test("Webex idempotency receipts use a keyed digest instead of storing OAuth credentials", () => {
+  const exchange = buildWebexTokenExchange({
+    grantType: "refresh_token",
+    clientId: config.clientId,
+    refreshToken: "synthetic-private-refresh-token",
+  }, config);
+
+  const key = webexExchangeIdempotencyKey(exchange, control.ipHashSecret);
+
+  assert.match(key, /^[a-f0-9]{64}$/);
+  assert.equal(key.includes("synthetic-private-refresh-token"), false);
+  assert.equal(key, webexExchangeIdempotencyKey(exchange, control.ipHashSecret));
+  assert.notEqual(key, webexExchangeIdempotencyKey(exchange, "j".repeat(32)));
 });
 
 test("broker rejects client substitution, redirect substitution, extra fields, and malformed PKCE", () => {

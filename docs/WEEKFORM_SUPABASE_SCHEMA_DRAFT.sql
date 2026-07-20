@@ -647,7 +647,7 @@ commit;
 -- 1. Generate 32+ cryptographically random bytes and encode URL-safe.
 -- 2. token_hash = SHA-256(raw token), hex.
 -- 3. Insert team_invites with the signed-in user's session; RLS confirms manager.
--- 4. Return https://weekform.com/invite/<raw token> exactly once.
+-- 4. Return https://weekform.dev/invite/<raw token> exactly once.
 -- 5. Never log raw token or include it in analytics.
 --
 -- Application-side snapshot insert rule:

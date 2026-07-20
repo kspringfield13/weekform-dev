@@ -39,6 +39,7 @@ import type { SettingsTab, WindowMode } from "../../lib/types";
 import { getLocalDateKey } from "../../lib/date";
 import { formatCount } from "../../lib/format";
 import { AI_UNAVAILABLE_HINT, MAX_PROACTIVE_ALERTS_PER_DAY, MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY } from "../../lib/constants";
+import { withAiTimeout } from "../../lib/aiTimeout";
 import type { ProactiveAlertSettings } from "../../lib/proactiveAlerts";
 import {
   downloadTextFile,
@@ -142,6 +143,7 @@ export function SetupScreen({
   corrections,
   auditEvents,
   onResetLocalData,
+  isResettingLocalData,
   onExportBackup,
   retentionDays,
   setRetentionDays,
@@ -185,7 +187,8 @@ export function SetupScreen({
   corrections: UserCorrection[];
   auditEvents: AuditEvent[];
   onResetLocalData: () => void;
-  onExportBackup: () => void;
+  isResettingLocalData: boolean;
+  onExportBackup: () => Promise<void>;
   retentionDays: number | null;
   setRetentionDays: (value: number | null) => void;
   proactiveAlertSettings: ProactiveAlertSettings;
@@ -195,7 +198,7 @@ export function SetupScreen({
   onDefaultWindowModeChange: (mode: WindowMode) => void;
   activeSettingsTab: SettingsTab;
   onActiveSettingsTabChange: (tab: SettingsTab) => void;
-  /** AI access exists (Codex plan, saved key, or env fallback). */
+  /** AI access exists (Codex plan, Keychain-backed key, or env fallback). */
   aiAvailable: boolean;
   cloud: CloudController;
   resetConfirmationRequestId: number;
@@ -213,6 +216,7 @@ export function SetupScreen({
   );
   const [isTesting, setIsTesting] = useState(false);
   const [isConnectingCodex, setIsConnectingCodex] = useState(false);
+  const [isExportingBackup, setIsExportingBackup] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
   const settingsTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -279,7 +283,10 @@ export function SetupScreen({
     }
     setDraftConfig(config);
     setAiConfig(config);
-    setProviderStatus({ tone: "success", message: "Provider settings saved locally." });
+    setProviderStatus({
+      tone: "success",
+      message: "Provider settings saved locally; desktop API keys use macOS Keychain.",
+    });
   };
 
   const testConnection = async () => {
@@ -309,11 +316,13 @@ export function SetupScreen({
           visionModel: draftConfig.visionModel?.trim() || undefined
         };
     try {
-      const result = await invoke<TestConnectionResponse>("test_ai_connection", {
-        request: {
-          aiConfig: testedConfig
-        }
-      });
+      const result = await withAiTimeout(
+        invoke<TestConnectionResponse>("test_ai_connection", {
+          request: {
+            aiConfig: testedConfig
+          }
+        })
+      );
       setDraftConfig(testedConfig);
       setAiConfig(testedConfig);
       setProviderStatus({ tone: "success", message: result.message });
@@ -397,14 +406,20 @@ export function SetupScreen({
     setRetentionDays(value === "off" ? null : Number(value));
   };
 
-  // Nudge: let the user save a FULL local backup before the irreversible wipe —
-  // covering every data class the reset destroys (blocks, activity, imports,
+  // Nudge: let the user save a complete local backup before the irreversible wipe —
+  // covering every data class the reset destroys (blocks, raw activity, imports,
   // corrections, the audit trail, forecasts, narratives, plays, and saved skills),
   // not just the ledger + audit. Handled in App.tsx (where the full state + audit
   // emitter live). The dialog stays open after exporting so they can review the
   // download and then confirm (or cancel).
-  const exportBeforeReset = () => {
-    onExportBackup();
+  const exportBeforeReset = async () => {
+    if (isExportingBackup) return;
+    setIsExportingBackup(true);
+    try {
+      await onExportBackup();
+    } finally {
+      setIsExportingBackup(false);
+    }
   };
 
   const focusSettingsTab = (index: number) => {
@@ -712,7 +727,7 @@ export function SetupScreen({
       </div>
 
       <div className="ai-assistance">
-          <p>Raw activity metadata stays in local storage. AI features send only the compact context required for the feature you invoke to the connection you select.</p>
+          <p>Raw activity metadata stays in the encrypted native journal. AI features send only the compact context required for the feature you invoke to the connection you select.</p>
           <p>Window titles and screenshots may include sensitive details. Pause tracking or disable visual context before handling confidential work.</p>
 
           <div className="ai-provider">
@@ -721,7 +736,7 @@ export function SetupScreen({
                 <span className="ai-provider-icon"><PlugZap size={17} aria-hidden /></span>
                 <div>
                   <strong>AI Provider</strong>
-                  <small><Lock size={12} aria-hidden /> API keys stay local; Codex-plan tokens remain managed by Codex.</small>
+                  <small><Lock size={12} aria-hidden /> Desktop API keys stay in macOS Keychain; Codex-plan tokens remain managed by Codex.</small>
                 </div>
               </div>
               {selectedPreset.docsUrl && (
@@ -1116,10 +1131,12 @@ export function SetupScreen({
         <button
           className="settings-control"
           type="button"
+          disabled={isResettingLocalData}
+          aria-busy={isResettingLocalData}
           onClick={() => setConfirmingReset(true)}
         >
           <RotateCcw size={15} aria-hidden />
-          <span>Reset Data</span>
+          <span>{isResettingLocalData ? "Resetting…" : "Reset Data"}</span>
         </button>
       </section>
       </div>
@@ -1154,13 +1171,18 @@ export function SetupScreen({
             <li>Calendar and Chat connection credentials &amp; cursors</li>
             <li>Your saved AI provider settings &amp; credentials</li>
           </ul>
+          <p className="dialog-desc">
+            A backup includes raw activity, window titles, and your saved Agent conversation as plaintext. Keep the exported file somewhere private and secure.
+          </p>
           <button
             type="button"
             className="secondary-action dialog-export-action"
-            onClick={exportBeforeReset}
+            disabled={isExportingBackup}
+            aria-busy={isExportingBackup}
+            onClick={() => void exportBeforeReset()}
           >
             <Download size={15} aria-hidden />
-            <span>Export my data first</span>
+            <span>{isExportingBackup ? "Preparing backup…" : "Export my data first"}</span>
           </button>
         </ConfirmDialog>
       )}

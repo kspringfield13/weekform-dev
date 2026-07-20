@@ -68,7 +68,15 @@ export interface PersonalReplicaSyncStateV1 {
   deviceId: string;
   deviceName: string;
   cursor: number;
+  /** Persisted hybrid logical clock for monotonic replica freshness. */
+  sourceClock: string | null;
   queue: PersonalReplicaSyncQueueItemV1[];
+  /**
+   * Durable, privacy-allowlisted application receipts for server-claimed review
+   * commands. Optional only for source compatibility with v1 state written before
+   * the outbox existed; every parser/default normalizes it to an array.
+   */
+  reviewOutbox?: ReviewCommandOutboxItemV1[];
   lastAttemptAt: string | null;
   lastSuccessAt: string | null;
   lastError: string | null;
@@ -76,6 +84,7 @@ export interface PersonalReplicaSyncStateV1 {
 
 export type ReviewCommandAction = "confirm" | "exclude" | "relabel";
 export type ReviewCommandStatus = "pending" | "applied" | "rejected" | "conflict";
+export type ReviewCommandApplicationPhase = "apply_pending" | "ack_pending";
 
 export interface ReviewCommandPatchV1 {
   category?: WorkCategory;
@@ -84,7 +93,8 @@ export interface ReviewCommandPatchV1 {
   blockerFlag?: boolean;
 }
 
-export interface ReviewCommandV1 {
+/** Minimal command projection safe to persist in the local retry outbox. */
+export interface ReviewCommandApplicationV1 {
   schemaVersion: 1;
   commandId: string;
   blockId: string;
@@ -92,10 +102,28 @@ export interface ReviewCommandV1 {
   expectedRevision: string;
   action: ReviewCommandAction;
   patch: ReviewCommandPatchV1 | null;
-  status: ReviewCommandStatus;
   createdAt: string;
+}
+
+export interface ReviewCommandOutboxItemV1 {
+  schemaVersion: 1;
+  command: ReviewCommandApplicationV1;
+  phase: ReviewCommandApplicationPhase;
+  queuedAt: string;
+  updatedAt: string;
+  attempts: number;
+  lastError: string | null;
+}
+
+export interface ReviewCommandV1 extends ReviewCommandApplicationV1 {
+  status: ReviewCommandStatus;
   decidedAt: string | null;
   decisionReason: string | null;
+  /** Server-owned two-phase lifecycle while status remains pending. */
+  applicationPhase?: ReviewCommandApplicationPhase | null;
+  claimedByDevice?: string | null;
+  claimedAt?: string | null;
+  claimOwnerRevoked?: boolean | null;
 }
 
 export interface PersonalSyncReceiptV1 {

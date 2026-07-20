@@ -138,9 +138,10 @@ interface ScreenRouterProps {
   // corrections screen
   corrections: UserCorrection[];
   onResetLocalData: () => void;
+  isResettingLocalData: boolean;
   resetConfirmationRequestId: number;
   onResetConfirmationRequestHandled: () => void;
-  onExportBackup: () => void;
+  onExportBackup: () => Promise<void>;
   // daily review screen
   reviewSuggestions: ReviewCopilotSuggestion[];
   reviewCopilotStatus: "idle" | "generating" | "error";
@@ -178,6 +179,7 @@ interface ScreenRouterProps {
   // agent screen
   todayKey: string;
   currentWeekRangeLabel: string;
+  agentResetGeneration: number;
   // transient feedback
   pushToast: PushToast;
 }
@@ -265,6 +267,7 @@ export function ScreenRouter({
   onClassifySessions,
   corrections,
   onResetLocalData,
+  isResettingLocalData,
   resetConfirmationRequestId,
   onResetConfirmationRequestHandled,
   onExportBackup,
@@ -298,6 +301,7 @@ export function ScreenRouter({
   consentReceipts,
   todayKey,
   currentWeekRangeLabel,
+  agentResetGeneration,
   pushToast,
 }: ScreenRouterProps) {
   const openScreen = (screen: Screen) => {
@@ -363,6 +367,7 @@ export function ScreenRouter({
           corrections={corrections}
           auditEvents={auditEvents}
           onResetLocalData={onResetLocalData}
+          isResettingLocalData={isResettingLocalData}
           resetConfirmationRequestId={resetConfirmationRequestId}
           onResetConfirmationRequestHandled={onResetConfirmationRequestHandled}
           onExportBackup={onExportBackup}
@@ -547,6 +552,7 @@ export function ScreenRouter({
           onGenerateForecast={onGenerateForecast}
           onGenerateNarrative={onRegenerate}
           pushToast={pushToast}
+          resetGeneration={agentResetGeneration}
         />
       )}
     </>

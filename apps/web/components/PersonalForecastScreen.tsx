@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LockKeyhole, TrendingUp } from "lucide-react";
 
 import type { PersonalWorkloadReplicaV1 } from "../../../packages/domain/src/personalCloud";
 import {
@@ -22,16 +23,20 @@ export function PersonalForecastScreen({
   const range = forecast.scenarios ? personalForecastRangeGeometry(forecast.scenarios) : null;
 
   return (
-    <section className="web-desktop-screen personal-forecast-screen" aria-labelledby="personal-forecast-title">
-      <header className="web-screen-heading">
+    <section
+      className="web-desktop-screen screen forecast-screen personal-forecast-screen"
+      aria-labelledby="personal-forecast-title"
+    >
+      <header className="screen-header">
         <div>
-          <span>Weekly forecast</span>
+          <p className="eyebrow">Weekly forecast</p>
           <h1 id="personal-forecast-title">
             {forecast.targetWeekId ? `Next week: ${forecast.targetWeekId}.` : "No forecast inputs yet."}
           </h1>
-          <p>See what reliably fits next, with the source and uncertainty kept visible.</p>
+          <p className="screen-intro">
+            See what reliably fits next, with the source and uncertainty kept visible.
+          </p>
         </div>
-        <Link className="button button-secondary" href="/download">Get Weekform for Mac</Link>
       </header>
 
       {error ? (
@@ -40,65 +45,98 @@ export function PersonalForecastScreen({
           <p>No planning baseline is being shown. Reload the page or resync from Weekform for Mac.</p>
         </div>
       ) : !forecast.scenarios ? (
-        <section className="panel web-screen-empty" role="status">
-          <h2>Nothing to forecast</h2>
-          <p>{forecast.explanation}</p>
-          <Link className="button button-primary" href="/download">Get Weekform for Mac</Link>
+        <section className="empty-state personal-forecast-empty" role="status">
+          <span className="empty-state-icon" aria-hidden="true"><TrendingUp size={20} /></span>
+          <div>
+            <strong>Nothing to forecast.</strong>
+            <p>{forecast.explanation}</p>
+          </div>
+          <div className="empty-state-actions">
+            <Link className="button button-primary" href="/download">Get Weekform for Mac</Link>
+          </div>
         </section>
       ) : (
         <>
-          <section className="personal-week-panel personal-forecast-panel" aria-labelledby="personal-forecast-agent-title">
-            <header>
+          <section
+            className="capacity-section forecast-panel"
+            aria-labelledby="personal-forecast-agent-title"
+          >
+            <div className="section-title">
               <div>
-                <h2 id="personal-forecast-agent-title">Derived planning baseline</h2>
-                <span>{forecast.targetWeekId ?? "Next week"} · {forecast.historyWeekCount} synced {forecast.historyWeekCount === 1 ? "week" : "weeks"}</span>
+                <h2 id="personal-forecast-agent-title">Forecast Agent</h2>
+                <span>
+                  {forecast.targetWeekId ?? "Next week"} · {forecast.historyWeekCount} synced {forecast.historyWeekCount === 1 ? "week" : "weeks"}
+                </span>
               </div>
               <span className="badge">{forecast.confidencePct ?? 0}% summary confidence</span>
-            </header>
+            </div>
 
-            <div className="forecast-summary personal-forecast-scenarios">
-              <div><span>Conservative</span><strong>{pct(forecast.scenarios.conservative)}</strong><small>protected planning case</small></div>
-              <div><span>Likely</span><strong>{pct(forecast.scenarios.likely)}</strong><small>median of synced baselines</small></div>
-              <div><span>Optimistic</span><strong>{pct(forecast.scenarios.optimistic)}</strong><small>only if current risks clear</small></div>
-            </div>
-            <div className="forecast-range" role="img" aria-label={`Scenario range from ${pct(forecast.scenarios.conservative)} to ${pct(forecast.scenarios.optimistic)}, likely ${pct(forecast.scenarios.likely)}`}>
-              <div className="forecast-range-track">
-                <span className="forecast-range-fill" style={{ left: `${range!.leftPct}%`, width: `${range!.widthPct}%` }} />
-                <span className="forecast-range-marker" style={{ left: `${range!.likelyPct}%` }} />
+            <div className="personal-forecast-local-boundary" role="note">
+              <LockKeyhole size={16} aria-hidden="true" />
+              <div>
+                <strong>AI forecast generation stays on your Mac.</strong>
+                <span>Not included in the review-safe replica · no forecast action has run.</span>
               </div>
-              <div className="forecast-range-labels" aria-hidden="true">
-                <span>{pct(range!.conservativePct)} conservative</span>
-                <strong>{pct(range!.likelyPct)} likely</strong>
-                <span>{pct(range!.optimisticPct)} optimistic</span>
+              <Link className="button button-secondary" href="/download">Get Weekform for Mac</Link>
+            </div>
+
+            <div className="forecast-result">
+              <div className="forecast-summary">
+                <div><span>Conservative</span><strong>{pct(forecast.scenarios.conservative)}</strong><small>protected planning case</small></div>
+                <div><span>Likely</span><strong>{pct(forecast.scenarios.likely)}</strong><small>median of synced baselines</small></div>
+                <div><span>Optimistic</span><strong>{pct(forecast.scenarios.optimistic)}</strong><small>only if current risks clear</small></div>
+              </div>
+              <p className="forecast-baseline-note">{forecast.explanation}</p>
+              <div
+                className="forecast-range"
+                role="img"
+                aria-label={`Scenario range from ${pct(forecast.scenarios.conservative)} to ${pct(forecast.scenarios.optimistic)}, likely ${pct(forecast.scenarios.likely)}`}
+              >
+                <div className="forecast-range-track">
+                  <span className="forecast-range-fill" style={{ left: `${range!.leftPct}%`, width: `${range!.widthPct}%` }} />
+                  <span className="forecast-range-marker" style={{ left: `${range!.likelyPct}%` }} />
+                </div>
+                <div className="forecast-range-label-row" aria-hidden="true">
+                  <span>Conservative · {pct(range!.conservativePct)}</span>
+                  <strong>Likely · {pct(range!.likelyPct)}</strong>
+                  <span>Optimistic · {pct(range!.optimisticPct)}</span>
+                </div>
+              </div>
+              <div className="forecast-copy">
+                <span>Planning guidance</span>
+                <h3>Derived planning baseline</h3>
+                <p>{forecast.recommendation}</p>
+              </div>
+              <div className="forecast-grid">
+                <section>
+                  <h4>Risk flags</h4>
+                  {forecast.risks.length > 0 ? (
+                    <ul className="personal-forecast-list">
+                      {forecast.risks.map((risk) => <li key={risk.key}><strong>{risk.label}</strong><span>{risk.detail}</span></li>)}
+                    </ul>
+                  ) : <p className="personal-week-empty">No elevated derived risk crossed the planning thresholds.</p>}
+                </section>
+                <section>
+                  <h4>Assumptions</h4>
+                  <span className="personal-forecast-list-kicker">Forecast basis</span>
+                  <ul className="personal-forecast-list">
+                    {forecast.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}
+                  </ul>
+                </section>
               </div>
             </div>
-            <p className="personal-week-panel-note">{forecast.explanation}</p>
           </section>
-
-          <div className="personal-week-detail-grid personal-forecast-detail-grid">
-            <section className="personal-week-panel">
-              <header><h2>Risk flags</h2><span>From the newest review-safe summary</span></header>
-              {forecast.risks.length > 0 ? (
-                <ul className="personal-forecast-list">
-                  {forecast.risks.map((risk) => <li key={risk.key}><strong>{risk.label}</strong><span>{risk.detail}</span></li>)}
-                </ul>
-              ) : <p className="personal-week-empty">No elevated derived risk crossed the planning thresholds.</p>}
-              <h3>Planning guidance</h3>
-              <p>{forecast.recommendation}</p>
-            </section>
-            <section className="personal-week-panel">
-              <header><h2>Forecast basis</h2><span>Inspectable assumptions and limits</span></header>
-              <h3>Assumptions</h3>
-              <ul className="personal-forecast-list">
-                {forecast.assumptions.map((assumption) => <li key={assumption}>{assumption}</li>)}
-              </ul>
-              <p className="personal-week-panel-note">This browser does not generate AI forecasts. The desktop Agent can refine this baseline against private local evidence after you ask it to.</p>
-            </section>
-          </div>
 
           {forecast.trajectory.length >= 2 ? (
             <PersonalForecastTrajectory trajectory={forecast.trajectory} reliableCapacityDeltaPts={forecast.trajectoryDeltaPts} />
-          ) : null}
+          ) : (
+            <section className="forecast-track-record personal-forecast-track-boundary" aria-label="Forecast track record unavailable">
+              <div>
+                <strong>Forecast track record</strong>
+                <p>One synced week is a deterministic baseline. Saved predictions and predicted-versus-actual accuracy remain on your Mac.</p>
+              </div>
+            </section>
+          )}
         </>
       )}
     </section>

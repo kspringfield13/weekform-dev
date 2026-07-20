@@ -14,7 +14,7 @@ no code may pretend to pair without the live path. Written July 19, 2026.
   (`cloudStore.ts`; the A4 adapter work moves this behind a storage seam with
   a Keychain-capable implementation).
 - There is **no deep link, no custom URL scheme, and no browser-initiated
-  flow**. The web app (weekform.com) and desktop app share an account but
+  flow**. The web app (weekform.dev) and desktop app share an account but
   pair only by the user typing the same credentials into both.
 - Distribution is **source-build only** — no Developer ID signature, no
   notarization, no updater (see `/download`'s honest fallback copy).
@@ -28,7 +28,7 @@ the OS-level trust chain (Gatekeeper, scheme registration) is meaningful.
 
 ## 3. Pairing flow (normative design)
 
-Actors: **D** = desktop app, **B** = user's browser on weekform.com,
+Actors: **D** = desktop app, **B** = user's browser on weekform.dev,
 **S** = server (Supabase + one new trusted endpoint pair).
 
 1. **Init (D):** D generates a random `code_verifier` (≥ 43 chars,
@@ -38,7 +38,7 @@ Actors: **D** = desktop app, **B** = user's browser on weekform.com,
    returns `pairing_id` plus a short **user code** (8–9 chars, no vowels, for
    display-and-compare only, never a credential).
 2. **Hand-off (D→B):** D opens
-   `https://weekform.com/pair?pairing_id=…` in the default browser. The
+   `https://weekform.dev/pair?pairing_id=…` in the default browser. The
    desktop shows the user code; the web page shows the same code and requires
    the signed-in user to confirm the codes match before approving.
 3. **Approve (B):** after explicit approval by an authenticated browser
@@ -79,7 +79,7 @@ Implementation may start only when ALL of the following exist, in order:
 
 1. **Apple Developer ID signing identity + notarization pipeline** (T1/T6
    depend on it; an unsigned scheme handler weakens the design's assumptions).
-2. **Hosted `weekform.com/pair` approval page + `pair/init`/`pair/redeem`
+2. **Hosted `weekform.dev/pair` approval page + `pair/init`/`pair/redeem`
    endpoints** with the atomic one-shot semantics above (needs a live
    deployment — the current repo's web app is env-blocked from live Supabase
    verification, see the runbook §0 rows).

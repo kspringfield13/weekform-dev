@@ -1,6 +1,11 @@
 import Link from "next/link";
 
 import type { PersonalReplicaBlockV1 } from "../../../packages/domain/src/personalCloud";
+import {
+  reviewCategories,
+  reviewPlannedStatuses,
+  reviewWorkModes,
+} from "@/lib/personalReviewTaxonomy";
 import type { PersonalReplicaView, ReviewCommandView } from "@/lib/personalReplica";
 import { formatDateTime } from "@/components/WorkloadSnapshot";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
@@ -13,21 +18,6 @@ import {
   eligibleReviewConfirmTargets,
   reviewConfirmEligibility,
 } from "@/lib/personalReplica";
-
-const REVIEW_CATEGORIES = [
-  "Planned analysis / project work",
-  "Ad hoc stakeholder requests",
-  "Recurring reporting",
-  "Dashboard development / edits",
-  "SQL / data modeling / query work",
-  "QA / data validation",
-  "Debugging / issue investigation",
-  "Documentation / requirement clarification",
-  "Meetings / stakeholder syncs",
-  "Admin / coordination",
-  "Blocked / waiting / dependency delay",
-];
-
 function clampProgress(value: number): number {
   return Math.min(100, Math.max(0, Math.round(value)));
 }
@@ -137,8 +127,34 @@ function PersonalReviewBlock({
             name="category"
             defaultValue={block.category}
           >
-            {REVIEW_CATEGORIES.map((category) => (
+            {reviewCategories.map((category) => (
               <option value={category} key={category}>{category}</option>
+            ))}
+          </select>
+        </label>
+        <label className="tag-field">
+          <span className="tag-field-label">Planned status</span>
+          <select
+            aria-label={`Planned status — ${block.category}`}
+            name="planned_status"
+            defaultValue={block.plannedStatus}
+          >
+            {reviewPlannedStatuses.map((statusOption) => (
+              <option value={statusOption} key={statusOption}>
+                {plannedStatusLabel(statusOption)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="tag-field">
+          <span className="tag-field-label">Work mode</span>
+          <select
+            aria-label={`Work mode — ${block.category}`}
+            name="mode"
+            defaultValue={block.mode}
+          >
+            {reviewWorkModes.map((modeOption) => (
+              <option value={modeOption} key={modeOption}>{modeOption}</option>
             ))}
           </select>
         </label>
@@ -209,7 +225,7 @@ export function PersonalTodayScreen({
             Confirm the obvious blocks, relabel the odd ones, or exclude anything sensitive. Web requests return to your Mac for approval.
           </p>
         </div>
-        {current && reviewQueue.length > 0 ? (
+        {!error && !reviewCommandsError && current && reviewQueue.length > 0 ? (
           <div className="review-header-actions">
             <span className="web-today-approval-chip">Approval required on Mac</span>
             {eligibleConfirmTargets.length > 0 && !reviewCommandsError ? (

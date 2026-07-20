@@ -10,6 +10,10 @@ const shellSource = readFileSync(
   new URL("../components/IndividualWorkspaceShell.tsx", import.meta.url),
   "utf8",
 );
+const todaySource = readFileSync(
+  new URL("../components/PersonalTodayScreen.tsx", import.meta.url),
+  "utf8",
+);
 const weeklyReviewSource = readFileSync(
   new URL("../components/PersonalWeeklyReviewScreen.tsx", import.meta.url),
   "utf8",
@@ -42,21 +46,21 @@ test("the authenticated workspace uses ephemeral route state instead of a stored
   assert.doesNotMatch(dashboardSource + shellSource, /WebWorkspaceIntro|localStorage|sessionStorage/);
 });
 
-test("invalid review-safe replica data is visible from every Individual route", () => {
-  assert.match(
+test("invalid review-safe replica data fails loudly inside each active Individual route", () => {
+  assert.doesNotMatch(
     dashboardSource,
-    /personalReplicaError\s*\?\s*\([\s\S]*?role=["']alert["'][\s\S]*?data could not be validated/i,
-    "the workspace must fail loudly before its route-specific view trees",
+    /className=["']form-alert web-replica-alert["']/,
+    "a global alert would duplicate the route-local error and shift every destination",
   );
-  assert.match(
-    dashboardSource,
-    /<div className=["']container workspace-shell["']>[\s\S]*?personalReplicaError[\s\S]*?<div data-web-view=["']today["']>/,
-    "the replica error must not be hidden inside one conditional destination",
-  );
-  const alertSource = dashboardSource.match(
-    /<div className=["']form-alert web-replica-integrity-alert["'][\s\S]*?<\/div>/,
-  )?.[0] ?? "";
-  assert.doesNotMatch(alertSource, /\{personalReplicaError\}/,
+  for (const component of ["PersonalTodayScreen", "PersonalCapacityScreen", "PersonalWeeklyReviewScreen", "PersonalForecastScreen", "PersonalSummaryScreen"]) {
+    assert.match(
+      dashboardSource,
+      new RegExp(`<${component}\\b[\\s\\S]*?error=\\{personalReplicaError\\}`),
+      `${component} must receive the existing typed replica failure without another query`,
+    );
+  }
+  assert.match(todaySource, /\{error\s*\?\s*\([\s\S]*?role=["']alert["']/);
+  assert.doesNotMatch(todaySource, /\{error\}/,
     "raw API or parser details must not be rendered into the browser");
 });
 
@@ -66,10 +70,10 @@ test("replica integrity and load failures expose distinct accessible recovery gu
     /errorKind:\s*personalReplicaErrorKind/,
     "the dashboard must retain the typed replica failure kind",
   );
-  assert.match(dashboardSource, /personalReplicaErrorKind\s*===\s*["']integrity["']/);
+  assert.match(dashboardSource, /errorKind\s*===\s*["']integrity["']/);
   assert.match(dashboardSource, /Your private Web data could not be validated\./);
   assert.match(dashboardSource, /Resync from Weekform for Mac/);
-  assert.match(dashboardSource, /personalReplicaErrorKind\s*===\s*["']load["']/);
+  assert.match(dashboardSource, /errorKind:\s*["']integrity["']\s*\|\s*["']load["']\s*\|\s*null/);
   assert.match(dashboardSource, /Your private Web data could not be loaded\./);
   assert.match(dashboardSource, /Reload this page or check your connection\./);
   assert.match(

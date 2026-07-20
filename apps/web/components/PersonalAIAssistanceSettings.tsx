@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { LocalSettingsControl, LocalSettingsHandoff } from "./PersonalSettingsLocalControl";
 import styles from "./PersonalAISettings.module.css";
 
 type AssistanceIconName = "provider" | "connection" | "guidance" | "vision";
@@ -70,7 +71,7 @@ export function PersonalAIAssistanceSettings() {
             <p>Choose OpenAI or another supported provider, then review model and vision-model settings beside the local evidence they may process.</p>
           </div>
           <div className={styles.status}><strong>Mac only</strong><span>Credentials never enter Web</span></div>
-          <Link className={`button button-secondary ${styles.localAction}`} href="/download">Get Weekform for Mac</Link>
+          <LocalSettingsControl />
         </section>
         {ASSISTANCE_ROWS.map((row) => (
           <section className={styles.row} key={row.id} aria-labelledby={`web-ai-${row.id}`}>
@@ -80,7 +81,7 @@ export function PersonalAIAssistanceSettings() {
               <p>{row.description}</p>
             </div>
             <div className={styles.status}><strong>Mac only</strong><span>{row.detail}</span></div>
-            <Link className={`button button-secondary ${styles.localAction}`} href="/download">Get Weekform for Mac</Link>
+            <LocalSettingsControl />
           </section>
         ))}
         <section className={`${styles.row} ${styles.webRow}`} aria-labelledby="web-ai-web-ask">
@@ -93,6 +94,13 @@ export function PersonalAIAssistanceSettings() {
           <Link className={`button button-primary ${styles.localAction}`} href="/app?screen=agent">Open Web Ask</Link>
         </section>
       </div>
+
+      <LocalSettingsHandoff
+        actionLabel="Get Weekform for Mac"
+        href="/download"
+        title="Change AI provider settings beside the evidence they affect"
+        description="Weekform for Mac owns provider credentials, connection tests, generation capabilities, and Visual Context consent. Web keeps these rows read-only and never receives that configuration."
+      />
 
       <p className={styles.footnote}>Desktop AI output remains reviewable. This Web settings surface does not receive raw local activity, window titles, screenshots, Desktop AI prompts, local provider credentials, or local AI configuration. Web Ask uses its separate authenticated server path and does not inherit these Desktop settings; its conversation stays temporary, requests use no-store processing, and you should not enter sensitive, confidential, or regulated information.</p>
     </section>

@@ -1,4 +1,4 @@
-# weekform.com (apps/web)
+# weekform.dev (apps/web)
 
 The web surface for Weekform: marketing landing page, Google/GitHub OAuth,
 passwordless Magic Link, and email/password auth,
@@ -17,9 +17,11 @@ pattern, wired through the Next.js 16
   names, screenshots, and the complete deterministic personal workload model
   stay in the Mac app. The optional private Web replica contains only the
   review-safe allowlist documented in `docs/PRIVACY.md`.
-- The website stores one user-scoped, versioned `localStorage` preference for
-  whether the first-run Web workspace intro was completed. It contains no
-  workload, identity details, role, team data, or auth material. The website
+- The website stores two narrow `localStorage` preferences: one user-scoped,
+  versioned value recording whether the first-run Web workspace intro was
+  completed, and one site-wide `light` or `dark` appearance value. Dark is the
+  default until a user explicitly selects and saves Light. These values contain
+  no workload, identity details, role, team data, or auth material. The website
   has no `sessionStorage`, IndexedDB, or application-managed persistent browser
   workload cache. Authenticated pages
   and actions call Supabase from the Next.js server under the signed-in user's
@@ -59,11 +61,33 @@ OAuth token broker. Neither secret is bundled into browser or desktop code.
 | `WEEKFORM_ARTIFACT_BUCKET` | Optional. Private Supabase Storage bucket holding the official packaged Mac artifact |
 | `WEEKFORM_ARTIFACT_PATH` | Optional. Object path within that bucket, e.g. `releases/Weekform_0.1.0_universal.dmg` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Optional, **secret**. Used only in `app/download/artifact/route.ts` to mint short-lived signed URLs; never sent to the browser |
+| `WEEKFORM_ARTIFACT_DEVELOPER_ID_SIGNED` | Release proof. Must be exactly `true` only after Developer ID signature verification succeeds |
+| `WEEKFORM_ARTIFACT_NOTARIZED` | Release proof. Must be exactly `true` only after Apple notarization succeeds |
+| `WEEKFORM_ARTIFACT_STAPLED` | Release proof. Must be exactly `true` only after stapler validation succeeds |
+| `WEEKFORM_ARTIFACT_SHA256` | Lower- or uppercase 64-character SHA-256 for the exact uploaded DMG |
+| `WEEKFORM_ARTIFACT_VERIFIED_AT` | Canonical UTC timestamp (`YYYY-MM-DDTHH:mm:ss.sssZ`) for the completed release verification run |
 | `WEEKFORM_ARTIFACT_SIGNED_URL_TTL_SECONDS` | Optional. Signed-URL lifetime in seconds; defaults to 300, clamped to 30-3600 |
 | `WEBEX_CHAT_CLIENT_ID` | Optional. Must match the public client ID configured in the Mac build |
 | `WEBEX_CHAT_CLIENT_SECRET` | Optional, **secret**. Used only in `app/api/oauth/webex/token/route.ts` for Webex token exchange/refresh |
 | `WEBEX_CHAT_REDIRECT_URI` | Optional. Exact registered loopback callback, normally `http://127.0.0.1:49323/chat-auth/callback` |
 | `WEBEX_CHAT_BROKER_SECURITY_VERIFIED` | Operational attestation. Set to exactly `true` only after deployed rate limiting and credential-safe request/proxy/observability logging are verified; otherwise the broker returns 503 |
+| `REQUEST_CONTROL_SERVER_CLAIM` | **Secret**, at least 32 UTF-8 bytes. Vercel-only claim for the distributed request-control RPCs; Postgres stores only its SHA-256 digest |
+| `REQUEST_CONTROL_IP_HASH_SECRET` | **Secret**, at least 32 UTF-8 bytes and independent from the server claim. HMAC-key for trusted client-IP subjects; raw IP addresses are never stored |
+| `REQUEST_CONTROL_TRUSTED_IP_HEADER` | Must be exactly `x-forwarded-for`; other headers fail closed |
+| `REQUEST_CONTROL_TRUSTED_PROXY` | Must be exactly `vercel`, with platform `VERCEL=1`; non-Vercel deployments fail closed until a separately implemented trusted-proxy policy exists |
+
+Request-control deployment is intentionally two-sided. Generate two independent
+random values of at least 32 bytes, store them only as sensitive Vercel
+variables, then store the lowercase SHA-256 of the server claim—not the claim
+itself—in Postgres:
+
+```sql
+alter database postgres set app.settings.request_control_server_claim_sha256 = '<64 lowercase hex characters>';
+```
+
+Reconnect/restart PostgREST after changing that database setting so new request
+workers observe it. If the digest, migration, secrets, trusted header, or Vercel
+platform proof is absent, every configured provider/broker path fails closed.
 
 Supabase dashboard configuration expected at runtime:
 
@@ -79,9 +103,24 @@ Supabase dashboard configuration expected at runtime:
   `display_name text`) with RLS letting a user select/insert their own row.
   The app reads and bootstraps a profile best-effort and falls back to the
   account email when the table or row is absent.
-- Repository migrations applied through `202607190007_personal_replica_sync.sql`.
+- Repository migrations applied through `202607200006_distributed_request_controls.sql`.
   Simulator authorization remains a separate, explicit maintainer grant; it is
   not implied by a manager team role.
+
+## Canonical origin and browser security
+
+`https://weekform.dev` is the sole canonical Web origin used by metadata.
+Requests arriving on `weekform.com`, `www.weekform.com`, or `www.weekform.dev`
+are permanently redirected with their path preserved. The corresponding aliases
+must still be attached to the deployment and DNS before the application can
+receive and redirect them.
+
+Every canonical response receives a deny-by-default Content Security Policy,
+`nosniff`, strict-origin referrer handling, a restricted Permissions Policy, and
+frame denial. Production permits same-origin Next.js resources plus the
+configured HTTPS Supabase origin and its secure Realtime socket. Development
+adds only loopback HTTP/WebSocket origins and the eval allowance required by the
+local Next.js toolchain.
 
 ## Behavior without configuration
 
@@ -128,8 +167,9 @@ configured.
   already a member) map to clear human messages
 - `/download` — protected; one native DMG action, release notes, features,
   first-week tips, privacy-permission expectations, and a standard Mac install
-  flow. Enables the download when the private-bucket artifact env vars are set;
-  otherwise it keeps the action visibly unavailable — see "Official Mac
+  flow. Enables the download only when the private-bucket artifact and complete
+  release-proof env vars are set; otherwise it keeps the action visibly
+  unavailable — see "Official Mac
   download" below
 - `/download/artifact` — protected server route; re-checks the session,
   then either 307-redirects to a freshly minted signed Supabase Storage URL
@@ -153,18 +193,26 @@ app. To enable the connector:
    with the same public client id and
    `WEEKFORM_CHAT_OAUTH_BROKER_URL=https://<site-origin>/api`; the Mac appends
    `/oauth/webex/token`.
-3. Add deployment-level rate limiting for this route and ensure request bodies,
-   authorization codes, and token responses are excluded from application,
-   proxy, and observability logs.
-4. After verifying both controls in the deployed environment, set
+3. Apply `202607200006_distributed_request_controls.sql`, set two independent
+   request-control secrets, and store only the lowercase SHA-256 of
+   `REQUEST_CONTROL_SERVER_CLAIM` in the Postgres database setting
+   `app.settings.request_control_server_claim_sha256`. The broker then enforces
+   a distributed 20-request UTC-daily keyed-IP budget, a 30-second lease, and
+   replay-safe idempotency before it contacts Webex. Raw IPs, credentials,
+   request bodies, and token responses are never written to its receipts.
+4. Verify Vercel overwrites `x-forwarded-for`, and ensure authorization codes,
+   refresh tokens, request bodies, and token responses are excluded from
+   application, proxy, and observability logs. The broker fails closed outside
+   that exact trusted-proxy configuration.
+5. After verifying both the implemented limiter and deployment logging controls, set
    `WEBEX_CHAT_BROKER_SECURITY_VERIFIED=true` on the broker and in the native
    release configuration. The broker and native connector otherwise remain
    unavailable even when the client id, secret, redirect, and URL are present.
-5. Exercise initial authorization, refresh, disconnect, expiry, denial, and
+6. Exercise initial authorization, refresh, disconnect, expiry, denial, and
    rate-limit paths against a non-production Webex account before presenting
    the connector as live-proven.
 
-The route is intentionally independent of a weekform.com account session: the
+The route is intentionally independent of a weekform.dev account session: the
 native app is bound by the one-time authorization code, state, PKCE verifier,
 fixed client id, and fixed redirect. The broker processes credentials/tokens
 only; the Mac calls Webex message APIs directly and performs the content-free
@@ -188,48 +236,47 @@ projection locally.
 
 `/download` is authenticated-session-required: signed-out visitors are
 redirected to `/login?next=/download` and returned here after signing in.
-The page and `/download/artifact` redirect are gated, but the bundled
-content-addressed CDN fallback is public to anyone who knows its exact URL.
-Use the private Storage path below when artifact access itself must be gated.
-The page never claims the public GitHub repository is inaccessible and always
-links or names it.
+The repository and Web deployment contain no public DMG fallback. On this
+machine there is no Developer ID Application identity, so no current local
+artifact is presented or claimed as Gatekeeper-trusted. `/download` remains in
+an honest pending state until private hosting and every release proof below are
+present. `/download/artifact` then re-checks the signed-in session before
+minting a short-lived private Storage URL.
 
-**Current state of this environment:** a 6.4 MiB universal DMG is built at
-`apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/Weekform_0.1.0_universal.dmg`.
-It contains Apple silicon and Intel slices plus the standard Applications
-shortcut. The app bundle is unsigned, not Developer ID signed or
-Apple-notarized. The verified DMG is copied into the Web release at
-`apps/web/public/downloads/5a14980de083abb5/Weekform_0.1.0_universal.dmg`, whose SHA-256 is
-`5a14980de083abb536269c481788882ec60674f5434a19060e77dcbcf489cc6c`.
-A signed-in visitor gets one active **Download now** action; the
-authenticated `/download/artifact` route redirects to that website-hosted DMG
-when private Storage is unconfigured. That static fallback is public by URL;
-authentication controls the product page and redirect, not direct CDN access.
-The downloaded file is a normal `.dmg`, not a ZIP or source archive.
+**To publish a trusted private artifact:**
 
-**To move the artifact to a private signed-URL path:**
-
-1. After Developer ID signing and Apple notarization, create a **private**
-   Supabase Storage bucket (e.g. `weekform-releases`) and upload the DMG at
-   `releases/Weekform_0.1.0_universal.dmg`.
-2. Leave the bucket's RLS/policies closed to public/anon access — only the
-   service-role key (used server-side) should be able to read it.
-3. Set, in the deployment's environment (never committed):
-   - `WEEKFORM_ARTIFACT_BUCKET` — the bucket name from step 1
-   - `WEEKFORM_ARTIFACT_PATH` — the object path from step 1
+1. Build the universal DMG, sign the app with a Developer ID Application
+   identity, submit it to Apple's notarization service, staple the accepted
+   ticket, and verify the signature, Gatekeeper assessment, notarization ticket,
+   mounted contents, architectures, version, and minimum macOS requirement.
+2. Compute the SHA-256 of those exact verified bytes. Create a **private**
+   Supabase Storage bucket (for example `weekform-releases`) and upload the same
+   DMG at `releases/Weekform_0.1.0_universal.dmg`. Keep public/anon access
+   closed; only the server-side service role should read it.
+3. Set, in the deployment environment (never commit secrets or fabricated proof):
+   - `WEEKFORM_ARTIFACT_BUCKET` — the bucket name from step 2
+   - `WEEKFORM_ARTIFACT_PATH` — the object path from step 2
    - `SUPABASE_SERVICE_ROLE_KEY` — from Project Settings -> API -> service
      role (secret); do **not** prefix it `NEXT_PUBLIC_`
+   - `WEEKFORM_ARTIFACT_DEVELOPER_ID_SIGNED=true`
+   - `WEEKFORM_ARTIFACT_NOTARIZED=true`
+   - `WEEKFORM_ARTIFACT_STAPLED=true`
+   - `WEEKFORM_ARTIFACT_SHA256` — the checksum from step 2
+   - `WEEKFORM_ARTIFACT_VERIFIED_AT` — the verification run's ISO timestamp
    - optionally `WEEKFORM_ARTIFACT_SIGNED_URL_TTL_SECONDS` (default `300`,
      clamped to `30`-`3600`)
-4. Redeploy. The existing single "Download now" action hits
+4. Redeploy. The single "Download now" action hits
    `/download/artifact`, which re-checks the session server-side
    and 307-redirects to a signed URL minted with
    `storage.from(bucket).createSignedUrl(path, ttl)`. The service-role key is
    read only inside that route handler and is never sent to the browser or
    included in any client bundle.
-5. Update `RELEASE_INFO` in `apps/web/lib/download.ts` (version, generated
-   date, artifact filename, release notes, and verification status) to match
-   the uploaded build.
+5. Smoke-test the deployed download, compare its bytes with the recorded
+   checksum, and update `RELEASE_INFO` in `apps/web/lib/download.ts` to match.
+
+The Web app validates that proof metadata is complete and well-formed; the
+release operator or CI pipeline remains responsible for making those
+attestations true and for comparing the uploaded bytes with the checksum.
 
 ## Testing status (honest)
 
@@ -237,40 +284,31 @@ The downloaded file is a normal `.dmg`, not a ZIP or source archive.
   normalization, expiry math, URL building/parsing, RPC error mapping) are
   covered by `lib/invites.test.ts` (`node:test`, run from the repo root
   with `npm run test:web`).
-- Pure download-config helpers (artifact env parsing, missing/blank-var
-  fallback, TTL clamping, TTL copy formatting, DMG metadata, and the
+- Pure download-config helpers (fail-closed proof parsing, missing/blank-var
+  fallback, TTL clamping, release copy, absence of a public DMG, and the
   one-action/no-developer-setup page contract) are covered by
   `lib/download.test.ts`, run the same way.
-- The local DMG has passed `hdiutil verify`; its mounted contents include
-  `Weekform.app` and `Applications -> /Applications`; `lipo -archs` reports
-  `x86_64 arm64`; its bundle reports version `0.1.0` and minimum macOS `13.0`.
-- **Integration and RLS cases have NOT been executed.** No Supabase project
-  or local Supabase CLI stack is available on this machine, so team
-  creation, invite insert authorization, and `accept_team_invite`
-  positive/negative paths were not run against a real database. The
-  expected outcomes are documented in
-  `docs/hackathon/TEAM_CLAWFATHER_RLS_MATRIX.md` (all cells EXPECTED, not
-  VERIFIED). Run the flow against a configured Supabase project before
-  claiming it verified.
+- `npm run test:supabase:rls` executes the local pgTAP suite against the
+  local Supabase database. A passing local result does not prove the linked or
+  production project has the same migrations, configuration, or policies.
 - **The optional private signed-URL artifact path has NOT been exercised end-to-end.** There
-  is no live Supabase project, private bucket, or uploaded artifact on this
-  machine, so `/download/artifact`'s configured branch (session check ->
-  bucket policy) is real code but has only been verified by
-  code inspection. The bundled website artifact path is separately covered by
-  a byte-level checksum test and production route verification. Run the private
-  path against a configured Supabase project with an uploaded artifact before
-  claiming that optional path verified.
+  is no verified signed/notarized/stapled private artifact on this machine, so
+  `/download/artifact`'s configured branch (session check -> bucket policy) is
+  real code but has only been verified through deterministic tests. Run the
+  private path against the deployed bucket and compare downloaded bytes before
+  claiming end-to-end release proof.
 
 ## Known limitations
 
-- Integration/RLS behavior is unexecuted (see "Testing status" above).
+- Linked and production RLS behavior remains separately unverified (see
+  "Testing status" above).
 - The optional private signed-URL artifact path is unexecuted end-to-end (see
-  "Testing status" above); production currently uses the bundled Web artifact.
+  "Testing status" above); the public release remains fail-closed.
 - Invites are member-role only; manager-role invites, invite revocation UI,
   and role changes are not built yet (revocation is permitted by RLS but has
   no button).
-- The universal macOS artifact is attached to the website download action but
-  is not Developer ID signed or Apple-notarized.
+- No Mac download is published until Developer ID signing, Apple notarization,
+  stapling, checksum recording, and private hosting are explicitly attested.
 - Sessions are standard Supabase cookie sessions; this is a prototype, not
   audited production auth.
 
@@ -287,5 +325,7 @@ From the repository root:
 
 ```bash
 npm run test:web   # node:test suite for the pure invite helpers (via tsx)
+npm run test:supabase:rls # executable local pgTAP authorization gate
+npm run verify:web:release # static tests + local RLS + production Web build
 npm run web:build  # this workspace's production build
 ```

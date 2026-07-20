@@ -6,6 +6,10 @@ const trajectorySource = readFileSync(
   new URL("../components/PersonalForecastTrajectory.tsx", import.meta.url),
   "utf8",
 );
+const globalStyles = readFileSync(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 test("Web Forecast trajectory mirrors Desktop keyboard and pointer series isolation", () => {
   assert.match(trajectorySource, /^"use client";/m);
@@ -26,6 +30,12 @@ test("Web Forecast trajectory legend carries the Desktop current-value and windo
   assert.match(trajectorySource, /over the window/);
   assert.match(trajectorySource, /No change over the window/);
   assert.match(trajectorySource, /aria-label="Trajectory series"/);
+});
+
+test("Web Forecast trajectory exposes a visible keyboard focus contract with a defined theme token", () => {
+  assert.match(globalStyles, /--focus-ring:\s*[^;]+;/);
+  assert.match(globalStyles, /\.personal-forecast-trajectory-legend > span:focus-visible[^}]*var\(--focus-ring\)/s);
+  assert.doesNotMatch(globalStyles, /var\(--focus\)/);
 });
 
 test("Web Forecast keeps its observed-baseline and no-accuracy boundary after extraction", () => {

@@ -1,6 +1,6 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { LocalSettingsControl, LocalSettingsHandoff } from "./PersonalSettingsLocalControl";
 import styles from "./PersonalNotificationsSettings.module.css";
 
 type NotificationIconName = "alerts" | "guardrail" | "review" | "calendar" | "fragmentation" | "summary";
@@ -81,7 +81,7 @@ export function PersonalNotificationsSettings() {
             <strong>Mac only</strong>
             <span>Delivery and master switch</span>
           </div>
-          <Link className={`button button-secondary ${styles.localAction}`} href="/download">Get Weekform for Mac</Link>
+          <LocalSettingsControl />
         </section>
         {ALERT_ROWS.map((row) => (
           <section className={styles.row} key={row.id} aria-labelledby={`web-notification-${row.id}`}>
@@ -94,10 +94,17 @@ export function PersonalNotificationsSettings() {
               <strong>Mac only</strong>
               <span>{row.status}</span>
             </div>
-            <Link className={`button button-secondary ${styles.localAction}`} href="/download">Get Weekform for Mac</Link>
+            <LocalSettingsControl />
           </section>
         ))}
       </div>
+
+      <LocalSettingsHandoff
+        actionLabel="Get Weekform for Mac"
+        href="/download"
+        title="Choose alert delivery on the Mac that owns your workload model"
+        description="Weekform for Mac controls notification permission, thresholds, and delivery. Web shows the same signal boundaries without requesting browser permission or keeping another settings copy."
+      />
 
       <p className={styles.footnote}>Web does not request browser notification permission or keep a second copy of your alert settings.</p>
     </section>

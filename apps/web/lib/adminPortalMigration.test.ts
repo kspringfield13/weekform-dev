@@ -38,7 +38,7 @@ test("production admin access RPC is current-user-only and authenticated-only", 
   );
 });
 
-test("live pgTAP contract covers grants, denials, and immediate revocation", () => {
+test("pgTAP specification source covers grants, denials, and immediate revocation", () => {
   const contract = executableSql(RLS_CONTRACT_URL);
 
   for (const expected of [

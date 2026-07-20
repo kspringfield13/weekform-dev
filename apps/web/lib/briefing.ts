@@ -672,6 +672,7 @@ export async function generateTeamBriefing(
         instructions: prompt.system,
         input: prompt.user,
         store: false,
+        max_output_tokens: 2_000,
         text: { format: { type: "json_object" } },
       }),
       signal: controller.signal,

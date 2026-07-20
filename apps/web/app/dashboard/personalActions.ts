@@ -26,7 +26,11 @@ function workspaceNotice(
 export async function queuePersonalReviewCommand(formData: FormData): Promise<void> {
   const action = text(formData, "action");
   const patch = action === "relabel"
-    ? { category: text(formData, "category") }
+    ? {
+        category: text(formData, "category"),
+        plannedStatus: text(formData, "planned_status"),
+        mode: text(formData, "mode"),
+      }
     : undefined;
   const input = reviewCommandInput({
     blockId: text(formData, "block_id"),

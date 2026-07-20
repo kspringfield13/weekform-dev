@@ -97,7 +97,7 @@ export function useForecastAgent({
       corrections,
     });
 
-    forecastAsync.start("generating");
+    const operationEpoch = forecastAsync.start("generating");
 
     try {
       const response = await withAiTimeout(
@@ -105,6 +105,9 @@ export function useForecastAgent({
           request: { prompt, ai_config: aiConfig },
         })
       );
+      if (!forecastAsync.isCurrent(operationEpoch)) {
+        return { ok: false, message: "Forecast generation was cancelled by a local-data reset." };
+      }
       // Enforce the prompt's output rules at the parse layer — the native AI response is
       // trusted TS but never runtime-checked, so a malformed/non-clamping provider could
       // render "NaN%", a >40% "reliable" headline, or an inverted scenario band. Normalizing
@@ -211,6 +214,9 @@ export function useForecastAgent({
         message: `Generated a forecast with ${pct(reliableNewWorkCapacityPct)} reliable new-work capacity for ${nextWeekRangeLabel}.`,
       };
     } catch (error) {
+      if (!forecastAsync.isCurrent(operationEpoch)) {
+        return { ok: false, message: "Forecast generation was cancelled by a local-data reset." };
+      }
       const message = error instanceof Error ? error.message : String(error);
       forecastAsync.fail(message);
       setAuditEvents((current) => [
@@ -239,6 +245,6 @@ export function useForecastAgent({
     forecastStatus,
     forecastError,
     generateForecastAgent,
-    resetForecast: forecastAsync.reset,
+    resetForecast: () => forecastAsync.reset(),
   };
 }

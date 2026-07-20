@@ -17,8 +17,15 @@ import {
   deleteCloudStateThrough,
   readCloudStateThrough,
   resolveSessionStorageAdapter,
-  writeCloudStateThrough
+  writeCloudStateStrictThrough
 } from "./sessionStorage";
+import { createPersistenceCoordinator } from "./persistenceCoordinator";
+
+async function persistCloudStateSnapshot(state: PersistedCloudStateV1): Promise<void> {
+  await writeCloudStateStrictThrough(resolveSessionStorageAdapter(), state);
+}
+
+const cloudPersistenceCoordinator = createPersistenceCoordinator(persistCloudStateSnapshot);
 
 /** Read + validate the persisted cloud state; null when nothing has ever been stored. */
 export async function readPersistedCloudState(): Promise<PersistedCloudStateV1 | null> {
@@ -26,9 +33,28 @@ export async function readPersistedCloudState(): Promise<PersistedCloudStateV1 |
 }
 
 export async function writePersistedCloudState(state: PersistedCloudStateV1): Promise<void> {
-  await writeCloudStateThrough(resolveSessionStorageAdapter(), state);
+  try {
+    await cloudPersistenceCoordinator.schedule(state);
+  } catch {
+    // Cloud preferences remain usable in memory when storage is unavailable.
+  }
+}
+
+/** Reject unless the complete cloud/session envelope reaches its selected backend. */
+export async function writePersistedCloudStateStrict(state: PersistedCloudStateV1): Promise<void> {
+  await cloudPersistenceCoordinator.schedule(state);
 }
 
 export async function clearPersistedCloudState(): Promise<boolean> {
-  return deleteCloudStateThrough(resolveSessionStorageAdapter());
+  try {
+    await cloudPersistenceCoordinator.clear(async () => {
+      const deleted = await deleteCloudStateThrough(resolveSessionStorageAdapter());
+      if (!deleted) {
+        throw new Error("Weekform could not verify durable cloud credential removal.");
+      }
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }

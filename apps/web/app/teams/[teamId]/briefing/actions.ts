@@ -1,17 +1,41 @@
 "use server";
 
+import { headers } from "next/headers";
+
 import { createClient } from "@/lib/supabase/server";
 import { getOwnMembership, isManagerRole, listTeamRoster } from "@/lib/teams";
 import { listLatestTeamSnapshots } from "@/lib/snapshots";
 import { classifyFreshness, freshnessLabel, summarizeTeamWorkload } from "@/lib/workload";
-import { buildBriefingInput, generateTeamBriefing } from "@/lib/briefing";
+import { buildBriefingInput, generateTeamBriefing, getBriefingModelConfig } from "@/lib/briefing";
+import {
+  AI_RESERVED_TOKEN_UNITS,
+  acquireAiRequestControl,
+  completeAiRequestControl,
+  deriveRequestIdempotencyKey,
+  keyRequestIpSubject,
+  requestControlFailure,
+  resolveServerRequestControlEnvironment,
+  type RequestControlOutcomeCode,
+  type RequestControlRpcClient,
+} from "@/lib/distributedRequestControl";
 import { INITIAL_BRIEFING_STATE, type BriefingActionState } from "./briefingState";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const REQUEST_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const NOT_CONFIGURED =
   "This deployment has no Supabase project configured, so team briefings are unavailable.";
+
+function outcomeForBriefing(
+  response: Awaited<ReturnType<typeof generateTeamBriefing>>,
+): RequestControlOutcomeCode {
+  if (response.mode === "model") return "ok";
+  if (response.fallbackReason === "timeout") return "provider_timeout";
+  if (response.fallbackReason === "schema_error") return "validation_error";
+  return "provider_error";
+}
 
 /**
  * Generates a Team Briefing for one team.
@@ -47,11 +71,12 @@ export async function generateBriefingAction(
   }
 
   const teamId = String(formData.get("team_id") ?? "");
-  if (!UUID_PATTERN.test(teamId)) {
+  const requestId = String(formData.get("request_id") ?? "").toLowerCase();
+  if (!UUID_PATTERN.test(teamId) || !REQUEST_ID_PATTERN.test(requestId)) {
     return {
       ...INITIAL_BRIEFING_STATE,
       status: "error",
-      message: "This briefing form is missing its team. Reload the page.",
+      message: "This briefing form is missing required request details. Reload the page.",
     };
   }
 
@@ -98,7 +123,64 @@ export async function generateBriefingAction(
     aggregates,
   });
 
+  const providerConfigured = getBriefingModelConfig() !== null && input.sharingCount > 0;
+  if (!providerConfigured) {
+    const response = await generateTeamBriefing(input);
+    return {
+      status: "success",
+      message: null,
+      result: response.result,
+      mode: response.mode,
+      fallbackReason: response.fallbackReason ?? null,
+      model: response.model ?? null,
+      generatedAt: nowIso,
+    };
+  }
+
+  const controls = resolveServerRequestControlEnvironment();
+  const requestHeaders = await headers();
+  const ipSubjectHash = controls ? keyRequestIpSubject(requestHeaders, controls) : null;
+  if (!controls || !ipSubjectHash) {
+    return {
+      ...INITIAL_BRIEFING_STATE,
+      status: "error",
+      message: "Distributed request controls are unavailable, so no provider request was sent.",
+    };
+  }
+  const controlClient = supabase as unknown as RequestControlRpcClient;
+  const acquired = await acquireAiRequestControl(controlClient, "team_briefing", {
+    ipSubjectHash,
+    idempotencyKey: deriveRequestIdempotencyKey([
+      "team_briefing",
+      nowIso.slice(0, 10),
+      user.id,
+      teamId,
+      requestId,
+    ]),
+    reservedTokenUnits: AI_RESERVED_TOKEN_UNITS.team_briefing,
+    serverClaim: controls.serverClaim,
+  });
+  if (acquired.decision !== "acquired") {
+    return {
+      ...INITIAL_BRIEFING_STATE,
+      status: "error",
+      message: requestControlFailure(acquired).message,
+    };
+  }
+
   const response = await generateTeamBriefing(input);
+  const completed = await completeAiRequestControl(controlClient, {
+    receiptId: acquired.receiptId,
+    leaseToken: acquired.leaseToken,
+    serverClaim: controls.serverClaim,
+  }, outcomeForBriefing(response));
+  if (!completed) {
+    return {
+      ...INITIAL_BRIEFING_STATE,
+      status: "error",
+      message: "The provider response could not be safely finalized. Try again shortly.",
+    };
+  }
 
   return {
     status: "success",

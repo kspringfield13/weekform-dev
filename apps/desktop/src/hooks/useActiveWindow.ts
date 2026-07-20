@@ -1,17 +1,15 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { createAuditEvent } from "../lib/audit";
-import type { ActiveWindowSample, AuditEvent } from "../../../../packages/domain/src/models";
+import type { ActiveWindowSample } from "../../../../packages/domain/src/models";
 
 interface UseActiveWindowParams {
   isDemoMode: boolean;
   setActiveWindowSamples: React.Dispatch<React.SetStateAction<ActiveWindowSample[]>>;
-  setAuditEvents: React.Dispatch<React.SetStateAction<AuditEvent[]>>;
   setCaptureError?: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 export function useActiveWindow(params: UseActiveWindowParams) {
-  const { isDemoMode, setActiveWindowSamples, setAuditEvents, setCaptureError } = params;
+  const { isDemoMode, setActiveWindowSamples, setCaptureError } = params;
 
   useEffect(() => {
     if (isDemoMode) return;
@@ -32,11 +30,13 @@ export function useActiveWindow(params: UseActiveWindowParams) {
 
       // Guard the native `timestamp_ms` before ISO-formatting it: a missing / NaN /
       // out-of-range value makes `new Date(x).toISOString()` throw a RangeError, which
-      // would lose the sample AND its audit row (both call sites below format it). Drop
-      // the malformed sample instead, using the shared finite-before-toISOString idiom
+      // would lose the sample. Drop the malformed sample instead, using the shared
+      // finite-before-toISOString idiom
       // (format.ts `Number.isFinite(new Date(x).getTime())`, useClassification's
       // NaN-filter). Computing the ISO once also keeps the sample and its audit event on
-      // the exact same timestamp.
+      // one validated timestamp. Individual samples are deliberately not copied
+      // into the unencrypted audit Store; capture policy/pause events remain the
+      // inspectable audit boundary and raw rows stay in the encrypted journal.
       const sampleDate = new Date(payload.timestamp_ms);
       if (!Number.isFinite(sampleDate.getTime())) {
         return;
@@ -57,25 +57,6 @@ export function useActiveWindow(params: UseActiveWindowParams) {
         return [...current, sample].slice(-2000);
       });
 
-      setAuditEvents((current) => [
-        ...current,
-        createAuditEvent({
-          type: "active_window_sample",
-          source: "macos_active_window",
-          title: "Active-window sample captured",
-          summary: `${payload.app_name}${payload.window_title ? ` - ${payload.window_title}` : ""}`,
-          privacy_level: "local_only",
-          timestamp,
-          details: {
-            app_name: payload.app_name,
-            window_title: payload.window_title,
-            stored_locally: true,
-            sent_to_cloud: false,
-            screenshots: false,
-            keystrokes: false,
-          },
-        }),
-      ].slice(-1000));
     })
       .then((cleanup) => {
         if (cancelled) {
@@ -94,5 +75,5 @@ export function useActiveWindow(params: UseActiveWindowParams) {
       cancelled = true;
       unlisten?.();
     };
-  }, [isDemoMode, setActiveWindowSamples, setAuditEvents, setCaptureError]);
+  }, [isDemoMode, setActiveWindowSamples, setCaptureError]);
 }

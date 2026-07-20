@@ -1,9 +1,9 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { deletePersonalReplicaHistory } from "@/app/dashboard/personalActions";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
 
+import { LocalSettingsControl, LocalSettingsHandoff } from "./PersonalSettingsLocalControl";
 import styles from "./PersonalWebDataControl.module.css";
 
 type ControlIconName = "cloud" | "timer" | "download" | "reset";
@@ -91,7 +91,7 @@ export function PersonalWebDataControl({
             <p>Choose how long raw active-window samples remain on the device that captured them. Web never receives those samples.</p>
           </div>
           <div className={styles.status}><strong>Mac only</strong><span>Local raw evidence</span></div>
-          <Link className={`button button-secondary ${styles.localAction}`} href="/download">Get Weekform for Mac</Link>
+          <LocalSettingsControl />
         </section>
 
         <section className={styles.row} aria-labelledby="web-export-title">
@@ -101,7 +101,7 @@ export function PersonalWebDataControl({
             <p>Export full classified blocks and the explainability trail as JSON or CSV from the local source. Web only has the review-safe allowlist.</p>
           </div>
           <div className={styles.status}><strong>Mac only</strong><span>Full-detail local export</span></div>
-          <Link className={`button button-secondary ${styles.localAction}`} href="/download">Get Weekform for Mac</Link>
+          <LocalSettingsControl />
         </section>
 
         <section className={styles.row} aria-labelledby="web-reset-title">
@@ -111,9 +111,16 @@ export function PersonalWebDataControl({
             <p>Reset activity, work blocks, corrections, forecasts, imports, and local audit history only from Weekform for Mac, after reviewing the full consequence.</p>
           </div>
           <div className={styles.status}><strong>Mac only · irreversible</strong><span>Never initiated by Web</span></div>
-          <Link className={`button button-secondary ${styles.localAction}`} href="/download">Get Weekform for Mac</Link>
+          <LocalSettingsControl />
         </section>
       </div>
+
+      <LocalSettingsHandoff
+        actionLabel="Get Weekform for Mac"
+        href="/download"
+        title="Manage full-detail evidence on the Mac that stores it"
+        description="Weekform for Mac owns retention, full-ledger export, and local reset. Web keeps those controls read-only while the separate private Web history action above remains available for this authenticated account."
+      />
     </section>
   );
 }

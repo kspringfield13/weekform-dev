@@ -1,4 +1,4 @@
-// Account & Sharing settings tab: sign in with the weekform.com account, pick the
+// Account & Sharing settings tab: sign in with the weekform.dev account, pick the
 // recipient team, edit the CloudSharePolicyV1, review the EXACT payload, and run the
 // manually approved sync. Sharing is off by default; nothing here claims "all data
 // synced" — the preview names the recipient team and every selected field.

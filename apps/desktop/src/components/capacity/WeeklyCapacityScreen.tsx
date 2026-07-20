@@ -1,5 +1,4 @@
-import { useId, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import { useMemo, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -85,8 +84,6 @@ const MODE_DESCRIPTIONS: Record<WorkMode, string> = {
   Blocked: "Time delayed by dependencies, waiting, or other constraints.",
 };
 
-type CoveragePartKey = "committed" | "available" | "protected";
-
 const CARRYOVER_SATURATION_PCT = 40;
 const MEETING_SATURATION_PCT = 35;
 
@@ -102,40 +99,6 @@ function formatCapacityHours(value: number) {
 
 function displayCategory(category: WorkCategory) {
   return CATEGORY_LABELS[category] ?? category;
-}
-
-function WeekVisualTooltip({
-  id,
-  visible,
-  title,
-  value,
-  detail,
-  className = "",
-  style,
-}: {
-  id: string;
-  visible: boolean;
-  title: string;
-  value: string;
-  detail: string;
-  className?: string;
-  style?: CSSProperties;
-}) {
-  return (
-    <div
-      className={`week-dashboard-visual-tooltip ${visible ? "is-visible" : ""} ${className}`.trim()}
-      id={id}
-      role="tooltip"
-      aria-hidden={!visible}
-      style={style}
-    >
-      <div>
-        <strong>{title}</strong>
-        <span>{value}</span>
-      </div>
-      <p>{detail}</p>
-    </div>
-  );
 }
 
 function AvailabilityGauge({ value }: { value: number }) {
@@ -223,10 +186,7 @@ function WeekMetricCard({
   );
 }
 
-function TimeSpentDonut({ items }: { items: Array<{ label: WorkMode; value: number }> }) {
-  const [hoveredMode, setHoveredMode] = useState<WorkMode | null>(null);
-  const [focusedMode, setFocusedMode] = useState<WorkMode | null>(null);
-  const tooltipId = `week-time-tooltip-${useId().replace(/:/g, "")}`;
+export function TimeSpentDonut({ items }: { items: Array<{ label: WorkMode; value: number }> }) {
   const total = items.reduce((sum, item) => sum + item.value, 0);
   let cursor = 0;
   const segments = items.map((item) => {
@@ -235,40 +195,24 @@ function TimeSpentDonut({ items }: { items: Array<{ label: WorkMode; value: numb
     cursor += share;
     return segment;
   });
-  const activeMode = hoveredMode ?? focusedMode;
-  const activeItem = segments.find((item) => item.label === activeMode) ?? null;
-  const chartLabel = segments
-    .map((item) => `${MODE_VISUALS[item.label].label}, ${Math.round(item.share)}%`)
-    .join("; ");
-
-  const clearMode = (mode: WorkMode, source: "hover" | "focus") => {
-    if (source === "hover") {
-      setHoveredMode((current) => (current === mode ? null : current));
-    } else {
-      setFocusedMode((current) => (current === mode ? null : current));
-    }
-  };
-
   return (
-    <div className={`week-dashboard-time-layout ${activeMode ? "has-active" : ""}`}>
+    <div className="week-dashboard-time-layout">
       <div className="week-dashboard-donut-shell">
         <div className="week-dashboard-donut">
           <svg
             className="week-dashboard-donut-svg"
             viewBox="0 0 160 160"
-            role="group"
-            aria-label={`Tracked time by work mode: ${chartLabel || "no tracked time"}`}
+            aria-hidden="true"
+            focusable="false"
           >
-            <circle className="week-dashboard-donut-track" cx="80" cy="80" r="58" pathLength="100" aria-hidden="true" />
+            <circle className="week-dashboard-donut-track" cx="80" cy="80" r="58" pathLength="100" />
             {segments.map((item, index) => {
               const gap = segments.length > 1 ? Math.min(1.2, item.share * 0.16) : 0;
               const visibleShare = Math.min(item.share, Math.max(0.35, item.share - gap));
-              const isActive = activeMode === item.label;
-              const isMuted = activeMode !== null && !isActive;
               return (
                 <circle
                   key={item.label}
-                  className={`week-dashboard-donut-segment ${isActive ? "is-active" : ""} ${isMuted ? "is-muted" : ""}`.trim()}
+                  className="week-dashboard-donut-segment"
                   cx="80"
                   cy="80"
                   r="58"
@@ -277,78 +221,35 @@ function TimeSpentDonut({ items }: { items: Array<{ label: WorkMode; value: numb
                   strokeDasharray={`${visibleShare} ${100 - visibleShare}`}
                   strokeDashoffset={-item.start}
                   style={{ animationDelay: `${70 + index * 45}ms` }}
-                  role="img"
-                  tabIndex={0}
-                  aria-label={`${MODE_VISUALS[item.label].label}: ${formatCapacityHours(item.value)}, ${Math.round(item.share)}% of tracked time. ${MODE_DESCRIPTIONS[item.label]}`}
-                  aria-describedby={isActive ? tooltipId : undefined}
                   transform="rotate(-90 80 80)"
-                  onMouseEnter={() => setHoveredMode(item.label)}
-                  onMouseLeave={() => clearMode(item.label, "hover")}
-                  onFocus={() => setFocusedMode(item.label)}
-                  onBlur={() => clearMode(item.label, "focus")}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      setHoveredMode(null);
-                      setFocusedMode(null);
-                      event.currentTarget.blur();
-                    }
-                  }}
                 />
               );
             })}
           </svg>
           <div className="week-dashboard-donut-center" aria-hidden="true">
-            <strong>{activeItem ? formatCapacityHours(activeItem.value) : formatCapacityHours(total)}</strong>
-            <span>{activeItem ? MODE_VISUALS[activeItem.label].label : "tracked"}</span>
+            <strong>{formatCapacityHours(total)}</strong>
+            <span>tracked</span>
           </div>
         </div>
       </div>
 
-      <ul className="week-dashboard-time-legend">
+      <ul className="week-dashboard-time-legend" aria-label="Tracked time by work mode">
         {segments.map((item) => {
           const share = Math.round(item.share);
           const visual = MODE_VISUALS[item.label];
-          const isActive = activeMode === item.label;
-          const isMuted = activeMode !== null && !isActive;
           return (
             <li key={item.label}>
-              <button
-                type="button"
-                className={`${isActive ? "is-active" : ""} ${isMuted ? "is-muted" : ""}`.trim()}
-                aria-label={`${visual.label}: ${formatCapacityHours(item.value)}, ${share}% of tracked time. ${MODE_DESCRIPTIONS[item.label]}`}
-                aria-describedby={isActive ? tooltipId : undefined}
-                onMouseEnter={() => setHoveredMode(item.label)}
-                onMouseLeave={() => clearMode(item.label, "hover")}
-                onFocus={() => setFocusedMode(item.label)}
-                onBlur={() => clearMode(item.label, "focus")}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    setHoveredMode(null);
-                    setFocusedMode(null);
-                    event.currentTarget.blur();
-                  }
-                }}
-              >
-                <span className="week-dashboard-time-label">
-                  <span className="dot" style={{ background: visual.color }} />
-                  {visual.label}
-                </span>
-                <strong>{formatCapacityHours(item.value)}</strong>
-                <span>{share}%</span>
-              </button>
+              <span className="week-dashboard-time-label">
+                <span className="dot" style={{ background: visual.color }} aria-hidden="true" />
+                {visual.label}
+              </span>
+              <strong>{formatCapacityHours(item.value)}</strong>
+              <span className="week-dashboard-time-share">{share}%</span>
+              <span className="sr-only">{MODE_DESCRIPTIONS[item.label]}</span>
             </li>
           );
         })}
       </ul>
-
-      <WeekVisualTooltip
-        id={tooltipId}
-        visible={activeItem !== null}
-        title={activeItem ? MODE_VISUALS[activeItem.label].label : "Tracked time"}
-        value={activeItem ? `${formatCapacityHours(activeItem.value)} · ${Math.round(activeItem.share)}%` : ""}
-        detail={activeItem ? MODE_DESCRIPTIONS[activeItem.label] : "How tracked work was distributed."}
-        className="week-dashboard-time-tooltip"
-      />
     </div>
   );
 }
@@ -373,12 +274,6 @@ export function WeeklyCapacityScreen({
   onOpenScreen: (screen: Screen) => void;
 }) {
   const [showAllCategories, setShowAllCategories] = useState(false);
-  const [hoveredCoverage, setHoveredCoverage] = useState<CoveragePartKey | null>(null);
-  const [focusedCoverage, setFocusedCoverage] = useState<CoveragePartKey | null>(null);
-  const [hoveredCategory, setHoveredCategory] = useState<WorkCategory | null>(null);
-  const [focusedCategory, setFocusedCategory] = useState<WorkCategory | null>(null);
-  const coverageTooltipId = `week-coverage-tooltip-${useId().replace(/:/g, "")}`;
-  const categoryTooltipId = `week-category-tooltip-${useId().replace(/:/g, "")}`;
   const viewedBlocks = useMemo(
     () => blocks.filter((block) => normalizeWeekId(block.week_id) === normalizeWeekId(snapshot.week_id)),
     [blocks, snapshot.week_id]
@@ -476,53 +371,26 @@ export function WeeklyCapacityScreen({
       ? 0
       : Math.max(0, 100 - committedWidth - availableWidth);
   const coverageParts: Array<{
-    key: CoveragePartKey;
+    key: "committed" | "available" | "protected";
     label: string;
     width: number;
-    center: number;
-    detail: string;
   }> = [
     {
       key: "committed",
       label: "Committed",
       width: committedWidth,
-      center: committedWidth / 2,
-      detail: "Work and delivery risk already carried by this week.",
     },
     {
       key: "available",
       label: "Available",
       width: availableWidth,
-      center: committedWidth + availableWidth / 2,
-      detail: "Dependable room remaining for new planned work.",
     },
     {
       key: "protected",
       label: "Protected buffer",
       width: protectedWidth,
-      center: committedWidth + availableWidth + protectedWidth / 2,
-      detail: "Room held back to absorb delivery risk and keep plans realistic.",
     },
   ];
-  const activeCoverage = hoveredCoverage ?? focusedCoverage;
-  const activeCoveragePart = coverageParts.find((part) => part.key === activeCoverage) ?? null;
-  const activeCategory = hoveredCategory ?? focusedCategory;
-
-  const clearCoveragePart = (key: CoveragePartKey, source: "hover" | "focus") => {
-    if (source === "hover") {
-      setHoveredCoverage((current) => (current === key ? null : current));
-    } else {
-      setFocusedCoverage((current) => (current === key ? null : current));
-    }
-  };
-
-  const clearCategory = (category: WorkCategory, source: "hover" | "focus") => {
-    if (source === "hover") {
-      setHoveredCategory((current) => (current === category ? null : current));
-    } else {
-      setFocusedCategory((current) => (current === category ? null : current));
-    }
-  };
 
   const focusTip = useMemo(() => {
     if (!hasWorkBlocks || viewedBlocks.length === 0) {
@@ -659,64 +527,31 @@ export function WeeklyCapacityScreen({
             </div>
           </div>
 
-          <div className="week-dashboard-coverage-labels">
+          <div className="week-dashboard-coverage-labels" aria-hidden="true">
             <strong>{pct(committedWidth)} committed</strong>
             <strong>{pct(availableWidth)} available</strong>
           </div>
           <div
             className="week-dashboard-coverage-visual"
-            role="group"
+            role="img"
             aria-label={`${pct(committedWidth)} committed, ${pct(availableWidth)} available for new planned work, and ${pct(protectedWidth)} protected as delivery buffer`}
           >
-            <div className={`week-dashboard-coverage-bar ${activeCoverage ? "has-active" : ""}`}>
+            <div className="week-dashboard-coverage-bar" aria-hidden="true">
               {coverageParts.map((part, index) => {
                 if (part.width <= 0) return null;
-                const isActive = activeCoverage === part.key;
-                const isMuted = activeCoverage !== null && !isActive;
                 return (
                   <span
                     key={part.key}
-                    className={`is-${part.key} ${isActive ? "is-active" : ""} ${isMuted ? "is-muted" : ""}`.trim()}
+                    className={`is-${part.key}`}
                     style={{ width: `${part.width}%`, animationDelay: `${45 + index * 45}ms` }}
-                    role="img"
-                    tabIndex={0}
-                    aria-label={`${part.label}: ${pct(part.width)} of the standard work week. ${part.detail}`}
-                    aria-describedby={isActive ? coverageTooltipId : undefined}
-                    onMouseEnter={() => setHoveredCoverage(part.key)}
-                    onMouseLeave={() => clearCoveragePart(part.key, "hover")}
-                    onFocus={() => setFocusedCoverage(part.key)}
-                    onBlur={() => clearCoveragePart(part.key, "focus")}
-                    onKeyDown={(event) => {
-                      if (event.key === "Escape") {
-                        setHoveredCoverage(null);
-                        setFocusedCoverage(null);
-                        event.currentTarget.blur();
-                      }
-                    }}
                   />
                 );
               })}
             </div>
-            <WeekVisualTooltip
-              id={coverageTooltipId}
-              visible={activeCoveragePart !== null}
-              title={activeCoveragePart?.label ?? "Weekly capacity"}
-              value={activeCoveragePart ? `${pct(activeCoveragePart.width)} · ${formatCapacityHours(activeCoveragePart.width)}` : ""}
-              detail={activeCoveragePart?.detail ?? "How the standard work week is allocated."}
-              className="week-dashboard-coverage-tooltip"
-              style={{
-                left: `clamp(112px, ${activeCoveragePart?.center ?? 50}%, calc(100% - 112px))`,
-              }}
-            />
           </div>
           <div className="week-dashboard-coverage-legend" aria-hidden="true">
             {coverageParts.map((part) => (
-              <span
-                key={part.key}
-                className={activeCoverage === part.key ? "is-active" : ""}
-                onMouseEnter={() => setHoveredCoverage(part.key)}
-                onMouseLeave={() => clearCoveragePart(part.key, "hover")}
-              >
+              <span key={part.key}>
                 <i className={`is-${part.key}`} />{part.label}
               </span>
             ))}
@@ -736,11 +571,7 @@ export function WeeklyCapacityScreen({
                   type="button"
                   aria-expanded={showAllCategories}
                   aria-controls="week-category-list"
-                  onClick={() => {
-                    setHoveredCategory(null);
-                    setFocusedCategory(null);
-                    setShowAllCategories((current) => !current);
-                  }}
+                  onClick={() => setShowAllCategories((current) => !current)}
                 >
                   {showAllCategories ? "Show top 5" : "View all"}
                 </button>
@@ -751,33 +582,14 @@ export function WeeklyCapacityScreen({
                 Top categories appear here once this week has reviewed work blocks.
               </p>
             )}
-            <ul className="week-dashboard-category-list" id="week-category-list">
+            <ul className="week-dashboard-category-list" id="week-category-list" aria-label="Tracked work by category">
               {visibleCategories.map((item, index) => {
                 const allocatedShare = Math.round((item.value / Math.max(allocatedCategoryTotal, 1)) * 100);
-                const isActive = activeCategory === item.label;
-                const tooltipId = `${categoryTooltipId}-${index}`;
                 return (
                   <li key={item.label}>
-                    <div
-                      className={`week-dashboard-category-item ${isActive ? "is-active" : ""}`}
-                      role="img"
-                      tabIndex={0}
-                      aria-label={`${displayCategory(item.label)}: ${formatCapacityHours(item.value)}, ${allocatedShare}% of tracked work`}
-                      aria-describedby={isActive ? tooltipId : undefined}
-                      onMouseEnter={() => setHoveredCategory(item.label)}
-                      onMouseLeave={() => clearCategory(item.label, "hover")}
-                      onFocus={() => setFocusedCategory(item.label)}
-                      onBlur={() => clearCategory(item.label, "focus")}
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          setHoveredCategory(null);
-                          setFocusedCategory(null);
-                          event.currentTarget.blur();
-                        }
-                      }}
-                    >
+                    <div className="week-dashboard-category-item">
                       <span className="week-dashboard-category-label">
-                        <span className="dot" style={{ background: categoryColors[item.label] }} />
+                        <span className="dot" style={{ background: categoryColors[item.label] }} aria-hidden="true" />
                         <span>{displayCategory(item.label)}</span>
                       </span>
                       <span className="week-dashboard-category-track" aria-hidden="true">
@@ -790,16 +602,11 @@ export function WeeklyCapacityScreen({
                         />
                       </span>
                       <strong>{formatCapacityHours(item.value)}</strong>
-                      <span>{allocatedShare}%</span>
+                      <span>
+                        {allocatedShare}%
+                        <span className="sr-only"> of tracked work</span>
+                      </span>
                     </div>
-                    <WeekVisualTooltip
-                      id={tooltipId}
-                      visible={isActive}
-                      title={displayCategory(item.label)}
-                      value={`${formatCapacityHours(item.value)} · ${allocatedShare}%`}
-                      detail="Share of the work already tracked this week."
-                      className="week-dashboard-category-tooltip"
-                    />
                   </li>
                 );
               })}

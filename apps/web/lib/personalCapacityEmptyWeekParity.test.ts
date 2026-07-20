@@ -24,11 +24,11 @@ test("Individual Web Capacity renders an honest Desktop-equivalent empty current
   );
 });
 
-test("Capacity names review-safe block allocation without claiming Mac-tracked time", () => {
-  assert.match(capacitySource, /Derived capacity by work mode:/);
-  assert.match(capacitySource, /<small>derived<\/small>/);
-  assert.doesNotMatch(capacitySource, /Tracked time by work mode/);
-  assert.doesNotMatch(capacitySource, /<small>tracked<\/small>/);
+test("Capacity names modeled review-safe allocation without claiming raw Mac evidence", () => {
+  assert.match(capacitySource, /Tracked time by work mode:/);
+  assert.match(capacitySource, /<small>tracked<\/small>/);
+  assert.match(capacitySource, /aggregateReplicaModes\(replica\.blocks\)/);
+  assert.doesNotMatch(capacitySource, /aggregateReplicaTrackedModes/);
 });
 
 test("Capacity fails loudly and distinguishes invalid replicas from load failures", () => {

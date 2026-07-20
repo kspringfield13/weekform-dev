@@ -113,6 +113,41 @@ test("replica revisions are stable across timestamps and change with reviewable 
   assert.notEqual(replicaContentFingerprint(first), replicaContentFingerprint(reviewed));
 });
 
+test("replica freshness records review, capacity, and deletion changes", () => {
+  const initial = buildPersonalWorkloadReplica({
+    weekId: "2026-W29",
+    blocks: [block],
+    snapshot,
+    now: "2026-07-19T20:00:00.000Z",
+  });
+  const reviewed = buildPersonalWorkloadReplica({
+    weekId: "2026-W29",
+    blocks: [{ ...block, user_verified: true }],
+    snapshot,
+    now: "2026-07-19T20:01:00.000Z",
+  });
+  const capacityChanged = buildPersonalWorkloadReplica({
+    weekId: "2026-W29",
+    blocks: [{ ...block, user_verified: true }],
+    snapshot: { ...snapshot, allocated_pct: 74 },
+    now: "2026-07-19T20:02:00.000Z",
+  });
+  const deleted = buildPersonalWorkloadReplica({
+    weekId: "2026-W29",
+    blocks: [],
+    snapshot: { ...snapshot, allocated_pct: 0 },
+    now: "2026-07-19T20:03:00.000Z",
+  });
+
+  assert.equal(initial.sourceUpdatedAt, "2026-07-19T20:00:00.000Z");
+  assert.equal(reviewed.sourceUpdatedAt, "2026-07-19T20:01:00.000Z");
+  assert.equal(capacityChanged.sourceUpdatedAt, "2026-07-19T20:02:00.000Z");
+  assert.equal(deleted.sourceUpdatedAt, "2026-07-19T20:03:00.000Z");
+  assert.notEqual(replicaContentFingerprint(initial), replicaContentFingerprint(reviewed));
+  assert.notEqual(replicaContentFingerprint(reviewed), replicaContentFingerprint(capacityChanged));
+  assert.notEqual(replicaContentFingerprint(capacityChanged), replicaContentFingerprint(deleted));
+});
+
 test("personal replica replaces every Chat-derived local id with a stable provider-free id", () => {
   const chatBlocks: WorkBlock[] = [
     {

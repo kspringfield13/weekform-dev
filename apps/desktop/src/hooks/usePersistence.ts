@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { MutableRefObject } from "react";
 import { writePersistedState } from "../services/localStore";
 import type { PersistedAppState } from "../services/localStore";
@@ -9,6 +9,13 @@ import type { PersistedAppState } from "../services/localStore";
 // forces a type error here (and at the App.tsx call site) until it's threaded through,
 // which is exactly what the old `as any` cast defeated.
 type PersistableState = Omit<PersistedAppState, "version"> & { isDemoMode: boolean };
+const PERSISTENCE_DEBOUNCE_MS = 250;
+const EMPTY_NATIVE_SAMPLES: PersistedAppState["activeWindowSamples"] = [];
+
+export interface PersistenceBarrier {
+  /** Persist the newest complete snapshot observed by the latest React render. */
+  flushLatest: () => Promise<void>;
+}
 
 export function usePersistence(
   state: PersistableState,
@@ -16,6 +23,20 @@ export function usePersistence(
   onWriteError?: (error: unknown) => void
 ) {
   const { isDemoMode, ...persistData } = state;
+  const isTauriRuntime = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  const samplesForPersistence = isTauriRuntime
+    ? EMPTY_NATIVE_SAMPLES
+    : persistData.activeWindowSamples;
+  const latestSnapshotRef = useRef<PersistedAppState>({
+    version: 1,
+    ...persistData,
+    activeWindowSamples: samplesForPersistence,
+  });
+  latestSnapshotRef.current = {
+    version: 1,
+    ...persistData,
+    activeWindowSamples: samplesForPersistence,
+  };
 
   // Keep the latest handler in a ref so it isn't an effect dependency — an inline
   // callback from App.tsx changes every render, and adding it to the deps below
@@ -25,6 +46,26 @@ export function usePersistence(
   // A failing write (quota/disk) tends to keep failing, so surface it ONCE rather
   // than re-toasting on every subsequent state change.
   const writeErrorSurfaced = useRef(false);
+  const pendingTimerRef = useRef<number | null>(null);
+
+  const flushLatest = useCallback(async (): Promise<void> => {
+    if (isDemoMode) throw new Error("Demo state is not persisted.");
+    if (!hydrated.current) throw new Error("Saved Weekform state has not finished loading.");
+    if (pendingTimerRef.current !== null) {
+      window.clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    }
+    try {
+      await writePersistedState(latestSnapshotRef.current);
+      writeErrorSurfaced.current = false;
+    } catch (error) {
+      if (!writeErrorSurfaced.current) {
+        writeErrorSurfaced.current = true;
+        onWriteErrorRef.current?.(error);
+      }
+      throw error;
+    }
+  }, [hydrated, isDemoMode]);
 
   useEffect(() => {
     // Skip the first-mount write until the async hydration read has resolved
@@ -32,20 +73,21 @@ export function usePersistence(
     // the empty-state write can race ahead of the read and persist `{blocks: []}`,
     // wiping the user's stored work. Mirrors the `themeHydrated` ref guard.
     if (isDemoMode || !hydrated.current) return;
-    writePersistedState({
-      version: 1,
-      ...persistData,
-    }).catch((error) => {
-      if (writeErrorSurfaced.current) return;
-      writeErrorSurfaced.current = true;
-      onWriteErrorRef.current?.(error);
-    });
+    const timer = window.setTimeout(() => {
+      if (pendingTimerRef.current === timer) pendingTimerRef.current = null;
+      void flushLatest().catch(() => undefined);
+    }, PERSISTENCE_DEBOUNCE_MS);
+    pendingTimerRef.current = timer;
+    return () => {
+      window.clearTimeout(timer);
+      if (pendingTimerRef.current === timer) pendingTimerRef.current = null;
+    };
   }, [
     persistData.blocks,
     persistData.calendarEvents,
     persistData.chatEvents,
     persistData.chatEvidence,
-    persistData.activeWindowSamples,
+    samplesForPersistence,
     persistData.auditEvents,
     persistData.corrections,
     persistData.reviewSuggestions,
@@ -76,5 +118,8 @@ export function usePersistence(
     persistData.usageCsvRowHashes,
     persistData.consentReceipts,
     isDemoMode,
+    flushLatest,
   ]);
+
+  return useMemo(() => ({ flushLatest }), [flushLatest]);
 }

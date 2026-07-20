@@ -75,7 +75,7 @@ export function useAcceleration({
     const startedAt = new Date().toISOString();
     const prompt = buildAccelerationPrompt({ weekRangeLabel: currentWeekRangeLabel, signals, blocks });
 
-    accelerationAsync.start("generating");
+    const operationEpoch = accelerationAsync.start("generating");
 
     try {
       const { data, model } = await aiCompleteJson<AuthoredAccelerationPlays>({
@@ -84,6 +84,7 @@ export function useAcceleration({
         responseFormat: jsonSchemaFormat("acceleration", accelerationSchema),
         aiConfig,
       });
+      if (!accelerationAsync.isCurrent(operationEpoch)) return;
 
       // Keep only authored plays that map back to a currently-mined signal, and rebuild each
       // from whitelisted fields so a malformed response can never widen what is persisted.
@@ -145,6 +146,7 @@ export function useAcceleration({
         ].slice(-1000)
       );
     } catch (error) {
+      if (!accelerationAsync.isCurrent(operationEpoch)) return;
       const message = error instanceof Error ? error.message : String(error);
       accelerationAsync.fail(message);
       setAuditEvents((current) =>
@@ -175,6 +177,6 @@ export function useAcceleration({
     accelerationStatus,
     accelerationError,
     generateAccelerationPlays,
-    resetAcceleration: accelerationAsync.reset,
+    resetAcceleration: () => accelerationAsync.reset(),
   };
 }

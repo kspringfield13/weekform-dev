@@ -424,7 +424,7 @@ export function ManagerAccessRoot() {
                 autoFocus
                 inputMode="email"
                 onChange={(event) => setEmail(event.target.value)}
-                placeholder="admin@weekform.com"
+                placeholder="admin@weekform.dev"
                 type="email"
                 value={email}
               />

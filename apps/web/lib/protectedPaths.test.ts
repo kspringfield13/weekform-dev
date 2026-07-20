@@ -15,13 +15,11 @@ test("Manager Access and account surfaces require an authenticated session", () 
   }
 });
 
-test("public pages and content-addressed preview artifacts remain explicitly public", () => {
+test("public marketing and authentication pages remain explicitly public", () => {
   for (const path of [
     "/",
     "/login",
     "/administrator",
-    "/downloads",
-    "/downloads/5a14980de083abb5/Weekform_0.1.0_universal.dmg",
   ]) {
     assert.equal(isProtectedWebPath(path), false, `${path} must remain public`);
   }

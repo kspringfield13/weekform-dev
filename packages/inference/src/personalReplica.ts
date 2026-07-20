@@ -57,10 +57,12 @@ export function buildPersonalWorkloadReplica(input: {
     .filter((block) => block.week_id === input.weekId)
     .map(personalReplicaBlock)
     .sort((left, right) => left.startTime.localeCompare(right.startTime) || left.blockId.localeCompare(right.blockId));
-  const sourceUpdatedAt = blocks.reduce(
-    (latest, block) => block.endTime > latest ? block.endTime : latest,
-    "1970-01-01T00:00:00.000Z",
-  );
+  // Freshness is the time this exact allowlisted replica was derived, not the
+  // end time of its newest work block. Review, relabel, capacity-only, and
+  // deletion changes can all leave block end times unchanged (or move them
+  // backward); using the derivation clock lets the server reject genuinely
+  // delayed batches without rejecting those legitimate local edits.
+  const sourceUpdatedAt = input.now;
   return {
     schemaVersion: 1,
     replicaId: `personal-${input.weekId}`,

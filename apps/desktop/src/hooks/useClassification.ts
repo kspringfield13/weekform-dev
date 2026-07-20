@@ -215,7 +215,7 @@ export function useClassification({
       corrections,
     });
 
-    classificationAsync.start("classifying");
+    const operationEpoch = classificationAsync.start("classifying");
 
     try {
       const { data, model } = await aiCompleteJson<{ work_blocks: NativeClassifiedWorkBlock[] }>({
@@ -224,6 +224,9 @@ export function useClassification({
         responseFormat: jsonSchemaFormat("weekform_work_block_classification", workBlockClassifierSchema),
         aiConfig,
       });
+      if (!classificationAsync.isCurrent(operationEpoch)) {
+        return { ok: false, message: "Classification was cancelled by a local-data reset." };
+      }
       const sessionMap = new Map(candidateSessions.map((session) => [session.session_id, session]));
       const draftBlocks = data.work_blocks
         .map((block) => classifiedBlockToWorkBlock(block, sessionMap, currentWeekId, aiProviderLabel(provider)))
@@ -328,6 +331,9 @@ export function useClassification({
         message: `${draftBlocks.length} draft work block${draftBlocks.length === 1 ? " was" : "s were"} created from ${candidateSessions.length} session${candidateSessions.length === 1 ? "" : "s"}.`,
       };
     } catch (error) {
+      if (!classificationAsync.isCurrent(operationEpoch)) {
+        return { ok: false, message: "Classification was cancelled by a local-data reset." };
+      }
       const message = error instanceof Error ? error.message : String(error);
       classificationAsync.fail(message);
       setAuditEvents((current) => [
@@ -356,6 +362,6 @@ export function useClassification({
     classificationStatus,
     classificationError,
     classifyActiveWindowSessions,
-    resetClassification: classificationAsync.reset,
+    resetClassification: () => classificationAsync.reset(),
   };
 }

@@ -1,13 +1,17 @@
 import { useMemo } from "react";
 import { analyzeInterruptionLoad, buildForecastTrackRecord, computeCapacityBaselines, computeWeeklyCapacitySnapshot, generateWeeklyNarrative, normalizeWeekId, scoreForecastAccuracy, summarizeChatStakeholders, summarizeForecastAccuracy } from "../../../../packages/inference/src/capacity";
 import type { ChatStakeholderSummary, ForecastAccuracyTrend, ForecastTrackRecordEntry, InterruptionLoadAnalysis } from "../../../../packages/inference/src/capacity";
-import { sessionizeActiveWindowSamples } from "../../../../packages/inference/src/sessionizer/activeWindow";
+import {
+  mergeActivitySessionWindows,
+  sessionizeActiveWindowSamples,
+} from "../../../../packages/inference/src/sessionizer/activeWindow";
 import { computeWeeklyAIUsageSummary, detectProxyUsage, proxyEventsToUsageDays } from "../../../../packages/inference/src/aiUsage";
 import { buildAccelerationSignals, buildRealizedSavings, summarizeRealizedSavings } from "../../../../packages/inference/src/accelerate";
 import type { RealizedSavingsEntry, RealizedSavingsSummary } from "../../../../packages/inference/src/accelerate";
 import type {
   WorkBlock,
   ActiveWindowSample,
+  ActivitySession,
   OutlookCalendarEvent,
   RawEvent,
   AccelerationSignal,
@@ -29,6 +33,10 @@ interface UseDerivedParams {
   blocks: WorkBlock[];
   chatEvents: RawEvent[];
   activeWindowSamples: ActiveWindowSample[];
+  journalSessionWindow?: {
+    cutoffMs: number;
+    sessions: ActivitySession[];
+  } | null;
   calendarEvents: OutlookCalendarEvent[];
   generatedNarrative: PersistedNarrativeRecord | null;
   forecastHistory: PersistedForecastRecord[];
@@ -49,6 +57,7 @@ export function useDerived(params: UseDerivedParams) {
     blocks,
     chatEvents,
     activeWindowSamples,
+    journalSessionWindow,
     calendarEvents,
     generatedNarrative,
     forecastHistory,
@@ -208,10 +217,16 @@ export function useDerived(params: UseDerivedParams) {
       )
     : "";
 
-  const activeWindowSessions = useMemo(
-    () => sessionizeActiveWindowSamples(activeWindowSamples),
-    [activeWindowSamples]
-  );
+  const activeWindowSessions = useMemo(() => {
+    if (!journalSessionWindow) return sessionizeActiveWindowSamples(activeWindowSamples);
+    const postCutoffSamples = activeWindowSamples.filter(
+      (sample) => new Date(sample.timestamp).getTime() > journalSessionWindow.cutoffMs,
+    );
+    return mergeActivitySessionWindows(
+      journalSessionWindow.sessions,
+      sessionizeActiveWindowSamples(postCutoffSamples),
+    );
+  }, [activeWindowSamples, journalSessionWindow]);
 
   // Proxy AI-usage days, derived live from the retained sessions (never persisted —
   // heuristic improvements retroactively apply, and sessions already persist).

@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 import { WeekformMark } from "@/components/WeekformMark";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { positionCompactWebWindow } from "@/lib/webCompactWindow";
 
 function ExpandIcon() {
@@ -57,9 +58,12 @@ export function WebCompactWorkspace({
           <WeekformMark className="web-compact-mark" />
           <span><strong>Weekform</strong><small>Web</small></span>
         </div>
-        <button type="button" onClick={onExpand} aria-label="Expand to full Web App" title="Expand to full Web App">
-          <ExpandIcon />
-        </button>
+        <div className="web-compact-toolbar-actions">
+          <ThemeToggle className="web-compact-theme-toggle" />
+          <button type="button" onClick={onExpand} aria-label="Expand to full Web App" title="Expand to full Web App">
+            <ExpandIcon />
+          </button>
+        </div>
       </header>
 
       <div className="web-compact-content">

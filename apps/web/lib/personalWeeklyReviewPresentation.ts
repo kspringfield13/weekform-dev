@@ -5,7 +5,7 @@ export type PersonalWeeklyReviewItemStatus = "ready" | "needs_attention" | "mac_
 export type PersonalWeeklyReviewTarget = "today" | "forecast" | "summary" | "mac";
 
 export interface PersonalWeeklyReviewItem {
-  id: "work_blocks" | "forecast_accuracy" | "narrative" | "completion";
+  id: "work_blocks" | "sensitive_captures" | "forecast_accuracy" | "narrative";
   title: string;
   description: string;
   status: PersonalWeeklyReviewItemStatus;
@@ -57,6 +57,15 @@ export function buildPersonalWeeklyReviewPresentation(
       target: current === null ? "mac" : "today",
     },
     {
+      id: "sensitive_captures",
+      title: "Review flagged captures",
+      description: "Flagged screenshots, summaries, and local review outcomes stay on your Mac and are never reconstructed from the Web replica.",
+      status: "mac_only",
+      count: null,
+      actionLabel: "Get Weekform for Mac",
+      target: "mac",
+    },
+    {
       id: "forecast_accuracy",
       title: "Check forecast against actual capacity",
       description: "Forecast comparisons and calibration history stay with the complete local workload model.",
@@ -73,15 +82,6 @@ export function buildPersonalWeeklyReviewPresentation(
       count: null,
       actionLabel: "Open Summary",
       target: "summary",
-    },
-    {
-      id: "completion",
-      title: "Record weekly review completion",
-      description: "Finishing the ritual writes a local audit event, so completion is recorded only in Weekform for Mac.",
-      status: "mac_only",
-      count: null,
-      actionLabel: "Get Weekform for Mac",
-      target: "mac",
     },
   ];
   const doneCount = items.filter((item) => item.status === "ready").length;

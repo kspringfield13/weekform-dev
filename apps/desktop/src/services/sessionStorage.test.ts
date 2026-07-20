@@ -23,6 +23,7 @@ import {
   readCloudStateThrough,
   resolveSessionStorageAdapter,
   writeCloudStateThrough,
+  writeCloudStateStrictThrough,
   type KeychainBridge,
   type SessionStorageAdapter
 } from "./sessionStorage";
@@ -157,6 +158,7 @@ test("a throwing adapter degrades every operation gracefully", async () => {
   };
   assert.equal(await readCloudStateThrough(hostile), null);
   await assert.doesNotReject(writeCloudStateThrough(hostile, createDefaultCloudState()));
+  await assert.rejects(writeCloudStateStrictThrough(hostile, createDefaultCloudState()), /backend down/);
   assert.equal(await deleteCloudStateThrough(hostile), false);
 });
 

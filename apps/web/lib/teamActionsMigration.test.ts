@@ -202,7 +202,7 @@ test("resolution and deletion reauthorize managers and keep lifecycle values ser
   );
 });
 
-test("live RLS contract checks both client roles have no direct write privilege", () => {
+test("pgTAP specification checks both client roles have no direct write privilege", () => {
   const rlsContract = readFileSync(RLS_TEST_URL, "utf8")
     .replace(/--[^\n]*/g, " ")
     .replace(/\s+/g, " ")
@@ -231,7 +231,7 @@ test("live RLS contract checks both client roles have no direct write privilege"
   }
 });
 
-test("live RLS contract exercises direct and RPC abuse as untrusted actors", () => {
+test("pgTAP specification exercises direct and RPC abuse as untrusted actors", () => {
   const rlsContract = readFileSync(RLS_TEST_URL, "utf8").toLowerCase();
 
   assert.match(

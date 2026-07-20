@@ -389,6 +389,7 @@ test("generateTeamBriefing succeeds and returns mode=model with store:false in t
   const parsedBody = JSON.parse(capturedBody as unknown as string) as Record<string, unknown>;
   assert.equal(parsedBody.store, false);
   assert.equal(parsedBody.model, "gpt-5.6");
+  assert.equal(parsedBody.max_output_tokens, 2_000);
 });
 
 test("generateTeamBriefing aborts via its real timer and reports fallbackReason=timeout", async () => {

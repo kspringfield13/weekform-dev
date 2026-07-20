@@ -405,7 +405,7 @@ export interface CloudBackupMetadata {
   policy: CloudSharePolicyV1;
   syncState: CloudSyncState;
   personalReplicaPolicy: PersonalReplicaPolicyV1;
-  personalSync: Omit<PersonalReplicaSyncStateV1, "queue"> & { queuedBatches: number };
+  personalSync: Omit<PersonalReplicaSyncStateV1, "queue" | "reviewOutbox"> & { queuedBatches: number };
 }
 
 /**
@@ -453,6 +453,7 @@ export function buildCloudBackupMetadata(
       deviceId: personalSyncState.deviceId,
       deviceName: personalSyncState.deviceName,
       cursor: personalSyncState.cursor,
+      sourceClock: personalSyncState.sourceClock,
       lastAttemptAt: personalSyncState.lastAttemptAt,
       lastSuccessAt: personalSyncState.lastSuccessAt,
       lastError: personalSyncState.lastError,

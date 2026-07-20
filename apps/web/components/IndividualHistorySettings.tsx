@@ -23,6 +23,7 @@ import { PersonalDataSourcesSettings } from "./PersonalDataSourcesSettings";
 import { PersonalAIAssistanceSettings } from "./PersonalAIAssistanceSettings";
 import { PersonalAIUsageSettings } from "./PersonalAIUsageSettings";
 import { PersonalNotificationsSettings } from "./PersonalNotificationsSettings";
+import { PersonalSensitiveBoundaryScreen } from "./PersonalSensitiveBoundaryScreen";
 import styles from "./PersonalHistoryScreen.module.css";
 
 export type HistoryTab = "activity" | "audit";
@@ -31,8 +32,8 @@ const SETTINGS_LABELS: Record<IndividualSettingsTab, string> = {
   "data-control": "Data Control",
   "ai-assistance": "AI Assistance",
   "ai-usage": "AI Usage",
-  notifications: "Notifications",
-  account: "Account & Sharing",
+  "notifications": "Notifications",
+  "account": "Account & Sharing",
 };
 
 const SETTINGS_TABS = INDIVIDUAL_SETTINGS_TABS.map((id) => ({ id, label: SETTINGS_LABELS[id] }));
@@ -60,6 +61,17 @@ function MacBoundary({ children }: { children: ReactNode }) {
   );
 }
 
+export function IndividualSensitiveBoundaryView() {
+  return (
+    <>
+      <span className="visually-hidden" role="status">
+        Flagged captures remain on your Mac. Web cannot display or manage them.
+      </span>
+      <PersonalSensitiveBoundaryScreen />
+    </>
+  );
+}
+
 export function IndividualHistoryView({
   replicas,
   error,
@@ -75,6 +87,8 @@ export function IndividualHistoryView({
   const [query, setQuery] = useState("");
   const [auditQuery, setAuditQuery] = useState("");
   const [auditFilter, setAuditFilter] = useState<"receipts" | "local">("receipts");
+  const activitySearchInputRef = useRef<HTMLInputElement>(null);
+  const auditSearchInputRef = useRef<HTMLInputElement>(null);
   const activity = useMemo(() => buildReviewSafeActivity(replicas), [replicas]);
   const visibleActivity = useMemo(
     () => filterReviewSafeActivity(activity, query),
@@ -89,7 +103,7 @@ export function IndividualHistoryView({
 
   return (
     <section className={`web-desktop-screen ${tab === "activity" ? "ledger-screen" : "audit-screen"} ${styles.historyScreen}`} aria-labelledby={`web-history-${initialTab}-title`}>
-      <header className={`web-screen-heading screen-header compact ${styles.screenHeader}`}>
+      <header className={`web-screen-heading screen-header compact ${styles.screenHeader} ${tab === "activity" ? styles.activityHeader : ""}`}>
         <div>
           <span className={styles.eyebrow}>{tab === "activity" ? "Activity ledger" : "Audit log"}</span>
           <h1 id={`web-history-${initialTab}-title`}>
@@ -101,11 +115,26 @@ export function IndividualHistoryView({
               : "See when a derived weekly replica reached Web. The complete local audit log remains on your Mac."}
           </p>
         </div>
-        <div className={styles.summaryScore} title={tab === "activity" ? "Review-safe inferred blocks available in Web" : "Successful derived replica syncs available in Web"}>
-          <span>{tab === "activity" ? "Safe blocks" : "Web receipts"}</span>
-          <strong>{tab === "activity" ? activity.length : auditEntries.length}</strong>
-          <span className={styles.srOnly}>{tab === "activity" ? "Review-safe inferred blocks" : "Successful derived replica syncs"}</span>
-        </div>
+        {tab === "activity" ? (
+          <label className={`search-box ${styles.searchBox}`}>
+            <span aria-hidden className={styles.searchGlyph}>⌕</span>
+            <input
+              ref={activitySearchInputRef}
+              aria-label="Search review-safe activity"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Escape") setQuery(""); }}
+              placeholder="Search category, mode, week, or review state"
+            />
+            {query ? <button type="button" aria-label="Clear search" onClick={() => { setQuery(""); activitySearchInputRef.current?.focus(); }}>×</button> : null}
+          </label>
+        ) : (
+          <div className={styles.summaryScore} title={error ? "Web receipt count unavailable" : "Successful derived replica syncs available in Web"}>
+            <span>Web receipts</span>
+            <strong>{error ? "—" : auditEntries.length}</strong>
+            <span className={styles.srOnly}>{error ? "Web receipt count unavailable" : "Successful derived replica syncs"}</span>
+          </div>
+        )}
       </header>
 
       {showTabs ? <nav className="context-navigation" aria-label="History views">
@@ -130,19 +159,6 @@ export function IndividualHistoryView({
               </div>
             </section>
           ) : null}
-          <div className={`audit-toolbar ${styles.activityToolbar}`}>
-            <label className={`search-box ${styles.searchBox}`}>
-              <span className="visually-hidden">Search review-safe activity</span>
-              <span aria-hidden className={styles.searchGlyph}>⌕</span>
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={(event) => { if (event.key === "Escape") setQuery(""); }}
-                placeholder="Search category, mode, week, or review state"
-              />
-              {query ? <button type="button" aria-label="Clear search" onClick={() => setQuery("")}>×</button> : null}
-            </label>
-          </div>
           {activity.length === 0 ? (
             <MacBoundary><h2>No review-safe work blocks yet</h2><p>Connect Private Web workspace from the desktop app to publish a derived weekly replica.</p></MacBoundary>
           ) : visibleActivity.length === 0 ? (
@@ -151,7 +167,7 @@ export function IndividualHistoryView({
             <div className={styles.ledgerList}>
               <h2 className="visually-hidden">Review-safe work blocks</h2>
               {visibleActivity.map((row) => (
-                <article className={styles.blockCard} key={`${row.weekId}-${row.blockId}`}>
+                <article className={`${styles.blockCard} ${row.reviewStatus === "Reviewed" ? styles.reviewedCard : ""}`} key={`${row.weekId}-${row.blockId}`}>
                   <div className={styles.blockTopline}>
                     <span>{row.weekId}</span>
                     <span className={row.reviewStatus === "Reviewed" ? styles.reviewed : styles.needsReview}>{row.reviewStatus}</span>
@@ -174,7 +190,7 @@ export function IndividualHistoryView({
       ) : (
         <>
           <div className={styles.auditToolbar}>
-            <div className={styles.auditFilters} aria-label="Audit scope">
+            <div className={styles.auditFilters} role="group" aria-label="Audit scope">
               <button type="button" className={auditFilter === "receipts" ? styles.activeFilter : ""} aria-pressed={auditFilter === "receipts"} onClick={() => setAuditFilter("receipts")}>Web receipts</button>
               <button type="button" className={auditFilter === "local" ? styles.activeFilter : ""} aria-pressed={auditFilter === "local"} onClick={() => setAuditFilter("local")}>Local history</button>
             </div>
@@ -183,13 +199,14 @@ export function IndividualHistoryView({
                 <span className="visually-hidden">Search sync receipts</span>
                 <span aria-hidden className={styles.searchGlyph}>⌕</span>
                 <input
+                  ref={auditSearchInputRef}
                   aria-label="Search sync receipts"
                   value={auditQuery}
                   onChange={(event) => setAuditQuery(event.target.value)}
                   onKeyDown={(event) => { if (event.key === "Escape") setAuditQuery(""); }}
                   placeholder="Search sync receipts"
                 />
-                {auditQuery ? <button type="button" aria-label="Clear search" onClick={() => setAuditQuery("")}>×</button> : null}
+                {auditQuery ? <button type="button" aria-label="Clear search" onClick={() => { setAuditQuery(""); auditSearchInputRef.current?.focus(); }}>×</button> : null}
               </label>
             ) : <span>Web shows completed derived syncs only</span>}
           </div>
@@ -236,7 +253,7 @@ export function IndividualSettingsView({
 }) {
   const [tab, setTab] = useState<IndividualSettingsTab>(initialTab);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const selectedLabel = SETTINGS_TABS.find((item) => item.id === tab)?.label ?? "Settings";
+  const isAccountSettings = tab === "account";
 
   const focusSettingsTab = (value: unknown) => {
     const nextTab = resolveIndividualSettingsTab(value);
@@ -279,7 +296,15 @@ export function IndividualSettingsView({
   return (
     <section className="web-desktop-screen settings-screen" aria-labelledby="web-settings-title">
       <header className="web-screen-heading screen-header">
-        <div><span>Settings</span><h1 id="web-settings-title">{selectedLabel}</h1><p>Understand what Web can access and manage local-only controls from the source of truth.</p></div>
+        <div>
+          <span>Settings</span>
+          <h1 id="web-settings-title">{isAccountSettings ? "Account & sharing" : "Privacy and data sources"}</h1>
+          <p>
+            {isAccountSettings
+              ? "Review your Weekform Web account and the sharing controls available to your membership."
+              : "Web receives only the review-safe data you approve. Capture and local controls stay on your Mac."}
+          </p>
+        </div>
       </header>
       <nav className="settings-tabs" role="tablist" aria-label="Settings sections">
         {SETTINGS_TABS.map((item, index) => (
@@ -315,9 +340,17 @@ export function IndividualSettingsView({
           {item.id === "ai-usage" ? <PersonalAIUsageSettings /> : null}
           {item.id === "notifications" ? <PersonalNotificationsSettings /> : null}
           {item.id === "account" ? (
-            <div className="settings-section">
-              <div className="settings-section-heading"><div><h2>Account &amp; Sharing</h2><span>Signed in as {accountEmail}. Team coordination uses only fields approved by your existing sharing settings.</span></div></div>
-              {accountAndSharing ?? <div className="panel"><h3>No additional sharing controls</h3><p>Your account is active. Manager Access appears only when your membership allows it.</p></div>}
+            <div className="settings-section account-sharing-page web-account-sharing">
+              <div className="settings-section-heading account-sharing-heading">
+                <div className="account-sharing-heading-copy">
+                  <span className="account-sharing-eyebrow">Account</span>
+                  <h2>Weekform Web</h2>
+                  <p>Signed in as {accountEmail}. Sharing stays limited to fields you approved from Weekform for Mac.</p>
+                </div>
+              </div>
+              <div className="web-account-sharing-content">
+                {accountAndSharing ?? <div className="panel"><h3>No additional sharing controls</h3><p>Your account is active. Manager Access appears only when your membership allows it.</p></div>}
+              </div>
             </div>
           ) : null}
         </div>

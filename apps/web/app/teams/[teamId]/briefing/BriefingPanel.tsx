@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useRef } from "react";
 
 import { generateBriefingAction } from "./actions";
 import { AI_DISCLOSURE, INITIAL_BRIEFING_STATE, fallbackReasonLabel } from "./briefingState";
@@ -12,6 +12,7 @@ import { AI_DISCLOSURE, INITIAL_BRIEFING_STATE, fallbackReasonLabel } from "./br
  * model logic ever ships to this component's client bundle.
  */
 export function BriefingPanel({ teamId }: { teamId: string }) {
+  const requestIdRef = useRef<HTMLInputElement>(null);
   const [state, formAction, pending] = useActionState(
     generateBriefingAction,
     INITIAL_BRIEFING_STATE,
@@ -19,8 +20,14 @@ export function BriefingPanel({ teamId }: { teamId: string }) {
 
   return (
     <div>
-      <form action={formAction}>
+      <form
+        action={formAction}
+        onSubmit={() => {
+          if (requestIdRef.current) requestIdRef.current.value = crypto.randomUUID();
+        }}
+      >
         <input type="hidden" name="team_id" value={teamId} />
+        <input ref={requestIdRef} type="hidden" name="request_id" defaultValue="" />
         <button type="submit" className="button button-primary" disabled={pending}>
           {pending
             ? "Generating briefing…"

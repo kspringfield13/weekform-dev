@@ -53,8 +53,14 @@ test("Individual Web Review preserves the Desktop close-out composition and acce
   assert.match(webSource, /<ol\b[^>]*aria-label=["']Weekly close-out checks["']/s);
   assert.match(webSource, /status-chip/);
   assert.match(webSource, /role=["']status["'][^>]*aria-live=["']polite["']/s);
-  assert.match(webSource, /disabled(?:=\{true\}|\s)/);
-  assert.match(webSource, /Finish weekly review/);
+  assert.match(webSource, /Get Weekform for Mac/);
+  assert.doesNotMatch(webSource, />\s*Finish weekly review on Mac\s*</);
+  assert.match(webSource, /weekly-review-finish-action/);
+  assert.doesNotMatch(
+    webSource,
+    /<button[^>]*disabled[^>]*>[\s\S]*?Finish weekly review/,
+    "Web must not present a dead duplicate completion control beside the truthful Mac handoff",
+  );
   assert.match(webSource, /Mac remains authoritative|Get Weekform for Mac/);
   assert.match(webSource, /href=["']\/download["']/);
 });

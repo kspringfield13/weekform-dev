@@ -3,6 +3,73 @@
   overflow-y: auto;
 }
 
+.emptyChat {
+  flex: 0 0 auto;
+  min-height: 0;
+  align-content: start;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+.briefingActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.briefingActions button {
+  display: inline-flex;
+  min-height: 29px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: var(--surface-elevated);
+  padding: 0 9px;
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease;
+}
+
+.briefingActions button:hover:not(:disabled),
+.briefingActions button:focus-visible {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--surface-muted);
+}
+
+.briefingActions button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.starterGrid > button {
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.starterGrid > button:hover:not(:disabled),
+.starterGrid > button:focus-visible {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--surface-elevated);
+  transform: translateY(-1px);
+}
+
+.starterGrid > button:hover:not(:disabled) :global(.personal-agent-starter-icon),
+.starterGrid > button:focus-visible :global(.personal-agent-starter-icon) {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--surface-muted);
+}
+
 .headerActions {
   display: flex;
   align-items: center;
@@ -29,45 +96,23 @@
   color: var(--text);
 }
 
-.emptyState {
-  display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
-  align-self: center;
-  gap: 10px 14px;
-  width: min(100%, 790px);
-  margin: auto;
-}
-
-.emptyState h2,
-.emptyState p,
 .userMessage p,
 .answer,
 .limitation {
   margin: 0;
 }
 
-.emptyState h2 {
-  font-size: 16px;
-}
-
-.emptyState p {
-  margin-top: 6px;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
 .messages {
   display: grid;
   align-content: start;
-  gap: 18px;
+  gap: 14px;
   width: min(100%, 790px);
   margin: 0 auto;
 }
 
 .turn {
   display: grid;
-  gap: 13px;
+  gap: 10px;
 }
 
 .userMessage {
@@ -116,6 +161,15 @@
   display: flex;
   align-items: center;
   gap: 9px;
+  min-height: 21px;
+  margin-top: 5px;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.agentMessage:hover .messageMeta,
+.agentMessage:focus-within .messageMeta {
+  opacity: 1;
 }
 
 .messageMeta button {
@@ -159,32 +213,65 @@
 }
 
 .macLink {
-  display: inline-block;
-  margin-top: 9px;
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
   color: var(--text);
+  background: var(--surface);
+  padding: 0 10px;
   font-size: 11px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .macActionCard {
   display: grid;
-  gap: 7px;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  width: min(100%, 720px);
+  margin-left: 38px;
   border: 1px solid var(--border-strong);
-  border-radius: 11px;
+  border-radius: 12px;
   background: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
-  padding: 13px 14px;
+  padding: 12px 13px;
+  box-shadow: 0 10px 30px -26px rgb(0 0 0 / 90%);
 }
 
-.macActionCard > strong {
+.actionIcon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+}
+
+.actionCopy {
+  min-width: 0;
+}
+
+.actionCopy > strong {
+  display: block;
   font-size: 13px;
   font-weight: 620;
 }
 
-.macActionCard > p {
+.actionCopy > p {
   margin: 0;
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+.actionControls {
+  display: flex;
+  align-items: center;
 }
 
 .actionEyebrow {
@@ -195,7 +282,7 @@
   text-transform: uppercase;
 }
 
-.macActionCard .actionBoundary {
+.actionCopy .actionBoundary {
   border-top: 1px solid var(--border);
   margin-top: 3px;
   padding-top: 8px;
@@ -206,8 +293,8 @@
 .followups {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 12px;
+  gap: 6px;
+  margin-top: 10px;
 }
 
 .followups button {
@@ -215,9 +302,9 @@
   border-radius: 999px;
   color: var(--text-muted);
   background: var(--surface-elevated);
-  padding: 6px 9px;
+  padding: 6px 11px;
   font: inherit;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.3;
 }
 
@@ -226,14 +313,80 @@
   color: var(--text);
 }
 
-.thinking {
+.progress {
+  width: min(100%, 570px);
+  margin-left: 38px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-elevated);
+  padding: 13px 14px;
+}
+
+.progressHead {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: min(100%, 790px);
-  margin: 0 auto;
+  gap: 10px;
+}
+
+.progressMark {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
   color: var(--text-muted);
-  font-size: 12px;
+  background: var(--surface-muted);
+}
+
+.progressHead strong,
+.progressHead small {
+  display: block;
+}
+
+.progressHead strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.progressHead small {
+  margin-top: 2px;
+  color: var(--text-subtle);
+  font-size: 9px;
+}
+
+.progressSteps {
+  display: flex;
+  gap: 8px;
+  margin-top: 11px;
+}
+
+.progressSteps > div {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-subtle);
+  font-size: 9px;
+}
+
+.progressSteps > div > span {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-size: 8px;
+}
+
+.progressSteps .activeStep {
+  color: var(--text);
+}
+
+.progressSteps .activeStep > span {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--surface-muted);
 }
 
 .error {
@@ -262,6 +415,8 @@
 }
 
 .clearButton:focus-visible,
+.briefingActions button:focus-visible,
+.starterGrid > button:focus-visible,
 .messageMeta button:focus-visible,
 .followups button:focus-visible,
 .error button:focus-visible,
@@ -270,7 +425,39 @@
   outline-offset: 2px;
 }
 
+.composer {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.composer:focus-within {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border-strong), 0 15px 38px -24px rgb(0 0 0 / 95%);
+}
+
+.composer button {
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.composer button:hover:not(:disabled) {
+  background: var(--text-muted);
+  transform: translateY(-1px);
+}
+
+.requestBoundary {
+  margin: -5px 4px 0;
+  color: var(--text-subtle);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
 @media (max-width: 680px) {
   .headerActions { align-items: flex-end; }
+  .briefingActions { width: 100%; justify-content: flex-start; }
   .userMessage { max-width: 88%; }
+  .progress { width: 100%; margin-left: 0; }
+  .progressSteps { display: grid; }
+  .macActionCard { grid-template-columns: 32px minmax(0, 1fr); }
+  .macActionCard { width: 100%; margin-left: 0; }
+  .actionControls { grid-column: 2; }
 }

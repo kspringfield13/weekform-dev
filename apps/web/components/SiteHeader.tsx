@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/auth/actions";
 import { WeekformMark } from "@/components/WeekformMark";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { managerAccessMemberships } from "@/lib/managerAccess";
 import { listUserTeams } from "@/lib/teams";
 import { productEntry } from "@/lib/productEntry";
@@ -73,6 +74,7 @@ export async function SiteHeader({
               </Link>
             </>
           )}
+          <ThemeToggle className="site-theme-toggle" />
           <Link
             href="/login"
             className="button button-ghost nav-account"

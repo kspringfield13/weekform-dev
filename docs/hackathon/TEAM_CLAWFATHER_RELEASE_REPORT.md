@@ -67,10 +67,10 @@ Per Prompt 11's update list, current state on this tree:
 
 ## 6. Known limitations (release-blocking candor)
 
-1. **Live RLS proof is environment-blocked** — SQL reviewed, four-actor matrix written (`docs/hackathon/TEAM_CLAWFATHER_RLS_MATRIX.md`), never executed. This is the single largest untested claim.
+1. **Production RLS proof remains separate** — the local pgTAP suite is executable through `npm run test:supabase:rls`, but its pass does not prove linked or production migration/configuration state.
 2. ~~`npm audit` blocked by this harness~~ — **resolved July 19, 2026**: `npm run audit:check` reports 0 vulnerabilities in both workspaces after the `postcss >=8.5.10` override in `apps/web` (see §2).
-3. Live Supabase auth/sync/storage-signing, live OpenAI briefing model, and desktop live-app soak are all unexercised on this machine (no env/keys/CLI); deterministic fallbacks are the demonstrated paths.
-4. Copy-link invites only (no email provider), prototype credential storage on desktop, and a public universal preview DMG that is unsigned/unnotarized — all documented in user-facing copy.
+3. Live hosted Supabase auth/sync/storage-signing, the live OpenAI briefing model, and desktop live-app soak are unexercised on this machine; deterministic or fail-closed paths are the demonstrated paths.
+4. Copy-link invites only (no email provider). No public Mac DMG ships; trusted distribution remains unavailable until Developer ID signing, notarization, stapling, checksum verification, and private hosting succeed.
 5. Auto-sync that exhausts the 1/5/15-minute retry ladder pauses until re-arm/reconnect/manual sync.
 
 ## 7. Evidence trail (public-safe)

@@ -7,6 +7,7 @@ import {
   buildPersonalAgentContext,
   generatePersonalAgentAnswer,
   isPersonalAgentActionIntent,
+  parsePersonalAgentRequest,
   parsePersonalAgentQuestion,
 } from "./personalAgent";
 
@@ -52,6 +53,17 @@ test("personal Agent accepts a bounded question and rejects malformed input", ()
   assert.equal(parsePersonalAgentQuestion({ question: "" }), null);
   assert.equal(parsePersonalAgentQuestion({ question: "x".repeat(601) }), null);
   assert.equal(parsePersonalAgentQuestion({ question: "ok", rawEvidence: "never" }), null);
+});
+
+test("personal Agent accepts only an exact question plus UUID submit nonce", () => {
+  const requestId = "81000000-0000-4000-8000-000000000001";
+  assert.deepEqual(parsePersonalAgentRequest({ question: "  What fits?  ", requestId }), {
+    question: "What fits?",
+    requestId,
+  });
+  assert.equal(parsePersonalAgentRequest({ question: "What fits?" }), null);
+  assert.equal(parsePersonalAgentRequest({ question: "What fits?", requestId: "predictable" }), null);
+  assert.equal(parsePersonalAgentRequest({ question: "What fits?", requestId, context: {} }), null);
 });
 
 test("personal Agent context contains only review-safe replica aggregates", () => {
@@ -359,6 +371,7 @@ test("personal Agent request is no-store and contains only the minimized catalog
   const body = JSON.parse(requestBody) as Record<string, unknown>;
   assert.equal(body.store, false);
   assert.equal(body.model, "gpt-test");
+  assert.equal(body.max_output_tokens, 1_200);
   assert.equal(authorization, "Bearer sk-private-test");
   for (const forbidden of ["sk-private-test", "review-safe-1", "0123456789abcdef", "2026-07-20T09:00:00.000Z"]) {
     assert.ok(!requestBody.includes(forbidden), `request body must omit ${forbidden}`);
@@ -453,7 +466,7 @@ test("Ask route authenticates, reloads the latest replica, and never accepts bro
   const route = readFileSync(new URL("../app/api/personal-agent/route.ts", import.meta.url), "utf8");
   assert.match(route, /auth\.getUser\(\)/);
   assert.match(route, /listOwnPersonalReplicas/);
-  assert.match(route, /parsePersonalAgentQuestion/);
+  assert.match(route, /parsePersonalAgentRequest/);
   assert.doesNotMatch(route, /body\.(?:replica|context|blocks|capacity)/);
 });
 
@@ -461,6 +474,8 @@ test("Ask workspace uses the authenticated endpoint with transient conversation 
   const source = readFileSync(new URL("../components/PersonalAgentWorkspace.tsx", import.meta.url), "utf8");
   assert.match(source, /^"use client";/);
   assert.match(source, /fetch\("\/api\/personal-agent"/);
+  assert.match(source, /requestId = crypto\.randomUUID\(\)/);
+  assert.match(source, /JSON\.stringify\(\{ question: cleanQuestion, requestId \}\)/);
   assert.match(source, /role="alert"/);
   assert.match(source, /aria-live="polite"/);
   assert.doesNotMatch(source, /localStorage|sessionStorage/);

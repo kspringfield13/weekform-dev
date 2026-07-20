@@ -31,9 +31,10 @@ test("Individual Web preserves Desktop sources and marks unavailable Email witho
   assert.match(source, /DATA_SOURCES\.map\(\(source\) =>/);
   assert.match(source, /<h3>\{source\.title\}<\/h3>/);
   assert.match(source, /<strong>\{source\.statusTitle\}<\/strong>/);
-  assert.match(source, /className=\{styles\.localBadge\}>\{source\.badge\}<\/span>/);
+  assert.match(source, /<LocalSettingsControl label=\{source\.badge\} \/>/);
   assert.match(source, /Data sources are controlled locally/);
-  assert.match(source, /href="\/download"[^>]*>Get Weekform for Mac<\/Link>/, "the download route needs download-accurate CTA copy");
+  assert.match(source, /<LocalSettingsHandoff[\s\S]*?href="\/download"/);
+  assert.match(source, /<LocalSettingsHandoff[\s\S]*?actionLabel="Get Weekform for Mac"/, "the single terminal handoff needs download-accurate CTA copy");
   assert.doesNotMatch(source, /<input|<select|onClick=/, "Web must not expose fake local-source controls");
 });
 
@@ -66,10 +67,11 @@ test("Individual Web places native-only Chat directly below the unavailable Emai
 });
 
 test("Individual Web data-source rows retain Desktop source-row scale", () => {
-  assert.match(styles, /\.row\s*\{[^}]*min-height:\s*78px/s);
+  assert.match(styles, /\.row\s*\{[^}]*min-height:\s*80px/s);
   assert.match(styles, /\.icon\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px/s);
   assert.match(styles, /\.copy h3\s*\{[^}]*font-size:\s*16px;[^}]*line-height:\s*24px/s);
-  assert.match(styles, /\.copy p\s*\{[^}]*font-size:\s*12px;[^}]*line-height:\s*18px/s);
+  assert.match(styles, /\.copy p\s*\{[^}]*font-size:\s*13px;[^}]*line-height:\s*18px/s);
   assert.match(styles, /\.status\s*\{[^}]*text-align:\s*right/s);
   assert.match(styles, /\.status strong\s*\{[^}]*font-size:\s*12px/s);
+  assert.match(styles, /\.status span\s*\{[^}]*font-size:\s*11px/s);
 });

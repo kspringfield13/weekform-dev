@@ -1,6 +1,13 @@
 import type { PersonalWorkloadReplicaV1 } from "../../../packages/domain/src/personalCloud";
 
 const MAX_QUESTION_LENGTH = 600;
+const REQUEST_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export interface PersonalAgentRequest {
+  question: string;
+  requestId: string;
+}
 
 export interface PersonalAgentContext {
   weekId: string;
@@ -46,6 +53,20 @@ export function parsePersonalAgentQuestion(value: unknown): string | null {
   const question = value.question.trim();
   if (!question || question.length > MAX_QUESTION_LENGTH) return null;
   return question;
+}
+
+/** A submit nonce distinguishes an intentional retry from transport replay. */
+export function parsePersonalAgentRequest(value: unknown): PersonalAgentRequest | null {
+  if (!isRecord(value)) return null;
+  const keys = Object.keys(value);
+  if (keys.length !== 2 || !keys.includes("question") || !keys.includes("requestId")) return null;
+  if (typeof value.question !== "string" || typeof value.requestId !== "string") return null;
+  const question = value.question.trim();
+  const requestId = value.requestId.toLowerCase();
+  if (!question || question.length > MAX_QUESTION_LENGTH || !REQUEST_ID_PATTERN.test(requestId)) {
+    return null;
+  }
+  return { question, requestId };
 }
 
 function counts(values: string[]): Record<string, number> {
@@ -260,6 +281,7 @@ export async function generatePersonalAgentAnswer(
       body: JSON.stringify({
         model,
         store: false,
+        max_output_tokens: 1_200,
         instructions: "You are Weekform Agent. Select only the supplied review-safe evidence that best answers the question. Never claim access to raw activity, titles, notes, screenshots, local files, or omitted evidence. Do not execute or imply actions. Return JSON with evidenceRefs (catalog keys only). Weekform composes all visible prose from validated fields; do not return answer or limitation prose.",
         input: JSON.stringify({ question, evidenceCatalog: context.evidenceCatalog }),
         text: { format: { type: "json_object" } },

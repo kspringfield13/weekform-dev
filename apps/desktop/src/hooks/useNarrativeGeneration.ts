@@ -114,7 +114,7 @@ export function useNarrativeGeneration({
       usageContext,
     });
 
-    narrativeAsync.start("generating");
+    const operationEpoch = narrativeAsync.start("generating");
 
     try {
       const response = await withAiTimeout(
@@ -122,6 +122,9 @@ export function useNarrativeGeneration({
           request: { prompt, ai_config: aiConfig },
         })
       );
+      if (!narrativeAsync.isCurrent(operationEpoch)) {
+        return { ok: false, message: "Narrative generation was cancelled by a local-data reset." };
+      }
       // The native response is trusted TS but never runtime-checked (same posture the
       // forecast/classification/visual hooks guard against), so a non-strict/custom provider
       // can return a non-string headline/summary_text/manager_ready_summary or a non-array
@@ -192,6 +195,9 @@ export function useNarrativeGeneration({
         message: `Generated a new weekly narrative and refreshed the manager-ready summary for ${currentWeekRangeLabel}.`,
       };
     } catch (error) {
+      if (!narrativeAsync.isCurrent(operationEpoch)) {
+        return { ok: false, message: "Narrative generation was cancelled by a local-data reset." };
+      }
       const message = error instanceof Error ? error.message : String(error);
       narrativeAsync.fail(message);
       setAuditEvents((current) => [
@@ -220,6 +226,6 @@ export function useNarrativeGeneration({
     narrativeGenerationStatus,
     narrativeGenerationError,
     regenerateNarrative,
-    resetNarrative: narrativeAsync.reset,
+    resetNarrative: () => narrativeAsync.reset(),
   };
 }

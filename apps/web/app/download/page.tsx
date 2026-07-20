@@ -204,17 +204,19 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
           <ExampleWeek />
         </section>
 
-        <section className="download-install-strip" aria-labelledby="install-title">
-          <div>
-            <p className="download-section-label">Preview Mac install</p>
-            <h2 id="install-title">The familiar DMG flow, with one preview limitation.</h2>
-          </div>
-          <ol>
-            <li><span>1</span><strong>Open the DMG</strong></li>
-            <li><span>2</span><strong>Drag to Applications</strong></li>
-            <li><span>3</span><strong>Expect a Gatekeeper warning</strong></li>
-          </ol>
-        </section>
+        {releasePresentation.kind === "available" ? (
+          <section className="download-install-strip" aria-labelledby="install-title">
+            <div>
+              <p className="download-section-label">Verified Mac install</p>
+              <h2 id="install-title">Install the Gatekeeper-trusted release.</h2>
+            </div>
+            <ol>
+              <li><span>1</span><strong>Open the DMG</strong></li>
+              <li><span>2</span><strong>Drag to Applications</strong></li>
+              <li><span>3</span><strong>Launch Weekform</strong></li>
+            </ol>
+          </section>
+        ) : null}
 
         <section
           id="release-notes"

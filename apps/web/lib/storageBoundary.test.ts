@@ -6,6 +6,11 @@ import { fileURLToPath } from "node:url";
 
 const WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PRODUCTION_DIRS = ["app", "components", "lib"];
+const ALLOWED_PREFERENCE_STORAGE = new Set([
+  "app/layout.tsx",
+  "components/ThemeToggle.tsx",
+  "components/WebWorkspaceIntro.tsx",
+]);
 
 function productionSources(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -27,8 +32,8 @@ test("production web source has no browser workload persistence", () => {
     for (const file of productionSources(path.join(WEB_ROOT, relativeDir))) {
       const source = readFileSync(file, "utf8");
       const relativePath = path.relative(WEB_ROOT, file);
-      if (/\blocalStorage\b/.test(source) && relativePath !== "components/WebWorkspaceIntro.tsx") {
-        violations.push(`${relativePath} uses localStorage outside the onboarding preference`);
+      if (/\blocalStorage\b/.test(source) && !ALLOWED_PREFERENCE_STORAGE.has(relativePath)) {
+        violations.push(`${relativePath} uses localStorage outside the appearance and onboarding preferences`);
       }
       for (const pattern of forbidden) {
         if (pattern.test(source)) {
@@ -47,6 +52,14 @@ test("production web source has no browser workload persistence", () => {
   assert.match(onboarding, /localStorage\.getItem\(storageKey\)/);
   assert.match(onboarding, /localStorage\.setItem\(storageKey, "complete"\)/);
   assert.doesNotMatch(onboarding, /JSON\.stringify|payload|snapshot|replica/i);
+
+  const layout = readFileSync(path.join(WEB_ROOT, "app/layout.tsx"), "utf8");
+  const themeToggle = readFileSync(path.join(WEB_ROOT, "components/ThemeToggle.tsx"), "utf8");
+  assert.match(layout, /storageKey = "weekform:web-theme"/);
+  assert.match(layout, /localStorage\.getItem\(storageKey\)/);
+  assert.match(themeToggle, /localStorage\.getItem\(WEB_THEME_STORAGE_KEY\)/);
+  assert.match(themeToggle, /localStorage\.setItem\(WEB_THEME_STORAGE_KEY, targetTheme\)/);
+  assert.doesNotMatch(layout + themeToggle, /JSON\.stringify/);
 });
 
 test("client components can use only the ephemeral Realtime client, never server workload modules", () => {

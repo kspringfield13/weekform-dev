@@ -195,7 +195,7 @@ test("Manager Access supports a configured staging web origin", () => {
 
 test("Manager Access uses the current local origin during development", () => {
   assert.equal(
-    getManagerAccessSignInUrl("https://weekform.com", {
+    getManagerAccessSignInUrl("https://weekform.dev", {
       isDevelopment: true,
       currentOrigin: "http://127.0.0.1:5174"
     }),

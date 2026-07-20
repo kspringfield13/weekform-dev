@@ -18,6 +18,7 @@ test("Web Ask exposes Desktop-shaped transient conversation controls", () => {
 test("failed Web Ask requests can retry the exact transient question", () => {
   assert.match(source, /setFailedQuestion\(cleanQuestion\)/);
   assert.match(source, /onClick=\{\(\) => void ask\(failedQuestion\)\}/);
+  assert.match(source, /requestId = crypto\.randomUUID\(\)/);
   assert.match(source, />Retry</);
 });
 

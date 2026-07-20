@@ -1,11 +1,14 @@
+"use client";
+
 import type { PersonalWorkloadReplicaV1 } from "../../../packages/domain/src/personalCloud";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 import {
   aggregateReplicaModes,
   aggregateReplicaCategories,
   capacityForPresentation,
   capacityCoverage,
+  categoryColor,
   displayPercent,
   isElevatedRatioScore,
   ratioScorePercent,
@@ -14,6 +17,12 @@ import {
 
 function pct(value: number): string {
   return `${Math.round(displayPercent(value))}%`;
+}
+
+function formatCapacityHours(value: number): string {
+  const hours = (Math.max(0, value) / 100) * 40;
+  if (hours > 0 && hours < 1) return `${Math.round(hours * 60)}m`;
+  return `${Number(hours.toFixed(1))}h`;
 }
 
 type CapacityIconName = "calendar" | "focus" | "message" | "plus" | "lightbulb" | "info" | "chevron";
@@ -40,12 +49,15 @@ export function PersonalWeekOverview({
 }: {
   replica: PersonalWorkloadReplicaV1;
 }) {
+  const [showAllCategories, setShowAllCategories] = useState(false);
   const capacity = replica.capacity;
   const hasCurrentWeekSignal = replica.blocks.length > 0;
   const displayCapacity = capacityForPresentation(capacity, hasCurrentWeekSignal);
   const available = safePercent(displayCapacity.reliableNewWorkCapacityPct);
   const coverage = capacityCoverage(displayCapacity, hasCurrentWeekSignal);
-  const categories = aggregateReplicaCategories(replica.blocks);
+  const categories = aggregateReplicaCategories(replica.blocks, Number.POSITIVE_INFINITY);
+  const visibleCategories = showAllCategories ? categories : categories.slice(0, 5);
+  const maxCategoryCapacity = Math.max(1, ...categories.map((category) => category.capacityPct));
   const metrics = [
     {
       key: "committed",
@@ -89,7 +101,7 @@ export function PersonalWeekOverview({
     share: mode.sharePct,
     tone: modeTone[mode.label] ?? "blocked",
   }));
-  const derivedTotal = workModes.reduce((sum, mode) => sum + mode.value, 0);
+  const allocatedModeTotal = workModes.reduce((sum, mode) => sum + mode.value, 0);
   let donutCursor = 0;
   const donutSegments = workModes.map((mode) => {
     const segment = { ...mode, start: donutCursor };
@@ -122,8 +134,7 @@ export function PersonalWeekOverview({
           };
 
   return (
-    <div className="personal-week-overview capacity-dashboard">
-      <p className="personal-week-eyebrow">Weekly capacity</p>
+    <div className="personal-week-overview capacity-dashboard" aria-label="Weekly capacity dashboard">
       <section
         className="personal-week-hero week-dashboard-hero"
         aria-labelledby="week-capacity-headline"
@@ -151,9 +162,9 @@ export function PersonalWeekOverview({
         <div className="personal-week-hero-copy">
           {hasCurrentWeekSignal ? (
             <>
-              <h4 id="week-capacity-headline">
+              <h1 id="week-capacity-headline">
                 You have {pct(available)} capacity for new planned work.
-              </h4>
+              </h1>
               <p>
                 {pct(displayCapacity.committedUtilizationPct)} of the week is already committed.{" "}
                 {available >= 30
@@ -168,7 +179,7 @@ export function PersonalWeekOverview({
             </>
           ) : (
             <>
-              <h4 id="week-capacity-headline">No review-safe work this week yet.</h4>
+              <h1 id="week-capacity-headline">No review-safe work this week yet.</h1>
               <p>
                 Enable Private Web workspace in Weekform for Mac, review or import this week&apos;s work,
                 then sync again. Until then, no capacity or delivery buffer is inferred here.
@@ -241,16 +252,32 @@ export function PersonalWeekOverview({
           </p>
 
           <div className="personal-week-categories">
-            <header><h5>Top categories</h5><span>Share of review-safe blocks</span></header>
+            <header>
+              <div><h5>Top categories</h5><span>Share of tracked work</span></div>
+              {categories.length > 5 ? (
+                <button
+                  type="button"
+                  aria-expanded={showAllCategories}
+                  aria-controls="personal-week-category-list"
+                  onClick={() => setShowAllCategories((current) => !current)}
+                >
+                  {showAllCategories ? "Show top 5" : "View all"}
+                </button>
+              ) : null}
+            </header>
             {categories.length === 0 ? (
               <p className="personal-week-empty">Categories appear after review-safe blocks sync.</p>
             ) : (
-              <ul>
-                {categories.map((category) => (
+              <ul id="personal-week-category-list" aria-label="Tracked work by category">
+                {visibleCategories.map((category) => (
                   <li key={category.label}>
-                    <span title={category.label}>{category.label}</span>
-                    <div aria-hidden="true"><i style={{ width: `${category.sharePct}%` }} /></div>
-                    <strong>{pct(category.capacityPct)}</strong>
+                    <span className="personal-week-category-label" title={category.label}>
+                      <i style={{ background: categoryColor(category.label) }} aria-hidden="true" />
+                      <span>{category.label}</span>
+                    </span>
+                    <div aria-hidden="true"><i style={{ width: `${(category.capacityPct / maxCategoryCapacity) * 100}%`, background: categoryColor(category.label) }} /></div>
+                    <strong>{formatCapacityHours(category.capacityPct)}</strong>
+                    <span>{Math.round(category.sharePct)}%<span className="sr-only"> of tracked work</span></span>
                   </li>
                 ))}
               </ul>
@@ -260,16 +287,16 @@ export function PersonalWeekOverview({
 
         <section className="personal-week-panel personal-week-time week-dashboard-panel" aria-labelledby="personal-week-patterns-title">
           <header>
-            <h4 id="personal-week-patterns-title">Derived work patterns</h4>
-            <span>Review-safe block modes within the capacity already allocated</span>
+            <h4 id="personal-week-patterns-title">How tracked time is spent</h4>
+            <span>Review-safe block modes within the time already allocated</span>
           </header>
           <div className="personal-week-time-layout">
             <div
               className="personal-week-donut"
               role="img"
               aria-label={donutSegments.length > 0
-                ? `Derived capacity by work mode: ${donutSegments.map((mode) => `${mode.label}, ${Math.round(mode.share)}%`).join("; ")}`
-                : "No derived work-mode allocation is available for this week"}
+                ? `Tracked time by work mode: ${donutSegments.map((mode) => `${mode.label}, ${formatCapacityHours(mode.value)}, ${Math.round(mode.share)}%`).join("; ")}`
+                : "No tracked work-mode time is available for this week"}
             >
               <svg viewBox="0 0 160 160" aria-hidden="true">
                 <circle className="personal-week-donut-track" cx="80" cy="80" r="58" pathLength="100" />
@@ -292,13 +319,13 @@ export function PersonalWeekOverview({
                   ) : null;
                 })}
               </svg>
-              <span aria-hidden="true"><strong>{pct(derivedTotal)}</strong><small>derived</small></span>
+              <span aria-hidden="true"><strong>{formatCapacityHours(allocatedModeTotal)}</strong><small>tracked</small></span>
             </div>
             <ul className="personal-week-time-legend">
               {donutSegments.map((mode) => (
                 <li key={mode.label}>
                   <span><i data-tone={mode.tone} />{mode.label}</span>
-                  <strong>{pct(mode.value)}</strong>
+                  <strong>{formatCapacityHours(mode.value)}</strong>
                   <small>{Math.round(mode.share)}%</small>
                 </li>
               ))}

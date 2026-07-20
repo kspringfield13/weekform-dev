@@ -1,4 +1,5 @@
 import { Store } from "@tauri-apps/plugin-store";
+import { invoke } from "@tauri-apps/api/core";
 import type {
   AccelerationPlayType,
   ActiveWindowSample,
@@ -30,12 +31,21 @@ import type { WindowMode } from "../lib/types";
 import type { AuthoredAccelerationPlay } from "./accelerationSchema";
 import { parseConsentReceipts, type ConsentReceiptV1 } from "./consentReceipt";
 import type { ChatEvidenceEventV1 } from "../../../../packages/integrations/src/chat/chatSync";
+import { createPersistenceCoordinator } from "./persistenceCoordinator";
 
 const STORE_FILE = "clear-capacity.store";
 const STATE_KEY = "appState";
 const THEME_KEY = "theme";
 const STORAGE_KEY = "clear-capacity:v1"; // fallback for non-Tauri
 const THEME_STORAGE_KEY = "clear-capacity:theme";
+export const AI_PROVIDER_LEGACY_KEYCHAIN_ACCOUNT = "weekform:ai-provider-api-key:v1";
+const AI_PROVIDER_KEYCHAIN_ACCOUNT_PREFIX = "weekform:ai-provider-api-key:v2:";
+const AI_SECRET_ENVELOPE_VERSION = 1;
+const AI_CREDENTIAL_BINDING_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+let currentAISecretBinding: string | null = null;
+let lastAISecretFingerprint: string | null | undefined;
 
 export type AppTheme = "light" | "dark";
 
@@ -246,8 +256,13 @@ const CURRENT_AI_AUDIT_SOURCES = new Set([
   "codex_app_server_vision"
 ]);
 
-/** Drop retired audit variants and normalize usage-setting history to the current fields. */
-function parseAuditEvents(value: unknown): AuditEvent[] {
+/**
+ * Drop retired or unsafe audit variants and normalize retained history.
+ * Per-sample foreground metadata belongs only in the encrypted native journal;
+ * legacy rows are removed instead of copying app/window titles into Store or an
+ * export under the label "audit".
+ */
+export function sanitizePersistedAuditEvents(value: unknown): AuditEvent[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
     if (
@@ -266,6 +281,7 @@ function parseAuditEvents(value: unknown): AuditEvent[] {
     }
 
     const event = entry as unknown as AuditEvent;
+    if (event.type === "active_window_sample") return [];
     if (event.type === "usage_settings") {
       return [{
         ...event,
@@ -331,6 +347,334 @@ function parseAIConfig(value: unknown): AIConfig | null {
     model: value.model,
     ...(typeof value.baseUrl === "string" ? { baseUrl: value.baseUrl } : {}),
     ...(typeof value.visionModel === "string" ? { visionModel: value.visionModel } : {})
+  };
+}
+
+/**
+ * The general Tauri Store and browser fallback are not credential stores. Keep
+ * non-secret provider/model preferences there, while the live API key is held
+ * only in memory and (on macOS) in Keychain.
+ */
+export function sanitizeAIConfigForPersistence(config: AIConfig | null): AIConfig | null {
+  return config ? { ...config, apiKey: "" } : null;
+}
+
+function parseAICredentialBinding(value: unknown): string | null {
+  return typeof value === "string" && AI_CREDENTIAL_BINDING_PATTERN.test(value)
+    ? value.toLowerCase()
+    : null;
+}
+
+/** Resolve the only Keychain account form used by current API-key credentials. */
+export function aiProviderKeychainAccount(binding: string): string {
+  const normalizedBinding = parseAICredentialBinding(binding);
+  if (!normalizedBinding) {
+    throw new Error("The AI provider credential binding is invalid.");
+  }
+  return `${AI_PROVIDER_KEYCHAIN_ACCOUNT_PREFIX}${normalizedBinding}`;
+}
+
+export interface AIProviderCredentialKeychain {
+  get(account: string): Promise<string | null>;
+  set(account: string, value: string): Promise<void>;
+  delete(account: string): Promise<void>;
+}
+
+export interface RollbackCapableStore {
+  set(key: string, value: unknown): Promise<unknown>;
+  delete(key: string): Promise<unknown>;
+  save(): Promise<unknown>;
+}
+
+/**
+ * Tauri Store stages `set` in memory before `save` reaches disk. Restore both
+ * the staged and durable prior value after any failed commit so a later save
+ * cannot accidentally publish a pointer whose Keychain entry was rolled back.
+ */
+export async function commitStoreValueWithRollback(
+  store: RollbackCapableStore,
+  key: string,
+  previousValue: unknown,
+  nextValue: unknown,
+): Promise<void> {
+  try {
+    await store.set(key, nextValue);
+    await store.save();
+  } catch (error) {
+    try {
+      if (previousValue === undefined) await store.delete(key);
+      else await store.set(key, previousValue);
+      await store.save();
+    } catch {
+      // Preserve the original commit error. The newly written credential is
+      // still removed by the outer transaction, while the on-disk Store keeps
+      // its previously durable pointer even if this in-memory rollback fails.
+    }
+    throw error;
+  }
+}
+
+/** Read only the binding-addressed entry owned by the durable Store pointer. */
+export async function readAIProviderCredentialForBinding(
+  keychain: AIProviderCredentialKeychain,
+  binding: string | null,
+): Promise<string | null> {
+  const normalizedBinding = parseAICredentialBinding(binding);
+  if (!normalizedBinding) return null;
+  const envelope = await keychain.get(aiProviderKeychainAccount(normalizedBinding));
+  return readAIProviderSecretEnvelope(envelope, normalizedBinding);
+}
+
+type AIProviderCredentialRotationInput = {
+  apiKey: string;
+  previousBinding: string | null;
+  keychain: AIProviderCredentialKeychain;
+  commitBinding: (binding: string | null) => Promise<void>;
+  createBinding?: () => string;
+  cleanupLegacySingleton?: boolean;
+};
+
+async function deleteCredentialBestEffort(
+  keychain: AIProviderCredentialKeychain,
+  account: string,
+): Promise<void> {
+  try {
+    await keychain.delete(account);
+  } catch {
+    // A stale, unreferenced Keychain entry is safer than rolling back a durable
+    // Store pointer or reporting a credential save as failed after it committed.
+  }
+}
+
+/**
+ * Commit a credential rotation across Keychain and Tauri Store without ever
+ * overwriting the currently referenced secret. The new binding-addressed entry
+ * is written first, the non-secret Store pointer is committed second, and only
+ * then are superseded entries retired. A failed Store commit removes the new
+ * entry and leaves the previous pointer/credential pair usable.
+ */
+export async function commitAIProviderCredentialRotation(
+  input: AIProviderCredentialRotationInput,
+): Promise<string | null> {
+  const previousBinding = input.previousBinding === null
+    ? null
+    : parseAICredentialBinding(input.previousBinding);
+  if (input.previousBinding !== null && !previousBinding) {
+    throw new Error("The previous AI provider credential binding is invalid.");
+  }
+  const apiKey = input.apiKey.trim();
+  if (apiKey.length > 20_000) {
+    throw new Error("The AI provider credential is too large.");
+  }
+
+  if (!apiKey) {
+    await input.commitBinding(null);
+    if (previousBinding) {
+      await deleteCredentialBestEffort(
+        input.keychain,
+        aiProviderKeychainAccount(previousBinding),
+      );
+    }
+    if (input.cleanupLegacySingleton) {
+      await deleteCredentialBestEffort(input.keychain, AI_PROVIDER_LEGACY_KEYCHAIN_ACCOUNT);
+    }
+    return null;
+  }
+
+  const createBinding = input.createBinding ?? (() => crypto.randomUUID());
+  const binding = parseAICredentialBinding(createBinding());
+  if (!binding || binding === previousBinding) {
+    throw new Error("Weekform could not allocate a unique AI credential binding.");
+  }
+  const account = aiProviderKeychainAccount(binding);
+  await input.keychain.set(account, encodeAIProviderSecretEnvelope(apiKey, binding));
+
+  try {
+    await input.commitBinding(binding);
+  } catch (error) {
+    try {
+      await input.keychain.delete(account);
+    } catch (cleanupError) {
+      const cleanupFailure = new Error(
+        "The Store update failed and Weekform could not remove the uncommitted Keychain entry.",
+      );
+      Object.assign(cleanupFailure, { failures: [error, cleanupError] });
+      throw cleanupFailure;
+    }
+    throw error;
+  }
+
+  if (previousBinding) {
+    await deleteCredentialBestEffort(
+      input.keychain,
+      aiProviderKeychainAccount(previousBinding),
+    );
+  }
+  if (input.cleanupLegacySingleton) {
+    await deleteCredentialBestEffort(input.keychain, AI_PROVIDER_LEGACY_KEYCHAIN_ACCOUNT);
+  }
+  return binding;
+}
+
+/**
+ * Bind a Keychain secret to the exact non-secret Store generation that owns it.
+ * Keychain and Tauri Store cannot commit atomically; this random join key makes
+ * either crash order fail closed instead of attaching a new credential to stale
+ * provider/base-URL metadata.
+ */
+export function encodeAIProviderSecretEnvelope(apiKey: string, binding: string): string {
+  const normalizedBinding = parseAICredentialBinding(binding);
+  const normalizedKey = apiKey.trim();
+  if (!normalizedBinding || !normalizedKey || normalizedKey.length > 20_000) {
+    throw new Error("The AI provider credential envelope is invalid.");
+  }
+  return JSON.stringify({
+    version: AI_SECRET_ENVELOPE_VERSION,
+    binding: normalizedBinding,
+    apiKey: normalizedKey,
+  });
+}
+
+export function readAIProviderSecretEnvelope(
+  value: string | null,
+  expectedBinding: string | null,
+): string | null {
+  const binding = parseAICredentialBinding(expectedBinding);
+  if (!value || !binding) return null;
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!isRecord(parsed)
+      || Object.keys(parsed).length !== 3
+      || parsed.version !== AI_SECRET_ENVELOPE_VERSION
+      || parseAICredentialBinding(parsed.binding) !== binding
+      || typeof parsed.apiKey !== "string"
+      || !parsed.apiKey.trim()
+      || parsed.apiKey.length > 20_000) return null;
+    return parsed.apiKey;
+  } catch {
+    return null;
+  }
+}
+
+function isTauriRuntime() {
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+const nativeAIProviderKeychain: AIProviderCredentialKeychain = {
+  get: (account) => invoke<string | null>("keychain_get_secret", { key: account }),
+  set: (account, value) => invoke<void>("keychain_set_secret", { key: account, value }),
+  delete: (account) => invoke<void>("keychain_delete_secret", { key: account }),
+};
+
+function readLegacyRawAIProviderSecret(value: string | null): string | null {
+  const secret = value?.trim() ?? "";
+  if (!secret || secret.length > 20_000) return null;
+  try {
+    const parsed: unknown = JSON.parse(secret);
+    // An envelope without a matching Store binding is evidence of an
+    // interrupted transaction, not permission to attach that key to whatever
+    // provider metadata happens to be durable now.
+    if (isRecord(parsed) && "binding" in parsed && "apiKey" in parsed) return null;
+  } catch {
+    // Historical singleton entries were the raw API-key string.
+  }
+  return secret;
+}
+
+async function hydrateAIProviderSecret(
+  config: AIConfig | null,
+  persistedBinding: unknown,
+  commitMigratedBinding?: (binding: string | null) => Promise<void>,
+): Promise<{
+  config: AIConfig | null;
+  credentialBinding: string | null;
+  migratedLegacySecret: boolean;
+}> {
+  if (!config || config.connectionMode === "codex") {
+    return {
+      config: sanitizeAIConfigForPersistence(config),
+      credentialBinding: null,
+      migratedLegacySecret: false,
+    };
+  }
+  if (!isTauriRuntime()) {
+    // A legacy browser/dev key remains usable for this process only. The caller
+    // immediately rewrites its localStorage record without the credential.
+    return {
+      config,
+      credentialBinding: null,
+      migratedLegacySecret: Boolean(config.apiKey.trim()),
+    };
+  }
+
+  const legacySecret = config.apiKey.trim();
+  if (legacySecret) {
+    if (!commitMigratedBinding) {
+      throw new Error("Weekform could not prepare the legacy AI credential migration.");
+    }
+    const binding = await commitAIProviderCredentialRotation({
+      apiKey: legacySecret,
+      previousBinding: parseAICredentialBinding(persistedBinding),
+      keychain: nativeAIProviderKeychain,
+      commitBinding: commitMigratedBinding,
+      cleanupLegacySingleton: true,
+    });
+    return {
+      config,
+      credentialBinding: binding,
+      migratedLegacySecret: false,
+    };
+  }
+
+  const binding = parseAICredentialBinding(persistedBinding);
+  let key = await readAIProviderCredentialForBinding(nativeAIProviderKeychain, binding);
+  if (!key) {
+    const legacyValue = await nativeAIProviderKeychain.get(AI_PROVIDER_LEGACY_KEYCHAIN_ACCOUNT);
+    if (binding) {
+      key = readAIProviderSecretEnvelope(legacyValue, binding);
+      if (key) {
+        // The Store already durably owns this binding. Copying the matching
+        // envelope to its binding-addressed account is safe and idempotent; the
+        // singleton is retired only after that write succeeds.
+        try {
+          await nativeAIProviderKeychain.set(
+            aiProviderKeychainAccount(binding),
+            encodeAIProviderSecretEnvelope(key, binding),
+          );
+          await deleteCredentialBestEffort(
+            nativeAIProviderKeychain,
+            AI_PROVIDER_LEGACY_KEYCHAIN_ACCOUNT,
+          );
+        } catch {
+          // Continue using the matching legacy entry for this process. It stays
+          // intact and migration will retry on the next launch.
+        }
+      }
+    } else {
+      const legacySingletonSecret = readLegacyRawAIProviderSecret(legacyValue);
+      if (legacySingletonSecret) {
+        if (!commitMigratedBinding) {
+          throw new Error("Weekform could not prepare the legacy AI credential migration.");
+        }
+        const migratedBinding = await commitAIProviderCredentialRotation({
+          apiKey: legacySingletonSecret,
+          previousBinding: null,
+          keychain: nativeAIProviderKeychain,
+          commitBinding: commitMigratedBinding,
+          cleanupLegacySingleton: true,
+        });
+        return {
+          config: { ...config, apiKey: legacySingletonSecret },
+          credentialBinding: migratedBinding,
+          migratedLegacySecret: false,
+        };
+      }
+    }
+  }
+  return {
+    config: { ...config, apiKey: key ?? "" },
+    credentialBinding: key ? binding : null,
+    migratedLegacySecret: false,
   };
 }
 
@@ -1008,26 +1352,45 @@ function parseTokenUsageSettings(value: unknown): TokenUsageSettings {
 }
 
 async function getStore(): Promise<Store | null> {
-  try {
-    if (!("__TAURI_INTERNALS__" in window)) {
-      // Non-Tauri environment (web dev/preview) - return null to fallback
-      return null;
-    }
-    return await Store.load(STORE_FILE);
-  } catch {
+  if (!isTauriRuntime()) {
+    // Non-Tauri environment (web dev/preview) - return null to fallback.
     return null;
   }
+  // Tauri Store failures are security/reliability failures, not a signal to
+  // silently fall back to browser storage. Let callers surface them.
+  return Store.load(STORE_FILE);
 }
 
 export async function readPersistedState(): Promise<PersistedAppState | null> {
-  try {
-    const store = await getStore();
-    if (!store) {
+  const store = await getStore();
+  if (!store) {
       // Fallback to localStorage for web/dev
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (!raw) return null;
       const parsed: unknown = JSON.parse(raw);
-      if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.blocks)) return null;
+      if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.blocks)) {
+        throw new Error("Saved Weekform browser state could not be validated.");
+      }
+      const parsedAIConfig = parseAIConfig(parsed.aiConfig);
+      const hydratedAIConfig = await hydrateAIProviderSecret(
+        parsedAIConfig,
+        parsed.aiCredentialBinding,
+      );
+      currentAISecretBinding = hydratedAIConfig.credentialBinding;
+      lastAISecretFingerprint = hydratedAIConfig.config?.connectionMode === "api_key"
+        && hydratedAIConfig.config.apiKey.trim()
+        ? `${hydratedAIConfig.config.provider}:${hydratedAIConfig.config.baseUrl ?? ""}:${hydratedAIConfig.config.apiKey}`
+        : undefined;
+      if (hydratedAIConfig.migratedLegacySecret) {
+        window.localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({
+            ...parsed,
+            aiConfig: sanitizeAIConfigForPersistence(parsedAIConfig),
+            aiCredentialBinding: null,
+          }),
+        );
+      }
       // (simplified return, same mapping as before)
       return {
         version: 1,
@@ -1036,7 +1399,7 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
         chatEvents: sanitizePersistedChatEvents(parsed.chatEvents),
         chatEvidence: sanitizePersistedChatEvidence(parsed.chatEvidence),
         activeWindowSamples: Array.isArray(parsed.activeWindowSamples) ? (parsed.activeWindowSamples as ActiveWindowSample[]) : [],
-        auditEvents: parseAuditEvents(parsed.auditEvents),
+        auditEvents: sanitizePersistedAuditEvents(parsed.auditEvents),
         corrections: Array.isArray(parsed.corrections) ? (parsed.corrections as UserCorrection[]) : [],
         reviewSuggestions: parseReviewSuggestions(parsed.reviewSuggestions),
         generatedForecast: parseForecastRecord(parsed.generatedForecast),
@@ -1053,7 +1416,7 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
         generatedNarrative: parseNarrativeRecord(parsed.generatedNarrative),
         lastNarrativeAutoRunDate: typeof parsed.lastNarrativeAutoRunDate === "string" ? parsed.lastNarrativeAutoRunDate : null,
         paused: typeof parsed.paused === "boolean" ? parsed.paused : true,
-        aiConfig: parseAIConfig(parsed.aiConfig),
+        aiConfig: hydratedAIConfig.config,
         retentionDays: parseRetentionDays(parsed.retentionDays),
         onboardingDismissed: typeof parsed.onboardingDismissed === "boolean" ? parsed.onboardingDismissed : false,
         walkthroughCompleted: typeof parsed.walkthroughCompleted === "boolean" ? parsed.walkthroughCompleted : false,
@@ -1069,18 +1432,38 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
         usageCsvRowHashes: parseStringIdList(parsed.usageCsvRowHashes),
         consentReceipts: parseConsentReceipts(parsed.consentReceipts)
       };
-    }
-    const data = await store.get<unknown>(STATE_KEY);
-    if (!data) {
-      return null;
-    }
+  }
+  const data = await store.get<unknown>(STATE_KEY);
+  if (!data) {
+    return null;
+  }
 
-    const parsed: unknown = data;
-    if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.blocks)) {
-      return null;
-    }
+  const parsed: unknown = data;
+  if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.blocks)) {
+    throw new Error("Saved Weekform Store state could not be validated.");
+  }
 
-    return {
+  const parsedAIConfig = parseAIConfig(parsed.aiConfig);
+  const hydratedAIConfig = await hydrateAIProviderSecret(
+    parsedAIConfig,
+    parsed.aiCredentialBinding,
+    (binding) => commitStoreValueWithRollback(
+      store,
+      STATE_KEY,
+      parsed,
+      {
+        ...parsed,
+        aiConfig: sanitizeAIConfigForPersistence(parsedAIConfig),
+        aiCredentialBinding: binding,
+      },
+    ),
+  );
+  currentAISecretBinding = hydratedAIConfig.credentialBinding;
+  lastAISecretFingerprint = hydratedAIConfig.config?.connectionMode === "api_key"
+    && hydratedAIConfig.config.apiKey.trim()
+    ? `${hydratedAIConfig.config.provider}:${hydratedAIConfig.config.baseUrl ?? ""}:${hydratedAIConfig.config.apiKey}`
+    : undefined;
+  return {
       version: 1,
       blocks: sanitizePersistedWorkBlocks(parsed.blocks),
       calendarEvents: parseCalendarEvents(parsed.calendarEvents),
@@ -1089,7 +1472,7 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
       activeWindowSamples: Array.isArray(parsed.activeWindowSamples)
         ? (parsed.activeWindowSamples as ActiveWindowSample[])
         : [],
-      auditEvents: parseAuditEvents(parsed.auditEvents),
+      auditEvents: sanitizePersistedAuditEvents(parsed.auditEvents),
       corrections: Array.isArray(parsed.corrections) ? (parsed.corrections as UserCorrection[]) : [],
       reviewSuggestions: parseReviewSuggestions(parsed.reviewSuggestions),
       generatedForecast: parseForecastRecord(parsed.generatedForecast),
@@ -1111,7 +1494,7 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
       lastNarrativeAutoRunDate:
         typeof parsed.lastNarrativeAutoRunDate === "string" ? parsed.lastNarrativeAutoRunDate : null,
       paused: typeof parsed.paused === "boolean" ? parsed.paused : true,
-      aiConfig: parseAIConfig(parsed.aiConfig),
+      aiConfig: hydratedAIConfig.config,
       retentionDays: parseRetentionDays(parsed.retentionDays),
       onboardingDismissed: typeof parsed.onboardingDismissed === "boolean" ? parsed.onboardingDismissed : false,
       walkthroughCompleted: typeof parsed.walkthroughCompleted === "boolean" ? parsed.walkthroughCompleted : false,
@@ -1125,42 +1508,130 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
       tokenUsageDays: parseTokenUsageDays(parsed.tokenUsageDays),
       tokenUsageSettings: parseTokenUsageSettings(parsed.tokenUsageSettings),
       usageCsvRowHashes: parseStringIdList(parsed.usageCsvRowHashes),
-      consentReceipts: parseConsentReceipts(parsed.consentReceipts)
-    };
-  } catch {
-    return null;
-  }
+    consentReceipts: parseConsentReceipts(parsed.consentReceipts)
+  };
 }
 
-export async function writePersistedState(state: PersistedAppState): Promise<void> {
-  // Errors propagate to the caller (usePersistence) so a genuine write failure
-  // (quota exceeded, disk error) can be surfaced instead of silently swallowed.
-  // `getStore()` already handles the Tauri-absent case by returning null.
+async function persistStateSnapshot(state: PersistedAppState): Promise<void> {
   const store = await getStore();
+  const secretFingerprint = state.aiConfig?.connectionMode === "api_key"
+    && state.aiConfig.apiKey.trim()
+    ? `${state.aiConfig.provider}:${state.aiConfig.baseUrl ?? ""}:${state.aiConfig.apiKey}`
+    : null;
   if (!store) {
-    // fallback
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    // The browser demo has no Keychain. Persist non-secret connection metadata
+    // only; users must re-enter a provider key after a browser reload.
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      ...state,
+      aiConfig: sanitizeAIConfigForPersistence(state.aiConfig),
+      aiCredentialBinding: null,
+    }));
+    currentAISecretBinding = null;
+    lastAISecretFingerprint = secretFingerprint;
     return;
   }
+
+  const buildSafeState = (binding: string | null) => ({
+    ...state,
+    aiConfig: sanitizeAIConfigForPersistence(state.aiConfig),
+    aiCredentialBinding: binding,
+    // Raw active-window samples are durably owned by the encrypted native
+    // journal, never duplicated into the general unencrypted Tauri Store.
+    activeWindowSamples: [],
+  });
+
+  if (secretFingerprint !== lastAISecretFingerprint) {
+    const previousStoreState = await store.get<unknown>(STATE_KEY);
+    const nextBinding = await commitAIProviderCredentialRotation({
+      apiKey: secretFingerprint ? state.aiConfig?.apiKey ?? "" : "",
+      previousBinding: currentAISecretBinding,
+      keychain: nativeAIProviderKeychain,
+      cleanupLegacySingleton: true,
+      commitBinding: (binding) => commitStoreValueWithRollback(
+        store,
+        STATE_KEY,
+        previousStoreState,
+        buildSafeState(binding),
+      ),
+    });
+    currentAISecretBinding = nextBinding;
+    lastAISecretFingerprint = secretFingerprint;
+    return;
+  }
+
   // Raw active-window samples are durably owned by the encrypted native journal.
   // Do not duplicate them into the general unencrypted Tauri Store. Browser/demo
   // mode has no native capture journal and keeps its documented fallback behavior.
-  await store.set(STATE_KEY, { ...state, activeWindowSamples: [] });
+  await store.set(STATE_KEY, buildSafeState(currentAISecretBinding));
   await store.save();
+  lastAISecretFingerprint = secretFingerprint;
 }
 
-export async function clearPersistedState(): Promise<void> {
+const persistenceCoordinator = createPersistenceCoordinator(persistStateSnapshot);
+
+export function writePersistedState(state: PersistedAppState): Promise<void> {
+  return persistenceCoordinator.schedule(state);
+}
+
+async function clearPersistedBackingState(): Promise<void> {
+  const failures: unknown[] = [];
+  let bindingToClear = currentAISecretBinding;
   try {
     const store = await getStore();
     if (!store) {
       window.localStorage.removeItem(STORAGE_KEY);
-      return;
+      if (window.localStorage.getItem(STORAGE_KEY) !== null) {
+        throw new Error("Browser storage still contains Weekform app state after reset.");
+      }
+    } else {
+      const existing = await store.get<unknown>(STATE_KEY);
+      if (isRecord(existing)) {
+        bindingToClear = parseAICredentialBinding(existing.aiCredentialBinding)
+          ?? bindingToClear;
+      }
+      await store.delete(STATE_KEY);
+      await store.save();
+      const remaining = await store.get<unknown>(STATE_KEY);
+      if (remaining !== null && remaining !== undefined) {
+        throw new Error("Tauri Store still contains Weekform app state after reset.");
+      }
     }
-    await store.delete(STATE_KEY);
-    await store.save();
-  } catch {
-    // ignore
+  } catch (error) {
+    failures.push(error);
   }
+
+  if (isTauriRuntime()) {
+    const accounts = new Set<string>([AI_PROVIDER_LEGACY_KEYCHAIN_ACCOUNT]);
+    if (bindingToClear) accounts.add(aiProviderKeychainAccount(bindingToClear));
+    for (const account of accounts) {
+      try {
+        await nativeAIProviderKeychain.delete(account);
+        const remainingSecret = await nativeAIProviderKeychain.get(account);
+        if (remainingSecret !== null) {
+          throw new Error("An AI provider credential remains in macOS Keychain after reset.");
+        }
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+  }
+
+  lastAISecretFingerprint = undefined;
+  if (failures.length > 0) {
+    // Keep the last known binding in memory so a same-process retry can still
+    // address and remove it even when the Store pointer was already deleted.
+    currentAISecretBinding = bindingToClear;
+    const error = new Error(
+      `Weekform could not verify that all persisted app state was cleared (${failures.length} failed operation${failures.length === 1 ? "" : "s"}).`,
+    );
+    Object.assign(error, { failures });
+    throw error;
+  }
+  currentAISecretBinding = null;
+}
+
+export function clearPersistedState(): Promise<void> {
+  return persistenceCoordinator.clear(clearPersistedBackingState);
 }
 
 // Best-effort read of the OS dark-mode preference, used as the first-launch

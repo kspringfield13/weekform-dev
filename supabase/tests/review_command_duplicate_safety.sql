@@ -5,7 +5,7 @@ begin;
 set local role postgres;
 set local search_path = public, extensions;
 create extension if not exists pgtap;
-select plan(25);
+select plan(27);
 
 select has_index(
   'public',
@@ -153,6 +153,22 @@ select throws_ok(
        'fedcba9876543210','confirm',null,'74000000-0000-4000-8000-000000000001') $$,
   '42501', 'permission denied for table review_commands',
   'the caller cannot evade duplicate safety with a direct table insert'
+);
+
+select is(
+  public.claim_review_command(
+    '75000000-0000-4000-8000-000000000001',
+    (select command_id from public.review_commands where block_id = 'block-duplicate-safe' and status = 'pending')
+  ),
+  'apply_pending',
+  'registered Mac claims the duplicate-safe request before mutation'
+);
+select ok(
+  public.mark_review_command_applied_locally(
+    '75000000-0000-4000-8000-000000000001',
+    (select command_id from public.review_commands where block_id = 'block-duplicate-safe' and status = 'pending')
+  ),
+  'registered Mac records local application before terminalization'
 );
 
 select lives_ok(

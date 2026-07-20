@@ -1908,7 +1908,84 @@ def chime_mission(status: str, mission_id: str = "", detail: str = "") -> None:
                 pass
 
 
-def stop(state: State, reason: str, status: str, runtime: dict[str, Any]) -> int:
+def final_report_run(runtime: dict[str, Any], state: State, engine: str,
+                     model: str = "") -> None:
+    """One last read-only agent run so the final report has a real summary.
+
+    Runs when the mission stops on an exhausted budget AND the latest agent
+    result carries no readable structured summary (e.g. the builder was cut
+    off by a limit before it could emit its JSON — report.md would otherwise
+    say nothing about what actually happened).
+
+    This run is deliberately EXEMPT from the mission cost/wall caps: the caps
+    bound the mission's build work, not the accounting of what happened. It
+    stays bounded by the engine's small read-only critic limits, and its cost
+    is still added to the mission total so the overrun is visible.
+    Disable with "report_beyond_budget": false in runtime.json.
+    """
+    if not runtime.get("report_beyond_budget", True):
+        return
+    if state.latest_agent_result:
+        latest = agent_structured(ROOT / state.latest_agent_result)
+        if isinstance(latest, dict) and str(latest.get("summary") or "").strip():
+            return  # the report already has a usable structured summary
+
+    say("budget exhausted before a readable agent report — running one final "
+        "read-only report pass beyond the mission budget "
+        '(disable with "report_beyond_budget": false in runtime.json)', "warn")
+    MONITOR.update(phase="final report", agent="reporter",
+                   agent_started=time.time())
+    prompt = (
+        "You are writing the final mission report. The mission loop has "
+        "stopped because its budget is exhausted; no further build work is "
+        "allowed. Do NOT edit any files. Inspect the working tree and the "
+        "iteration artifacts under .absoloop/tmp/ (prompts, agent results, "
+        "logs) to determine what was actually accomplished.\n\n"
+        f"Mission objective:\n{str(runtime.get('objective') or '').strip()}\n\n"
+        f"Definition of done: {json.dumps(runtime.get('definition_of_done', []))}\n\n"
+        "Return schema-valid JSON describing the real state of the work:\n"
+        "- summary: what was accomplished and what remains (concise, specific)\n"
+        "- changed_artifacts: files created or modified for the mission\n"
+        "- commands_run: read-only checks you ran and what they showed\n"
+        "- evidence: paths to screenshots or other proof, when present\n"
+        "- risks: known gaps, untested areas, or partial work\n"
+        "- done: true ONLY if the definition of done is genuinely met; "
+        "otherwise false\n"
+    )
+    out_path = TMP / f"iteration-{state.iteration:04d}-final-report-agent-result.json"
+    if engine == "claude":
+        run = run_claude(prompt, runtime["claude"]["critic"], out_path,
+                         label="reporter", model=model)
+    elif engine == "grok":
+        run = run_grok(prompt, runtime["grok"]["critic"], out_path,
+                       label="reporter", model=model)
+    else:
+        run = run_codex(prompt, runtime["codex"]["critic"],
+                        runtime["codex"].get("pricing"), out_path,
+                        RESULT_SCHEMA, label="reporter", model=model)
+
+    state.cost_usd += run.cost_usd
+    state.tokens_total += run.tokens or 0
+    if not run.cost_is_exact:
+        state.inexact_cost_events += 1
+    cap = float(runtime.get("max_cost_usd", 0))
+    over = state.cost_usd - cap
+    say(f"final report pass cost ${run.cost_usd:.2f} — mission total "
+        f"${state.cost_usd:.2f}"
+        + (f" (${over:.2f} over the ${cap:.2f} cap, sanctioned for the "
+           "final report)" if over > 0 else ""),
+        "dim")
+    MONITOR.update(cost_usd=round(state.cost_usd, 4),
+                   tokens_total=state.tokens_total, agent=None)
+    render_agent_report(out_path, "reporter")
+    if run.exit_code == 0 and not run.limit_reached:
+        state.latest_agent_result = str(out_path.relative_to(ROOT))
+
+
+def stop(state: State, reason: str, status: str, runtime: dict[str, Any],
+         engine: str = "", model: str = "") -> int:
+    if status == "BUDGET_EXHAUSTED" and engine:
+        final_report_run(runtime, state, engine, model=model)
     state.stop_reason = reason
     state.status = status
     checkpoint(state, "terminal")
@@ -2043,9 +2120,11 @@ def main() -> int:
                     "for a follow-on run with fresh budgets, or raise "
                     "max_wall_seconds in .absoloop/runtime.json then resume",
                     "err")
-            return stop(state, "wall_clock_budget", "BUDGET_EXHAUSTED", runtime)
+            return stop(state, "wall_clock_budget", "BUDGET_EXHAUSTED", runtime,
+                        engine=args.engine, model=model)
         if state.cost_usd >= float(runtime["max_cost_usd"]):
-            return stop(state, "cost_budget", "BUDGET_EXHAUSTED", runtime)
+            return stop(state, "cost_budget", "BUDGET_EXHAUSTED", runtime,
+                        engine=args.engine, model=model)
 
         # Re-read the mission config so an operator fix to budgets takes
         # effect on the next iteration instead of being silently ignored for
@@ -2196,7 +2275,8 @@ def main() -> int:
         if state.repeated_failure_count >= int(runtime["no_progress_window"]):
             return stop(state, "no_progress_window", "BLOCKED", runtime)
 
-    return stop(state, "iteration_budget", "BUDGET_EXHAUSTED", runtime)
+    return stop(state, "iteration_budget", "BUDGET_EXHAUSTED", runtime,
+                engine=args.engine, model=model)
 
 
 if __name__ == "__main__":

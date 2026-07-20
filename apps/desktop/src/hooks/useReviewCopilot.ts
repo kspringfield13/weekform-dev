@@ -103,7 +103,7 @@ export function useReviewCopilot({
       corrections,
     });
 
-    reviewCopilotAsync.start("generating");
+    const operationEpoch = reviewCopilotAsync.start("generating");
 
     try {
       const response = await withAiTimeout(
@@ -112,6 +112,7 @@ export function useReviewCopilot({
           { request: { prompt, ai_config: aiConfig } }
         )
       );
+      if (!reviewCopilotAsync.isCurrent(operationEpoch)) return;
       // The native response is JSON.parse-only (the strict schema is server-side and
       // unenforceable for a custom provider), so `suggestions` and each `work_block_ids`
       // are trusted-TS-but-not-runtime-checked arrays. A non-array would throw in the
@@ -171,6 +172,7 @@ export function useReviewCopilot({
         }),
       ].slice(-1000));
     } catch (error) {
+      if (!reviewCopilotAsync.isCurrent(operationEpoch)) return;
       const message = error instanceof Error ? error.message : String(error);
       reviewCopilotAsync.fail(message);
       setAuditEvents((current) => [
@@ -198,6 +200,6 @@ export function useReviewCopilot({
     reviewCopilotStatus,
     reviewCopilotError,
     generateReviewCopilotSuggestions,
-    resetReviewCopilot: reviewCopilotAsync.reset,
+    resetReviewCopilot: () => reviewCopilotAsync.reset(),
   };
 }

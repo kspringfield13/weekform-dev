@@ -43,19 +43,18 @@ export const RELEASE_INFO = {
   ],
 } as const;
 
-/**
- * Release artifact shipped with the website and served by its public static
- * CDN fallback. The authenticated page and redirect do not make this direct
- * content-addressed URL private; private access requires the Storage path.
- * The content-addressed directory makes cache updates explicit while keeping
- * the downloaded filename familiar to Mac users.
- */
-export const BUNDLED_ARTIFACT = {
-  filename: RELEASE_INFO.artifactFilename,
-  href: `/downloads/5a14980de083abb5/${RELEASE_INFO.artifactFilename}`,
-  sizeLabel: "6.4 MiB",
-  sha256: "5a14980de083abb536269c481788882ec60674f5434a19060e77dcbcf489cc6c",
-} as const;
+export interface ReleaseProof {
+  /** Explicit release attestation: signed with an Apple Developer ID identity. */
+  developerIdSigned: true;
+  /** Explicit release attestation: Apple's notarization service accepted it. */
+  notarized: true;
+  /** Explicit release attestation: the notarization ticket is stapled and validates. */
+  stapled: true;
+  /** SHA-256 of the exact DMG uploaded to private release storage. */
+  sha256: string;
+  /** ISO timestamp for the completed verification run. */
+  verifiedAt: string;
+}
 
 export interface ArtifactConfig {
   /** Supabase Storage bucket holding the official packaged artifact. */
@@ -68,6 +67,8 @@ export interface ArtifactConfig {
   serviceRoleKey: string;
   /** How long a signed URL stays valid, in seconds. */
   signedUrlTtlSeconds: number;
+  /** Required, explicit proof that the hosted bytes passed the Mac release gate. */
+  releaseProof: ReleaseProof;
 }
 
 export type ReleasePresentation =
@@ -94,10 +95,9 @@ const MAX_SIGNED_URL_TTL_SECONDS = 3600; // 1 hour
  *
  * Returns null (not a throw) when any required variable is missing or blank,
  * so callers can treat "unconfigured" as a first-class, honestly-labeled
- * state rather than an error — this is what powers the documented fallback:
- * when the official artifact hasn't been uploaded to a private bucket, the
- * page and route degrade to an honestly unavailable release action instead
- * of claiming a packaged download exists.
+ * state rather than an error. When private hosting or any required release
+ * proof is incomplete, the page and route degrade to an honestly unavailable
+ * release action instead of claiming a trusted package exists.
  */
 export function parseArtifactConfig(
   env: Record<string, string | undefined>,
@@ -106,8 +106,30 @@ export function parseArtifactConfig(
   const path = env.WEEKFORM_ARTIFACT_PATH?.trim();
   const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const developerIdSigned = parseRequiredAttestation(
+    env.WEEKFORM_ARTIFACT_DEVELOPER_ID_SIGNED,
+  );
+  const notarized = parseRequiredAttestation(
+    env.WEEKFORM_ARTIFACT_NOTARIZED,
+  );
+  const stapled = parseRequiredAttestation(env.WEEKFORM_ARTIFACT_STAPLED);
+  const sha256 = env.WEEKFORM_ARTIFACT_SHA256?.trim().toLowerCase();
+  const verifiedAt = env.WEEKFORM_ARTIFACT_VERIFIED_AT?.trim();
 
-  if (!bucket || !path || !supabaseUrl || !serviceRoleKey) {
+  if (
+    !bucket
+    || !path
+    || path.split("/").at(-1) !== RELEASE_INFO.artifactFilename
+    || !supabaseUrl
+    || !serviceRoleKey
+    || !developerIdSigned
+    || !notarized
+    || !stapled
+    || !sha256
+    || !/^[a-f0-9]{64}$/.test(sha256)
+    || !verifiedAt
+    || !isCanonicalUtcTimestamp(verifiedAt)
+  ) {
     return null;
   }
 
@@ -115,7 +137,20 @@ export function parseArtifactConfig(
     env.WEEKFORM_ARTIFACT_SIGNED_URL_TTL_SECONDS,
   );
 
-  return { bucket, path, supabaseUrl, serviceRoleKey, signedUrlTtlSeconds };
+  return {
+    bucket,
+    path,
+    supabaseUrl,
+    serviceRoleKey,
+    signedUrlTtlSeconds,
+    releaseProof: {
+      developerIdSigned,
+      notarized,
+      stapled,
+      sha256,
+      verifiedAt,
+    },
+  };
 }
 
 /** True when the private-bucket signed-URL path is fully configured. */
@@ -134,9 +169,8 @@ export function isArtifactConfigured(
  */
 export function getReleasePresentation(
   config: ArtifactConfig | null,
-  bundledArtifact: typeof BUNDLED_ARTIFACT | null = BUNDLED_ARTIFACT,
 ): ReleasePresentation {
-  if (!config && !bundledArtifact) {
+  if (!config) {
     return {
       kind: "pending",
       title: "Mac release is being finalized",
@@ -144,25 +178,38 @@ export function getReleasePresentation(
         "The Mac installer is completing its final release checks. You can keep using Weekform Web with the same account in the meantime.",
       action: { label: "Open Weekform Web", href: "/app" },
       detail:
-        "The installer will appear here after Apple distribution verification and secure release hosting are complete.",
+        "The installer will appear here only after Developer ID signing, Apple notarization, stapler validation, checksum recording, and secure private release hosting are complete.",
     };
   }
 
-  if (!config && bundledArtifact) {
-    return {
-      kind: "available",
-      action: { label: "Download now", href: "/download/artifact" },
-      filename: bundledArtifact.filename,
-      note: `${bundledArtifact.sizeLabel}. Open the DMG and move Weekform to Applications. This Build Week preview is not Developer ID signed or Apple-notarized, so macOS is expected to block first launch on another Mac. Use Weekform Web while a Gatekeeper-trusted Mac release is pending.`,
-    };
-  }
-
+  const verifiedDate = formatVerifiedDate(config.releaseProof.verifiedAt);
   return {
     kind: "available",
     action: { label: "Download now", href: "/download/artifact" },
     filename: RELEASE_INFO.artifactFilename,
-    note: `Your private link lasts ${formatTtl(config!.signedUrlTtlSeconds)}. Open the DMG, move Weekform to Applications, and launch it.`,
+    note: `Developer ID signed, Apple-notarized, and stapled; verified ${verifiedDate}. Your private link lasts ${formatTtl(config.signedUrlTtlSeconds)}. Open the DMG, move Weekform to Applications, and launch it.`,
   };
+}
+
+function parseRequiredAttestation(raw: string | undefined): true | null {
+  return raw?.trim().toLowerCase() === "true" ? true : null;
+}
+
+function isCanonicalUtcTimestamp(raw: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(raw)) {
+    return false;
+  }
+  const parsed = new Date(raw);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === raw;
+}
+
+function formatVerifiedDate(verifiedAt: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(verifiedAt));
 }
 
 /**
@@ -209,8 +256,6 @@ export async function planArtifactResponse(deps: {
   getUser: () => Promise<{ userId: string | null }>;
   /** Parsed private-bucket config, or null when unconfigured. */
   config: ArtifactConfig | null;
-  /** Website-hosted artifact URL used when private Storage is unconfigured. */
-  bundledArtifactUrl: string | null;
   /** Mint a signed URL; resolves null on storage failure. Service-key step. */
   createSignedUrl: (config: ArtifactConfig) => Promise<string | null>;
   /** The incoming request URL, base for the styled-page error redirect. */
@@ -242,20 +287,13 @@ export async function planArtifactResponse(deps: {
   }
 
   if (!deps.config) {
-    if (deps.bundledArtifactUrl) {
-      return {
-        kind: "redirect",
-        status: 307,
-        url: deps.bundledArtifactUrl,
-      };
-    }
     return {
       kind: "json",
       status: 503,
       body: {
         error: "artifact_not_configured",
         message:
-          "The official Weekform DMG has not been published to the private release bucket yet. Return to /download for current release status.",
+          "The verified Weekform DMG release is not fully configured. Return to /download for current release status.",
       },
     };
   }

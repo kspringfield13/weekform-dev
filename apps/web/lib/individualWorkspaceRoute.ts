@@ -12,6 +12,7 @@ export type IndividualSubview =
   | "skills"
   | "activity"
   | "audit"
+  | "sensitive"
   | "settings";
 
 export interface IndividualWorkspaceRoute {
@@ -36,6 +37,7 @@ const SCREEN_ROUTES = {
   skills: { destination: "agent", subview: "skills" },
   ledger: { destination: "history", subview: "activity" },
   audit: { destination: "history", subview: "audit" },
+  sensitive: { destination: "history", subview: "sensitive" },
   setup: { destination: "settings", subview: "settings" },
 } as const satisfies Record<string, IndividualWorkspaceRoute>;
 
@@ -51,7 +53,7 @@ const VALID_SUBVIEWS: Record<IndividualDestination, ReadonlySet<IndividualSubvie
   today: new Set(["today"]),
   week: new Set(["capacity", "forecast", "review", "usage", "summary"]),
   agent: new Set(["agent", "accelerate", "skills"]),
-  history: new Set(["activity", "audit"]),
+  history: new Set(["activity", "audit", "sensitive"]),
   settings: new Set(["settings"]),
 };
 

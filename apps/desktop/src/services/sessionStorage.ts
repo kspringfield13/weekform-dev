@@ -316,10 +316,21 @@ export async function writeCloudStateThrough(
   state: PersistedCloudStateV1
 ): Promise<void> {
   try {
-    await adapter.write(state);
+    await writeCloudStateStrictThrough(adapter, state);
   } catch {
     // Cloud preferences still work in memory when storage is unavailable.
   }
+}
+
+/**
+ * Confirmed write for consequential workflows. Unlike the best-effort wrapper,
+ * this rejects when storage cannot prove the complete envelope is durable.
+ */
+export async function writeCloudStateStrictThrough(
+  adapter: SessionStorageAdapter,
+  state: PersistedCloudStateV1
+): Promise<void> {
+  await adapter.write(state);
 }
 
 /** True only when the adapter confirms deletion or a durable revocation tombstone. */

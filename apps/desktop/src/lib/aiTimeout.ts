@@ -13,12 +13,11 @@ export const AI_TIMEOUT_MESSAGE = `The AI provider didn't respond within ${Math.
 /**
  * Race a Rust-mediated AI `invoke` against a bounded timeout.
  *
- * The native path has no cancellation (only the Agent wires an AbortController)
- * and the `reqwest` clients have no read timeout, so a hung provider would pin an
- * AI hook at "generating" forever. On timeout we reject with `AI_TIMEOUT_MESSAGE`
- * — the caller's existing catch then calls `fail(message)`, resetting status to
- * "error". The underlying request is not cancelled (it can't be); it simply
- * finishes in the background and its result is ignored.
+ * Native provider calls have connect/read/total timeouts and a total ceiling
+ * shorter than this UI timeout. Tauri invoke promises do not expose transport
+ * cancellation, so the Rust boundary guarantees the paid HTTP request has
+ * already ended before this fallback can abandon its promise. On timeout the
+ * caller's existing catch resets status to an actionable error.
  */
 export function withAiTimeout<T>(promise: Promise<T>, timeoutMs = AI_CALL_TIMEOUT_MS): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;

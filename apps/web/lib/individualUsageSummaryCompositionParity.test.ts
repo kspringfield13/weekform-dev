@@ -72,14 +72,16 @@ test("review-safe AI Usage preserves the Desktop screen hierarchy without recons
 
   assert.match(webSource, /Weekly AI usage/i);
   assert.match(webSource, /review-safe|not part of the Web replica|not uploaded/i);
-  assert.match(webSource, /role=["']status["']/);
+  assert.match(webSource, /empty-state-icon/);
+  assert.match(webSource, /empty-state-actions/);
+  assert.doesNotMatch(webSource, /role=["']status["']/);
   assert.match(
     webSource,
     /href=["']\/app\?screen=setup&settings_tab=ai-usage["']/,
     "Web AI Usage must preserve Desktop's operational handoff to AI Usage settings",
   );
-  assert.match(webSource, /href=["']\/download["']/);
-  assert.match(webSource, /Get Weekform for Mac/);
+  assert.doesNotMatch(webSource, /href=["']\/download["']/);
+  assert.doesNotMatch(webSource, /Get Weekform for Mac/);
   assert.doesNotMatch(
     webSource,
     /Open (?:Weekform for Mac|on Mac)/,

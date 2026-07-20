@@ -2,7 +2,10 @@ import Link from "next/link";
 import type { ReactNode, SVGProps } from "react";
 
 import type { PersonalWorkloadReplicaV1 } from "../../../packages/domain/src/personalCloud";
-import { buildPersonalAccelerationPresentation } from "@/lib/personalAccelerationPresentation";
+import {
+  buildPersonalAccelerationPresentation,
+  type PersonalAccelerationPresentation,
+} from "@/lib/personalAccelerationPresentation";
 import styles from "./PersonalAccelerationScreen.module.css";
 
 type IconName = "lock" | "rocket" | "sparkles" | "trend" | "zap";
@@ -38,6 +41,22 @@ function AccelerationIcon({
   );
 }
 
+function ConnectionAnnouncement({
+  presentation,
+}: {
+  presentation: PersonalAccelerationPresentation;
+}) {
+  return (
+    <p
+      className={styles.srOnly}
+      data-state={presentation.state}
+      role={presentation.state === "error" ? "alert" : "status"}
+    >
+      {presentation.statusLabel}. {presentation.context}
+    </p>
+  );
+}
+
 export function PersonalAccelerationScreen({
   replica,
   error = null,
@@ -47,14 +66,74 @@ export function PersonalAccelerationScreen({
 }) {
   const presentation = buildPersonalAccelerationPresentation(replica, error);
 
+  if (presentation.state === "waiting") {
+    return (
+      <section className={`${styles.screen} acceleration-screen`} aria-labelledby="personal-acceleration-title">
+        <header className={styles.header}>
+          <div>
+            <p className={styles.eyebrow}>Acceleration</p>
+            <h1 id="personal-acceleration-title">No acceleration plays mined yet.</h1>
+          </div>
+        </header>
+        <div className={styles.emptyState}>
+          <span className={styles.emptyIcon} aria-hidden="true">
+            <AccelerationIcon name="rocket" size={24} />
+          </span>
+          <strong>Nothing high-impact to accelerate yet.</strong>
+          <p>{presentation.context}</p>
+          <div className={styles.emptyActions}>
+            <Link className="button button-primary" href="/download">Get Weekform for Mac</Link>
+            <span className={styles.handoffNote}>After installing, review today on Mac to surface new plays.</span>
+          </div>
+        </div>
+        <section className={styles.trackRecord} aria-labelledby="personal-acceleration-track-title">
+          <AccelerationIcon name="trend" size={16} className={styles.trackIcon} aria-hidden="true" />
+          <div>
+            <h2 id="personal-acceleration-track-title">Realized savings</h2>
+            <p>Acted-on plays and their week-over-week outcomes stay local until a review-safe track record is available.</p>
+          </div>
+          <span className={styles.unavailable}>Not included in replica</span>
+        </section>
+      </section>
+    );
+  }
+
+  if (presentation.state === "error") {
+    return (
+      <section className={`${styles.screen} acceleration-screen`} aria-labelledby="personal-acceleration-title">
+        <header className={styles.header}>
+          <div>
+            <p className={styles.eyebrow}>Acceleration</p>
+            <h1 id="personal-acceleration-title">Acceleration availability could not be checked.</h1>
+          </div>
+        </header>
+        <div className={`${styles.connection} ${styles.connectionError}`} data-state={presentation.state} role="alert">
+          <span>{presentation.statusLabel}</span>
+          <p>{presentation.context}</p>
+        </div>
+        <div className={styles.emptyState}>
+          <span className={styles.emptyIcon} aria-hidden="true">
+            <AccelerationIcon name="rocket" size={24} />
+          </span>
+          <strong>The review-safe workspace is unavailable.</strong>
+          <p>No private evidence or local acceleration state was moved into the browser while the connection failed.</p>
+          <div className={styles.emptyActions}>
+            <Link className="button button-primary" href="/dashboard?screen=accelerate">Try again</Link>
+            <Link className="button button-secondary" href="/download">Get Weekform for Mac</Link>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className={`${styles.screen} acceleration-screen`} aria-labelledby="personal-acceleration-title">
       <header className={styles.header}>
         <div>
           <p className={styles.eyebrow}>Acceleration</p>
-          <h1 id="personal-acceleration-title">{presentation.headline}</h1>
+          <h1 id="personal-acceleration-title">Ways to reclaim your week.</h1>
           <p className={styles.intro}>
-            Weekform Web matches the Desktop workspace without uploading or reconstructing the local evidence behind a play.
+            Mined locally from your observed work in Weekform for Mac. Web shows the same decision hierarchy without uploading or reconstructing the private evidence behind a play.
           </p>
         </div>
         <div className={styles.total} aria-label="Estimated weekly savings unavailable on Web">
@@ -62,32 +141,21 @@ export function PersonalAccelerationScreen({
           <div><strong>—</strong><small>est. saved / week</small></div>
         </div>
       </header>
-
-      <div
-        className={styles.connection}
-        data-state={presentation.state}
-        role={presentation.state === "error" ? "alert" : "status"}
-      >
-        <span>{presentation.statusLabel}</span>
-        <p>{presentation.context}</p>
-      </div>
+      <ConnectionAnnouncement presentation={presentation} />
 
       <section className={styles.synthesis} aria-labelledby="personal-acceleration-synthesis-title">
-        <button
-          type="button"
+        <Link
           className="button button-primary"
-          disabled
-          aria-disabled="true"
+          href="/download"
           title="Skill generation requires private local evidence and your locally configured AI"
         >
           <AccelerationIcon name="sparkles" size={16} aria-hidden="true" />
-          Generate Skills
-        </button>
+          Get Weekform for Mac
+        </Link>
         <div>
-          <h2 id="personal-acceleration-synthesis-title">AI synthesis remains opt-in on Mac.</h2>
+          <h2 id="personal-acceleration-synthesis-title">Generate Skills on Mac.</h2>
           <p>Web receives no raw window titles, workflow evidence, prompts, saved recipes, or AI credentials.</p>
         </div>
-        <Link className="button button-secondary" href="/download">Get Weekform for Mac</Link>
       </section>
 
       <section className={styles.trackRecord} aria-labelledby="personal-acceleration-track-title">
@@ -123,6 +191,7 @@ export function PersonalAccelerationScreen({
             </p>
           </details>
           <div className={styles.actions}>
+            <p className={styles.localOnly}><AccelerationIcon name="lock" size={13} aria-hidden="true" /> Play actions stay on Mac.</p>
             <Link className="button button-primary" href="/download">Get Weekform for Mac</Link>
           </div>
         </article>
