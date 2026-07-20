@@ -1844,7 +1844,13 @@ h3 {
 .calendar-provider-meta { gap: 10px; margin-top: 5px; color: var(--text-subtle); font-size: 10px; }
 .calendar-provider-actions { justify-content: flex-end; gap: 6px; }
 .calendar-provider-actions .settings-control { white-space: nowrap; }
-.calendar-provider-actions .icon-button { width: 32px; height: 32px; }
+.calendar-provider-actions .icon-button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
 
 .chat-connect-overlay {
   z-index: 2100;
@@ -14161,12 +14167,18 @@ html[data-theme="dark"] .model-pricing-card {
   white-space: nowrap;
 }
 
+.model-pricing-content {
+  display: grid;
+  gap: 16px;
+  padding: 18px 20px 20px;
+}
+
 .pricing-detected-callout {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(220px, auto) auto;
   gap: 14px;
   align-items: center;
-  margin: 16px 20px 0;
+  margin: 0;
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--info) 24%, var(--border));
   border-radius: 9px;
@@ -14240,7 +14252,7 @@ html[data-theme="dark"] .model-pricing-card {
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
-  margin: 18px 20px;
+  margin: 0;
   padding: 22px;
   border: 1px dashed var(--border-strong);
   border-radius: 10px;
@@ -14251,6 +14263,14 @@ html[data-theme="dark"] .model-pricing-card {
 .model-pricing-empty > div {
   display: grid;
   gap: 3px;
+}
+
+.model-pricing-empty .empty-state-actions {
+  display: flex;
+  grid-column: 3;
+  grid-row: 1;
+  justify-content: flex-end;
+  margin: 0;
 }
 
 .model-pricing-empty strong {
@@ -14277,7 +14297,7 @@ html[data-theme="dark"] .model-pricing-card {
 }
 
 .model-pricing-table-wrap {
-  margin: 16px 20px;
+  margin: 0;
   overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 9px;
@@ -14511,7 +14531,7 @@ html[data-theme="dark"] .model-pricing-card {
 .model-price-catalog {
   display: grid;
   gap: 12px;
-  margin: 0 20px 16px;
+  margin: 0;
   padding: 14px;
   border: 1px solid color-mix(in srgb, var(--info) 22%, var(--border));
   border-radius: 10px;
@@ -14677,7 +14697,7 @@ html[data-theme="dark"] .model-pricing-card {
 }
 
 .pricing-sources {
-  margin: 0 20px 16px;
+  margin: 0;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 9px;
@@ -14898,11 +14918,21 @@ html[data-theme="dark"] .model-pricing-card {
 @container model-pricing (max-width: 640px) {
   .model-pricing-header,
   .pricing-detected-callout,
-  .model-pricing-empty,
   .model-price-catalog-header,
   .model-price-catalog-row,
   .pricing-source-list > a {
     grid-template-columns: 1fr;
+  }
+
+  .model-pricing-empty {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .model-pricing-empty .empty-state-actions {
+    grid-column: 2;
+    grid-row: auto;
+    justify-content: flex-start;
+    margin-top: 2px;
   }
 
   .model-pricing-summary {
@@ -14978,18 +15008,18 @@ html[data-theme="dark"] .model-pricing-card {
     padding-inline: 14px;
   }
 
-  .pricing-detected-callout,
-  .model-pricing-empty,
-  .model-pricing-table-wrap,
-  .model-price-catalog,
-  .pricing-sources {
-    margin-inline: 14px;
+  .model-pricing-content {
+    padding: 14px;
   }
 
   .model-pricing-table tr,
   .model-pricing-empty,
   .model-price-catalog-row {
     grid-template-columns: 1fr;
+  }
+
+  .model-pricing-empty .empty-state-actions {
+    grid-column: 1;
   }
 
   .model-pricing-table td:first-child,
