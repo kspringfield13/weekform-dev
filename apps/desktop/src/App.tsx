@@ -82,6 +82,7 @@ import { GettingStartedModal } from "./components/onboarding/GettingStartedModal
 import { WelcomeOverlay } from "./components/onboarding/WelcomeOverlay";
 import type { Screen, SettingsTab, WindowMode } from "./lib/types";
 import { ManagerAccessWorkspace } from "./admin/ManagerAccessWorkspace";
+import { createSimulationDemoState } from "./admin/simulationDemoData";
 import {
   getManagerModeMemberships,
   getWeekformWebAppUrl,
@@ -131,7 +132,15 @@ function calendarEventChanged(prior: OutlookCalendarEvent, next: OutlookCalendar
 export function App() {
   const [isTauriRuntime] = useState(() => isTauriWindow());
   const [isDemoMode] = useState(() => new URLSearchParams(window.location.search).get("demo") === "1");
-  const [persistedSnapshot, setPersistedSnapshot] = useState<PersistedAppState | null>(() => isDemoMode ? createDemoState() : null);
+  const [simulationPersonaId] = useState(() => {
+    const search = new URLSearchParams(window.location.search);
+    return search.get("simulator") === "1" ? search.get("simulationPersona") : null;
+  });
+  const isSimulationMode = isDemoMode && Boolean(simulationPersonaId);
+  const [persistedSnapshot, setPersistedSnapshot] = useState<PersistedAppState | null>(() => {
+    if (!isDemoMode) return null;
+    return simulationPersonaId ? createSimulationDemoState(simulationPersonaId) : createDemoState();
+  });
   // Date-derived keys that roll over across midnight / a week boundary in this
   // long-running tray app (see useDateContext) rather than freezing at mount.
   const { todayKey, currentWeekId, currentWeekRangeLabel, nextWeekId, nextWeekRangeLabel } =
@@ -2302,6 +2311,7 @@ export function App() {
       setTheme={setTheme}
       weekRangeLabel={active === "weekly-review" ? formatIsoWeekLabel(closingWeekId) : currentWeekRangeLabel}
       demoMode={isDemoMode}
+      simulationMode={isSimulationMode}
       showTrackingReminder={showTrackingReminder}
       toasts={toasts}
       onDismissToast={dismissToast}

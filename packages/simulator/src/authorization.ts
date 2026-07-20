@@ -1,6 +1,8 @@
 import type { SimulationAccessContext, SimulationAccessDecision } from "./types";
 
-export const SPAN_SIMULATOR_ADMIN_HREF = "/admin/span-simulator";
+export const SIMULATION_ADMIN_HREF = "/manager-access/simulation";
+/** Compatibility export retained for callers compiled against the original name. */
+export const SPAN_SIMULATOR_ADMIN_HREF = SIMULATION_ADMIN_HREF;
 export const LOCAL_SIMULATOR_ADMIN_EMAIL = "span.admin@example.test";
 export const LOCAL_SIMULATOR_ADMIN_PASSWORD = "Weekform-Span-2026!";
 
@@ -25,8 +27,8 @@ export function getLocalAdminPortalView(authenticated: boolean): LocalAdminPorta
     tools: authenticated
       ? [{
           href: SPAN_SIMULATOR_ADMIN_HREF,
-          label: "Span Simulator",
-          description: "Create and review synthetic workload scenarios."
+          label: "Simulation",
+          description: "Generate realistic spans or watch a live synthetic work session."
         }]
       : []
   };
@@ -34,10 +36,10 @@ export function getLocalAdminPortalView(authenticated: boolean): LocalAdminPorta
 
 export function authorizeSimulatorAccess(context: SimulationAccessContext): SimulationAccessDecision {
   if (!context.authenticated) {
-    return { allowed: false, reason: "Sign in before opening Span Simulator." };
+    return { allowed: false, reason: "Sign in before opening Simulation." };
   }
   if (!context.roles.includes("simulator_admin")) {
-    return { allowed: false, reason: "Span Simulator access requires the simulator_admin role." };
+    return { allowed: false, reason: "Simulation access requires the simulator_admin role." };
   }
   return { allowed: true, reason: "Simulator administrator authorized." };
 }

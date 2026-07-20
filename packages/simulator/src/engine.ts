@@ -30,6 +30,7 @@ import {
   zonedDateTimeToIso,
 } from "./clock";
 import { getPersona } from "./personas";
+import { getPersonaWorkCatalog } from "./workCatalog";
 import { validateSimulationConfig, validateSimulationDataset } from "./validate";
 import type {
   ArtifactStamp,
@@ -41,7 +42,10 @@ import type {
   SimulationForecast,
   SimulationMember,
   SimulationPersona,
+  SimulationBusinessRecord,
+  SimulationCommunication,
   SimulationSharedSnapshot,
+  SimulationWorkItem,
   SimulationWeekSnapshot,
 } from "./types";
 
@@ -54,6 +58,7 @@ const PROVENANCE = [
   "generateWeeklyNarrative",
   "analyzeInterruptionLoad",
   "buildAccelerationSignals",
+  "personaWorkCatalog",
 ];
 
 interface Intent {
@@ -66,6 +71,7 @@ interface Intent {
   plannedStatus: PlannedStatus;
   project: string;
   stakeholder: string;
+  workItemId: string;
 }
 
 interface RunIdentity {
@@ -87,14 +93,22 @@ function emptyArtifacts(): SimulationArtifacts {
     accelerationSignals: [],
     forecasts: [],
     sharedSnapshots: [],
+    workItems: [],
+    communications: [],
+    businessRecords: [],
     auditEvents: [],
   };
 }
 
 function cloneArtifacts(artifacts: SimulationArtifacts): SimulationArtifacts {
-  return Object.fromEntries(
-    Object.entries(artifacts).map(([key, values]) => [key, [...values]]),
-  ) as unknown as SimulationArtifacts;
+  const normalized = emptyArtifacts();
+  for (const key of Object.keys(normalized) as Array<keyof SimulationArtifacts>) {
+    const values = artifacts[key];
+    (normalized[key] as SimulationArtifact<unknown>[]) = Array.isArray(values)
+      ? [...(values as SimulationArtifact<unknown>[])]
+      : [];
+  }
+  return normalized;
 }
 
 function inputIdentity(config: SimulationConfig): RunIdentity {
@@ -179,6 +193,7 @@ function scenarioPressure(config: SimulationConfig, weekIndex: number, totalWeek
   let fragmentation = 1;
   let meetings = 1;
   let recovery = false;
+  let reactiveSpike = false;
 
   if (config.scenario.kind === "quiet") workload = 0.72;
   if (config.scenario.kind === "busy") workload = 1.2;
@@ -188,8 +203,9 @@ function scenarioPressure(config: SimulationConfig, weekIndex: number, totalWeek
     reactive = 1 + cycle * 0.08;
   }
   if (config.scenario.kind === "incident") {
-    reactive = weekIndex % 8 === 4 ? 1.8 : 1.12;
-    fragmentation = weekIndex % 8 === 4 ? 1.6 : 1.1;
+    reactiveSpike = weekIndex % 8 === 4;
+    reactive = reactiveSpike ? 1.8 : 1.12;
+    fragmentation = reactiveSpike ? 1.6 : 1.1;
   }
   if (config.scenario.kind === "launch") {
     const distance = Math.abs((weekIndex % 10) - 7);
@@ -209,6 +225,7 @@ function scenarioPressure(config: SimulationConfig, weekIndex: number, totalWeek
       if (weekIndex === 11) {
         reactive = 2;
         fragmentation = 1.75;
+        reactiveSpike = true;
       }
     } else if (weekIndex === 13 || weekIndex === 14) {
       workload = weekIndex === 13 ? 0.68 : 0.8;
@@ -224,7 +241,7 @@ function scenarioPressure(config: SimulationConfig, weekIndex: number, totalWeek
       meetings = 1.03 + ramp * 0.03;
     }
   }
-  return { workload, reactive, fragmentation, meetings, recovery };
+  return { workload, reactive, fragmentation, meetings, recovery, reactiveSpike };
 }
 
 function isUnavailable(config: SimulationConfig, memberOrdinal: number, date: string) {
@@ -241,6 +258,215 @@ function wallOffset(config: SimulationConfig, minutes: number) {
   return addMinutesToWallTime(config.workingHours.start, minutes);
 }
 
+function wallTimeMinutes(wallTime: string) {
+  const [hour, minute] = wallTime.split(":").map(Number);
+  return hour * 60 + minute;
+}
+
+function workingDayMinutes(config: SimulationConfig) {
+  return wallTimeMinutes(config.workingHours.end) - wallTimeMinutes(config.workingHours.start);
+}
+
+function atWorkOffset(config: SimulationConfig, date: string, offset: number) {
+  const boundedOffset = clamp(Math.round(offset), 0, workingDayMinutes(config));
+  return zonedDateTimeToIso(date, wallOffset(config, boundedOffset), config.timezone);
+}
+
+function activeWorkDates(
+  config: SimulationConfig,
+  memberOrdinal: number,
+  weekStart: string,
+) {
+  return Array.from({ length: 7 }, (_, day) => addDays(weekStart, day)).filter(
+    (date) => config.workDays.includes(isoWeekday(date)) && !isUnavailable(config, memberOrdinal, date),
+  );
+}
+
+function activeProjectPool(persona: SimulationPersona, projectCount: number) {
+  return Array.from({ length: projectCount }, (_, index) => {
+    const base = persona.projects[index % persona.projects.length];
+    const cycle = Math.floor(index / persona.projects.length);
+    return cycle === 0 ? base : `${base} · workstream ${cycle + 1}`;
+  });
+}
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.max(minimum, Math.min(maximum, value));
+}
+
+function round(value: number, precision = 0) {
+  const scale = 10 ** precision;
+  return Math.round(value * scale) / scale;
+}
+
+function pickRoleMode(
+  config: SimulationConfig,
+  persona: SimulationPersona,
+  date: string,
+  index: number,
+  pressure: ReturnType<typeof scenarioPressure>,
+  random: () => number,
+): WorkMode {
+  if (pressure.reactiveSpike && index === 2) return "Blocked";
+
+  const reactiveDemand = clamp(
+    (config.scenario.reactiveLoad / 100) * 0.65
+      + (persona.reactiveLoad.typicalPercent / 100) * 0.75,
+    0,
+    1.4,
+  ) * pressure.reactive;
+  const interruptionDemand = clamp(
+    (config.scenario.interruptions / 100) * 0.7
+      + Math.min(1, persona.interruptions.perFocusHour / 2.5) * 0.45,
+    0,
+    1.4,
+  ) * pressure.fragmentation;
+
+  // High controls have a guaranteed, visible scheduling consequence while the
+  // remaining duties continue to follow each persona's full mode distribution.
+  if (reactiveDemand >= 0.65 && index === 2) return "Reactive";
+  if (interruptionDemand >= 0.7 && index === 1) return "Fragmented";
+
+  const preferredDeepWorkDay = persona.deepWorkCadence.preferredDays.includes(isoWeekday(date));
+  const adjusted = persona.modeWeights
+    .filter((entry) => pressure.reactiveSpike || entry.value !== "Blocked")
+    .map((entry) => {
+      let multiplier = 1;
+      if (entry.value === "Reactive") multiplier = 0.3 + reactiveDemand * 1.8;
+      if (entry.value === "Fragmented") multiplier = 0.35 + interruptionDemand * 1.55;
+      if (entry.value === "Deep work" && preferredDeepWorkDay) multiplier = 1.35;
+      return { value: entry.value, weight: entry.weight * multiplier };
+    });
+  const total = adjusted.reduce((sum, entry) => sum + entry.weight, 0);
+  return weightedPick(adjusted.map((entry) => ({ ...entry, weight: (entry.weight / total) * 100 })), random);
+}
+
+function buildRoleArtifacts(
+  config: SimulationConfig,
+  persona: SimulationPersona,
+  member: SimulationMember,
+  memberOrdinal: number,
+  weekStart: string,
+  weekIndex: number,
+  pressure: ReturnType<typeof scenarioPressure>,
+): {
+  workItems: SimulationWorkItem[];
+  communications: SimulationCommunication[];
+  businessRecords: SimulationBusinessRecord[];
+} {
+  const catalog = getPersonaWorkCatalog(persona.id);
+  if (!catalog) throw new Error(`Persona ${persona.id} has no work catalog.`);
+  const random = createSeededRandom(`${config.seed}|${member.memberId}|week:${weekIndex}|work-world`);
+  const weekId = isoWeekId(weekStart);
+  const workItems: SimulationWorkItem[] = [];
+  const communications: SimulationCommunication[] = [];
+  const businessRecords: SimulationBusinessRecord[] = [];
+  const availableDates = activeWorkDates(config, memberOrdinal, weekStart);
+  if (availableDates.length === 0) return { workItems, communications, businessRecords };
+
+  const preferredDates = availableDates.filter((date) =>
+    persona.deepWorkCadence.preferredDays.includes(isoWeekday(date))
+  );
+  const scheduledDates = preferredDates.length > 0 ? preferredDates : availableDates;
+  const projects = activeProjectPool(persona, config.scenario.projectCount);
+  const dayMinutes = workingDayMinutes(config);
+  const dueOffset = Math.max(1, dayMinutes - Math.min(20, Math.max(1, dayMinutes * 0.08)));
+  const completionOffset = Math.max(1, dueOffset - Math.min(20, Math.max(1, dayMinutes * 0.08)));
+  const recordOffset = Math.max(1, dueOffset - Math.min(8, Math.max(1, dayMinutes * 0.03)));
+
+  Array.from({ length: 3 }, (_, index) => index).forEach((index) => {
+    const duty = catalog.duties[(weekIndex * 3 + index) % catalog.duties.length];
+    const pattern = catalog.communicationPatterns[(weekIndex + index) % catalog.communicationPatterns.length];
+    const measure = catalog.businessMeasures[(weekIndex * 2 + index) % catalog.businessMeasures.length];
+    const project = projects[(weekIndex * 3 + index) % projects.length];
+    const workItemId = `${member.memberId}:w${weekIndex}:work:${index}`;
+    const date = scheduledDates[(weekIndex + index) % scheduledDates.length];
+    const mode = pickRoleMode(config, persona, date, index, pressure, random);
+    const dueAt = atWorkOffset(config, date, dueOffset);
+    const pressureLoad = Math.max(0.7, pressure.workload + (pressure.reactive - 1) * 0.22);
+    const plannedMinutes = Math.max(15, Math.min(dayMinutes, Math.round(duty.typicalMinutes / 15) * 15));
+    const actualMinutes = Math.max(10, Math.min(dayMinutes, Math.round(plannedMinutes * pressureLoad * (0.82 + random() * 0.34))));
+    const blocked = mode === "Blocked";
+    const inProgress = !blocked && ((weekIndex + index) % 6 === 0 || (pressure.workload > 1.32 && index === 1));
+    const status: SimulationWorkItem["status"] = blocked ? "blocked" : inProgress ? "in-progress" : "completed";
+    const priority: SimulationWorkItem["priority"] =
+      blocked || pressure.reactive >= 1.55 ? "urgent" : pressure.workload >= 1.18 || duty.priority === "high" ? "high" : duty.priority;
+
+    workItems.push({
+      schemaVersion: 1,
+      workItemId,
+      weekId,
+      scheduledDate: date,
+      title: `SIMULATED — ${duty.title}`,
+      responsibility: duty.responsibility,
+      project,
+      deliverable: duty.deliverable,
+      category: blocked ? "Blocked / waiting / dependency delay" : duty.category,
+      mode,
+      status,
+      priority,
+      plannedMinutes,
+      actualMinutes,
+      dueAt,
+      completedAt: status === "completed" ? atWorkOffset(config, date, completionOffset) : null,
+      blockedReason: status === "blocked" ? "SIMULATED dependency review is waiting on an upstream owner." : null,
+      sourceSurface: duty.preferredSurface,
+    });
+
+    communications.push({
+      schemaVersion: 1,
+      communicationId: `${member.memberId}:w${weekIndex}:communication:${index}`,
+      weekId,
+      occurredAt: atWorkOffset(config, date, dayMinutes * (0.25 + index * 0.2)),
+      channel: pattern.channel,
+      direction: pattern.direction,
+      purpose: pattern.purpose,
+      subject: `SIMULATED — ${pattern.subject}`,
+      stakeholderGroup: persona.stakeholders[(weekIndex + index) % persona.stakeholders.length],
+      relatedWorkItemId: workItemId,
+      messageCount: pattern.channel === "meeting" ? 1 : Math.max(2, Math.round(3 + random() * 7 * pressure.reactive)),
+      responseMinutes: Math.max(
+        2,
+        Math.round(
+          persona.interruptions.recoveryMinutes.typical
+            * (0.65 + random() * 0.7)
+            * pressure.fragmentation,
+        ),
+      ),
+      actionItem: `Confirm the next step for ${duty.deliverable.toLowerCase()}.`,
+    });
+
+    const direction = measure.higherIsBetter ? 1 : -1;
+    const scenarioEffect = direction * ((pressure.workload - 1) * -0.08 + (pressure.recovery ? 0.04 : 0));
+    const seasonalWave = Math.sin((weekIndex + index) * 0.72) * 0.045;
+    const rawValue = measure.baseline * (1 + scenarioEffect + seasonalWave + (random() - 0.5) * 0.035);
+    const value = round(clamp(rawValue, measure.plausibleMin, measure.plausibleMax), 2);
+    const target = round(measure.target, 2);
+    const variancePct = target === 0 ? 0 : round(((value - target) / Math.abs(target)) * 100, 1);
+    businessRecords.push({
+      schemaVersion: 1,
+      recordId: `${member.memberId}:w${weekIndex}:business:${index}`,
+      weekId,
+      recordedAt: atWorkOffset(config, date, recordOffset),
+      relatedWorkItemId: workItemId,
+      relatedProject: project,
+      label: measure.label,
+      value,
+      target,
+      unit: measure.unit,
+      plausibleMin: measure.plausibleMin,
+      plausibleMax: measure.plausibleMax,
+      variancePct,
+      trend: Math.abs(value - measure.baseline) < Math.max(0.01, Math.abs(measure.baseline) * 0.01)
+        ? "flat"
+        : value > measure.baseline ? "up" : "down",
+      sourceSurface: measure.sourceSurface,
+    });
+  });
+
+  return { workItems, communications, businessRecords };
+}
+
 function makeIntents(
   config: SimulationConfig,
   persona: SimulationPersona,
@@ -248,123 +474,191 @@ function makeIntents(
   memberOrdinal: number,
   weekStart: string,
   weekIndex: number,
-  totalWeeks: number,
+  pressure: ReturnType<typeof scenarioPressure>,
+  workItems: SimulationWorkItem[],
 ) {
   const random = createSeededRandom(`${config.seed}|${member.memberId}|week:${weekIndex}|activity`);
-  const pressure = scenarioPressure(config, weekIndex, totalWeeks);
   const intents: Intent[] = [];
   const calendarEvents: OutlookCalendarEvent[] = [];
   const chatImports: RawEventImport[] = [];
-  const activeDates = Array.from({ length: 7 }, (_, day) => addDays(weekStart, day)).filter(
-    (date) => config.workDays.includes(isoWeekday(date)) && !isUnavailable(config, memberOrdinal, date),
+  const calendarWorkItemIds = new Map<string, string>();
+  const activeDates = activeWorkDates(config, memberOrdinal, weekStart);
+  const dayMinutes = workingDayMinutes(config);
+  if (activeDates.length === 0 || workItems.length === 0) {
+    return { intents, calendarEvents, calendarWorkItemIds, chatImports };
+  }
+
+  const meetingDensityFactor = clamp(0.2 + config.scenario.meetingDensity / 65, 0.2, 1.75);
+  const meetingTarget = persona.meetingBehavior.weeklyMinutes.typical
+    * meetingDensityFactor
+    * pressure.meetings;
+  const meetingDays = Math.min(
+    activeDates.length,
+    Math.max(0, Math.ceil(meetingTarget / Math.max(30, Math.min(90, dayMinutes * 0.18)))),
   );
-  const meetingTarget = persona.meetingBehavior.weeklyMinutes.typical *
-    (0.55 + config.scenario.meetingDensity / 100) * pressure.meetings;
-  const meetingDuration = meetingTarget > 520 ? 90 : 60;
-  const meetingDays = Math.min(activeDates.length, Math.max(0, Math.round(meetingTarget / meetingDuration)));
+  const meetingDuration = meetingDays === 0
+    ? 0
+    : clamp(Math.round((meetingTarget / meetingDays) / 15) * 15, 15, Math.min(90, dayMinutes * 0.2));
+  const reactiveDemand = clamp(
+    ((config.scenario.reactiveLoad / 100) * 0.65
+      + (persona.reactiveLoad.typicalPercent / 100) * 0.75)
+      * pressure.reactive,
+    0,
+    1.4,
+  );
+  const interruptionDemand = clamp(
+    ((config.scenario.interruptions / 100) * 0.7
+      + Math.min(1, persona.interruptions.perFocusHour / 2.5) * 0.45)
+      * pressure.fragmentation,
+    0,
+    1.4,
+  );
+
+  const contextIndexFor = (workItem: SimulationWorkItem, fallback: number) => {
+    const exact = persona.appContexts.findIndex((context) => context.family === workItem.sourceSurface);
+    return exact >= 0 ? exact : fallback % persona.appContexts.length;
+  };
+
+  const plannedStatusFor = (workItem: SimulationWorkItem): PlannedStatus => {
+    if (workItem.mode === "Blocked" || workItem.status === "blocked") return "blocked";
+    if (workItem.mode === "Reactive") return "unplanned";
+    if (workItem.mode === "Collaborative" && workItem.category === "Meetings / stakeholder syncs") return "fixed";
+    return "planned";
+  };
 
   const addIntent = (
     date: string,
     offset: number,
     duration: number,
+    workItem: SimulationWorkItem,
     contextIndex: number,
-    mode: WorkMode,
-    category: WorkCategory,
-    plannedStatus: PlannedStatus,
-    projectIndex: number,
     suffix: string,
   ) => {
+    const safeOffset = clamp(Math.round(offset), 0, Math.max(0, dayMinutes - 1));
+    const safeDuration = clamp(Math.round(duration), 1, Math.max(1, dayMinutes - safeOffset));
     const context = persona.appContexts[contextIndex % persona.appContexts.length];
-    const project = persona.projects[projectIndex % persona.projects.length];
-    const title = `${context.syntheticTitles[(weekIndex + projectIndex) % context.syntheticTitles.length]} · ${suffix} · ${member.memberId.split(":").pop()}`;
+    const title = `${workItem.title} · ${suffix} · ${member.memberId.split(":").pop()}`;
     intents.push({
-      start: zonedDateTimeToIso(date, wallOffset(config, offset), config.timezone),
-      end: zonedDateTimeToIso(date, wallOffset(config, offset + duration), config.timezone),
+      start: atWorkOffset(config, date, safeOffset),
+      end: atWorkOffset(config, date, safeOffset + safeDuration),
       appName: context.appName,
       windowTitle: title,
-      category,
-      mode,
-      plannedStatus,
-      project,
-      stakeholder: persona.stakeholders[(weekIndex + projectIndex) % persona.stakeholders.length],
+      category: workItem.category,
+      mode: workItem.mode,
+      plannedStatus: plannedStatusFor(workItem),
+      project: workItem.project,
+      stakeholder: persona.stakeholders[(weekIndex + contextIndex) % persona.stakeholders.length],
+      workItemId: workItem.workItemId,
     });
   };
 
   activeDates.forEach((date, dayIndex) => {
-    const categoryA = weightedPick(persona.categoryWeights, random);
-    const categoryB = weightedPick(persona.categoryWeights, random);
-    const fragmentationChance = Math.min(0.82, (config.scenario.fragmentation / 100) * pressure.fragmentation);
-    const fragmented = random() < fragmentationChance;
+    const primary = workItems[dayIndex % workItems.length];
+    const secondary = workItems[(dayIndex + 1) % workItems.length];
+    const tertiary = workItems[(dayIndex + 2) % workItems.length];
+    const preferredOffsets = persona.deepWorkCadence.preferredStartHours
+      .map((hour) => hour * 60 - wallTimeMinutes(config.workingHours.start))
+      .filter((offset) => offset >= 0 && offset <= dayMinutes * 0.28);
+    const morningOffset = primary.mode === "Deep work" && preferredOffsets.length > 0
+      ? preferredOffsets[(weekIndex + dayIndex) % preferredOffsets.length]
+      : 0;
+    const focusSlot = Math.max(12, dayMinutes * 0.23 - morningOffset);
+    const focusDuration = clamp(
+      primary.mode === "Deep work"
+        ? persona.deepWorkCadence.blockMinutes.typical
+        : primary.mode === "Reactive"
+          ? 20 + reactiveDemand * 38
+          : primary.plannedMinutes * 0.45,
+      10,
+      focusSlot,
+    );
 
-    if (fragmented) {
-      addIntent(date, 0, 28, dayIndex, "Fragmented", categoryA, "planned", dayIndex, "focus segment A");
-      addIntent(date, 32, 24, dayIndex + 1, "Reactive", "Ad hoc stakeholder requests", "unplanned", dayIndex + 1, "interrupting request");
-      addIntent(date, 61, 29, dayIndex, "Fragmented", categoryA, "planned", dayIndex, "focus recovery");
+    if (primary.mode === "Fragmented") {
+      const recoveryGap = clamp(
+        persona.interruptions.recoveryMinutes.typical * (0.65 + interruptionDemand * 0.35),
+        3,
+        Math.max(3, focusDuration * 0.25),
+      );
+      const segment = Math.max(5, (focusDuration - recoveryGap) / 2);
+      addIntent(date, morningOffset, segment, primary, contextIndexFor(primary, dayIndex), "focus segment A");
+      addIntent(date, morningOffset + segment + recoveryGap, segment, primary, contextIndexFor(primary, dayIndex), "focus recovery");
     } else {
-      addIntent(date, 0, pressure.recovery ? 75 : 90, dayIndex, "Deep work", categoryA, "planned", dayIndex, "protected focus");
+      addIntent(date, morningOffset, focusDuration, primary, contextIndexFor(primary, dayIndex), "primary duty block");
     }
-    addIntent(date, 105, 75, dayIndex + 1, fragmented ? "Fragmented" : "Deep work", categoryB, "planned", dayIndex + 1, "analysis block");
+
+    const secondOffset = dayMinutes * 0.27;
+    const secondDuration = clamp(
+      secondary.mode === "Reactive" ? 20 + reactiveDemand * 32 : secondary.plannedMinutes * 0.38,
+      10,
+      dayMinutes * 0.16,
+    );
+    addIntent(date, secondOffset, secondDuration, secondary, contextIndexFor(secondary, dayIndex + 1), "supporting duty block");
 
     if (dayIndex < meetingDays) {
-      const start = zonedDateTimeToIso(date, wallOffset(config, 240), config.timezone);
-      const end = zonedDateTimeToIso(date, wallOffset(config, 240 + meetingDuration), config.timezone);
+      const meetingItem = workItems.find((item) => item.mode === "Collaborative") ?? secondary;
+      const meetingOffset = dayMinutes * 0.47;
+      const start = atWorkOffset(config, date, meetingOffset);
+      const end = atWorkOffset(config, date, meetingOffset + meetingDuration);
+      const calendarEventId = `${member.memberId}:w${weekIndex}:meeting:${dayIndex}`;
       calendarEvents.push({
-        calendar_event_id: `${member.memberId}:w${weekIndex}:meeting:${dayIndex}`,
+        calendar_event_id: calendarEventId,
         uid: `sim-${memberOrdinal}-${weekIndex}-${dayIndex}@weekform.invalid`,
-        title: `SIMULATED — ${persona.meetingBehavior.recurringMeetings[dayIndex % persona.meetingBehavior.recurringMeetings.length]}`,
+        title: `${meetingItem.title} · ${persona.meetingBehavior.recurringMeetings[dayIndex % persona.meetingBehavior.recurringMeetings.length]}`,
         start_time: start,
         end_time: end,
         location: "Weekform simulator room",
         organizer: "simulator@weekform.invalid",
         attendee_count: 3 + ((weekIndex + dayIndex) % 6),
         source: "outlook_ics",
-        imported_at: zonedDateTimeToIso(weekStart, "08:00", config.timezone),
+        imported_at: atWorkOffset(config, activeDates[0], 0),
       });
-    } else {
-      addIntent(date, 240, 60, dayIndex + 2, "Collaborative", "Documentation / requirement clarification", "planned", dayIndex + 2, "collaboration block");
+      calendarWorkItemIds.set(calendarEventId, meetingItem.workItemId);
     }
 
-    const afternoonMode: WorkMode = fragmented || pressure.fragmentation > 1.25 ? "Fragmented" : "Deep work";
-    addIntent(date, 315, pressure.recovery ? 60 : 75, dayIndex + 2, afternoonMode, categoryA, "planned", dayIndex + 2, "delivery block");
+    const afternoonOffset = dayMinutes * 0.68;
+    const afternoonDuration = clamp(
+      tertiary.mode === "Deep work"
+        ? persona.deepWorkCadence.blockMinutes.typical * 0.65
+        : tertiary.mode === "Reactive"
+          ? 18 + reactiveDemand * 42
+          : tertiary.plannedMinutes * 0.4,
+      10,
+      dayMinutes * 0.14,
+    );
+    addIntent(date, afternoonOffset, afternoonDuration, tertiary, contextIndexFor(tertiary, dayIndex + 2), "delivery block");
 
-    if (!pressure.recovery || dayIndex % 2 === 0) {
-      // Keep the foreground timeline non-overlapping: reactive pressure raises the duration up to
-      // the closeout boundary, while extra pressure is expressed through fragmentation/overtime.
-      const reactiveDuration = Math.min(58, Math.round(30 + 18 * Math.min(1.6, pressure.reactive)));
-      addIntent(date, 405, reactiveDuration, dayIndex + 3, "Reactive", "Ad hoc stakeholder requests", "unplanned", dayIndex + 3, "reactive handling");
-      const burstStart = zonedDateTimeToIso(date, wallOffset(config, 396), config.timezone);
-      const burstEnd = zonedDateTimeToIso(date, wallOffset(config, 408), config.timezone);
-      chatImports.push({
-        event_id: `${member.memberId}:w${weekIndex}:chat:${dayIndex}`,
-        user_id: member.memberId,
-        timestamp_start: burstStart,
-        timestamp_end: burstEnd,
-        source_type: "chat",
-        app_name: "Slack Sandbox",
-        project_hint: "SIMULATED — reactive coordination",
-        metadata: {
-          provider: "weekform-sandbox",
-          messages: String(Math.max(2, Math.round(4 + pressure.reactive * 5 + random() * 4))),
-          mentions: String(random() < 0.5 ? 1 : 0),
-          surface: "channel",
-        },
-        privacy_level: "derived_only",
-      });
+    const reactiveItem = workItems.find((item) => item.mode === "Reactive") ?? primary;
+    const burstStartOffset = dayMinutes * 0.86;
+    const burstDuration = clamp(8 + reactiveDemand * 18, 8, dayMinutes * 0.07);
+    if (reactiveItem.mode === "Reactive" && !pressure.recovery) {
+      addIntent(date, burstStartOffset, burstDuration, reactiveItem, contextIndexFor(reactiveItem, dayIndex + 3), "reactive handling");
     }
 
-    const recurringCategory: WorkCategory =
-      persona.id === "data-analyst" || persona.id === "finance-analyst"
-        ? "Recurring reporting"
-        : "Admin / coordination";
-    addIntent(date, 468, 35, dayIndex + 4, "Collaborative", recurringCategory, "fixed", 0, "daily closeout");
-
-    const overtimeChance = (config.scenario.overtime / 100) * Math.max(1, pressure.workload - 0.1);
-    if (random() < overtimeChance || pressure.workload >= 1.35) {
-      addIntent(date, 515, 45, dayIndex, "Fragmented", "QA / data validation", "unplanned", 1, "deadline overtime");
-    }
+    const chatStart = atWorkOffset(config, date, dayMinutes * 0.83);
+    const chatEnd = atWorkOffset(config, date, dayMinutes * 0.83 + Math.max(3, Math.min(12, burstDuration)));
+    chatImports.push({
+      event_id: `${member.memberId}:w${weekIndex}:chat:${dayIndex}`,
+      user_id: member.memberId,
+      timestamp_start: chatStart,
+      timestamp_end: chatEnd,
+      source_type: "chat",
+      app_name: "Slack Sandbox",
+      project_hint: reactiveItem.project,
+      metadata: {
+        provider: "weekform-sandbox",
+        messages: String(Math.max(1, Math.round(
+          persona.reactiveLoad.burstsPerDay.typical * (0.4 + reactiveDemand) + random() * 3,
+        ))),
+        mentions: String(random() < interruptionDemand * 0.5 ? 1 : 0),
+        surface: "channel",
+        work_item_id: reactiveItem.workItemId,
+        interruption_recovery_minutes: String(persona.interruptions.recoveryMinutes.typical),
+      },
+      privacy_level: "derived_only",
+    });
   });
 
-  return { intents, calendarEvents, chatImports, pressure };
+  return { intents, calendarEvents, calendarWorkItemIds, chatImports };
 }
 
 function samplesFromIntents(intents: Intent[], member: SimulationMember, weekIndex: number): ActiveWindowSample[] {
@@ -392,6 +686,52 @@ function sessionKey(session: ActivitySession) {
 
 function intentKey(intent: Intent) {
   return `${intent.appName}|${intent.windowTitle}|${intent.start}`;
+}
+
+function linkImportedBlocksToWorkItems(
+  blocks: WorkBlock[],
+  events: RawEvent[],
+  workItems: SimulationWorkItem[],
+) {
+  const eventById = new Map(events.map((event) => [event.event_id, event]));
+  const workItemById = new Map(workItems.map((workItem) => [workItem.workItemId, workItem]));
+  return blocks.map((block) => {
+    const event = block.derived_from.map((eventId) => eventById.get(eventId)).find(Boolean);
+    const workItemId = event?.metadata.work_item_id;
+    const workItem = workItemId ? workItemById.get(workItemId) : undefined;
+    if (!workItem) return block;
+    return {
+      ...block,
+      category: workItem.category,
+      mode: workItem.mode,
+      planned_status: workItem.mode === "Blocked"
+        ? "blocked" as const
+        : workItem.mode === "Reactive"
+          ? "unplanned" as const
+          : block.planned_status,
+      project_name: workItem.project,
+      blocker_flag: workItem.mode === "Blocked" || workItem.status === "blocked",
+      evidence: [...block.evidence, `Work item: ${workItem.workItemId}`, `Synthetic duty: ${workItem.title}`],
+    };
+  });
+}
+
+function linkCalendarBlocksToWorkItems(
+  blocks: WorkBlock[],
+  calendarWorkItemIds: Map<string, string>,
+  workItems: SimulationWorkItem[],
+) {
+  const workItemById = new Map(workItems.map((workItem) => [workItem.workItemId, workItem]));
+  return blocks.map((block) => {
+    const workItemId = block.derived_from.map((eventId) => calendarWorkItemIds.get(eventId)).find(Boolean);
+    const workItem = workItemId ? workItemById.get(workItemId) : undefined;
+    if (!workItem) return block;
+    return {
+      ...block,
+      project_name: workItem.project,
+      evidence: [...block.evidence, `Work item: ${workItem.workItemId}`, `Synthetic duty: ${workItem.title}`],
+    };
+  });
 }
 
 function buildCorrections(
@@ -481,14 +821,25 @@ function generateMemberWeek(
   const persona = getPersona(member.personaId);
   if (!persona) throw new Error(`Persona ${member.personaId} disappeared during generation.`);
   const weekId = isoWeekId(weekStart);
-  const { intents, calendarEvents, chatImports } = makeIntents(
+  const pressure = scenarioPressure(config, weekIndex, totalWeeks);
+  const roleArtifacts = buildRoleArtifacts(
     config,
     persona,
     member,
     memberOrdinal,
     weekStart,
     weekIndex,
-    totalWeeks,
+    pressure,
+  );
+  const { intents, calendarEvents, calendarWorkItemIds, chatImports } = makeIntents(
+    config,
+    persona,
+    member,
+    memberOrdinal,
+    weekStart,
+    weekIndex,
+    pressure,
+    roleArtifacts.workItems,
   );
   const activeWindowSamples = samplesFromIntents(intents, member, weekIndex);
   const sessions = sessionizeActiveWindowSamples(activeWindowSamples);
@@ -509,7 +860,13 @@ function generateMemberWeek(
       app_name: session.app_name,
       window_title: session.window_title,
       project_hint: intent.project,
-      metadata: { simulated: "true", stakeholder: intent.stakeholder },
+      metadata: {
+        simulated: "true",
+        stakeholder: intent.stakeholder,
+        work_item_id: intent.workItemId,
+        work_category: intent.category,
+        work_mode: intent.mode,
+      },
       privacy_level: "local_only",
       category: intent.category,
       mode: intent.mode,
@@ -518,10 +875,19 @@ function generateMemberWeek(
     };
   });
   const imported = importRawEvents(sessionImports, { weekId, userId: member.memberId });
+  const linkedImportedBlocks = linkImportedBlocksToWorkItems(
+    imported.work_blocks,
+    imported.events,
+    roleArtifacts.workItems,
+  );
   const chatImported = importRawEvents(chatImports, { weekId, userId: member.memberId });
-  const calendarBlocks = outlookEventsToWorkBlocks(calendarEvents, weekId);
+  const calendarBlocks = linkCalendarBlocksToWorkItems(
+    outlookEventsToWorkBlocks(calendarEvents, weekId),
+    calendarWorkItemIds,
+    roleArtifacts.workItems,
+  );
   const virtualReviewTime = zonedDateTimeToIso(addDays(weekStart, 6), "18:00", config.timezone);
-  const reviewed = buildCorrections([...imported.work_blocks, ...calendarBlocks], member, weekIndex, virtualReviewTime);
+  const reviewed = buildCorrections([...linkedImportedBlocks, ...calendarBlocks], member, weekIndex, virtualReviewTime);
   const priorSnapshots = existing.weeklySnapshots
     .filter((entry) => entry.stamp.memberId === member.memberId)
     .map((entry) => entry.payload);
@@ -572,6 +938,9 @@ function generateMemberWeek(
   output.accelerationSignals = signals.map((payload, index) => artifact(payload, "acceleration", member, config, identity, `${coordinate}:a${index}`));
   output.forecasts = [artifact(forecast, "forecast", member, config, identity, coordinate)];
   output.sharedSnapshots = [artifact(shared, "shared", member, config, identity, coordinate)];
+  output.workItems = roleArtifacts.workItems.map((payload, index) => artifact(payload, "work-item", member, config, identity, `${coordinate}:wi${index}`));
+  output.communications = roleArtifacts.communications.map((payload, index) => artifact(payload, "communication", member, config, identity, `${coordinate}:cm${index}`));
+  output.businessRecords = roleArtifacts.businessRecords.map((payload, index) => artifact(payload, "business", member, config, identity, `${coordinate}:br${index}`));
   output.auditEvents = auditEvents.map((payload, index) => artifact(payload, "audit", member, config, identity, `${coordinate}:u${index}`));
   return output;
 }
@@ -600,7 +969,7 @@ function assembleDataset(config: SimulationConfig, artifacts: SimulationArtifact
     members,
     artifacts,
     weeklySnapshots,
-    realismReport: { valid: true, score: 100, checksRun: 8, violations: [] },
+    realismReport: { valid: true, score: 100, checksRun: 10, violations: [] },
     provenance: PROVENANCE,
   };
   const validation = validateSimulationDataset(dataset);
@@ -609,7 +978,7 @@ function assembleDataset(config: SimulationConfig, artifacts: SimulationArtifact
     realismReport: {
       valid: validation.valid,
       score: Math.max(0, 100 - validation.violations.filter((item) => item.severity === "error").length * 20 - validation.violations.filter((item) => item.severity === "warning").length * 5),
-      checksRun: 8,
+      checksRun: 10,
       violations: validation.violations,
     },
   };

@@ -23,7 +23,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     {window.location.pathname === "/manager-access" || window.location.pathname === "/admin"
       ? <ManagerAccessRoot />
-      : window.location.pathname === "/manager-access/span-simulator" || window.location.pathname === "/admin/span-simulator" || window.location.pathname.startsWith("/simulator-sandbox/")
+      : window.location.pathname === "/manager-access/simulation" || window.location.pathname === "/admin/simulation" || window.location.pathname === "/manager-access/span-simulator" || window.location.pathname === "/admin/span-simulator" || window.location.pathname.startsWith("/simulator-sandbox/")
       ? <SpanSimulatorRoot />
       : new URLSearchParams(window.location.search).get("window") === "compact-host"
       ? <CompactWindowHandoff />

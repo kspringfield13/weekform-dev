@@ -1,10 +1,15 @@
-# Weekform Span Simulator
+# Weekform Simulation
 
-Weekform Span Simulator is an administrator-oriented workload laboratory for generating clearly synthetic professional activity and running it through Weekform's real deterministic inference code. Its purpose is product testing, longitudinal scenario review, and safe demonstrations. It is not an employee-monitoring feature, a source of real workforce records, or a way to impersonate a person.
+Weekform Simulation is an administrator-oriented workload laboratory with two complementary functions:
+
+1. **Generate span** deterministically creates clearly synthetic, persona-based duties, communications, business records, and workload evidence across weeks, months, or years, then runs that evidence through Weekform's real deterministic inference code.
+2. **Live simulation** replays a short role-specific work loop in local development. A visible synthetic cursor works inside embedded Weekform-owned business sandboxes, returns to Weekform's actual demo UI, reviews a work block, and opens the Week and Forecast surfaces in real time.
+
+Its purpose is product testing, longitudinal scenario review, and safe demonstrations. It is not an employee-monitoring feature, a source of real workforce records, a way to impersonate a person, or an automation bridge to workplace applications.
 
 ## Current implementation status
 
-This repository contains a Fast Forward simulator vertical slice, a reviewable Supabase migration, and policy-test SQL. The Team Cloud web application described in the planning blueprint is not deployed from this checkout. The migration in `supabase/migrations/202607180001_span_simulator.sql` has not been applied to or verified against a live Supabase project, and the pgTAP-style contract in `supabase/tests/span_simulator_rls.sql` has not been run here because Supabase CLI/local services are unavailable.
+As of July 20, 2026, this repository contains the local Generate span and Live simulation functions, a reviewable Supabase migration, and policy-test SQL. Generate span is the longitudinal engine. Live simulation is a development-only, same-origin demonstration surface; it is not enabled in production builds. The Team Cloud web application described in the planning blueprint is not deployed from this checkout. The migration in `supabase/migrations/202607180001_span_simulator.sql` has not been applied to or verified against a live Supabase project, and the pgTAP-style contract in `supabase/tests/span_simulator_rls.sql` has not been run here because Supabase CLI/local services are unavailable.
 
 Any local Manager Access session in this prototype is a development convenience, not a production authorization boundary. Production cloud simulator access requires an authenticated Supabase user with an explicit row in `private.simulator_admins`; a normal member, team manager, local session marker, environment flag, or user-editable metadata value is insufficient.
 
@@ -22,14 +27,15 @@ Email: span.admin@example.test
 Password: Weekform-Span-2026!
 ```
 
-The Manager Access entry is automatically available in Settings → Account & Sharing during Vite development. **Open Manager Access** stays on the current local origin; after sign-in, Span Simulator appears as an isolated synthetic tool. Successful local authentication creates a tab-scoped `sessionStorage` marker so returning to Manager Access retains the session and directly pasting the simulator URL does not bypass sign-in. Monochrome display preferences use browser `localStorage` and never contain workload evidence or grant access. These published demo credentials and local browser values have no production or cloud access. The optional mock playback surfaces additionally require `VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true`.
+The Manager Access entry is automatically available in Settings → Account & Sharing during Vite development. **Open Manager Access** stays on the current local origin; after sign-in, Simulation appears as an isolated synthetic tool. Successful local authentication creates a tab-scoped `sessionStorage` marker so returning to Manager Access retains the session and directly pasting the Simulation URL does not bypass sign-in. Monochrome display preferences use browser `localStorage` and never contain workload evidence or grant access. These published demo credentials and local browser values have no production or cloud access. Live simulation is available only in Vite development and requires explicit per-run confirmation; there is no separate playback environment flag.
 
 ## Canonical pipeline
 
-Fast Forward generates upstream evidence before deriving outcomes:
+Generate span creates the synthetic work world and upstream evidence before deriving outcomes:
 
 ```text
-versioned persona + versioned scenario + date range + timezone + seed
+versioned persona + role catalog + versioned scenario + date range + timezone + seed
+→ linked role-specific work items, communications, and bounded business records
 → synthetic active-window samples, calendar events, and metadata-only chat events
 → real Weekform sessionizer and source adapters
 → real WorkBlock shapes
@@ -57,7 +63,7 @@ Member display names must contain `SIMULATED`, and `simulated_badge` is constrai
 
 Persona definitions are append-only by `(slug, persona_version)`: changing a persona requires a new version. Members, artifacts, and week snapshots are likewise insert/delete-only for authenticated simulator administrators; revised output comes from a new run rather than an in-place rewrite. Canonical run inputs—including configuration, sharing policy, execution mode, persona/scenario/generator versions, and seed—are immutable after insertion. Only lifecycle state, completion fingerprint, archive state, and their timestamps may advance on an existing run.
 
-Personas describe roles, responsibility patterns, app families, project mixes, meeting behavior, and seasonal pressure. They do not contain or derive from real employee profiles. Natural-language scenario direction and custom persona descriptions must stay abstract: do not paste real names, organizations, customers, email addresses, local paths, credentials, calendar text, or window titles.
+Personas describe roles, responsibility patterns, app families, project mixes, meeting behavior, and seasonal pressure. The versioned role catalog adds concrete duties, deliverables, communication patterns, and business measures with plausible synthetic bounds. Work items link to their communications and business records through synthetic identifiers so a reviewer can trace a role-specific activity without treating a derived Weekform metric as authored truth. Personas and catalogs do not contain or derive from real employee profiles. Natural-language scenario direction and custom persona descriptions must stay abstract: do not paste real names, organizations, customers, email addresses, local paths, credentials, calendar text, or window titles.
 
 ## Storage isolation
 
@@ -120,21 +126,23 @@ Archive is reversible and removes the run from the active simulation manager vie
 
 The existing personal full-backup/export path is separate and must not silently include simulator tables. Likewise, deleting a simulation run does not reset personal Weekform state, and resetting personal prototype data does not prove cloud simulation rows were deleted.
 
-## Controlled Local Playback boundary
+## Live simulation boundary
 
-Fast Forward is the required mode. Controlled Local Playback is optional and remains behind the simulator flag, a separate playback flag, and an explicit per-run confirmation.
+Generate span is the long-span function and performs no workplace-app automation. Live simulation is an optional Vite-development function behind the local Manager Access gate and an explicit per-run confirmation.
 
-The implemented proof of concept builds a validated action plan whose URLs are limited to exact allowlisted surfaces under a loopback `/simulator-sandbox/` route. It rejects external HTTPS/HTTP origins, lookalike hosts, `file:`, arbitrary localhost routes, query strings, fragments, and navigation supplied by generated page content. The mock pages expose only synthetic controls, and the plan marks `externalMutation` false.
+The live runner builds a validated action plan whose URLs are limited to exact loopback origins on port `5173`: allowlisted Weekform-owned `/simulator-sandbox/` surfaces with a known persona, and an exact Weekform demo URL carrying `demo=1`, `simulator=1`, an allowlisted screen, and a known `simulationPersona`. It rejects external origins, lookalike hosts, `file:`, arbitrary localhost routes, unexpected query parameters, fragments, and navigation supplied by generated page content. Every action is marked synthetic and external mutation is disabled.
 
-The current UI previews the plan and allows an administrator to open its mock pages manually; it does not yet launch or drive a dedicated browser profile. A production-capable runner must add a dedicated temporary profile, host-level external-network denial, immediate context closure on cancellation, and canonical event emission without AppleScript, OS-wide input automation, or foreground-window capture. Sandbox-only screenshots may be captured for synthetic demo evidence if explicitly enabled and permanently marked simulated.
+The runner executes inside a sandboxed, same-origin iframe and renders its own synthetic cursor overlay. It can click and type only through the allowlisted selectors in that embedded document. It does **not** move the macOS cursor, use AppleScript or OS-wide input automation, launch a dedicated browser profile, capture the foreground window, open external applications, or perform network/workplace mutations. Pause, step, restart, and cancellation operate on the local action sequence; missing selectors and disallowed URLs fail closed.
+
+When the loop returns to Weekform, it opens the actual Weekform application UI in demo mode with persona-shaped synthetic state. The review, navigation, Week, and Forecast interactions use the real UI handlers, but that embedded session is in memory: it does not read or write personal `PersistedAppState`, start capture, import personal sources, sync cloud data, or persist its simulated edits. The same-origin iframe is an observable local demonstration surface, not host-level network isolation and not proof that Weekform automates real workplace applications.
 
 ## Demo evidence
 
 The golden Senior Data Analyst scenario was exercised through the local admin workflow using synthetic data only:
 
-![Span Simulator preflight](assets/weekform-span-simulator-preflight.png)
+![Simulation Generate span preflight](assets/weekform-span-simulator-preflight.png)
 
-![Span Simulator results](assets/weekform-span-simulator-results.png)
+![Simulation Generate span results](assets/weekform-span-simulator-results.png)
 
 ## Known limitations
 
@@ -143,7 +151,7 @@ The golden Senior Data Analyst scenario was exercised through the local admin wo
 - Capacity weights and realism distributions are prototype heuristics, not organizational benchmarks.
 - Local prototype stores are unencrypted. Although simulator data is synthetic, natural-language scenario text can still become sensitive if an administrator ignores the input rules.
 - The committed migration and pgTAP contract are review artifacts until applied and run against a real Supabase environment. No RLS result should be reported as live proof from this checkout.
-- Controlled Local Playback currently validates and previews a sandbox action plan; it does not yet execute that plan in a dedicated browser profile. It is not evidence that Weekform can or should automate real workplace applications.
+- Live simulation executes only inside embedded Weekform-owned development pages. Its cursor is a visual overlay, not the operating-system cursor, and the local proof does not establish external-application automation or host-level network isolation.
 
 ## Verification gates
 
@@ -154,4 +162,4 @@ Before deployment:
 3. Prove anonymous, member, team-manager, forged-ID, and user-metadata role paths cannot enumerate or mutate simulation data.
 4. Prove explicit simulator admin access, provenance mismatch rejection, isolated view behavior, and cascade deletion.
 5. Run deterministic engine tests, the root `npm run build`, `npm audit --audit-level=moderate`, and the golden 26-week scenario.
-6. Inspect JSON/CSV exports and playback navigation manually with synthetic fixtures only.
+6. Inspect JSON/CSV exports and the embedded live loop manually with synthetic fixtures only; separately confirm that the Weekform portion remains demo-mode and in-memory.

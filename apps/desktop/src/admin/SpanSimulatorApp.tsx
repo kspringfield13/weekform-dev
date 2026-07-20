@@ -21,6 +21,7 @@ import {
   Layers3,
   LoaderCircle,
   LockKeyhole,
+  MousePointer2,
   Pause,
   Play,
   Plus,
@@ -46,9 +47,9 @@ import { serializeSimulationJson, serializeWeeklySnapshotsCsv } from "../../../.
 import { GOLDEN_SIMULATION_CONFIG } from "../../../../packages/simulator/src/golden";
 import { buildLocalPlaybackPlan, isAllowedPlaybackSurface } from "../../../../packages/simulator/src/playback";
 import { PERSONA_CATALOG } from "../../../../packages/simulator/src/personas";
+import { getPersonaWorkCatalog } from "../../../../packages/simulator/src/workCatalog";
 import type {
   ExecutionMode,
-  LocalPlaybackPlan,
   ScenarioKind,
   SharingLevel,
   SimulationConfig,
@@ -67,15 +68,15 @@ import {
   writeSimulationRuns,
   type StoredSimulationRun,
 } from "./simulatorRepository";
+import { LiveSimulationStage } from "./LiveSimulationStage";
 import "./span-simulator.css";
 
 type AdminView = "new" | "history" | "personas" | "run" | "results";
-type ResultTab = "overview" | "timeline" | "evidence" | "forecast" | "shared" | "quality" | "audit";
+type ResultTab = "overview" | "work-world" | "timeline" | "evidence" | "forecast" | "shared" | "quality" | "audit";
 
 const STEPS = ["Persona & Team", "Span", "Scenario", "Sharing", "Preflight"] as const;
 const LOCAL_SIMULATOR_AVAILABLE = import.meta.env.DEV;
-const PLAYBACK_FEATURE_ENABLED = LOCAL_SIMULATOR_AVAILABLE
-  && import.meta.env.VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK === "true";
+const PLAYBACK_FEATURE_ENABLED = LOCAL_SIMULATOR_AVAILABLE;
 const SCENARIOS: Array<{ id: ScenarioKind; label: string }> = [
   { id: "normal", label: "Normal" },
   { id: "quiet", label: "Quiet" },
@@ -201,11 +202,11 @@ function AccessBoundary({ children }: { children: ReactNode }) {
       <section className="sim-access-card" aria-labelledby="sim-access-title">
         <div className="sim-access-mark"><WeekformMark /></div>
         <span className="sim-kicker">Weekform admin lab</span>
-        <h1 id="sim-access-title">Span Simulator is locked.</h1>
+        <h1 id="sim-access-title">Simulation is locked.</h1>
         <p>
           {LOCAL_SIMULATOR_AVAILABLE
             ? decision.reason
-            : "The local Span Simulator is available only in development."}
+            : "The local Simulation tool is available only in development."}
         </p>
         <div className="sim-gate-note">
           <LockKeyhole size={17} aria-hidden />
@@ -229,10 +230,13 @@ function AccessBoundary({ children }: { children: ReactNode }) {
 export function SpanSimulatorRoot() {
   const sandboxMatch = /^\/simulator-sandbox\/([^/]+)$/.exec(window.location.pathname);
   if (sandboxMatch) {
-    if (PLAYBACK_FEATURE_ENABLED && isAllowedPlaybackSurface(sandboxMatch[1])) {
-      return <SimulatorSandbox surface={sandboxMatch[1]} />;
-    }
-    return <SimulatorSandboxLocked />;
+    return (
+      <AccessBoundary>
+        {PLAYBACK_FEATURE_ENABLED && isAllowedPlaybackSurface(sandboxMatch[1])
+          ? <SimulatorSandbox surface={sandboxMatch[1]} />
+          : <SimulatorSandboxLocked />}
+      </AccessBoundary>
+    );
   }
   return (
     <AccessBoundary>
@@ -253,6 +257,9 @@ function SpanSimulatorApp() {
   const [playbackConfirmation, setPlaybackConfirmation] = useState(false);
   const [deleteRun, setDeleteRun] = useState<StoredSimulationRun | null>(null);
   const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [livePlaybackPaused, setLivePlaybackPaused] = useState(false);
+  const [livePlaybackSpeed, setLivePlaybackSpeed] = useState(1);
+  const [livePlaybackOutcome, setLivePlaybackOutcome] = useState<{ runId: string | null; complete: boolean; error: string | null }>({ runId: null, complete: false, error: null });
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   const activeRun = runs.find((run) => run.id === activeRunId) ?? null;
@@ -292,6 +299,35 @@ function SpanSimulatorApp() {
 
   useEffect(() => {
     if (!activeRun || activeRun.status !== "running") return;
+    const isLive = activeRun.config.executionMode === "local-playback";
+    const activeOutcome = livePlaybackOutcome.runId === activeRun.id
+      ? livePlaybackOutcome
+      : { runId: activeRun.id, complete: false, error: null };
+    if (isLive && activeOutcome.error) {
+      updateRun(activeRun.id, (run) => ({
+        ...run,
+        status: "failed",
+        updatedAt: new Date().toISOString(),
+        error: `Live simulation stopped safely: ${activeOutcome.error}`,
+      }));
+      setToast("Live simulation stopped because an allowlisted action could not be completed.");
+      return;
+    }
+    if (activeRun.checkpoint.status === "complete") {
+      if (isLive && !activeOutcome.complete) return;
+      updateRun(activeRun.id, (run) => ({
+        ...run,
+        status: "complete",
+        updatedAt: new Date().toISOString(),
+        error: null,
+      }));
+      setToast(isLive
+        ? "Live simulation complete — the action sequence and deterministic span both finished."
+        : "Simulation complete — every artifact remains permanently marked synthetic.");
+      if (!isLive) setView("results");
+      return;
+    }
+    if (isLive && livePlaybackPaused) return;
     const timeout = window.setTimeout(() => {
       try {
         const checkpoint = advanceSimulation(activeRun.config, activeRun.checkpoint, 1);
@@ -300,11 +336,11 @@ function SpanSimulatorApp() {
           ...run,
           checkpoint,
           dataset: checkpoint.dataset,
-          status: checkpoint.status === "complete" ? "complete" : checkpoint.status,
+          status: checkpoint.status === "complete" && isLive ? "running" : checkpoint.status,
           updatedAt: now,
           error: null,
         }));
-        if (checkpoint.status === "complete") {
+        if (checkpoint.status === "complete" && !isLive) {
           setToast("Simulation complete — every artifact remains permanently marked synthetic.");
           setView("results");
         }
@@ -316,9 +352,11 @@ function SpanSimulatorApp() {
           error: error instanceof Error ? error.message : "The simulator stopped unexpectedly.",
         }));
       }
-    }, activeRun.config.executionMode === "local-playback" ? 420 : 90);
+    }, isLive
+      ? Math.max(1100, Math.round(14_000 / spanWeeks(activeRun.config))) / livePlaybackSpeed
+      : 90);
     return () => window.clearTimeout(timeout);
-  }, [activeRun?.id, activeRun?.status, activeRun?.checkpoint.nextWeekIndex]);
+  }, [activeRun?.id, activeRun?.status, activeRun?.checkpoint.nextWeekIndex, activeRun?.checkpoint.status, livePlaybackPaused, livePlaybackSpeed, livePlaybackOutcome.runId, livePlaybackOutcome.complete, livePlaybackOutcome.error]);
 
   const navigate = (next: AdminView) => {
     setView(next);
@@ -331,7 +369,7 @@ function SpanSimulatorApp() {
       return;
     }
     if (draft.executionMode === "local-playback" && !PLAYBACK_FEATURE_ENABLED) {
-      setToast("Controlled Local Playback is disabled. Enable its dedicated local feature flag first.");
+      setToast("Live simulation is available only in local Vite development.");
       return;
     }
     if (!validation.valid) {
@@ -359,6 +397,9 @@ function SpanSimulatorApp() {
     };
     commitRuns((current) => [run, ...current]);
     setActiveRunId(id);
+    setLivePlaybackPaused(false);
+    setLivePlaybackSpeed(1);
+    setLivePlaybackOutcome({ runId: id, complete: false, error: null });
     setPlaybackConfirmation(false);
     navigate("run");
   };
@@ -387,6 +428,8 @@ function SpanSimulatorApp() {
       updatedAt: new Date().toISOString(),
       error: null,
     }));
+    setLivePlaybackPaused(false);
+    setLivePlaybackOutcome({ runId: run.id, complete: false, error: null });
     setActiveRunId(run.id);
     navigate("run");
   };
@@ -416,6 +459,11 @@ function SpanSimulatorApp() {
   const comparedRuns = compareIds
     .map((id) => runs.find((run) => run.id === id))
     .filter((run): run is StoredSimulationRun => Boolean(run?.dataset));
+  const openMode = (executionMode: ExecutionMode) => {
+    setDraft((current) => ({ ...current, executionMode }));
+    setStep(0);
+    navigate("new");
+  };
 
   return (
     <div className="sim-app">
@@ -426,7 +474,7 @@ function SpanSimulatorApp() {
           <span>/</span>
           <a href="/manager-access">Manager Access</a>
           <span>/</span>
-          <b>Span Simulator</b>
+          <b>Simulation</b>
           <span className="admin-lab-badge">Admin lab</span>
         </div>
         <div className="sim-titlebar-actions">
@@ -436,10 +484,13 @@ function SpanSimulatorApp() {
         </div>
       </header>
 
-      <aside className="sim-sidebar" aria-label="Span Simulator navigation">
+      <aside className="sim-sidebar" aria-label="Simulation navigation">
         <nav>
-          <button type="button" className={view === "new" ? "is-active" : ""} onClick={() => navigate("new")}>
-            <Plus size={17} aria-hidden /><span><strong>New simulation</strong><small>Design a synthetic span</small></span>
+          <button type="button" className={view === "new" && draft.executionMode === "fast-forward" ? "is-active" : ""} onClick={() => openMode("fast-forward")}>
+            <Database size={17} aria-hidden /><span><strong>Generate span</strong><small>Weeks to years in seconds</small></span>
+          </button>
+          <button type="button" className={view === "new" && draft.executionMode === "local-playback" ? "is-active" : ""} onClick={() => openMode("local-playback")}>
+            <Activity size={17} aria-hidden /><span><strong>Live simulation</strong><small>Watch the real UI respond</small></span>
           </button>
           <button type="button" className={view === "history" || view === "results" || view === "run" ? "is-active" : ""} onClick={() => navigate("history")}>
             <History size={17} aria-hidden /><span><strong>Run history</strong><small>{runs.length} local run{runs.length === 1 ? "" : "s"}</small></span>
@@ -450,12 +501,12 @@ function SpanSimulatorApp() {
         </nav>
         <section className="sim-isolation-card" aria-label="Synthetic data isolation">
           <SyntheticBadge compact />
-          <strong>Isolated workload lab</strong>
+          <strong>Isolated simulation lab</strong>
           <p>No personal Weekform state is read on this route. Real team metrics exclude every run.</p>
           <ul>
             <li><Check size={12} aria-hidden /> Synthetic identities only</li>
             <li><Check size={12} aria-hidden /> Separate local store key</li>
-            <li><Check size={12} aria-hidden /> Cloud writes remain RLS-gated</li>
+            <li><Check size={12} aria-hidden /> No cloud or external writes</li>
           </ul>
         </section>
       </aside>
@@ -479,7 +530,20 @@ function SpanSimulatorApp() {
           />
         )}
         {view === "run" && activeRun && (
-          <RunScreen headingRef={headingRef} run={activeRun} onCancel={cancelActiveRun} onResume={() => resumeRun(activeRun)} onResults={() => navigate("results")} />
+          <RunScreen
+            headingRef={headingRef}
+            run={activeRun}
+            livePaused={livePlaybackPaused}
+            liveSpeed={livePlaybackSpeed}
+            onLivePausedChange={setLivePlaybackPaused}
+            onLiveSpeedChange={setLivePlaybackSpeed}
+            onLiveComplete={() => setLivePlaybackOutcome({ runId: activeRun.id, complete: true, error: null })}
+            onLiveFailure={(message) => setLivePlaybackOutcome({ runId: activeRun.id, complete: false, error: message })}
+            onLiveRestart={() => setLivePlaybackOutcome({ runId: activeRun.id, complete: false, error: null })}
+            onCancel={cancelActiveRun}
+            onResume={() => resumeRun(activeRun)}
+            onResults={() => navigate("results")}
+          />
         )}
         {view === "run" && !activeRun && <MissingRun headingRef={headingRef} onHistory={() => navigate("history")} />}
         {view === "results" && activeRun?.dataset && (
@@ -557,7 +621,7 @@ function SimulationWizard({
 
   const stepTitle = [
     "Who should this synthetic team represent?",
-    "How much virtual work should Weekform observe?",
+    draft.executionMode === "local-playback" ? "How much virtual context should the live session build?" : "How much virtual work should Weekform observe?",
     "What pressure should shape the span?",
     "What may the isolated manager view receive?",
     "Review the contract before generation starts.",
@@ -567,12 +631,30 @@ function SimulationWizard({
     <section className="sim-workflow" aria-labelledby="sim-wizard-title">
       <header className="sim-page-header">
         <div>
-          <span className="sim-kicker">New simulation</span>
+          <span className="sim-kicker">Simulation · {draft.executionMode === "fast-forward" ? "Generate span" : "Run live"}</span>
           <h1 id="sim-wizard-title" ref={headingRef} tabIndex={-1}>{stepTitle}</h1>
-          <p>Generate upstream synthetic evidence, then let Weekform’s real deterministic inference derive the result.</p>
+          <p>{draft.executionMode === "fast-forward"
+            ? "Generate concrete duties, communications, and business measures, then let Weekform’s real deterministic inference derive the long-span result."
+            : "Watch the selected persona work across local business sandboxes, return to the real Weekform UI, review evidence, and inspect what fits next."}</p>
         </div>
         <SyntheticBadge />
       </header>
+
+      <div className="sim-mode-lenses" role="radiogroup" aria-label="Simulation function">
+        <label className={draft.executionMode === "fast-forward" ? "is-selected" : ""}>
+          <input type="radio" name="simulation-function" checked={draft.executionMode === "fast-forward"} onChange={() => setDraft((current) => ({ ...current, executionMode: "fast-forward" }))} />
+          <Database size={18} aria-hidden />
+          <span><strong>Generate span</strong><small>Compress weeks, months, or years into realistic, inspectable workload evidence.</small></span>
+          <b>WEEKS → YEARS</b>
+        </label>
+        <i aria-hidden><span /></i>
+        <label className={draft.executionMode === "local-playback" ? "is-selected" : ""}>
+          <input type="radio" name="simulation-function" checked={draft.executionMode === "local-playback"} disabled={!playbackEnabled} onChange={() => setDraft((current) => ({ ...current, executionMode: "local-playback" }))} />
+          <MousePointer2 size={18} aria-hidden />
+          <span><strong>Live simulation</strong><small>Watch role-specific work, cursor movement, review, and Weekform decisions in real time.</small></span>
+          <b>SECONDS → MINUTES</b>
+        </label>
+      </div>
 
       <ol className="sim-stepper" aria-label="Simulation setup steps">
         {STEPS.map((label, index) => (
@@ -620,7 +702,7 @@ function SimulationWizard({
           </button>
         ) : (
           <button className="sim-button primary" type="button" disabled={!validation.valid} onClick={onStart}>
-            <Play size={15} aria-hidden /> Start simulated run
+            <Play size={15} aria-hidden /> {draft.executionMode === "fast-forward" ? "Generate synthetic span" : "Start live simulation"}
           </button>
         )}
       </footer>
@@ -699,12 +781,38 @@ function PersonaStep({ draft, setDraft }: { draft: SimulationConfig; setDraft: R
   );
 }
 
+function trapDialogFocus(event: React.KeyboardEvent<HTMLElement>, onClose: () => void) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    onClose();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusable = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(
+    "button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+  )).filter((element) => element.getAttribute("aria-hidden") !== "true");
+  if (focusable.length === 0) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 function PersonaDrawer({ persona, onClose }: { persona: SimulationPersona; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => { closeRef.current?.focus(); }, []);
+  const restoreFocusRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  useEffect(() => {
+    closeRef.current?.focus();
+    return () => restoreFocusRef.current?.focus();
+  }, []);
   return (
     <div className="sim-drawer-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <aside className="sim-drawer" role="dialog" aria-modal="true" aria-labelledby="persona-drawer-title">
+      <aside className="sim-drawer" role="dialog" aria-modal="true" aria-labelledby="persona-drawer-title" onKeyDown={(event) => trapDialogFocus(event, onClose)}>
         <header><div><SyntheticBadge compact /><h2 id="persona-drawer-title">{persona.displayName}</h2><p>{persona.role} · persona v{persona.version}</p></div><button ref={closeRef} type="button" aria-label="Close persona details" onClick={onClose}><X size={17} aria-hidden /></button></header>
         <section><h3>Responsibility patterns</h3><ul>{persona.responsibilities.map((item) => <li key={item}>{item}</li>)}</ul></section>
         <section><h3>Typical projects</h3><div className="sim-chip-list">{persona.projects.map((item) => <span key={item}>{item}</span>)}</div></section>
@@ -788,6 +896,12 @@ function SharingStep({ draft, setDraft }: { draft: SimulationConfig; setDraft: R
     { id: "summary+categories", title: "Summary + categories", body: "Adds aggregate work-category and mode allocation." },
     { id: "summary+categories+projects", title: "Summary + categories + projects", body: "Uses approved synthetic project labels in the isolated planning view." },
   ];
+  const previewLabel = draft.members
+    .map((member) => {
+      const persona = PERSONA_CATALOG.find((item) => item.id === member.personaId);
+      return `${persona?.displayName ?? "Synthetic persona"}${member.count > 1 ? ` ×${member.count}` : ""}`;
+    })
+    .join(" · ");
   return (
     <fieldset className="sim-fieldset">
       <legend>Sharing policy</legend>
@@ -801,7 +915,7 @@ function SharingStep({ draft, setDraft }: { draft: SimulationConfig; setDraft: R
         ))}
       </div>
       <section className="shared-preview" aria-label="Isolated manager preview">
-        <header><div><span className="sim-kicker">Isolated manager preview</span><h3>Senior Data Analyst</h3></div><SyntheticBadge /></header>
+        <header><div><span className="sim-kicker">Isolated manager preview</span><h3>{previewLabel || "Synthetic team"}</h3></div><SyntheticBadge /></header>
         <div className="shared-preview-grid"><div><span>Reliable capacity</span><strong>Derived at run time</strong></div><div><span>Reactive load</span><strong>Derived at run time</strong></div><div><span>Sharing scope</span><strong>{choices.find((choice) => choice.id === draft.sharingPolicy.level)?.title}</strong></div></div>
         <p><LockKeyhole size={14} aria-hidden /> Raw evidence, notes, screenshots, real identities, and window titles never enter this snapshot.</p>
       </section>
@@ -809,7 +923,7 @@ function SharingStep({ draft, setDraft }: { draft: SimulationConfig; setDraft: R
   );
 }
 
-function PreflightStep({ draft, setDraft, validation, playbackEnabled }: { draft: SimulationConfig; setDraft: React.Dispatch<React.SetStateAction<SimulationConfig>>; validation: ReturnType<typeof validateSimulationConfig>; playbackEnabled: boolean }) {
+function PreflightStep({ draft, setDraft: _setDraft, validation, playbackEnabled }: { draft: SimulationConfig; setDraft: React.Dispatch<React.SetStateAction<SimulationConfig>>; validation: ReturnType<typeof validateSimulationConfig>; playbackEnabled: boolean }) {
   const estimate = memberCount(draft) * spanWeeks(draft);
   return (
     <fieldset className="sim-fieldset">
@@ -822,49 +936,51 @@ function PreflightStep({ draft, setDraft, validation, playbackEnabled }: { draft
         <section><span className="sim-kicker">Canonical inputs</span><dl><div><dt>Personas / members</dt><dd>{draft.members.length} / {memberCount(draft)}</dd></div><div><dt>Date / span</dt><dd>{formatDate(draft.startDate)} · {draft.span.value} {draft.span.unit}</dd></div><div><dt>Timezone</dt><dd>{draft.timezone}</dd></div><div><dt>Scenario</dt><dd>{scenarioLabel(draft.scenario.kind)}</dd></div><div><dt>Seed</dt><dd><code>{draft.seed}</code></dd></div><div><dt>Generator</dt><dd>v{draft.generatorVersion}</dd></div></dl></section>
         <section><span className="sim-kicker">Estimated output</span><dl><div><dt>Member-weeks</dt><dd>{formatNumber(estimate)}</dd></div><div><dt>Evidence range</dt><dd>{formatNumber(estimate * 460)}–{formatNumber(estimate * 720)}</dd></div><div><dt>Snapshots</dt><dd>{formatNumber(estimate)}</dd></div><div><dt>Sharing</dt><dd>{draft.sharingPolicy.level}</dd></div></dl></section>
       </div>
-      <div className="execution-modes" role="radiogroup" aria-label="Execution mode">
-        {(["fast-forward", "local-playback"] as ExecutionMode[]).map((mode) => (
-          <label key={mode} className={`${draft.executionMode === mode ? "is-selected" : ""}${mode === "local-playback" && !playbackEnabled ? " is-disabled" : ""}`}>
-            <input type="radio" name="execution-mode" checked={draft.executionMode === mode} disabled={mode === "local-playback" && !playbackEnabled} onChange={() => setDraft((current) => ({ ...current, executionMode: mode }))} />
-            {mode === "fast-forward" ? <LoaderCircle size={18} aria-hidden /> : <Activity size={18} aria-hidden />}
-            <span><strong>{mode === "fast-forward" ? "Fast Forward" : "Controlled Local Playback"}</strong><small>{mode === "fast-forward" ? "Required, chunked historical generation through the real pipeline." : playbackEnabled ? "Weekform-owned localhost sandbox pages, synthetic credentials, and no external mutations." : "Disabled until VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true is set locally."}</small></span>
-          </label>
-        ))}
+      <div className="selected-execution-summary">
+        {draft.executionMode === "fast-forward" ? <LoaderCircle size={18} aria-hidden /> : <Activity size={18} aria-hidden />}
+        <div><span className="sim-kicker">Selected function</span><strong>{draft.executionMode === "fast-forward" ? "Generate span" : "Live simulation"}</strong><p>{draft.executionMode === "fast-forward" ? "Chunked historical generation through the real Weekform evidence pipeline." : playbackEnabled ? "Embedded same-origin business sandboxes plus the real Weekform demo UI; no personal state or external mutations." : "Live simulation is unavailable outside local development."}</p></div>
       </div>
       <p className="sim-contract-note"><ClipboardCheck size={16} aria-hidden /> Starting records run creation in the synthetic audit trail. Playback requires one additional explicit confirmation.</p>
     </fieldset>
   );
 }
 
-function RunScreen({ headingRef, run, onCancel, onResume, onResults }: { headingRef: React.RefObject<HTMLHeadingElement>; run: StoredSimulationRun; onCancel: () => void; onResume: () => void; onResults: () => void }) {
+function RunScreen({ headingRef, run, livePaused, liveSpeed, onLivePausedChange, onLiveSpeedChange, onLiveComplete, onLiveFailure, onLiveRestart, onCancel, onResume, onResults }: { headingRef: React.RefObject<HTMLHeadingElement>; run: StoredSimulationRun; livePaused: boolean; liveSpeed: number; onLivePausedChange: (paused: boolean) => void; onLiveSpeedChange: (speed: number) => void; onLiveComplete: () => void; onLiveFailure: (message: string) => void; onLiveRestart: () => void; onCancel: () => void; onResume: () => void; onResults: () => void }) {
   const total = spanWeeks(run.config);
   const current = run.checkpoint.nextWeekIndex;
   const progress = Math.round((Math.min(current, total) / total) * 100);
   const phases = ["Signals", "Sessions", "Work blocks", "Review", "Capacity", "Forecasts", "Shared snapshots", "Validation"];
   const phase = phases[Math.min(phases.length - 1, current % phases.length)];
-  const playback = run.config.executionMode === "local-playback" ? buildLocalPlaybackPlan(run.config) : null;
+  const playback = useMemo(
+    () => run.config.executionMode === "local-playback" ? buildLocalPlaybackPlan(run.config, window.location.origin) : null,
+    [run.id, run.config.executionMode],
+  );
+  const awaitingLiveSequence = Boolean(playback && run.status === "running" && run.checkpoint.status === "complete");
   return (
     <section className="sim-run-screen" aria-labelledby="sim-run-title">
-      <header className="sim-page-header run-header"><div><span className="sim-kicker">{run.status === "running" ? "Generation in progress" : "Generation checkpoint"}</span><h1 ref={headingRef} tabIndex={-1} id="sim-run-title">{run.name}</h1><p><SyntheticBadge compact /> <code>{run.id}</code> · seed <code>{run.config.seed}</code></p></div>{run.status === "running" ? <button className="sim-button danger" type="button" onClick={onCancel}><Pause size={15} aria-hidden /> Cancel run</button> : run.status === "canceled" || run.status === "failed" ? <button className="sim-button primary" type="button" onClick={onResume}><Play size={15} aria-hidden /> Resume checkpoint</button> : <button className="sim-button primary" type="button" onClick={onResults}>View results <ArrowRight size={15} aria-hidden /></button>}</header>
+      <header className="sim-page-header run-header"><div><span className="sim-kicker">{run.status === "running" ? awaitingLiveSequence ? "Live sequence in progress" : "Generation in progress" : run.status === "complete" ? "Simulation complete" : "Generation checkpoint"}</span><h1 ref={headingRef} tabIndex={-1} id="sim-run-title">{run.name}</h1><p><SyntheticBadge compact /> <code>{run.id}</code> · seed <code>{run.config.seed}</code></p></div>{run.status === "running" ? <button className="sim-button danger" type="button" onClick={onCancel}><Pause size={15} aria-hidden /> Cancel run</button> : run.status === "canceled" || run.status === "failed" ? <button className="sim-button primary" type="button" onClick={onResume}><Play size={15} aria-hidden /> Resume checkpoint</button> : <button className="sim-button primary" type="button" onClick={onResults}>View results <ArrowRight size={15} aria-hidden /></button>}</header>
       {run.error && <div className="sim-inline-alert error" role="alert"><CircleAlert size={16} aria-hidden />{run.error}</div>}
       <section className="run-stage" aria-live="polite" aria-busy={run.status === "running"}>
-        <div className="run-stage-top"><div className="run-pulse">{run.status === "running" ? <LoaderCircle className="spinning" size={20} aria-hidden /> : <Pause size={20} aria-hidden />}</div><div><span>Virtual clock</span><strong>{run.status === "running" ? phase : run.status === "canceled" ? "Canceled safely" : run.status}</strong></div><b>{progress}%</b></div>
+        <div className="run-stage-top"><div className="run-pulse">{run.status === "running" ? <LoaderCircle className="spinning" size={20} aria-hidden /> : <Pause size={20} aria-hidden />}</div><div><span>Virtual clock</span><strong>{run.status === "running" ? awaitingLiveSequence ? "Live actions" : phase : run.status === "canceled" ? "Canceled safely" : run.status}</strong></div><b>{progress}%</b></div>
         <Weekline total={total} current={current} status={run.status} />
-        <div className="run-facts"><div><span>Virtual week</span><strong>{Math.min(current + (run.status === "running" ? 1 : 0), total)} / {total}</strong></div><div><span>Persona</span><strong>{PERSONA_CATALOG.find((persona) => persona.id === run.config.members[0]?.personaId)?.displayName ?? "Synthetic member"}</strong></div><div><span>Phase</span><strong>{phase}</strong></div><div><span>Checkpoint</span><strong>{formatTimestamp(run.updatedAt)}</strong></div></div>
+        <div className="run-facts"><div><span>Virtual week</span><strong>{Math.min(current + (run.status === "running" ? 1 : 0), total)} / {total}</strong></div><div><span>Persona</span><strong>{PERSONA_CATALOG.find((persona) => persona.id === run.config.members[0]?.personaId)?.displayName ?? "Synthetic member"}</strong></div><div><span>Phase</span><strong>{awaitingLiveSequence ? "Live UI" : phase}</strong></div><div><span>Checkpoint</span><strong>{formatTimestamp(run.updatedAt)}</strong></div></div>
       </section>
-      {playback && <PlaybackPanel plan={playback} current={current} />}
+      {playback && (
+        <LiveSimulationStage
+          plan={playback}
+          status={run.status}
+          currentWeek={current}
+          totalWeeks={total}
+          paused={livePaused}
+          speed={liveSpeed}
+          onPausedChange={onLivePausedChange}
+          onSpeedChange={onLiveSpeedChange}
+          onComplete={onLiveComplete}
+          onFailure={onLiveFailure}
+          onRestart={onLiveRestart}
+        />
+      )}
       <section className="run-log"><header><span className="sim-kicker">Chunk log</span><strong>Resumable week checkpoints</strong></header><div>{Array.from({ length: current }, (_, index) => <div key={index}><CheckCircle2 size={14} aria-hidden /><span>Virtual week {index + 1}</span><small>Signals → sessions → work blocks → derived outputs</small></div>).reverse().slice(0, 8)}</div>{current === 0 && <p>Generation is preparing the first synthetic week.</p>}</section>
-    </section>
-  );
-}
-
-function PlaybackPanel({ plan, current }: { plan: LocalPlaybackPlan; current: number }) {
-  const action = plan.actions[current % plan.actions.length];
-  return (
-    <section className="playback-panel">
-      <header><div><span className="sim-kicker">Controlled local playback</span><h2>Sandbox action plan</h2></div><SyntheticBadge /></header>
-      <div className="playback-safety"><span><ShieldCheck size={14} aria-hidden /> Dedicated profile</span><span><LockKeyhole size={14} aria-hidden /> Synthetic credentials</span><span><X size={14} aria-hidden /> External mutations disabled</span></div>
-      {action && <div className="playback-current"><span>{action.type}</span><code>{action.url}</code><a href={action.url} target="_blank" rel="noreferrer">Open sandbox preview <ArrowRight size={13} aria-hidden /></a></div>}
     </section>
   );
 }
@@ -873,7 +989,7 @@ function ResultsScreen({ headingRef, run, otherRuns, onClone, onArchive, onDelet
   const [tab, setTab] = useState<ResultTab>("overview");
   const dataset = run.dataset!;
   const resultTabs: Array<{ id: ResultTab; label: string }> = [
-    { id: "overview", label: "Overview" }, { id: "timeline", label: "Timeline" }, { id: "evidence", label: "Evidence & reviews" }, { id: "forecast", label: "Forecasts & acceleration" }, { id: "shared", label: "Shared view" }, { id: "quality", label: "Quality" }, { id: "audit", label: "Audit" },
+    { id: "overview", label: "Overview" }, { id: "work-world", label: "Work & business data" }, { id: "timeline", label: "Timeline" }, { id: "evidence", label: "Evidence & reviews" }, { id: "forecast", label: "Forecasts & acceleration" }, { id: "shared", label: "Shared view" }, { id: "quality", label: "Quality" }, { id: "audit", label: "Audit" },
   ];
   return (
     <section className="sim-results" aria-labelledby="sim-results-title">
@@ -882,6 +998,7 @@ function ResultsScreen({ headingRef, run, otherRuns, onClone, onArchive, onDelet
       <div className="sim-tabs" role="tablist" aria-label="Simulation result views">{resultTabs.map((item) => <button type="button" role="tab" aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} key={item.id} className={tab === item.id ? "is-active" : ""} onClick={() => setTab(item.id)}>{item.label}</button>)}</div>
       <div className="sim-tab-panel" role="tabpanel">
         {tab === "overview" && <OverviewResult dataset={dataset} />}
+        {tab === "work-world" && <WorkWorldResult dataset={dataset} />}
         {tab === "timeline" && <TimelineResult dataset={dataset} />}
         {tab === "evidence" && <EvidenceResult dataset={dataset} />}
         {tab === "forecast" && <ForecastResult dataset={dataset} />}
@@ -895,7 +1012,37 @@ function ResultsScreen({ headingRef, run, otherRuns, onClone, onArchive, onDelet
 
 function OverviewResult({ dataset }: { dataset: SimulationDataset }) {
   const latest = dataset.weeklySnapshots[dataset.weeklySnapshots.length - 1]?.payload;
-  return <div className="result-stack"><div className="result-metrics"><Metric label="Artifacts" value={formatNumber(artifactCount(dataset))} helper="Canonical synthetic records" /><Metric label="Reliable capacity" value={`${Math.round(latest?.reliable_new_work_capacity_pct ?? 0)}%`} helper="Latest derived week" /><Metric label="Reactive load" value={`${Math.round(latest?.reactive_pct ?? 0)}%`} helper="Latest derived week" /><Metric label="Realism quality" value={`${Math.round(dataset.realismReport.score)}%`} helper={`${dataset.realismReport.checksRun} checks run`} /></div><TrendChart weeks={dataset.weeklySnapshots} /><section className="result-section"><header><div><span className="sim-kicker">Provenance</span><h2>Real Weekform pipeline</h2></div><ShieldCheck size={18} aria-hidden /></header><div className="provenance-flow">{dataset.provenance.map((item, index) => <span key={item}>{item}{index < dataset.provenance.length - 1 && <ChevronRight size={13} aria-hidden />}</span>)}</div></section></div>;
+  return <div className="result-stack"><div className="result-metrics"><Metric label="Artifacts" value={formatNumber(artifactCount(dataset))} helper="Canonical synthetic records" /><Metric label="Reliable capacity" value={`${Math.round(latest?.reliable_new_work_capacity_pct ?? 0)}%`} helper="Latest derived week" /><Metric label="Reactive load" value={`${Math.round(latest?.reactive_pct ?? 0)}%`} helper="Latest derived week" /><Metric label="Dataset quality" value={`${Math.round(dataset.realismReport.score)}%`} helper={`${dataset.realismReport.checksRun} constraints checked`} /></div><TrendChart weeks={dataset.weeklySnapshots} /><section className="result-section"><header><div><span className="sim-kicker">Provenance</span><h2>Real Weekform pipeline</h2></div><ShieldCheck size={18} aria-hidden /></header><div className="provenance-flow">{dataset.provenance.map((item, index) => <span key={item}>{item}{index < dataset.provenance.length - 1 && <ChevronRight size={13} aria-hidden />}</span>)}</div></section></div>;
+}
+
+function WorkWorldResult({ dataset }: { dataset: SimulationDataset }) {
+  const workItems = [...(dataset.artifacts.workItems ?? [])].reverse();
+  const communications = [...(dataset.artifacts.communications ?? [])].reverse();
+  const businessRecords = [...(dataset.artifacts.businessRecords ?? [])].reverse();
+  return (
+    <div className="result-stack work-world-result">
+      <div className="result-metrics">
+        <Metric label="Duties & tasks" value={formatNumber(workItems.length)} helper="Role-specific work items" />
+        <Metric label="Communications" value={formatNumber(communications.length)} helper="Chat, email, meetings, comments" />
+        <Metric label="Business records" value={formatNumber(businessRecords.length)} helper="Bounded operating measures" />
+        <Metric label="Projects" value={formatNumber(new Set(workItems.map((item) => item.payload.project)).size)} helper="Synthetic portfolio" />
+      </div>
+      <div className="result-grid two">
+        <section className="result-section work-item-ledger">
+          <header><div><span className="sim-kicker">Persona duties</span><h2>Concrete work across the span</h2></div><ClipboardCheck size={18} aria-hidden /></header>
+          <div>{workItems.slice(0, 18).map((artifact) => <article key={artifact.stamp.canonicalArtifactId}><span className={`work-status ${artifact.payload.status}`}>{artifact.payload.status}</span><div><strong>{artifact.payload.title}</strong><p>{artifact.payload.deliverable}</p><small>{artifact.payload.project} · {artifact.payload.actualMinutes} min · due {formatTimestamp(artifact.payload.dueAt)}</small></div></article>)}</div>
+        </section>
+        <section className="result-section communication-ledger">
+          <header><div><span className="sim-kicker">Communication rhythm</span><h2>Reasonable coordination, not random noise</h2></div><Activity size={18} aria-hidden /></header>
+          <div>{communications.slice(0, 18).map((artifact) => <article key={artifact.stamp.canonicalArtifactId}><span>{artifact.payload.channel}</span><div><strong>{artifact.payload.subject}</strong><p>{artifact.payload.purpose}</p><small>{artifact.payload.stakeholderGroup} · {artifact.payload.messageCount} exchange{artifact.payload.messageCount === 1 ? "" : "s"} · {artifact.payload.responseMinutes} min response</small></div></article>)}</div>
+        </section>
+      </div>
+      <section className="result-section business-records">
+        <header><div><span className="sim-kicker">Synthetic business data</span><h2>Plausible measures tied back to the work</h2></div><BarChart3 size={18} aria-hidden /></header>
+        <div>{businessRecords.slice(0, 24).map((artifact) => <article key={artifact.stamp.canonicalArtifactId}><span>{artifact.payload.label}</span><strong>{artifact.payload.value} <small>{artifact.payload.unit}</small></strong><p>Target {artifact.payload.target} · {artifact.payload.variancePct > 0 ? "+" : ""}{artifact.payload.variancePct}% · {artifact.payload.trend}</p><small>{artifact.payload.relatedProject}</small></article>)}</div>
+      </section>
+    </div>
+  );
 }
 
 function Metric({ label, value, helper }: { label: string; value: string; helper: string }) { return <div className="result-metric"><span>{label}</span><strong>{value}</strong><small>{helper}</small></div>; }
@@ -935,7 +1082,7 @@ function SharedResult({ dataset }: { dataset: SimulationDataset }) {
 function QualityResult({ dataset }: { dataset: SimulationDataset }) {
   const validated = validateSimulationDataset(dataset);
   const violations = [...dataset.realismReport.violations, ...validated.violations];
-  return <div className="result-stack"><div className={`quality-hero ${validated.valid && dataset.realismReport.valid ? "is-valid" : "is-warning"}`}><div className="quality-score"><strong>{Math.round(dataset.realismReport.score)}</strong><span>/100 realism</span></div><div><h2>{validated.valid && dataset.realismReport.valid ? "Constraints and privacy checks passed" : "Quality checks found issues"}</h2><p>{dataset.realismReport.checksRun} realism checks plus canonical privacy validation. Synthetic provenance remains inspectable on every artifact.</p></div></div><section className="result-section"><header><div><span className="sim-kicker">Constraint report</span><h2>{violations.length} violation{violations.length === 1 ? "" : "s"}</h2></div></header>{violations.length === 0 ? <div className="quality-pass"><CheckCircle2 size={18} aria-hidden /><div><strong>No impossible overlaps, PII, paths, or metric inconsistencies found.</strong><p>The same seed and versioned inputs can be replayed to confirm determinism.</p></div></div> : <div className="violation-list">{violations.map((item, index) => <article key={`${item.code}-${index}`} data-severity={item.severity}><span>{item.severity}</span><div><strong>{item.code}</strong><p>{item.message}</p></div><code>{item.weekId ?? item.artifactId ?? "run"}</code></article>)}</div>}</section></div>;
+  return <div className="result-stack"><div className={`quality-hero ${validated.valid && dataset.realismReport.valid ? "is-valid" : "is-warning"}`}><div className="quality-score"><strong>{Math.round(dataset.realismReport.score)}</strong><span>/100 constraints</span></div><div><h2>{validated.valid && dataset.realismReport.valid ? "Constraints and privacy checks passed" : "Quality checks found issues"}</h2><p>{dataset.realismReport.checksRun} dataset constraints cover provenance, privacy, links, and plausible business bounds. Synthetic provenance remains inspectable on every artifact.</p></div></div><section className="result-section"><header><div><span className="sim-kicker">Constraint report</span><h2>{violations.length} violation{violations.length === 1 ? "" : "s"}</h2></div></header>{violations.length === 0 ? <div className="quality-pass"><CheckCircle2 size={18} aria-hidden /><div><strong>No provenance, privacy, span, work-link, or business-bound violations found.</strong><p>The same seed and versioned inputs can be replayed to confirm determinism.</p></div></div> : <div className="violation-list">{violations.map((item, index) => <article key={`${item.code}-${index}`} data-severity={item.severity}><span>{item.severity}</span><div><strong>{item.code}</strong><p>{item.message}</p></div><code>{item.weekId ?? item.artifactId ?? "run"}</code></article>)}</div>}</section></div>;
 }
 
 function AuditResult({ dataset }: { dataset: SimulationDataset }) {
@@ -957,7 +1104,7 @@ function ComparePanel({ runs, onClose }: { runs: StoredSimulationRun[]; onClose:
   const leftLatest = leftWeeks[leftWeeks.length - 1].payload;
   const rightLatest = rightWeeks[rightWeeks.length - 1].payload;
   const rows = [{ label: "Reliable capacity", left: leftLatest.reliable_new_work_capacity_pct, right: rightLatest.reliable_new_work_capacity_pct }, { label: "Reactive load", left: leftLatest.reactive_pct, right: rightLatest.reactive_pct }, { label: "Meeting load", left: leftLatest.meeting_pct, right: rightLatest.meeting_pct }, { label: "Fragmentation", left: leftLatest.fragmented_work_pct, right: rightLatest.fragmented_work_pct }];
-  return <div className="compare-overlay" role="dialog" aria-modal="true" aria-labelledby="compare-title"><div className="compare-panel"><header><div><span className="sim-kicker">Side-by-side run comparison</span><h2 id="compare-title">Different conditions, inspectable outcomes</h2><p>Deltas describe workload shape; they never rank people or imply performance.</p></div><button type="button" aria-label="Close comparison" onClick={onClose}><X size={17} aria-hidden /></button></header><div className="compare-head"><div><SyntheticBadge compact /><strong>{left.name}</strong><span>Seed {left.config.seed} · {left.config.span.value} {left.config.span.unit}</span></div><div><SyntheticBadge compact /><strong>{right.name}</strong><span>Seed {right.config.seed} · {right.config.span.value} {right.config.span.unit}</span></div></div><div className="compare-table">{rows.map((row) => <div key={row.label}><span>{row.label}</span><strong>{Math.round(row.left)}%</strong><b>{Math.round(row.right - row.left) > 0 ? "+" : ""}{Math.round(row.right - row.left)} pts</b><strong>{Math.round(row.right)}%</strong></div>)}</div><div className="compare-quality"><span>{Math.round(left.dataset!.realismReport.score)}/100 realism</span><span>{Math.round(right.dataset!.realismReport.score)}/100 realism</span></div></div></div>;
+  return <div className="compare-overlay" role="dialog" aria-modal="true" aria-labelledby="compare-title"><div className="compare-panel"><header><div><span className="sim-kicker">Side-by-side run comparison</span><h2 id="compare-title">Different conditions, inspectable outcomes</h2><p>Deltas describe workload shape; they never rank people or imply performance.</p></div><button type="button" aria-label="Close comparison" onClick={onClose}><X size={17} aria-hidden /></button></header><div className="compare-head"><div><SyntheticBadge compact /><strong>{left.name}</strong><span>Seed {left.config.seed} · {left.config.span.value} {left.config.span.unit}</span></div><div><SyntheticBadge compact /><strong>{right.name}</strong><span>Seed {right.config.seed} · {right.config.span.value} {right.config.span.unit}</span></div></div><div className="compare-table">{rows.map((row) => <div key={row.label}><span>{row.label}</span><strong>{Math.round(row.left)}%</strong><b>{Math.round(row.right - row.left) > 0 ? "+" : ""}{Math.round(row.right - row.left)} pts</b><strong>{Math.round(row.right)}%</strong></div>)}</div><div className="compare-quality"><span>{Math.round(left.dataset!.realismReport.score)}/100 constraints</span><span>{Math.round(right.dataset!.realismReport.score)}/100 constraints</span></div></div></div>;
 }
 
 function PersonaCatalog({ headingRef, onUse }: { headingRef: React.RefObject<HTMLHeadingElement>; onUse: (persona: SimulationPersona) => void }) {
@@ -967,8 +1114,12 @@ function PersonaCatalog({ headingRef, onUse }: { headingRef: React.RefObject<HTM
 
 function ConfirmPlayback({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: () => void }) {
   const cancelRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => { cancelRef.current?.focus(); }, []);
-  return <div className="sim-dialog-overlay"><section className="sim-dialog" role="alertdialog" aria-modal="true" aria-labelledby="playback-confirm-title"><div className="sim-dialog-icon"><ShieldCheck size={20} aria-hidden /></div><h2 id="playback-confirm-title">Confirm controlled local playback</h2><p>Weekform will open only its localhost sandbox pages in a dedicated synthetic profile. It will not automate real applications, use real credentials, or permit external mutations.</p><ul><li><Check size={13} aria-hidden /> Cancelable immediately</li><li><Check size={13} aria-hidden /> Synthetic credentials only</li><li><Check size={13} aria-hidden /> Same canonical event adapter as Fast Forward</li></ul><div className="sim-dialog-actions"><button ref={cancelRef} className="sim-button secondary" type="button" onClick={onCancel}>Cancel</button><button className="sim-button primary" type="button" onClick={onConfirm}>Confirm and start playback</button></div></section></div>;
+  const restoreFocusRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
+  useEffect(() => {
+    cancelRef.current?.focus();
+    return () => restoreFocusRef.current?.focus();
+  }, []);
+  return <div className="sim-dialog-overlay"><section className="sim-dialog" role="alertdialog" aria-modal="true" aria-labelledby="playback-confirm-title" onKeyDown={(event) => trapDialogFocus(event, onCancel)}><div className="sim-dialog-icon"><ShieldCheck size={20} aria-hidden /></div><h2 id="playback-confirm-title">Confirm controlled live simulation</h2><p>Weekform will run an embedded, same-origin synthetic business session and operate the real Weekform demo UI. It will not move the macOS cursor, automate external applications, use real credentials, or permit network mutations.</p><ul><li><Check size={13} aria-hidden /> Pause or cancel immediately</li><li><Check size={13} aria-hidden /> Synthetic identities and in-memory Weekform state only</li><li><Check size={13} aria-hidden /> Same persona work catalog as Generate span</li></ul><div className="sim-dialog-actions"><button ref={cancelRef} className="sim-button secondary" type="button" onClick={onCancel}>Cancel</button><button className="sim-button primary" type="button" onClick={onConfirm}>Confirm and start simulation</button></div></section></div>;
 }
 
 function DeleteRunDialog({ run, onCancel, onDelete }: { run: StoredSimulationRun; onCancel: () => void; onDelete: () => void }) {
@@ -981,11 +1132,63 @@ function MissingRun({ headingRef, onHistory }: { headingRef: React.RefObject<HTM
 }
 
 function SimulatorSandbox({ surface }: { surface: string }) {
+  const personaId = new URLSearchParams(window.location.search).get("persona") ?? "data-analyst";
+  const persona = PERSONA_CATALOG.find((entry) => entry.id === personaId) ?? PERSONA_CATALOG[0];
+  const catalog = getPersonaWorkCatalog(persona.id)!;
   const surfaceName = surface.replace(/-/g, " ");
-  const items = ["Synthetic Q3 operating review", "Dashboard migration checkpoint", "Quarter-end variance analysis", "Forecast validation queue"];
-  return <main className="sandbox-app"><header><div><WeekformMark /><strong>Weekform Sandbox</strong></div><SyntheticBadge /><span>Localhost only · no external mutations</span></header><section><aside><span className="sim-kicker">Mock application</span><h1>{surfaceName}</h1><p>This controlled page emits only canonical synthetic simulator actions.</p><nav>{["Inbox", "Workspace", "Reports", "Planning"].map((item, index) => <button type="button" key={item} className={index === 1 ? "is-active" : ""}>{item}</button>)}</nav></aside><div className="sandbox-workspace"><header><div><span className="sim-kicker">Simulated work queue</span><h2>Quarter-end reporting + dashboard migration</h2></div><button type="button" data-synthetic-action="open-dashboard">Synthetic action</button></header>{surface === "documents" && <label className="sim-full-field"><span>SIMULATED scenario notes</span><textarea data-synthetic-input="notes" defaultValue="" /></label>}<div className="sandbox-grid">{items.map((item, index) => <article key={item}><span>{index % 2 === 0 ? "Analysis" : "Migration"}</span><strong>{item}</strong><p>Generated context for a sandboxed {surfaceName} session.</p><button type="button">Open mock item</button></article>)}</div></div></section><footer><ShieldCheck size={14} aria-hidden /> Dedicated synthetic profile · external network disabled · cancel from Span Simulator</footer></main>;
+  const [openedItem, setOpenedItem] = useState<string | null>(null);
+  const [replyPrepared, setReplyPrepared] = useState(false);
+  const surfaceTitle = {
+    projects: "Priority work queue",
+    documents: "Work product draft",
+    chat: "Stakeholder coordination",
+    bi: "Operating measures",
+    code: "Delivery workspace",
+    crm: "Relationship workspace",
+    email: "Synthetic correspondence",
+    meetings: "Working session",
+  }[surface] ?? "Synthetic workspace";
+
+  return (
+    <main className="sandbox-app">
+      <header><div><WeekformMark /><strong>Weekform Business Sandbox</strong></div><SyntheticBadge /><span>Localhost only · no external mutations</span></header>
+      <section>
+        <aside>
+          <span className="sim-kicker">{persona.role} workspace</span>
+          <h1>{surfaceName}</h1>
+          <p>{persona.responsibilities[0]}</p>
+          <nav>{["Queue", "Work", "Measures", "Decisions"].map((item, index) => <button type="button" key={item} className={index === 1 ? "is-active" : ""}>{item}</button>)}</nav>
+        </aside>
+        <div className="sandbox-workspace">
+          <header>
+            <div><span className="sim-kicker">SIMULATED · {surfaceTitle}</span><h2>{catalog.duties[0].title}</h2><p>{catalog.duties[0].deliverable}</p></div>
+            <button type="button" data-synthetic-action="open-work-item" onClick={() => setOpenedItem(catalog.duties[0].id)}>{openedItem ? "Work item open" : "Open priority item"}</button>
+          </header>
+
+          {surface === "documents" && (
+            <label className="sim-full-field sandbox-note-field"><span>SIMULATED work note</span><textarea data-synthetic-input="notes" defaultValue="" placeholder={`Draft ${catalog.duties[0].deliverable.toLowerCase()}`} /></label>
+          )}
+          {surface === "chat" && (
+            <section className="sandbox-conversation" aria-label="Synthetic stakeholder conversation">
+              <div><span>{persona.stakeholders[0]}</span><p><strong>SIMULATED</strong> {catalog.communicationPatterns[0].subject}. Can you confirm the decision boundary and timing?</p></div>
+              {replyPrepared && <div className="is-reply"><span>{persona.displayName}</span><p><strong>SIMULATED</strong> I have the request. I’ll attach the evidence and confirm the next step in the work record.</p></div>}
+              <button type="button" data-synthetic-action="reply" onClick={() => setReplyPrepared(true)}>{replyPrepared ? "Mock reply prepared" : "Prepare mock reply"}</button>
+            </section>
+          )}
+
+          <div className="sandbox-measures" aria-label="Synthetic business measures">
+            {catalog.businessMeasures.map((measure) => <article key={measure.label}><span>{measure.label}</span><strong>{measure.baseline} <small>{measure.unit}</small></strong><p>Target {measure.target} · plausible {measure.plausibleMin}–{measure.plausibleMax}</p></article>)}
+          </div>
+          <div className="sandbox-grid">
+            {catalog.duties.map((duty, index) => <article key={duty.id} className={openedItem === duty.id ? "is-open" : ""}><span>{duty.category}</span><strong>SIMULATED — {duty.title}</strong><p>{duty.deliverable}</p><footer><em>{duty.typicalMinutes} min</em><b>{duty.priority}</b></footer><button type="button" onClick={() => setOpenedItem(duty.id)}>{openedItem === duty.id ? "Selected" : "Open work item"}</button></article>)}
+          </div>
+        </div>
+      </section>
+      <footer><ShieldCheck size={14} aria-hidden /> Embedded synthetic session · same-origin only · no network writes · cancel from Simulation</footer>
+    </main>
+  );
 }
 
 function SimulatorSandboxLocked() {
-  return <main className="sim-access-shell"><section className="sim-access-card" aria-labelledby="sandbox-locked-title"><div className="sim-access-mark"><LockKeyhole /></div><span className="sim-kicker">Weekform controlled playback</span><h1 id="sandbox-locked-title">Sandbox playback is locked.</h1><p>This localhost-only surface requires the dedicated playback flag and an allowlisted mock application route.</p><div className="sim-gate-note"><ShieldCheck size={17} aria-hidden /><div><strong>Dedicated playback gate</strong><span>Set <code>VITE_ENABLE_SPAN_SIMULATOR_PLAYBACK=true</code> only for explicit local sandbox sessions.</span></div></div><a className="sim-button secondary" href="/manager-access/span-simulator">Return to Span Simulator</a></section></main>;
+  return <main className="sim-access-shell"><section className="sim-access-card" aria-labelledby="sandbox-locked-title"><div className="sim-access-mark"><LockKeyhole /></div><span className="sim-kicker">Weekform live simulation</span><h1 id="sandbox-locked-title">Synthetic surface is locked.</h1><p>This route is available only inside the local development Simulation tool and only for an allowlisted same-origin business surface.</p><div className="sim-gate-note"><ShieldCheck size={17} aria-hidden /><div><strong>Development-only boundary</strong><span>Open Live simulation through authenticated Manager Access; production and external URLs remain blocked.</span></div></div><a className="sim-button secondary" href="/manager-access/simulation">Return to Simulation</a></section></main>;
 }

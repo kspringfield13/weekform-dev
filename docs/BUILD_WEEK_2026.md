@@ -156,7 +156,7 @@ the product vocabulary and approval boundaries remained human-directed.
   12 routes; root `npm run build`, `npm run audit:check` (zero vulnerabilities
   in both workspaces), and `git diff --check` pass.
 
-### Manager Access and Span Simulator access
+### Manager Access and Simulation access
 
 - **Date:** July 19, 2026
 - **Outcome:** **Manager Access** is the only manager-facing product surface.
@@ -181,9 +181,10 @@ the product vocabulary and approval boundaries remained human-directed.
 - **Boundary:** the current desktop manager workspace is visibly labeled
   **Synthetic preview**. It uses deterministic synthetic approved summaries,
   makes no model request, reads no personal `PersistedAppState`, and performs no
-  production team write. Span Simulator stays an isolated, development-only
+  production team write. Simulation stays an isolated, development-only
   synthetic tool with separate simulator authorization and RLS requirements.
-  Live simulator execution and live multi-actor RLS proof are not claimed.
+  At this July 19 milestone, live execution was not yet claimed. The July 20
+  local implementation below does not change the production or RLS boundary.
 - **Evidence:** tests cover owner/manager filtering, single-team routing,
   authenticated-route protection, six-person comparison, combined roster
   filters, approval/cancellation behavior, safe web handoff, and monochrome
@@ -198,6 +199,44 @@ the product vocabulary and approval boundaries remained human-directed.
 The work used separate desktop and web implementers plus an independent critic;
 the maintainer supplied the local-first/cloud-complexity boundary and requested
 the alignment QA.
+
+### Simulation work world and observable live loop
+
+- **Date:** July 20, 2026
+- **Outcome:** the administrator tool is now presented as **Simulation** with
+  two first-class functions. **Generate span** creates deterministic,
+  persona-based duties, work items, communications, and plausibly bounded
+  business records across weeks, months, or years. Those records link back to
+  synthetic work-item identifiers, while Weekform outcomes still come from the
+  real signal → session → work-block → reviewed-evidence → deterministic-model
+  pipeline. **Live simulation** uses the same persona catalog to show a short
+  business-work loop, a visible synthetic cursor, a return to Weekform, review
+  of a real demo-mode work block, and navigation through the actual Week and
+  Forecast UI.
+- **Implementation:** live actions run in a sandboxed same-origin iframe and
+  are limited to exact loopback port `5173` URLs, known persona parameters, and
+  allowlisted selectors. The Weekform leg uses persona-shaped synthetic demo
+  state and the application's real UI handlers. The stage exposes pause,
+  resume, step, restart, speed, a role transcript, and a business-action →
+  staged-context → demo-review → decision ribbon so the scripted live path is
+  not misrepresented as native foreground capture. A live run is complete only
+  after both its finite action plan and deterministic span generation finish.
+- **Boundary:** Live simulation exists only in Vite development and requires
+  explicit per-run confirmation. Its cursor is rendered inside Weekform; it is
+  not the macOS cursor. It does not use AppleScript, OS-wide input automation,
+  a dedicated browser profile, external applications, or external network
+  mutations. The embedded Weekform session is demo-mode and in-memory: it reads
+  no personal `PersistedAppState`, starts no capture/import, and persists no
+  simulated UI edits. This is not evidence of production browser automation,
+  real workplace-app control, host-level network isolation, or live multi-actor
+  RLS behavior.
+- **Evidence:** simulator contracts were expanded red-first to cover all ten
+  persona work catalogs, linked duties/communications/business records for long
+  spans, exact playback URL constraints, and actual Weekform UI actions. The
+  simulator suite passes 21/21, including work-item-to-raw-event-to-WorkBlock
+  traceability, scenario/persona responsiveness, and calendar bounds. The
+  authoritative root `npm run build`
+  passes. Browser and native proof remain separate evidence surfaces.
 
 ### Weekform Web and Mac entry choice
 
@@ -297,6 +336,72 @@ The hackathon-readiness and provenance task is supplemental evidence:
 - **User-visible outcome:** Weekform for Mac can explicitly enable a private, review-safe Web replica. The authenticated Web dashboard shows derived capacity and reviewable blocks, sends confirm/exclude/relabel requests, and states that the Mac must approve every request. Private Supabase Broadcast invalidations refresh the server-rendered view; the 15-second request-fresh loop remains the fallback.
 - **Implementation evidence:** `PersonalWorkloadReplicaV1` is built field-by-field with no raw evidence fields; desktop sync uses registered devices, durable offline batches, idempotent batch ids, server cursors, and block revisions. The additive Supabase migration defines RLS-scoped replicas, commands, hardened RPCs, and private Broadcast authorization. Native capture writes AES-256-GCM journal entries before emitting a sample, keeps the journal/session keys in macOS Keychain, migrates legacy raw samples out of the general Tauri Store, and connects retention/reset to the journal.
 - **Boundary:** The migration is a reviewed repository artifact until it is applied to a configured Supabase project and exercised with live RLS actors. Browser/demo proof does not prove native capture or Keychain behavior; native Rust tests and a packaged-app smoke test are separate evidence surfaces.
+
+### Desktop-parity Individual Web workspace
+
+- **Date:** July 20, 2026
+- **Outcome:** authenticated Individual access now uses the same primary spatial
+  model as the Desktop app: the current light Geist viewport shell, persistent Today / Week / Agent /
+  History / Settings navigation, a reliable-capacity rail, contextual Week tabs,
+  and distinct selected views. Week opens directly on a decision-first capacity
+  surface with dependable headroom, committed/planned/reactive load, work-pattern
+  distribution, and safe category allocation. Forecast adds a deterministic,
+  explicitly non-AI baseline from bounded review-safe history. Today provides the
+  review queue; History separates review-safe Activity from Web sync receipts, and
+  Settings mirrors Desktop sections while retaining account, deletion, and sharing controls.
+- **Boundary:** Supabase queries, realtime invalidation, retention, deletion, and
+  approval-gated confirm/exclude/relabel actions are unchanged. The Web capacity
+  presentation derives only from the positive-allowlist personal replica. Agent,
+  AI-generated Forecast refinement, AI Usage, generated Summary, Acceleration, and
+  Skills remain explicitly Mac-only where the Web lacks the private evidence or
+  runtime needed to support them; the UI does not fabricate those capabilities.
+- **Evidence:** shell and capacity-presentation contracts were written red-first.
+  A follow-up visual-contract pass replaced the obsolete dark shell cascade with
+  Desktop's current light tokens, 224px sidebar and 44px toolbar geometry, centered
+  brand hierarchy, compact context rail, and 1200px content frame. It also made
+  unavailable Web Agent controls natively disabled instead of merely labeling them
+  unavailable. A second red-first shell refinement moved Settings to Desktop's
+  wide-layout footer position (while retaining it in the narrow navigation) and
+  added Desktop's accessible Today review-count badge from the already-loaded,
+  review-safe replica. `verify:wave3` passes with 154 desktop-cloud and 265 Web tests plus the optimized
+  Next.js build; the authoritative root build passes. Package audit execution was
+  attempted but the sandbox could not resolve `registry.npmjs.org`, so this run does
+  not claim a fresh vulnerability result. Authenticated browser screenshot proof
+  remains separate from the source/build gates.
+
+- **July 20 Capacity composition follow-through:** the populated Individual Web
+  Capacity view now preserves the Desktop dashboard order and density: gauge-led
+  decision hero, icon-led capacity cards, commitment/headroom and category detail,
+  a work-mode composition panel, contextual guidance, and collapsed explainability.
+  The duplicate Web-only hero was removed without changing replica, realtime,
+  error, empty, approval, or Manager Access wiring. Web work-mode composition is
+  calculated only from disjoint review-safe block modes—not overlapping summary
+  signals—and overload above 100% remains visible in labels while chart geometry
+  stays bounded. Ratio-based context-switch and WIP scores retain the Desktop
+  0..1 model semantics. Red-first Capacity contracts reached 10/10, the expanded
+  Individual parity set reached 24/24, and `verify:wave3` passed with 154/154
+  desktop-cloud tests, 271/271 Web tests, and the optimized Next.js build. An
+  independent critic found no blocker in this bounded slice. The root TypeScript
+  build is not claimed in this follow-through because concurrently existing Span
+  Simulator edits currently fail in `packages/simulator/src/engine.ts`; package
+  audit also remains environment-blocked by registry DNS. Authenticated rendered
+  proof and full Today body parity remain open.
+
+- **July 20 Today composition follow-through:** authenticated Individual Web
+  Today now follows the Desktop Daily Review hierarchy: queue-aware headings,
+  verified/total progress, a pending-only single-column ledger, dense review
+  cards, and distinct load-error, disconnected, empty, and all-reviewed states.
+  The Web cards expose only review-safe replica fields and explicitly identify
+  the private project, stakeholder, and evidence detail that remains on Mac.
+  Confirm, exclude, and category-change forms still submit the existing block,
+  week, revision, and action fields through the approval-gated server action;
+  no browser workload storage or direct mutation was added. Red-first Today
+  contracts reached 10/10, `verify:wave3` passed with 154/154 desktop-cloud
+  tests, 281/281 Web tests, and the optimized Next.js build, and the
+  authoritative root build passed. Package audit was retried but remains
+  environment-blocked by registry DNS. The sandbox also denied binding the
+  local Web dev-server port, so authenticated rendered browser proof is not
+  claimed in this follow-through.
 
 - **Codex Session ID:** `019f75f1-73fc-7850-98a4-c23ec0aae893`
 - **Task title:** `Prepare Weekform for Build Week`

@@ -38,6 +38,7 @@ export function AppShell({
   setTheme,
   weekRangeLabel,
   demoMode,
+  simulationMode,
   showTrackingReminder,
   toasts,
   onDismissToast,
@@ -61,6 +62,7 @@ export function AppShell({
   setTheme: (value: "light" | "dark") => void;
   weekRangeLabel: string;
   demoMode: boolean;
+  simulationMode: boolean;
   /** Persistent "tracking is still off" nudge after the getting-started modal was deferred. */
   showTrackingReminder: boolean;
   toasts: Toast[];
@@ -77,7 +79,10 @@ export function AppShell({
   const showWeekContext = primarySectionForScreen(active) === "week";
   const showContextNav = windowMode === "large" && active !== "setup" && sectionTabCount > 0;
   return (
-    <div className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${windowMode === "compact" ? "is-compact-widget" : ""} ${active === "agent" ? "agent-active" : ""}`}>
+    <div
+      className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""} ${windowMode === "compact" ? "is-compact-widget" : ""} ${active === "agent" ? "agent-active" : ""}`}
+      data-simulation-runtime={simulationMode ? "true" : undefined}
+    >
       <AppToolbar
         paused={paused}
         setPaused={setPaused}
@@ -214,12 +219,13 @@ export function AppShell({
               <ContextNavigation active={active} setActive={setActive} showFlaggedTab={showFlaggedTab} />
               {demoMode && (
                 <button
-                  className="demo-badge"
+                  className={`demo-badge${simulationMode ? " simulation-runtime-badge" : ""}`}
                   type="button"
-                  title="Leave the simulated demo and return to your own data"
+                  aria-label={simulationMode ? "Exit the live synthetic simulation and return to Weekform" : "Exit demo and return to your own Weekform data"}
+                  title={simulationMode ? "This embedded session uses synthetic simulation data only" : "Leave the simulated demo and return to your own data"}
                   onClick={() => window.location.assign(window.location.pathname)}
                 >
-                  Demo — exit
+                  {simulationMode ? "SIMULATED · LIVE" : "Demo — exit"}
                 </button>
               )}
               {showWeekContext && (

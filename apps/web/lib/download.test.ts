@@ -203,6 +203,7 @@ function trackedDeps(overrides: Partial<PlanDeps>) {
   const deps: PlanDeps = {
     supabaseConfigured: overrides.supabaseConfigured ?? true,
     config: "config" in overrides ? (overrides.config ?? null) : CONFIG,
+    bundledArtifactUrl: overrides.bundledArtifactUrl ?? null,
     requestUrl: REQUEST_URL,
     getUser: async () => {
       calls.getUser += 1;

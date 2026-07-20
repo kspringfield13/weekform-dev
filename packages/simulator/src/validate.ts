@@ -105,6 +105,42 @@ export function validateSimulationDataset(dataset: SimulationDataset): Simulatio
       violations.push({ code: "outside-span", severity: "error", message: "Raw event falls outside the configured span.", artifactId: artifact.stamp.canonicalArtifactId });
     }
   }
+  const workItemOwners = new Map(
+    dataset.artifacts.workItems.map((artifact) => [artifact.payload.workItemId, artifact.stamp.memberId]),
+  );
+  for (const artifact of [...dataset.artifacts.communications, ...dataset.artifacts.businessRecords]) {
+    const owner = workItemOwners.get(artifact.payload.relatedWorkItemId);
+    if (!owner || owner !== artifact.stamp.memberId) {
+      violations.push({
+        code: "broken-work-link",
+        severity: "error",
+        message: "Role communication or business data does not link to a work item owned by the same simulated member.",
+        artifactId: artifact.stamp.canonicalArtifactId,
+        memberId: artifact.stamp.memberId,
+        weekId: artifact.payload.weekId,
+      });
+    }
+  }
+  for (const artifact of dataset.artifacts.businessRecords) {
+    const { value, plausibleMin, plausibleMax } = artifact.payload;
+    if (
+      !Number.isFinite(value)
+      || !Number.isFinite(plausibleMin)
+      || !Number.isFinite(plausibleMax)
+      || plausibleMin > plausibleMax
+      || value < plausibleMin
+      || value > plausibleMax
+    ) {
+      violations.push({
+        code: "implausible-business-value",
+        severity: "error",
+        message: "Synthetic business measure falls outside its declared plausible bounds.",
+        artifactId: artifact.stamp.canonicalArtifactId,
+        memberId: artifact.stamp.memberId,
+        weekId: artifact.payload.weekId,
+      });
+    }
+  }
   const errors = violations.filter((item) => item.severity === "error").map((item) => item.message);
   return { valid: errors.length === 0, errors, violations };
 }

@@ -1,0 +1,231 @@
+import Link from "next/link";
+
+import type { PersonalReplicaBlockV1 } from "../../../packages/domain/src/personalCloud";
+import type { PersonalReplicaView } from "@/lib/personalReplica";
+import { formatDateTime } from "@/components/WorkloadSnapshot";
+import { FormSubmitButton } from "@/components/FormSubmitButton";
+import { queuePersonalReviewCommand } from "@/app/dashboard/personalActions";
+import { presentPersonalToday } from "@/lib/personalTodayPresentation";
+
+const REVIEW_CATEGORIES = [
+  "Planned analysis / project work",
+  "Ad hoc stakeholder requests",
+  "Recurring reporting",
+  "Dashboard development / edits",
+  "SQL / data modeling / query work",
+  "QA / data validation",
+  "Debugging / issue investigation",
+  "Documentation / requirement clarification",
+  "Meetings / stakeholder syncs",
+  "Admin / coordination",
+  "Blocked / waiting / dependency delay",
+];
+
+function clampProgress(value: number): number {
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
+
+function confidencePresentation(value: number): {
+  className: string;
+  label: string;
+  title: string;
+} {
+  if (value === 0 || !Number.isFinite(value)) {
+    return {
+      className: "confidence unscored",
+      label: "Unscored",
+      title: "No classification confidence score",
+    };
+  }
+  const pct = Math.round(value * 100);
+  const level = pct >= 85 ? "High" : pct >= 74 ? "Medium" : "Needs review";
+  return {
+    className: `confidence ${level === "Needs review" ? "low" : level.toLowerCase()}`,
+    label: `${level} ${pct}%`,
+    title: `${pct}% classification confidence`,
+  };
+}
+
+function plannedStatusLabel(value: string): string {
+  return value.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function ReviewCommandFields({
+  block,
+  action,
+}: {
+  block: PersonalReplicaBlockV1;
+  action: "confirm" | "exclude" | "relabel";
+}) {
+  return (
+    <>
+      <input type="hidden" name="block_id" value={block.blockId} />
+      <input type="hidden" name="week_id" value={block.weekId} />
+      <input type="hidden" name="expected_revision" value={block.revision} />
+      <input type="hidden" name="action" value={action} />
+    </>
+  );
+}
+
+function PersonalReviewBlock({ block }: { block: PersonalReplicaBlockV1 }) {
+  const confidence = confidencePresentation(block.confidence);
+
+  return (
+    <article className="block-card web-review-block">
+      <div className="block-topline">
+        <span className="block-time">
+          {formatDateTime(block.startTime)} — {formatDateTime(block.endTime)}
+        </span>
+        <div className="block-chips">
+          {block.blockerFlag ? <span className="blocker-badge">Blocker</span> : null}
+          <span className={confidence.className} title={confidence.title}>{confidence.label}</span>
+        </div>
+      </div>
+
+      <div className="block-main">
+        <div>
+          <h3>{block.category}</h3>
+          <p>{block.mode} · {plannedStatusLabel(block.plannedStatus)}</p>
+        </div>
+        <div className="block-capacity" title="Share of a standard week's modeled capacity this review-safe block accounts for">
+          <strong>{Math.round(block.estimatedCapacityPct)}%</strong>
+          <span className="capacity-caption">of week</span>
+        </div>
+      </div>
+
+      <form action={queuePersonalReviewCommand} className="tag-grid web-review-relabel-form">
+        <ReviewCommandFields block={block} action="relabel" />
+        <label className="tag-field">
+          <span className="tag-field-label">Work category</span>
+          <select
+            aria-label={`Work category — ${block.category}`}
+            name="category"
+            defaultValue={block.category}
+          >
+            {REVIEW_CATEGORIES.map((category) => (
+              <option value={category} key={category}>{category}</option>
+            ))}
+          </select>
+        </label>
+        <FormSubmitButton className="button button-secondary" pendingLabel="Sending request…">
+          Request relabel
+        </FormSubmitButton>
+      </form>
+
+      <p className="web-review-private-note">
+        Private project, stakeholder, and evidence details stay on your Mac.
+      </p>
+
+      <div className="block-actions">
+        <form action={queuePersonalReviewCommand}>
+          <ReviewCommandFields block={block} action="confirm" />
+          <FormSubmitButton className="button button-primary" pendingLabel="Sending request…">
+            Request confirmation
+          </FormSubmitButton>
+        </form>
+        <form action={queuePersonalReviewCommand}>
+          <ReviewCommandFields block={block} action="exclude" />
+          <FormSubmitButton className="button button-secondary web-review-exclude" pendingLabel="Sending request…">
+            Request exclusion
+          </FormSubmitButton>
+        </form>
+      </div>
+    </article>
+  );
+}
+
+export function PersonalTodayScreen({
+  replicas,
+  error,
+}: {
+  replicas: PersonalReplicaView[];
+  error: string | null;
+}) {
+  const current = replicas[0] ?? null;
+  const blocks = current?.payload.blocks ?? [];
+  const {
+    reviewQueue,
+    verifiedCount,
+    totalCount,
+    progressPct,
+    heading,
+  } = presentPersonalToday(blocks);
+  const allDone = totalCount > 0 && reviewQueue.length === 0;
+
+  return (
+    <section className="web-desktop-screen web-today-screen review-screen" aria-labelledby="web-today-title">
+      <header className="screen-header compact web-today-header">
+        <div>
+          <p className="eyebrow">Daily review</p>
+          <h1 id="web-today-title">
+            {!current ? "No review-safe week connected." : heading}
+          </h1>
+          <p className="screen-subhead">
+            Confirm the obvious blocks, relabel the odd ones, or exclude anything sensitive. Web requests return to your Mac for approval.
+          </p>
+        </div>
+        {current && reviewQueue.length > 0 ? (
+          <span className="web-today-approval-chip">Approval required on Mac</span>
+        ) : null}
+      </header>
+
+      {error ? (
+        <div className="form-alert web-today-state" role="alert">
+          <h2>Your review queue could not be loaded.</h2>
+          <p>Reload the page to try again. No review request was sent.</p>
+        </div>
+      ) : !current ? (
+        <div className="panel web-screen-empty web-today-state" role="status">
+          <h2>Your review queue is not connected.</h2>
+          <p>Turn on Private Web workspace in Weekform for Mac to publish review-safe derived blocks.</p>
+          <Link href="/download" className="button button-primary">Open Weekform for Mac</Link>
+        </div>
+      ) : (
+        <>
+          <div
+            className="review-progress"
+            role="status"
+            aria-label={`${verifiedCount} of ${totalCount} block${totalCount === 1 ? "" : "s"} verified`}
+          >
+            <span><b>{verifiedCount}</b> of {totalCount} verified</span>
+            <div
+              className="review-progress-track"
+              role="progressbar"
+              aria-label="Review progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progressPct}
+            >
+              <span className="review-progress-fill" style={{ width: `${progressPct}%` }} />
+            </div>
+          </div>
+
+          <div className="web-today-sync-line">
+            <span>{current.weekId} · Received {formatDateTime(current.syncedAt)}</span>
+            <span>Review-safe replica · private evidence remains local</span>
+          </div>
+
+          {blocks.length === 0 ? (
+            <div className="panel web-screen-empty web-today-state" role="status">
+              <h2>Your review queue is empty.</h2>
+              <p>New review-safe blocks will appear after your Mac publishes an updated replica.</p>
+            </div>
+          ) : allDone ? (
+            <div className="panel web-screen-empty web-today-state web-today-complete" role="status">
+              <span className="web-today-complete-mark" aria-hidden="true">✓</span>
+              <h2>Everything is confirmed.</h2>
+              <p>New blocks will appear here when they need review. Your Mac remains the source of truth.</p>
+            </div>
+          ) : (
+            <div className="ledger-list web-review-ledger">
+              <h2 className="visually-hidden">Blocks to review</h2>
+              {reviewQueue.map((block) => (
+                <PersonalReviewBlock block={block} key={block.blockId} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}

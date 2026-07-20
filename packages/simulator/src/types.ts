@@ -184,6 +184,69 @@ export interface SimulationSharedSnapshot {
   workModeAllocation?: Array<{ label: WorkMode; value: number }>;
 }
 
+export type SimulationWorkItemStatus = "planned" | "in-progress" | "blocked" | "completed";
+export type SimulationWorkItemPriority = "normal" | "high" | "urgent";
+
+/**
+ * A concrete, role-specific duty produced by the simulator. These records are
+ * product-test fixtures rather than a second task system: Weekform still derives
+ * workload outcomes from the signal/session/work-block pipeline below.
+ */
+export interface SimulationWorkItem {
+  schemaVersion: 1;
+  workItemId: string;
+  weekId: string;
+  scheduledDate: string;
+  title: string;
+  responsibility: string;
+  project: string;
+  deliverable: string;
+  category: WorkCategory;
+  mode: WorkMode;
+  status: SimulationWorkItemStatus;
+  priority: SimulationWorkItemPriority;
+  plannedMinutes: number;
+  actualMinutes: number;
+  dueAt: string;
+  completedAt: string | null;
+  blockedReason: string | null;
+  sourceSurface: string;
+}
+
+export interface SimulationCommunication {
+  schemaVersion: 1;
+  communicationId: string;
+  weekId: string;
+  occurredAt: string;
+  channel: "chat" | "email" | "meeting" | "comment";
+  direction: "inbound" | "outbound" | "collaborative";
+  purpose: string;
+  subject: string;
+  stakeholderGroup: string;
+  relatedWorkItemId: string;
+  messageCount: number;
+  responseMinutes: number;
+  actionItem: string;
+}
+
+export interface SimulationBusinessRecord {
+  schemaVersion: 1;
+  recordId: string;
+  weekId: string;
+  recordedAt: string;
+  relatedWorkItemId: string;
+  relatedProject: string;
+  label: string;
+  value: number;
+  target: number;
+  unit: string;
+  plausibleMin: number;
+  plausibleMax: number;
+  variancePct: number;
+  trend: "up" | "down" | "flat";
+  sourceSurface: string;
+}
+
 export interface SimulationArtifacts {
   rawEvents: SimulationArtifact<RawEvent>[];
   activeWindowSamples: SimulationArtifact<ActiveWindowSample>[];
@@ -196,6 +259,9 @@ export interface SimulationArtifacts {
   accelerationSignals: SimulationArtifact<AccelerationSignal>[];
   forecasts: SimulationArtifact<SimulationForecast>[];
   sharedSnapshots: SimulationArtifact<SimulationSharedSnapshot>[];
+  workItems: SimulationArtifact<SimulationWorkItem>[];
+  communications: SimulationArtifact<SimulationCommunication>[];
+  businessRecords: SimulationArtifact<SimulationBusinessRecord>[];
   auditEvents: SimulationArtifact<AuditEvent>[];
 }
 
@@ -273,6 +339,11 @@ export interface LocalPlaybackAction {
   actionId: string;
   type: LocalPlaybackActionType;
   url: string;
+  personaId: string;
+  surface: "business-app" | "weekform";
+  appName: string;
+  label: string;
+  detail: string;
   selector?: string;
   value?: string;
   durationMs?: number;
@@ -282,6 +353,8 @@ export interface LocalPlaybackPlan {
   actions: LocalPlaybackAction[];
   syntheticCredentialsOnly: true;
   externalMutationsAllowed: false;
-  dedicatedProfile: true;
+  /** This implementation is an embedded same-origin session, not a browser profile. */
+  dedicatedProfile: false;
+  embeddedSameOriginOnly: true;
   cancelable: true;
 }

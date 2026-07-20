@@ -21,13 +21,23 @@ import { FormSubmitButton } from "@/components/FormSubmitButton";
 import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
 import { PersonalReplicaRealtime } from "@/components/PersonalReplicaRealtime";
 import { listOwnPersonalReplicas, type PersonalReplicaView } from "@/lib/personalReplica";
-import { deletePersonalReplicaHistory, queuePersonalReviewCommand } from "./personalActions";
+import { deletePersonalReplicaHistory } from "./personalActions";
 import {
   getSingleManagerTeamPath,
   managerAccessMemberships,
 } from "@/lib/managerAccess";
-import { WebWorkspaceIntro } from "@/components/WebWorkspaceIntro";
 import { WorkspaceModeToggle } from "@/components/WorkspaceModeToggle";
+import { PersonalWeekOverview } from "@/components/PersonalWeekOverview";
+import { IndividualWorkspaceShell } from "@/components/IndividualWorkspaceShell";
+import { PersonalForecastScreen } from "@/components/PersonalForecastScreen";
+import { PersonalAgentWorkspace } from "@/components/PersonalAgentWorkspace";
+import { PersonalTodayScreen } from "@/components/PersonalTodayScreen";
+import { PersonalWeeklyReviewScreen } from "@/components/PersonalWeeklyReviewScreen";
+import {
+  IndividualHistoryView,
+  IndividualSettingsView,
+} from "@/components/IndividualHistorySettings";
+import { signOut } from "@/app/auth/actions";
 
 export const metadata: Metadata = { title: "Weekform Web" };
 export const dynamic = "force-dynamic";
@@ -103,53 +113,30 @@ export default async function DashboardPage({
     await listOwnPersonalReplicas(supabase);
   const managedTeams = managerAccessMemberships(teams);
   const managerHref = getSingleManagerTeamPath(managedTeams) ?? "/manager-access";
+  const currentReplica = personalReplicas[0] ?? null;
 
   return (
-    <>
-      <SiteHeader />
-      <main className="container workspace-shell">
-        <div className="workspace-hero" id="workspace-overview">
-          <span className="workspace-eyebrow">Private workload intelligence</span>
-          <h1>Your week, ready for decisions.</h1>
-          <p>
-            Welcome, {greetingName}. Review what your Mac prepared, coordinate
-            only approved signals, and decide what fits next without exposing
-            the raw evidence behind your week.
-          </p>
-          <div className="status-line">
-            <span>
-              Signed in as <span className="mono">{user.email}</span>
-            </span>
-            {profile ? null : (
-              <span>
-                Profile details are not available yet — using your account
-                email for now.
-              </span>
-            )}
-          </div>
+    <IndividualWorkspaceShell
+      greetingName={greetingName}
+      reliableCapacity={currentReplica?.payload.capacity.reliableNewWorkCapacityPct ?? null}
+      reviewCount={currentReplica?.payload.blocks.filter((block) => !block.userVerified).length ?? 0}
+      managerAccessAvailable={managedTeams.length > 0}
+      managerHref={managerHref}
+      accountActions={(
+        <>
+          <span className="web-toolbar-account" title={user.email ?? undefined}>{user.email}</span>
+          <form action={signOut}>
+            <button className="web-toolbar-button" type="submit">Sign out</button>
+          </form>
+        </>
+      )}
+    >
+      <div className="container workspace-shell">
+        <div data-web-view="today">
+          <PersonalTodayScreen replicas={personalReplicas} error={personalReplicaError} />
         </div>
-
-        <WorkspaceModeToggle
-          managerAvailable={managedTeams.length > 0}
-          managerHref={managerHref}
-          mode="individual"
-        />
-
-        <nav className="workspace-nav" aria-label="Web workspace">
-          <a href="#personal-workspace">Private review</a>
-          <a href="#teams">Teams</a>
-          {managedTeams.length > 0 ? <a href="#manager-entry">Manager</a> : null}
-          <a href="#sharing">Sharing</a>
-        </nav>
-        <WebWorkspaceIntro userId={user.id} hasManagerAccess={managedTeams.length > 0} />
-
-        <div className="workspace-decision-path" aria-label="How Weekform Web works">
-          <div><span>01</span><strong>Review</strong><small>Inspect approved, derived workload signals.</small></div>
-          <div><span>02</span><strong>Decide</strong><small>See headroom, risk, and what needs attention.</small></div>
-          <div><span>03</span><strong>Request</strong><small>Send changes to your Mac for approval.</small></div>
-          <div><span>04</span><strong>Coordinate</strong><small>Share only the summary you intended.</small></div>
-        </div>
-
+        <div data-web-view="week">
+        <div data-web-subview="capacity">
         <RequestFreshnessRefresh />
         <PersonalReplicaRealtime userId={user.id} />
 
@@ -159,8 +146,33 @@ export default async function DashboardPage({
           </div>
         ) : null}
 
-        <PersonalWorkspaceSection replicas={personalReplicas} error={personalReplicaError} />
+        <PersonalCapacityScreen replicas={personalReplicas} error={personalReplicaError} />
+        </div>
+        <div data-web-subview="forecast">
+          <PersonalForecastScreen replicas={personalReplicas.map((replica) => replica.payload)} />
+        </div>
+        <div data-web-subview="review">
+          <PersonalWeeklyReviewScreen replicas={personalReplicas} error={personalReplicaError} />
+        </div>
+        <div data-web-subview="usage">
+          <MacOnlyParityScreen
+            eyebrow="AI usage"
+            title="Usage intelligence stays with your local AI activity."
+            detail="Provider calls, token imports, model pricing, and budgets are not part of the review-safe Web replica. Open the Mac app to inspect the desktop AI Usage view."
+          />
+        </div>
+        <div data-web-subview="summary">
+          <MacOnlyParityScreen
+            eyebrow="Weekly summary"
+            title="Narratives stay grounded in private evidence on Mac."
+            detail="The Web replica has capacity facts, but not prompts, evidence, or generated narratives. Weekform Web will not invent a summary from fields it did not receive."
+          />
+        </div>
+        </div>
 
+        <div data-web-view="settings">
+        <IndividualSettingsView accountEmail={user.email ?? "your account"} accountAndSharing={(
+        <>
         <section id="teams" className="workspace-section" aria-labelledby="teams-title">
           <div className="workspace-section-heading">
             <span>Optional coordination</span>
@@ -295,219 +307,108 @@ export default async function DashboardPage({
             </Link>
           </section>
         ) : null}
-
         <SharedWorkloadSection
           teams={teams}
           snapshots={ownSnapshots}
           snapshotsError={snapshotsError}
         />
-      </main>
-      <SiteFooter />
-    </>
+        <details className="disclosure web-private-history-control">
+          <summary>Delete private Web history</summary>
+          <p>Turn Private Web workspace off on your Mac first, or a later desktop sync can publish the current week again. This removes your replicas and pending review requests; local Mac data stays untouched.</p>
+          <form action={deletePersonalReplicaHistory}>
+            <FormSubmitButton
+              className="button button-danger"
+              pendingLabel="Deleting Web history…"
+              confirmMessage="Permanently delete your private Web replicas and pending review requests? Your local Mac data will stay untouched."
+            >
+              Delete replicas and pending requests
+            </FormSubmitButton>
+          </form>
+        </details>
+        </>
+        )} />
+        </div>
+
+        <div data-web-view="history">
+          <div data-web-subview="activity">
+            <IndividualHistoryView replicas={personalReplicas} error={personalReplicaError} initialTab="activity" showTabs={false} />
+          </div>
+          <div data-web-subview="audit">
+            <IndividualHistoryView replicas={personalReplicas} error={personalReplicaError} initialTab="audit" showTabs={false} />
+          </div>
+        </div>
+
+        <div data-web-view="agent">
+          <div data-web-subview="agent">
+            <PersonalAgentWorkspace replica={currentReplica?.payload ?? null} />
+          </div>
+          <div data-web-subview="accelerate">
+            <MacOnlyParityScreen
+              eyebrow="Acceleration"
+              title="Acceleration plays require the private work pattern."
+              detail="The review-safe Web replica does not include workflow evidence, saved play history, or AI credentials. Generate, approve, and track acceleration plays in Weekform for Mac."
+            />
+          </div>
+          <div data-web-subview="skills">
+            <MacOnlyParityScreen
+              eyebrow="Skills library"
+              title="Saved skills remain in your local Weekform library."
+              detail="Skill instructions and their supporting evidence are not uploaded to the Web workspace. Open Weekform for Mac to inspect or run them."
+            />
+          </div>
+        </div>
+      </div>
+    </IndividualWorkspaceShell>
   );
 }
 
-const REVIEW_CATEGORIES = [
-  "Planned analysis / project work",
-  "Ad hoc stakeholder requests",
-  "Recurring reporting",
-  "Dashboard development / edits",
-  "SQL / data modeling / query work",
-  "QA / data validation",
-  "Debugging / issue investigation",
-  "Documentation / requirement clarification",
-  "Meetings / stakeholder syncs",
-  "Admin / coordination",
-  "Blocked / waiting / dependency delay",
-];
-
-function PersonalWorkspaceSection({ replicas, error }: { replicas: PersonalReplicaView[]; error: string | null }) {
-  const current = replicas[0] ?? null;
+function MacOnlyParityScreen({
+  eyebrow,
+  title,
+  detail,
+}: {
+  eyebrow: string;
+  title: string;
+  detail: string;
+}) {
+  const screenId = `web-${eyebrow.toLowerCase().replace(/[^a-z]+/g, "-")}-title`;
   return (
-    <section
-      id="personal-workspace"
-      className="workspace-section hybrid-workspace"
-      aria-labelledby="personal-workspace-title"
-    >
-      <header className="hybrid-heading">
-        <span className="hybrid-kicker">The Hybrid Weekform model</span>
+    <section className="web-desktop-screen web-local-boundary-screen" aria-labelledby={screenId}>
+      <header className="web-screen-heading">
         <div>
-          <h2 id="personal-workspace-title">
-            Two surfaces. <span>One private source of truth.</span>
-          </h2>
-          <p>
-            Your Mac understands the work. The Web gives you a safe place to
-            review the week and request changes from anywhere.
-          </p>
+          <span>{eyebrow}</span>
+          <h1 id={screenId}>{title}</h1>
+          <p>{detail}</p>
         </div>
       </header>
-
-      <div className="hybrid-model" aria-label="How the hybrid Weekform model works">
-        <article className="hybrid-surface hybrid-surface-mac">
-          <div className="hybrid-surface-meta">
-            <span>01 · On your Mac</span>
-            <span className="hybrid-state"><i aria-hidden="true" /> Private source of truth</span>
-          </div>
-          <h3>Your Mac holds the full picture.</h3>
-          <p>
-            It captures activity, builds your workload model, and keeps the
-            sensitive evidence behind every result on your device.
-          </p>
-          <div className="hybrid-local-fields" aria-label="Data that stays on your Mac">
-            <span>Raw activity</span>
-            <span>App &amp; window titles</span>
-            <span>Evidence &amp; notes</span>
-            <span>Screenshots &amp; AI keys</span>
-          </div>
-        </article>
-
-        <div className="hybrid-transfer" aria-hidden="true">
-          <span>Review-safe sync</span>
-          <div><i /><b>→</b><i /></div>
-          <small>Only derived fields</small>
-        </div>
-
-        <article className="hybrid-surface hybrid-surface-web">
-          <div className="hybrid-surface-meta">
-            <span>02 · On the Web</span>
-            <span className="hybrid-state"><i aria-hidden="true" /> Private to you</span>
-          </div>
-          <h3>The Web gets only what you need to review.</h3>
-          <p>
-            See capacity, workload categories, work modes, and review status—
-            without uploading the raw evidence that produced them.
-          </p>
-          <div className="hybrid-web-fields">
-            <span>Capacity</span>
-            <span>Category</span>
-            <span>Work mode</span>
-            <span>Review status</span>
-          </div>
-          <strong className="hybrid-never">Raw activity never comes here.</strong>
-        </article>
-
-        <div className="hybrid-return-rail">
-          <span className="hybrid-return-arrow" aria-hidden="true">←</span>
-          <div>
-            <span>03 · Approval loop</span>
-            <strong>Every change returns to your Mac.</strong>
-            <p>
-              A Web action creates a request. Your local workload changes only
-              after you approve it in the desktop app.
-            </p>
-          </div>
-          <span className="hybrid-approval-chip">Approve on Mac</span>
-        </div>
+      <div className="panel web-screen-empty" role="status">
+        <span className="badge">Mac-only private capability</span>
+        <h2>Continue with the complete local evidence.</h2>
+        <p>Web remains API-connected and ephemeral; it does not cache or reconstruct the omitted private data.</p>
+        <Link className="button button-primary" href="/download">Open Weekform for Mac</Link>
       </div>
+    </section>
+  );
+}
 
+function PersonalCapacityScreen({
+  replicas,
+  error,
+}: {
+  replicas: PersonalReplicaView[];
+  error: string | null;
+}) {
+  const current = replicas[0] ?? null;
+  return (
+    <section className="web-desktop-screen capacity-screen" aria-label="Weekly capacity">
       {error ? (
-        <div className="form-alert hybrid-load-error" role="alert">
-          Your private Web workspace could not be loaded. Reload the page to try again.
-        </div>
+        <div className="form-alert web-screen-empty" role="alert">Your private Web workspace could not be loaded. Reload the page to try again.</div>
       ) : !current ? (
-        <div className="hybrid-setup">
-          <div className="hybrid-setup-copy">
-            <span>Connect your private workspace</span>
-            <h3>Bring your review-safe week to the Web.</h3>
-            <p>
-              Setup happens on the Mac, where your private source of truth lives.
-              You can turn the connection off again at any time.
-            </p>
-            <Link href="/download" className="button button-primary">
-              Get Weekform for Mac <span aria-hidden="true">→</span>
-            </Link>
-          </div>
-          <ol aria-label="Private Web workspace setup steps">
-            <li>
-              <span>1</span>
-              <div><strong>Open Weekform for Mac</strong><small>Your Mac must be signed in to the same account.</small></div>
-            </li>
-            <li>
-              <span>2</span>
-              <div><strong>Choose Account &amp; Sharing</strong><small>Your sharing controls stay in the desktop app.</small></div>
-            </li>
-            <li>
-              <span>3</span>
-              <div><strong>Turn on Private Web workspace</strong><small>Your review-safe week will appear here after sync.</small></div>
-            </li>
-          </ol>
-        </div>
+        <div className="panel web-screen-empty"><h2>No review-safe week is connected</h2><p>Enable Private Web workspace in Weekform for Mac to publish the derived capacity fields this screen can display.</p><Link href="/download" className="button button-primary">Open Weekform for Mac</Link></div>
       ) : (
-        <div className="panel workspace-primary-panel hybrid-review-data">
-          <div className="hybrid-data-heading">
-            <div>
-              <span className="badge">Private to you</span>
-              <h3>Your review-safe week</h3>
-            </div>
-            <span>{current.weekId} · Received {formatDateTime(current.syncedAt)}</span>
-          </div>
-          <div className="metric-grid compact-metrics">
-            <div className="metric"><span>Reliable new-work capacity</span><strong>{Math.round(current.payload.capacity.reliableNewWorkCapacityPct)}%</strong></div>
-            <div className="metric"><span>Allocated</span><strong>{Math.round(current.payload.capacity.allocatedPct)}%</strong></div>
-            <div className="metric"><span>Reactive</span><strong>{Math.round(current.payload.capacity.reactivePct)}%</strong></div>
-            <div className="metric"><span>Context switching</span><strong>{Math.round(current.payload.capacity.contextSwitchScore)}/100</strong></div>
-          </div>
-          <div className="status-line">
-            <span>{current.payload.blocks.length} review-safe block{current.payload.blocks.length === 1 ? "" : "s"}</span>
-            <span>Ephemeral browser view · no workload cache</span>
-          </div>
-          <details className="disclosure">
-            <summary>Delete private Web history</summary>
-            <p>Turn the Private Web workspace off on your Mac first, or a later desktop sync can recreate the current week.</p>
-            <form action={deletePersonalReplicaHistory}>
-              <FormSubmitButton className="button button-danger" pendingLabel="Deleting Web history…">
-                Delete replicas and pending requests
-              </FormSubmitButton>
-            </form>
-          </details>
-          {current.payload.blocks.length === 0 ? <p>No blocks are available for this week.</p> : (
-              <ul className="member-grid personal-review-grid" style={{ listStyle: "none", padding: 0 }}>
-                {current.payload.blocks.map((block) => (
-                  <li className="member-card" key={block.blockId}>
-                    <div className="member-card-head">
-                      <div><strong>{block.category}</strong><span>{block.mode} · {block.plannedStatus}</span></div>
-                      <span className="badge">{block.userVerified ? "Reviewed" : "Needs review"}</span>
-                    </div>
-                    <p>{formatDateTime(block.startTime)} — {formatDateTime(block.endTime)} · {Math.round(block.estimatedCapacityPct)}% of week</p>
-                    <div className="action-row">
-                      {!block.userVerified && (
-                        <form action={queuePersonalReviewCommand}>
-                          <input type="hidden" name="block_id" value={block.blockId} />
-                          <input type="hidden" name="week_id" value={block.weekId} />
-                          <input type="hidden" name="expected_revision" value={block.revision} />
-                          <input type="hidden" name="action" value="confirm" />
-                          <FormSubmitButton className="button button-primary" pendingLabel="Sending request…">
-                            Request confirmation
-                          </FormSubmitButton>
-                        </form>
-                      )}
-                      <form action={queuePersonalReviewCommand}>
-                        <input type="hidden" name="block_id" value={block.blockId} />
-                        <input type="hidden" name="week_id" value={block.weekId} />
-                        <input type="hidden" name="expected_revision" value={block.revision} />
-                        <input type="hidden" name="action" value="exclude" />
-                        <FormSubmitButton className="button button-secondary" pendingLabel="Sending request…">
-                          Request exclusion
-                        </FormSubmitButton>
-                      </form>
-                    </div>
-                    <form action={queuePersonalReviewCommand} className="inline-review-form">
-                      <input type="hidden" name="block_id" value={block.blockId} />
-                      <input type="hidden" name="week_id" value={block.weekId} />
-                      <input type="hidden" name="expected_revision" value={block.revision} />
-                      <input type="hidden" name="action" value="relabel" />
-                      <label htmlFor={`category-${block.blockId}`}>Request category change</label>
-                      <select id={`category-${block.blockId}`} name="category" defaultValue={block.category}>
-                        {REVIEW_CATEGORIES.map((category) => <option value={category} key={category}>{category}</option>)}
-                      </select>
-                      <FormSubmitButton className="button button-secondary" pendingLabel="Sending request…">
-                        Send request
-                      </FormSubmitButton>
-                    </form>
-                  </li>
-                ))}
-              </ul>
-          )}
+        <div className="web-capacity-panel">
+          <PersonalWeekOverview replica={current.payload} />
+          <div className="status-line" aria-label="Private Web replica status"><span>{current.weekId} · Received {formatDateTime(current.syncedAt)} · {current.payload.blocks.length} review-safe block{current.payload.blocks.length === 1 ? "" : "s"}</span><span>Ephemeral browser view · no workload cache</span></div>
         </div>
       )}
     </section>
