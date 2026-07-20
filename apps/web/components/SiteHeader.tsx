@@ -76,7 +76,6 @@ export async function SiteHeader({
               </Link>
             </>
           )}
-          <ThemeToggle className="site-theme-toggle" />
           <Link
             href="/login"
             className="button button-ghost nav-account"
@@ -95,6 +94,7 @@ export async function SiteHeader({
               Open Web app
             </Link>
           )}
+          <ThemeToggle className="site-theme-toggle" />
         </nav>
       </div>
     </header>

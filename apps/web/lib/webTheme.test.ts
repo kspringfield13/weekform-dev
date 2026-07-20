@@ -44,6 +44,20 @@ test("public and authenticated Web chrome both expose the shared theme toggle", 
   assert.match(workspace, /<ThemeToggle/);
 });
 
+test("the site header places the theme toggle after the account action", () => {
+  const signOutPosition = header.indexOf("Sign out");
+  const themeTogglePosition = header.indexOf(
+    '<ThemeToggle className="site-theme-toggle" />',
+  );
+
+  assert.ok(signOutPosition >= 0, "the signed-in header must expose Sign out");
+  assert.ok(themeTogglePosition >= 0, "the site header must expose the theme toggle");
+  assert.ok(
+    themeTogglePosition > signOutPosition,
+    "the theme toggle must be the rightmost signed-in control, after Sign out",
+  );
+});
+
 test("the authenticated Web header presents theme and compact mode as labeled display controls", () => {
   assert.match(toggle, /showLabel\s*=\s*false/);
   assert.match(toggle, /theme-toggle-label/);
