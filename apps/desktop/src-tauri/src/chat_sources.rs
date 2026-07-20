@@ -3,7 +3,7 @@ use security_framework::passwords::{
     delete_generic_password, get_generic_password, set_generic_password,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
     env,
@@ -12,6 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 const KEYCHAIN_SERVICE: &str = "com.weekform.desktop";
 const HASH_SALT_KEY: &str = "weekform:chat:hash-salt:v1";
@@ -100,14 +101,84 @@ struct StoredChatToken {
     self_id: String,
 }
 
-#[derive(Clone, Default, Deserialize, Serialize)]
-#[serde(default)]
+impl Zeroize for StoredChatToken {
+    fn zeroize(&mut self) {
+        self.refresh_token.zeroize();
+        self.self_id.zeroize();
+    }
+}
+
+impl Drop for StoredChatToken {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for StoredChatToken {}
+
+#[derive(Clone, Default, Serialize)]
 struct StoredChatCursor {
     range_key: String,
     provider_page_token: Option<String>,
     item_offset: usize,
     active_surface_id: Option<String>,
     surface_page_token: Option<String>,
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct StoredChatCursorWire {
+    range_key: String,
+    provider_page_token: Option<String>,
+    item_offset: usize,
+    active_surface_id: Option<String>,
+    surface_page_token: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for StoredChatCursor {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let wire = StoredChatCursorWire::deserialize(deserializer)?;
+        Ok(Self {
+            range_key: wire.range_key,
+            provider_page_token: wire.provider_page_token,
+            item_offset: wire.item_offset,
+            active_surface_id: wire.active_surface_id,
+            surface_page_token: wire.surface_page_token,
+        })
+    }
+}
+
+impl Zeroize for StoredChatCursor {
+    fn zeroize(&mut self) {
+        self.range_key.zeroize();
+        self.provider_page_token.zeroize();
+        self.item_offset.zeroize();
+        self.active_surface_id.zeroize();
+        self.surface_page_token.zeroize();
+    }
+}
+
+impl Drop for StoredChatCursor {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for StoredChatCursor {}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatReadinessCode {
+    Ready,
+    MissingClientId,
+    MissingRedirectUri,
+    InvalidRedirectUri,
+    MissingBrokerUrl,
+    InvalidBrokerUrl,
+    BrokerSecurityReviewRequired,
 }
 
 #[derive(Serialize)]
@@ -118,6 +189,7 @@ pub struct ChatConnectionStatus {
     connected: bool,
     requires_broker: bool,
     detail: String,
+    readiness_code: ChatReadinessCode,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
@@ -366,10 +438,10 @@ fn validate_broker_url(value: &str) -> Result<reqwest::Url, String> {
     Ok(url)
 }
 
-fn validate_provider_config(
+fn inspect_provider_config(
     provider: ChatProvider,
     read: &dyn Fn(&str) -> Option<String>,
-) -> Result<ProviderConfig, String> {
+) -> Result<ProviderConfig, (ChatReadinessCode, String)> {
     let client_variable = match provider {
         ChatProvider::Slack => "SLACK_CHAT_CLIENT_ID",
         ChatProvider::GoogleChat => "GOOGLE_CHAT_CLIENT_ID",
@@ -379,9 +451,12 @@ fn validate_provider_config(
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
-            format!(
-                "{} live sync is not configured in this build (missing {client_variable}).",
-                provider.label()
+            (
+                ChatReadinessCode::MissingClientId,
+                format!(
+                    "{} live sync is not configured in this build (missing {client_variable}).",
+                    provider.label()
+                ),
             )
         })?;
     if provider != ChatProvider::Webex {
@@ -394,20 +469,33 @@ fn validate_provider_config(
     let redirect_uri = read("WEBEX_CHAT_REDIRECT_URI")
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| "Webex chat requires WEBEX_CHAT_REDIRECT_URI.".to_string())?;
-    validate_redirect_uri(&redirect_uri)?;
+        .ok_or_else(|| {
+            (
+                ChatReadinessCode::MissingRedirectUri,
+                "Webex chat requires WEBEX_CHAT_REDIRECT_URI.".to_string(),
+            )
+        })?;
+    validate_redirect_uri(&redirect_uri)
+        .map_err(|error| (ChatReadinessCode::InvalidRedirectUri, error))?;
     let broker_url = read("WEEKFORM_CHAT_OAUTH_BROKER_URL")
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| "Webex chat requires WEEKFORM_CHAT_OAUTH_BROKER_URL.".to_string())?;
-    validate_broker_url(&broker_url)?;
+        .ok_or_else(|| {
+            (
+                ChatReadinessCode::MissingBrokerUrl,
+                "Webex chat requires WEEKFORM_CHAT_OAUTH_BROKER_URL.".to_string(),
+            )
+        })?;
+    validate_broker_url(&broker_url)
+        .map_err(|error| (ChatReadinessCode::InvalidBrokerUrl, error))?;
     let broker_security_verified =
         read("WEBEX_CHAT_BROKER_SECURITY_VERIFIED").as_deref() == Some("true");
     if !broker_security_verified {
-        return Err(
+        return Err((
+            ChatReadinessCode::BrokerSecurityReviewRequired,
             "Webex chat remains unavailable until WEBEX_CHAT_BROKER_SECURITY_VERIFIED=true confirms the token broker security review."
                 .to_string(),
-        );
+        ));
     }
     Ok(ProviderConfig {
         client_id,
@@ -416,23 +504,45 @@ fn validate_provider_config(
     })
 }
 
+fn validate_provider_config(
+    provider: ChatProvider,
+    read: &dyn Fn(&str) -> Option<String>,
+) -> Result<ProviderConfig, String> {
+    inspect_provider_config(provider, read).map_err(|(_, detail)| detail)
+}
+
+#[cfg(test)]
+fn provider_readiness(
+    provider: ChatProvider,
+    read: &dyn Fn(&str) -> Option<String>,
+) -> ChatReadinessCode {
+    inspect_provider_config(provider, read)
+        .map(|_| ChatReadinessCode::Ready)
+        .unwrap_or_else(|(code, _)| code)
+}
+
 fn provider_config(provider: ChatProvider) -> Result<ProviderConfig, String> {
     validate_provider_config(provider, &configured_env)
 }
 
 fn keychain_read_json<T: for<'de> Deserialize<'de>>(account: &str) -> Result<Option<T>, String> {
     match get_generic_password(KEYCHAIN_SERVICE, account) {
-        Ok(bytes) => serde_json::from_slice(&bytes)
-            .map(Some)
-            .map_err(|_| "Saved chat connection data in Keychain is invalid.".to_string()),
+        Ok(bytes) => {
+            let bytes = Zeroizing::new(bytes);
+            serde_json::from_slice(&bytes)
+                .map(Some)
+                .map_err(|_| "Saved chat connection data in Keychain is invalid.".to_string())
+        }
         Err(error) if error.code() == -25300 => Ok(None),
         Err(_) => Err("Could not read chat connection data from macOS Keychain.".to_string()),
     }
 }
 
 fn keychain_write_json<T: Serialize>(account: &str, value: &T) -> Result<(), String> {
-    let bytes = serde_json::to_vec(value)
-        .map_err(|_| "Chat connection data could not be encoded.".to_string())?;
+    let bytes = Zeroizing::new(
+        serde_json::to_vec(value)
+            .map_err(|_| "Chat connection data could not be encoded.".to_string())?,
+    );
     set_generic_password(KEYCHAIN_SERVICE, account, &bytes)
         .map_err(|_| "Could not save chat connection data in macOS Keychain.".to_string())
 }
@@ -463,18 +573,24 @@ fn cursor_write(provider: ChatProvider, cursor: &StoredChatCursor) -> Result<(),
 
 fn random_urlsafe(length: usize) -> String {
     use rand::RngCore;
-    let mut bytes = vec![0u8; length];
+    let mut bytes = Zeroizing::new(vec![0u8; length]);
     rand::rngs::OsRng.fill_bytes(&mut bytes);
     general_purpose::URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn hash_salt() -> Result<Vec<u8>, String> {
+fn hash_salt() -> Result<Zeroizing<Vec<u8>>, String> {
     match get_generic_password(KEYCHAIN_SERVICE, HASH_SALT_KEY) {
-        Ok(bytes) if bytes.len() >= 32 => Ok(bytes),
-        Ok(_) => Err("Saved chat hashing material in Keychain is invalid.".to_string()),
+        Ok(bytes) => {
+            let bytes = Zeroizing::new(bytes);
+            if bytes.len() >= 32 {
+                Ok(bytes)
+            } else {
+                Err("Saved chat hashing material in Keychain is invalid.".to_string())
+            }
+        }
         Err(error) if error.code() == -25300 => {
             use rand::RngCore;
-            let mut bytes = vec![0u8; 32];
+            let mut bytes = Zeroizing::new(vec![0u8; 32]);
             rand::rngs::OsRng.fill_bytes(&mut bytes);
             set_generic_password(KEYCHAIN_SERVICE, HASH_SALT_KEY, &bytes).map_err(|_| {
                 "Could not save chat hashing material in macOS Keychain.".to_string()
@@ -1066,11 +1182,50 @@ fn oauth_reply(stream: &mut std::net::TcpStream, message: &str) {
     );
 }
 
+enum CallbackDecision {
+    IgnorePath,
+    IgnoreUnverified,
+    Denied,
+    Authorized(Zeroizing<String>),
+}
+
+fn callback_decision(
+    target: &str,
+    expected_state: &str,
+    expected_path: &str,
+) -> Result<CallbackDecision, String> {
+    let url = reqwest::Url::parse(&format!("http://127.0.0.1{target}"))
+        .map_err(|_| "The chat sign-in response was malformed.".to_string())?;
+    if url.path() != expected_path {
+        return Ok(CallbackDecision::IgnorePath);
+    }
+    let mut code = None;
+    let mut state = None;
+    let mut denied = false;
+    for (key, value) in url.query_pairs() {
+        match key.as_ref() {
+            "code" => code = Some(Zeroizing::new(value.into_owned())),
+            "state" => state = Some(value.into_owned()),
+            "error" | "error_description" => denied = true,
+            _ => {}
+        }
+    }
+    if state.as_deref() != Some(expected_state) {
+        return Ok(CallbackDecision::IgnoreUnverified);
+    }
+    if denied {
+        return Ok(CallbackDecision::Denied);
+    }
+    code.map(CallbackDecision::Authorized).ok_or_else(|| {
+        "The chat sign-in response did not include an authorization code.".to_string()
+    })
+}
+
 fn wait_for_callback(
     listener: TcpListener,
     expected_state: &str,
     expected_path: &str,
-) -> Result<String, String> {
+) -> Result<Zeroizing<String>, String> {
     listener
         .set_nonblocking(true)
         .map_err(|_| "Could not prepare chat sign-in.".to_string())?;
@@ -1087,44 +1242,30 @@ fn wait_for_callback(
                     .next()
                     .and_then(|line| line.split_whitespace().nth(1))
                     .unwrap_or("");
-                let url = reqwest::Url::parse(&format!("http://127.0.0.1{target}"))
-                    .map_err(|_| "The chat sign-in response was malformed.".to_string())?;
-                if url.path() != expected_path {
-                    oauth_reply(&mut stream, "This is not a Weekform chat callback.");
-                    continue;
-                }
-                let mut code = None;
-                let mut state = None;
-                let mut denied = false;
-                for (key, value) in url.query_pairs() {
-                    match key.as_ref() {
-                        "code" => code = Some(value.into_owned()),
-                        "state" => state = Some(value.into_owned()),
-                        "error" | "error_description" => denied = true,
-                        _ => {}
+                match callback_decision(target, expected_state, expected_path)? {
+                    CallbackDecision::IgnorePath => {
+                        oauth_reply(&mut stream, "This is not a Weekform chat callback.");
+                    }
+                    CallbackDecision::IgnoreUnverified => {
+                        oauth_reply(&mut stream, "This chat response could not be verified.");
+                        // Another local process can probe a loopback listener. An
+                        // unverified callback must not cancel the user's real flow.
+                    }
+                    CallbackDecision::Denied => {
+                        oauth_reply(
+                            &mut stream,
+                            "Chat access was not connected. Return to Weekform to try again.",
+                        );
+                        return Err("Chat access was not granted.".to_string());
+                    }
+                    CallbackDecision::Authorized(code) => {
+                        oauth_reply(
+                            &mut stream,
+                            "Chat connected. Close this tab and return to Weekform.",
+                        );
+                        return Ok(code);
                     }
                 }
-                if state.as_deref() != Some(expected_state) {
-                    oauth_reply(&mut stream, "This chat response could not be verified.");
-                    // Another local process can probe a loopback listener. An
-                    // unverified callback must not cancel the user's real flow.
-                    continue;
-                }
-                if denied {
-                    oauth_reply(
-                        &mut stream,
-                        "Chat access was not connected. Return to Weekform to try again.",
-                    );
-                    return Err("Chat access was not granted.".to_string());
-                }
-                let code = code.ok_or_else(|| {
-                    "The chat sign-in response did not include an authorization code.".to_string()
-                })?;
-                oauth_reply(
-                    &mut stream,
-                    "Chat connected. Close this tab and return to Weekform.",
-                );
-                return Ok(code);
             }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 if Instant::now() > deadline {
@@ -1177,19 +1318,46 @@ fn broker_endpoint(base: &str) -> Result<reqwest::Url, String> {
     Ok(url)
 }
 
-fn jwt_subject(id_token: &str) -> Option<String> {
+fn jwt_subject(id_token: &str) -> Option<Zeroizing<String>> {
     let payload = id_token.split('.').nth(1)?;
-    let bytes = general_purpose::URL_SAFE_NO_PAD.decode(payload).ok()?;
-    let value: Value = serde_json::from_slice(&bytes).ok()?;
-    value.get("sub").and_then(Value::as_str).map(str::to_string)
+    let bytes = Zeroizing::new(general_purpose::URL_SAFE_NO_PAD.decode(payload).ok()?);
+    let mut value: Value = serde_json::from_slice(&bytes).ok()?;
+    take_secret_value(&mut value, "sub", "sub")
 }
 
-fn response_value(value: &Value, camel: &str, snake: &str) -> Option<String> {
-    value
-        .get(camel)
-        .or_else(|| value.get(snake))
-        .and_then(Value::as_str)
-        .map(str::to_string)
+fn take_secret_value(value: &mut Value, camel: &str, snake: &str) -> Option<Zeroizing<String>> {
+    let object = value.as_object_mut()?;
+    let mut secret = None;
+    for key in [camel, snake] {
+        if key == camel && snake == camel && secret.is_some() {
+            continue;
+        }
+        if let Some(Value::String(value)) = object.remove(key) {
+            let value = Zeroizing::new(value);
+            if secret.is_none() {
+                secret = Some(value);
+            }
+        }
+    }
+    secret
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WebexAuthorizationExchange<'a> {
+    grant_type: &'static str,
+    client_id: &'a str,
+    code: &'a str,
+    redirect_uri: &'a str,
+    code_verifier: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WebexRefreshExchange<'a> {
+    grant_type: &'static str,
+    client_id: &'a str,
+    refresh_token: &'a str,
 }
 
 fn provider_authorization_parameters(provider: ChatProvider) -> (&'static str, &'static str) {
@@ -1215,9 +1383,11 @@ fn provider_authorization_parameters(provider: ChatProvider) -> (&'static str, &
 async fn connect_oauth(provider: ChatProvider) -> Result<(), String> {
     let config = provider_config(provider)?;
     let (listener, redirect_uri) = callback_listener(provider, &config)?;
-    let verifier = random_urlsafe(64);
-    let challenge = general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-    let state = random_urlsafe(32);
+    let verifier = Zeroizing::new(random_urlsafe(64));
+    let challenge = Zeroizing::new(
+        general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes())),
+    );
+    let state = Zeroizing::new(random_urlsafe(32));
     let (authorize_endpoint, scope) = provider_authorization_parameters(provider);
     let mut authorize_url = reqwest::Url::parse(authorize_endpoint)
         .map_err(|_| "The chat authorization endpoint is invalid.".to_string())?;
@@ -1255,7 +1425,7 @@ async fn connect_oauth(provider: ChatProvider) -> Result<(), String> {
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|_| "Could not prepare the chat token request.".to_string())?;
-    let value = match provider {
+    let mut value = match provider {
         ChatProvider::Slack => {
             let response = client
                 .post("https://slack.com/api/oauth.v2.access")
@@ -1308,13 +1478,13 @@ async fn connect_oauth(provider: ChatProvider) -> Result<(), String> {
             )?;
             let response = client
                 .post(endpoint)
-                .json(&json!({
-                    "grantType": "authorization_code",
-                    "clientId": config.client_id,
-                    "code": code,
-                    "redirectUri": redirect_uri,
-                    "codeVerifier": verifier
-                }))
+                .json(&WebexAuthorizationExchange {
+                    grant_type: "authorization_code",
+                    client_id: &config.client_id,
+                    code: &code,
+                    redirect_uri: &redirect_uri,
+                    code_verifier: &verifier,
+                })
                 .send()
                 .await
                 .map_err(|_| "The Weekform Webex token broker could not be reached.".to_string())?;
@@ -1333,68 +1503,68 @@ async fn connect_oauth(provider: ChatProvider) -> Result<(), String> {
                 return Err("Slack did not authorize the requested read-only access.".to_string());
             }
             let user = value
-                .get("authed_user")
+                .get_mut("authed_user")
                 .ok_or_else(|| "Slack did not return a user authorization.".to_string())?;
             (
-                response_value(user, "access_token", "access_token")
+                take_secret_value(user, "accessToken", "access_token")
                     .ok_or_else(|| "Slack did not return an access token.".to_string())?,
-                response_value(user, "refresh_token", "refresh_token")
+                take_secret_value(user, "refreshToken", "refresh_token")
                     .ok_or_else(|| "Slack did not return rotating offline access.".to_string())?,
-                response_value(user, "id", "id").ok_or_else(|| {
+                take_secret_value(user, "id", "id").ok_or_else(|| {
                     "Slack did not return the authorized user identity.".to_string()
                 })?,
             )
         }
         ChatProvider::GoogleChat => {
-            let access_token = response_value(&value, "accessToken", "access_token")
+            let access_token = take_secret_value(&mut value, "accessToken", "access_token")
                 .ok_or_else(|| "Google Chat did not return an access token.".to_string())?;
-            let refresh_token = response_value(&value, "refreshToken", "refresh_token")
+            let refresh_token = take_secret_value(&mut value, "refreshToken", "refresh_token")
                 .ok_or_else(|| "Google Chat did not return offline access.".to_string())?;
-            let id_token = response_value(&value, "idToken", "id_token")
+            let id_token = take_secret_value(&mut value, "idToken", "id_token")
                 .ok_or_else(|| "Google Chat did not return an identity token.".to_string())?;
             let subject = jwt_subject(&id_token)
                 .ok_or_else(|| "Google Chat identity could not be read.".to_string())?;
-            (access_token, refresh_token, format!("users/{subject}"))
+            (
+                access_token,
+                refresh_token,
+                Zeroizing::new(format!("users/{}", subject.as_str())),
+            )
         }
         ChatProvider::Webex => (
-            response_value(&value, "accessToken", "access_token")
+            take_secret_value(&mut value, "accessToken", "access_token")
                 .ok_or_else(|| "The Webex broker did not return an access token.".to_string())?,
-            response_value(&value, "refreshToken", "refresh_token")
+            take_secret_value(&mut value, "refreshToken", "refresh_token")
                 .ok_or_else(|| "The Webex broker did not return offline access.".to_string())?,
-            response_value(&value, "selfId", "self_id").unwrap_or_default(),
+            take_secret_value(&mut value, "selfId", "self_id").unwrap_or_default(),
         ),
     };
     if provider == ChatProvider::Webex && self_id.is_empty() {
         let response = client
             .get("https://webexapis.com/v1/people/me")
-            .bearer_auth(&access_token)
+            .bearer_auth(access_token.as_str())
             .send()
             .await
             .map_err(|_| "Webex identity verification could not reach the provider.".to_string())?;
         if !response.status().is_success() {
             return Err("Webex could not verify the authorized account.".to_string());
         }
-        let identity = response
+        let mut identity = response
             .json::<Value>()
             .await
             .map_err(|_| "Webex returned an unreadable identity response.".to_string())?;
-        self_id = identity
-            .get("id")
-            .and_then(Value::as_str)
-            .map(str::to_string)
+        self_id = take_secret_value(&mut identity, "id", "id")
             .ok_or_else(|| "Webex did not return the authorized account identity.".to_string())?;
     }
-    drop(access_token);
-    token_write(
-        provider,
-        &StoredChatToken {
-            refresh_token,
-            self_id,
-        },
-    )
+    let stored = StoredChatToken {
+        refresh_token: refresh_token.to_string(),
+        self_id: self_id.to_string(),
+    };
+    token_write(provider, &stored)
 }
 
-async fn refresh_access_token(provider: ChatProvider) -> Result<(String, String), String> {
+async fn refresh_access_token(
+    provider: ChatProvider,
+) -> Result<(Zeroizing<String>, Zeroizing<String>), String> {
     let stored =
         token_read(provider)?.ok_or_else(|| format!("{} is not connected.", provider.label()))?;
     let config = provider_config(provider)?;
@@ -1402,7 +1572,7 @@ async fn refresh_access_token(provider: ChatProvider) -> Result<(String, String)
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|_| "Could not prepare the chat refresh request.".to_string())?;
-    let value = match provider {
+    let mut value = match provider {
         ChatProvider::Slack => {
             let response = client
                 .post("https://slack.com/api/oauth.v2.access")
@@ -1452,11 +1622,11 @@ async fn refresh_access_token(provider: ChatProvider) -> Result<(String, String)
             )?;
             let response = client
                 .post(endpoint)
-                .json(&json!({
-                    "grantType": "refresh_token",
-                    "clientId": config.client_id,
-                    "refreshToken": stored.refresh_token
-                }))
+                .json(&WebexRefreshExchange {
+                    grant_type: "refresh_token",
+                    client_id: &config.client_id,
+                    refresh_token: &stored.refresh_token,
+                })
                 .send()
                 .await
                 .map_err(|_| "The Weekform Webex token broker could not be reached.".to_string())?;
@@ -1473,33 +1643,39 @@ async fn refresh_access_token(provider: ChatProvider) -> Result<(String, String)
             if value.get("ok").and_then(Value::as_bool) != Some(true) {
                 return Err("Slack access expired. Disconnect and connect again.".to_string());
             }
-            let user = value.get("authed_user").unwrap_or(&value);
+            let user = if value.get("authed_user").is_some() {
+                value
+                    .get_mut("authed_user")
+                    .expect("checked Slack authorization object")
+            } else {
+                &mut value
+            };
             (
-                response_value(user, "accessToken", "access_token")
+                take_secret_value(user, "accessToken", "access_token")
                     .ok_or_else(|| "Slack refresh did not return an access token.".to_string())?,
-                response_value(user, "refreshToken", "refresh_token"),
+                take_secret_value(user, "refreshToken", "refresh_token"),
             )
         }
         _ => (
-            response_value(&value, "accessToken", "access_token").ok_or_else(|| {
+            take_secret_value(&mut value, "accessToken", "access_token").ok_or_else(|| {
                 format!(
                     "{} refresh did not return an access token.",
                     provider.label()
                 )
             })?,
-            response_value(&value, "refreshToken", "refresh_token"),
+            take_secret_value(&mut value, "refreshToken", "refresh_token"),
         ),
     };
     if let Some(refresh_token) = replacement_refresh {
         token_write(
             provider,
             &StoredChatToken {
-                refresh_token,
+                refresh_token: refresh_token.to_string(),
                 self_id: stored.self_id.clone(),
             },
         )?;
     }
-    Ok((access_token, stored.self_id))
+    Ok((access_token, Zeroizing::new(stored.self_id.clone())))
 }
 
 fn range_unix_seconds(value: &str) -> Result<i64, String> {
@@ -2368,11 +2544,15 @@ async fn fetch_webex(
 }
 
 fn connection_status(provider: ChatProvider) -> Result<ChatConnectionStatus, String> {
-    let config = provider_config(provider);
+    let config = inspect_provider_config(provider, &configured_env);
     let saved = token_read(provider)?.is_some();
     let available = config.is_ok();
     let connected = available && saved;
-    let detail = if let Err(error) = config {
+    let readiness_code = match &config {
+        Ok(_) => ChatReadinessCode::Ready,
+        Err((code, _)) => *code,
+    };
+    let detail = if let Err((_, error)) = config {
         if saved {
             format!("{error} A saved credential is present but cannot be used until configuration is restored.")
         } else {
@@ -2394,6 +2574,7 @@ fn connection_status(provider: ChatProvider) -> Result<ChatConnectionStatus, Str
         connected,
         requires_broker: provider == ChatProvider::Webex,
         detail,
+        readiness_code,
     })
 }
 
@@ -2523,22 +2704,18 @@ pub fn clear_chat_source_storage() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        authoritative_receipt_coverage, collection_authority_coverage, disconnect_key_order,
-        exclusive_provider_lower_bound, keyed_digest, normalize_google_messages,
-        normalize_slack_messages, normalize_webex_messages, participant_bucket,
-        project_google_messages, project_slack_messages_with_count, project_webex_messages,
-        provider_authorization_parameters, receipt_semantics, retain_requested_events,
-        slack_history_next_cursor, slack_rate_limit_model_eligible, validate_provider_config,
-        validate_redirect_uri, wait_for_callback, webex_page_reached_start, ChatProvider,
-        ChatRangeRequest, ProviderFetch, StoredChatCursor, SyncCoverage,
+        authoritative_receipt_coverage, callback_decision, collection_authority_coverage,
+        disconnect_key_order, exclusive_provider_lower_bound, keyed_digest,
+        normalize_google_messages, normalize_slack_messages, normalize_webex_messages,
+        participant_bucket, project_google_messages, project_slack_messages_with_count,
+        project_webex_messages, provider_authorization_parameters, provider_readiness,
+        receipt_semantics, retain_requested_events, slack_history_next_cursor,
+        slack_rate_limit_model_eligible, take_secret_value, validate_provider_config,
+        validate_redirect_uri, webex_page_reached_start, CallbackDecision, ChatConnectionStatus,
+        ChatProvider, ChatRangeRequest, ChatReadinessCode, ProviderFetch, StoredChatCursor,
+        StoredChatToken, SyncCoverage,
     };
     use serde_json::json;
-    use std::{
-        io::Write,
-        net::{TcpListener, TcpStream},
-        thread,
-        time::Duration,
-    };
     use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
     #[test]
@@ -2547,6 +2724,157 @@ mod tests {
         assert!(serde_json::from_str::<ChatProvider>("\"google_chat\"").is_ok());
         assert!(serde_json::from_str::<ChatProvider>("\"webex\"").is_ok());
         assert!(serde_json::from_str::<ChatProvider>("\"teams\"").is_err());
+    }
+
+    #[test]
+    fn provider_readiness_uses_safe_typed_codes_without_echoing_configuration() {
+        let read = |name: &str| match name {
+            "WEBEX_CHAT_CLIENT_ID" => Some("synthetic-client".to_string()),
+            "WEBEX_CHAT_REDIRECT_URI" => {
+                Some("http://127.0.0.1:49152/chat-auth/callback".to_string())
+            }
+            "WEEKFORM_CHAT_OAUTH_BROKER_URL" => {
+                Some("https://broker.example.test/weekform".to_string())
+            }
+            "WEBEX_CHAT_BROKER_SECURITY_VERIFIED" => Some("true".to_string()),
+            _ => None,
+        };
+
+        assert_eq!(
+            provider_readiness(ChatProvider::Slack, &read),
+            ChatReadinessCode::MissingClientId,
+        );
+        assert_eq!(
+            provider_readiness(ChatProvider::Webex, &read),
+            ChatReadinessCode::Ready,
+        );
+
+        let serialized = serde_json::to_string(&provider_readiness(ChatProvider::Slack, &read))
+            .expect("readiness code should serialize");
+        assert_eq!(serialized, "\"missing_client_id\"");
+        assert!(!serialized.contains("SLACK_CHAT_CLIENT_ID"));
+        assert!(!serialized.contains("synthetic-client"));
+    }
+
+    #[test]
+    fn webex_readiness_distinguishes_each_operator_gate_without_configuration_values() {
+        let cases = [
+            (
+                vec![("WEBEX_CHAT_CLIENT_ID", "synthetic-client")],
+                ChatReadinessCode::MissingRedirectUri,
+            ),
+            (
+                vec![
+                    ("WEBEX_CHAT_CLIENT_ID", "synthetic-client"),
+                    ("WEBEX_CHAT_REDIRECT_URI", "https://callback.example.test"),
+                ],
+                ChatReadinessCode::InvalidRedirectUri,
+            ),
+            (
+                vec![
+                    ("WEBEX_CHAT_CLIENT_ID", "synthetic-client"),
+                    (
+                        "WEBEX_CHAT_REDIRECT_URI",
+                        "http://127.0.0.1:49152/chat-auth/callback",
+                    ),
+                ],
+                ChatReadinessCode::MissingBrokerUrl,
+            ),
+            (
+                vec![
+                    ("WEBEX_CHAT_CLIENT_ID", "synthetic-client"),
+                    (
+                        "WEBEX_CHAT_REDIRECT_URI",
+                        "http://127.0.0.1:49152/chat-auth/callback",
+                    ),
+                    ("WEEKFORM_CHAT_OAUTH_BROKER_URL", "http://broker.invalid"),
+                ],
+                ChatReadinessCode::InvalidBrokerUrl,
+            ),
+            (
+                vec![
+                    ("WEBEX_CHAT_CLIENT_ID", "synthetic-client"),
+                    (
+                        "WEBEX_CHAT_REDIRECT_URI",
+                        "http://127.0.0.1:49152/chat-auth/callback",
+                    ),
+                    (
+                        "WEEKFORM_CHAT_OAUTH_BROKER_URL",
+                        "https://broker.example.test/weekform",
+                    ),
+                ],
+                ChatReadinessCode::BrokerSecurityReviewRequired,
+            ),
+        ];
+
+        for (configuration, expected) in cases {
+            let read = |name: &str| {
+                configuration
+                    .iter()
+                    .find(|(key, _)| *key == name)
+                    .map(|(_, value)| (*value).to_string())
+            };
+            assert_eq!(provider_readiness(ChatProvider::Webex, &read), expected);
+        }
+    }
+
+    #[test]
+    fn status_adds_readiness_code_without_changing_existing_wire_fields() {
+        let status = ChatConnectionStatus {
+            provider: ChatProvider::Slack,
+            available: false,
+            connected: false,
+            requires_broker: false,
+            detail: "Unavailable in this build.".to_string(),
+            readiness_code: ChatReadinessCode::MissingClientId,
+        };
+
+        assert_eq!(
+            serde_json::to_value(status).unwrap(),
+            json!({
+                "provider": "slack",
+                "available": false,
+                "connected": false,
+                "requiresBroker": false,
+                "detail": "Unavailable in this build.",
+                "readinessCode": "missing_client_id"
+            }),
+        );
+    }
+
+    #[test]
+    fn persisted_chat_secrets_are_zeroized_on_drop_without_changing_keychain_json() {
+        fn assert_zeroize_on_drop<T: zeroize::ZeroizeOnDrop>() {}
+        assert_zeroize_on_drop::<StoredChatToken>();
+        assert_zeroize_on_drop::<StoredChatCursor>();
+
+        let token = StoredChatToken {
+            refresh_token: "synthetic-refresh-secret".to_string(),
+            self_id: "synthetic-provider-identity".to_string(),
+        };
+        assert_eq!(
+            serde_json::to_value(&token).unwrap(),
+            json!({
+                "refresh_token": "synthetic-refresh-secret",
+                "self_id": "synthetic-provider-identity"
+            }),
+        );
+    }
+
+    #[test]
+    fn response_secrets_are_removed_from_json_and_owned_by_zeroizing_memory() {
+        let mut response = json!({
+            "access_token": "synthetic-access-secret",
+            "refresh_token": "synthetic-refresh-secret"
+        });
+
+        let access = take_secret_value(&mut response, "accessToken", "access_token").unwrap();
+        let refresh = take_secret_value(&mut response, "refreshToken", "refresh_token").unwrap();
+
+        assert_eq!(access.as_str(), "synthetic-access-secret");
+        assert_eq!(refresh.as_str(), "synthetic-refresh-secret");
+        assert!(response.get("access_token").is_none());
+        assert!(response.get("refresh_token").is_none());
     }
 
     #[test]
@@ -2562,25 +2890,26 @@ mod tests {
 
     #[test]
     fn unverified_loopback_probe_cannot_cancel_the_real_oauth_callback() {
-        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
-        let address = listener.local_addr().unwrap();
-        let callback = thread::spawn(move || {
-            wait_for_callback(listener, "expected-state", "/chat-auth/callback")
-        });
-        let send = |target: &str| {
-            let mut stream = TcpStream::connect(address).unwrap();
-            write!(
-                stream,
-                "GET {target} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n"
+        assert!(matches!(
+            callback_decision(
+                "/chat-auth/callback?error=access_denied&state=wrong-state",
+                "expected-state",
+                "/chat-auth/callback",
             )
-            .unwrap();
+            .unwrap(),
+            CallbackDecision::IgnoreUnverified,
+        ));
+
+        let decision = callback_decision(
+            "/chat-auth/callback?code=verified-code&state=expected-state",
+            "expected-state",
+            "/chat-auth/callback",
+        )
+        .unwrap();
+        let CallbackDecision::Authorized(code) = decision else {
+            panic!("verified callback should produce an authorization code");
         };
-
-        send("/chat-auth/callback?error=access_denied&state=wrong-state");
-        thread::sleep(Duration::from_millis(20));
-        send("/chat-auth/callback?code=verified-code&state=expected-state");
-
-        assert_eq!(callback.join().unwrap().unwrap(), "verified-code");
+        assert_eq!(code.as_str(), "verified-code");
     }
 
     #[test]

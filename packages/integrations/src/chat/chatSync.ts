@@ -1,52 +1,21 @@
 import type { RawEvent, WorkBlock } from "../../../domain/src/models";
 import { importRawEvents } from "../import/rawEvents";
+import {
+  CHAT_PROVIDER_CAPABILITIES,
+  chatProviderCapability,
+  type ChatProviderCapability,
+  type ChatProviderId,
+} from "./chatProviderCapabilities";
 
-/** Providers that can be connected from Settings. Legacy Teams files remain import-only. */
-export type ChatProviderId = "slack" | "google_chat" | "webex";
+export type { ChatProviderCapability, ChatProviderId } from "./chatProviderCapabilities";
+export type ChatProviderDescriptor = ChatProviderCapability;
+export { CHAT_PROVIDER_CAPABILITIES, chatProviderCapability } from "./chatProviderCapabilities";
 
-export interface ChatProviderDescriptor {
-  id: ChatProviderId;
-  label: string;
-  connection: "oauth_pkce" | "oauth_broker";
-  description: string;
-  contentBoundary: string;
-  requiresBroker: boolean;
-}
+/** Compatibility alias; new consumers should use `CHAT_PROVIDER_CAPABILITIES`. */
+export const CHAT_PROVIDERS: readonly ChatProviderCapability[] = CHAT_PROVIDER_CAPABILITIES;
 
-export const CHAT_PROVIDERS: readonly ChatProviderDescriptor[] = [
-  {
-    id: "slack",
-    label: "Slack",
-    connection: "oauth_pkce",
-    description: "Sync top-level message evidence from currently listed, non-archived Slack conversations. Thread replies are not included.",
-    contentBoundary: "Message content is discarded at the native boundary.",
-    requiresBroker: false,
-  },
-  {
-    id: "google_chat",
-    label: "Google Chat",
-    connection: "oauth_pkce",
-    description: "Connect Google Chat and sync attention evidence from spaces and direct messages.",
-    contentBoundary: "Message content is discarded at the native boundary.",
-    requiresBroker: false,
-  },
-  {
-    id: "webex",
-    label: "Webex",
-    connection: "oauth_broker",
-    description: "Connect Webex and sync attention evidence from rooms and direct messages.",
-    contentBoundary: "Message content is discarded at the native boundary.",
-    requiresBroker: true,
-  },
-] as const;
-
-export function providerDescriptor(provider: ChatProviderId): ChatProviderDescriptor {
-  const descriptor = CHAT_PROVIDERS.find((candidate) => candidate.id === provider);
-  if (!descriptor) {
-    throw new Error(`Unsupported chat provider: ${provider}`);
-  }
-  return descriptor;
-}
+/** Compatibility name retained for existing audit and UI consumers. */
+export const providerDescriptor = chatProviderCapability;
 
 export interface ChatRangeInput {
   start_date: string;

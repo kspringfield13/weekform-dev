@@ -1,12 +1,25 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
-import { Check, ExternalLink, LoaderCircle, LockKeyhole, ShieldCheck } from "lucide-react";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import type { ChatProviderId } from "../../../../../packages/integrations/src/chat/chatSync";
-import type { ChatConnectionStatus } from "../../hooks/useChatSources";
 import {
-  CHAT_SETUP_GUIDES,
-  chatSetupState,
-} from "./chatSetupGuides";
+  Check,
+  ExternalLink,
+  LoaderCircle,
+  LockKeyhole,
+  ShieldCheck,
+  TriangleAlert,
+} from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import {
+  chatProviderCapability,
+  type ChatProviderId,
+} from "../../../../../packages/integrations/src/chat/chatProviderCapabilities";
+import type {
+  ChatConnectionStatus,
+  ChatProviderActivity,
+} from "../../hooks/useChatSources";
+import {
+  chatCapabilityNotice,
+  chatConnectionPresentation,
+} from "./chatConnectionPresentation";
 
 async function openSetupLink(url: string): Promise<void> {
   if ("__TAURI_INTERNALS__" in window) {
@@ -19,49 +32,64 @@ async function openSetupLink(url: string): Promise<void> {
 
 export function ChatConnectWizard({
   provider,
-  label,
   status,
+  activity,
   rangeIsValid,
-  busy,
   refreshing,
   onConnect,
+  onSync,
   onRecheck,
   onClose,
 }: {
   provider: ChatProviderId;
-  label: string;
   status: ChatConnectionStatus | undefined;
+  activity: ChatProviderActivity;
   rangeIsValid: boolean;
-  busy: boolean;
   refreshing: boolean;
-  onConnect: () => void;
-  onRecheck: () => void;
+  onConnect: () => Promise<void>;
+  onSync: () => Promise<void>;
+  onRecheck: () => Promise<void>;
   onClose: () => void;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const initialFocusRef = useRef<HTMLButtonElement>(null);
+  const progressHasFocusRef = useRef(false);
   const baseId = useId();
   const titleId = `${baseId}-title`;
   const descriptionId = `${baseId}-description`;
-  const guide = CHAT_SETUP_GUIDES[provider];
-  const setupState = chatSetupState(status);
+  const capability = chatProviderCapability(provider);
+  const capabilityNotice = chatCapabilityNotice(capability);
+  const presentation = chatConnectionPresentation({ status, activity });
   const [linkError, setLinkError] = useState<string | null>(null);
 
   useEffect(() => {
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    closeRef.current?.focus();
+    initialFocusRef.current?.focus();
     return () => previouslyFocused?.focus?.();
   }, []);
+
+  useEffect(() => {
+    if (!presentation.canClose && !progressHasFocusRef.current) {
+      panelRef.current?.focus();
+      progressHasFocusRef.current = true;
+    } else if (presentation.canClose) {
+      progressHasFocusRef.current = false;
+    }
+  }, [presentation.canClose]);
+
+  const requestClose = () => {
+    if (presentation.canClose) onClose();
+  };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Escape") {
       event.stopPropagation();
-      onClose();
+      requestClose();
       return;
     }
     if (event.key !== "Tab") return;
     const focusable = panelRef.current?.querySelectorAll<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      'button:not(:disabled), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
     );
     if (!focusable?.length) return;
     const first = focusable[0];
@@ -82,120 +110,181 @@ export function ChatConnectWizard({
     });
   };
 
-  const needsSetup = setupState === "needs_setup";
-  const checking = setupState === "checking";
+  const runPrimaryAction = () => {
+    setLinkError(null);
+    if (presentation.stage === "complete") {
+      onClose();
+      return;
+    }
+    if (presentation.stage === "checking" || presentation.stage === "unavailable") {
+      void onRecheck().catch(() => undefined);
+      return;
+    }
+    if (presentation.stage === "access_review" || presentation.stage === "authorization_error") {
+      void onConnect().catch(() => undefined);
+      return;
+    }
+    if (presentation.stage === "transfer_error" || presentation.stage === "native_filtering") {
+      void onSync().catch(() => undefined);
+    }
+  };
+
+  const primaryDisabled = refreshing ||
+    (presentation.requiresRange && !rangeIsValid) ||
+    presentation.stage === "browser_authorization" ||
+    (presentation.stage === "native_filtering" && activity.phase === "syncing");
+  const showOperatorSetup = presentation.stage === "unavailable";
+  const checkingAvailability = presentation.stage === "checking";
 
   return (
     <div
       className="dialog-overlay chat-connect-overlay"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) requestClose();
       }}
     >
       <div
         ref={panelRef}
-        className="dialog-panel chat-connect-dialog"
+        className={`dialog-panel chat-connect-dialog is-${provider}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descriptionId}
+        aria-busy={!presentation.canClose}
+        tabIndex={-1}
         onKeyDown={handleKeyDown}
       >
         <header className="chat-connect-header">
-          <span className={`calendar-provider-mark is-${provider}`} aria-hidden>{label.slice(0, 1)}</span>
+          <span className={`calendar-provider-mark is-${provider}`} aria-hidden>
+            {capability.label.slice(0, 1)}
+          </span>
           <div>
-            <span className="chat-connect-eyebrow">Chat connection</span>
-            <h2 className="dialog-title" id={titleId}>Connect {label}</h2>
+            <span className="chat-connect-eyebrow">Private account transfer</span>
+            <h2 className="dialog-title" id={titleId}>Connect {capability.label}</h2>
           </div>
         </header>
 
-        <p className="dialog-desc" id={descriptionId}>
-          {needsSetup
-            ? `This copy of Weekform needs ${label} connector setup before you can authorize an account.`
-            : checking
-              ? "Weekform needs a fresh connector check before it can continue."
-              : guide.authorizationSummary}
-        </p>
+        <p className="dialog-desc" id={descriptionId}>{presentation.summary}</p>
 
-        {needsSetup || checking ? (
-          <ol className="chat-connect-steps">
-            <li>
-              <span className="chat-connect-step-number">1</span>
-              <div>
-                <strong>Get the provider credential</strong>
-                <p>{guide.setupSummary}</p>
-                <div className="chat-connect-links">
-                  <button type="button" onClick={() => openLink(guide.credentialsUrl)}>
-                    <ExternalLink size={13} aria-hidden /> {guide.credentialsLinkLabel}
-                  </button>
-                  <button type="button" onClick={() => openLink(guide.docsUrl)}>
-                    <ExternalLink size={13} aria-hidden /> {guide.docsLinkLabel}
-                  </button>
-                </div>
-              </div>
-            </li>
-            <li>
-              <span className="chat-connect-step-number">2</span>
-              <div>
-                <strong>Add the public setup to Weekform</strong>
-                <p>Configure these build settings, then restart the desktop app. Never paste a client secret into Weekform.</p>
-                <div className="chat-connect-settings" aria-label={`${label} required build settings`}>
-                  {guide.buildSettings.map((setting) => <code key={setting}>{setting}</code>)}
-                </div>
-              </div>
-            </li>
-            <li>
-              <span className="chat-connect-step-number">3</span>
-              <div>
-                <strong>Recheck, then authorize</strong>
-                <p>Weekform will verify the connector before opening {label} in your browser.</p>
-              </div>
-            </li>
-          </ol>
+        {checkingAvailability ? (
+          <div className="chat-connect-unavailable" aria-live="polite">
+            <LoaderCircle className="spin" size={16} aria-hidden />
+            <div>
+              <strong>Checking connector availability</strong>
+              <p>Weekform is asking the native app for a safe readiness status.</p>
+            </div>
+          </div>
+        ) : showOperatorSetup ? (
+          <div className="chat-connect-unavailable" aria-live="polite">
+            <TriangleAlert size={16} aria-hidden />
+            <div>
+              <strong>{capability.label} connection unavailable</strong>
+              <p>This Mac app was not prepared for {capability.label} authorization. You do not need to change app settings or paste a secret.</p>
+              <p>The sanitized local JSON import remains available in Chat settings.</p>
+            </div>
+          </div>
         ) : (
-          <ol className="chat-connect-steps">
-            <li>
-              <span className="chat-connect-step-number"><ExternalLink size={13} aria-hidden /></span>
-              <div><strong>Sign in in your browser</strong><p>Weekform never asks for your {label} password.</p></div>
-            </li>
-            <li>
-              <span className="chat-connect-step-number"><ShieldCheck size={13} aria-hidden /></span>
+          <ol className="chat-connect-steps" aria-live="polite">
+            <li className={presentation.stage === "access_review" ? "is-current" : "is-complete"}>
+              <span className="chat-connect-step-number">
+                {presentation.stage === "access_review" ? "1" : <Check size={13} aria-hidden />}
+              </span>
               <div>
-                <strong>Approve limited read access</strong>
-                <ul>{guide.accessItems.map((item) => <li key={item}>{item}</li>)}</ul>
+                <strong>Review access</strong>
+                <p>{capability.authorization.summary}</p>
+                <ul>{capability.authorization.accessItems.map((item) => <li key={item}>{item}</li>)}</ul>
               </div>
             </li>
-            <li>
-              <span className="chat-connect-step-number"><Check size={13} aria-hidden /></span>
-              <div><strong>Return to Weekform</strong><p>The selected date range syncs into content-free, reviewable evidence on this Mac.</p></div>
+            <li className={presentation.stage === "browser_authorization" ? "is-current" : status?.connected ? "is-complete" : undefined}>
+              <span className="chat-connect-step-number">
+                {presentation.stage === "browser_authorization"
+                  ? <LoaderCircle className="spin" size={13} aria-hidden />
+                  : status?.connected
+                    ? <Check size={13} aria-hidden />
+                    : "2"}
+              </span>
+              <div>
+                <strong>Authorize in your system browser</strong>
+                <p>Weekform never asks for your {capability.label} password. Return here after the provider finishes.</p>
+              </div>
+            </li>
+            <li className={presentation.stage === "native_filtering" ? "is-current" : presentation.stage === "complete" ? "is-complete" : undefined}>
+              <span className="chat-connect-step-number">
+                {presentation.stage === "native_filtering" && activity.phase === "syncing"
+                  ? <LoaderCircle className="spin" size={13} aria-hidden />
+                  : presentation.stage === "complete"
+                    ? <Check size={13} aria-hidden />
+                    : "3"}
+              </span>
+              <div>
+                <strong>Transfer and filter on this Mac</strong>
+                <p>Only the selected inclusive range—up to {capability.transfer.range.maxDays} days—is read. Native filtering discards content and raw identities before evidence reaches Weekform.</p>
+                {activity.receipt && (
+                  <p>{activity.receipt.has_more
+                    ? `${activity.receipt.normalized_count} content-free signals retained so far; more provider pages remain.`
+                    : `${activity.receipt.normalized_count} content-free signals retained in this run.`}</p>
+                )}
+              </div>
             </li>
           </ol>
         )}
 
+        {!checkingAvailability && !showOperatorSetup && capabilityNotice && (
+          <p className="chat-connect-provider-note">{capabilityNotice}</p>
+        )}
+
         <div className="chat-connect-privacy">
           <LockKeyhole size={14} aria-hidden />
-          <span>Credentials stay in macOS Keychain. Message content is discarded at the native boundary and is not stored or sent to AI.</span>
+          <span>Credentials stay in macOS Keychain. Message content and raw identifiers are discarded at the native boundary and are not stored, audited, exported, or sent to AI.</span>
         </div>
 
-        {status?.detail && <p className="chat-connect-build-detail"><strong>Connector check:</strong> {status.detail}</p>}
-        {!rangeIsValid && !needsSetup && !checking && (
+        {showOperatorSetup && (
+          <details className="chat-connect-operator">
+            <summary>Requirements for the person who prepares this build</summary>
+            <p>{capability.operatorSetup.summary}</p>
+            <div className="chat-connect-settings" aria-label={`${capability.label} operator build settings`}>
+              {capability.operatorSetup.buildSettings.map((setting) => <code key={setting}>{setting}</code>)}
+            </div>
+            <div className="chat-connect-links">
+              <button type="button" onClick={() => openLink(capability.operatorSetup.credentialsUrl)}>
+                <ExternalLink size={13} aria-hidden /> {capability.operatorSetup.credentialsLinkLabel}
+              </button>
+              <button type="button" onClick={() => openLink(capability.operatorSetup.docsUrl)}>
+                <ExternalLink size={13} aria-hidden /> {capability.operatorSetup.docsLinkLabel}
+              </button>
+            </div>
+          </details>
+        )}
+
+        {activity.message && <p className="import-error" role="alert">{activity.message}</p>}
+        {!rangeIsValid && presentation.requiresRange && (
           <p className="import-error" role="alert">Choose a valid transfer date range before continuing.</p>
         )}
         {linkError && <p className="import-error" role="alert">{linkError}</p>}
 
         <div className="dialog-actions">
-          <button ref={closeRef} className="secondary-action" type="button" onClick={onClose}>Not now</button>
-          {needsSetup || checking ? (
-            <button className="primary-action" type="button" disabled={refreshing} onClick={onRecheck}>
-              {refreshing && <LoaderCircle className="spin" size={15} aria-hidden />}
-              {refreshing ? "Checking…" : "Recheck setup"}
+          {presentation.canClose ? (
+            <button
+              ref={presentation.stage === "complete" ? undefined : initialFocusRef}
+              className="secondary-action"
+              type="button"
+              onClick={onClose}
+            >
+              {presentation.stage === "complete" ? "Close" : "Not now"}
             </button>
           ) : (
-            <button className="primary-action" type="button" disabled={!rangeIsValid || busy} onClick={onConnect}>
-              {busy && <LoaderCircle className="spin" size={15} aria-hidden />}
-              {busy ? "Connecting…" : `Continue to ${label}`}
-            </button>
+            <span className="chat-connect-stay-open"><ShieldCheck size={13} aria-hidden /> Keep Weekform open</span>
           )}
+          <button
+            ref={presentation.stage === "complete" ? initialFocusRef : undefined}
+            className="primary-action"
+            type="button"
+            disabled={primaryDisabled}
+            onClick={runPrimaryAction}
+          >
+            {!presentation.canClose && <LoaderCircle className="spin" size={15} aria-hidden />}
+            {refreshing ? "Checking…" : presentation.primaryAction}
+          </button>
         </div>
       </div>
     </div>

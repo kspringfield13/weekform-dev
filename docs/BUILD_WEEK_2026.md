@@ -791,16 +791,32 @@ The hackathon-readiness and provenance task is supplemental evidence:
   Webex token broker, and live-account transfer remain unclaimed. Codex task
   `019f7f6c-b19e-7d71-a333-58c951ef34c5` contains the implementation and review
   evidence; raw task artifacts are not public submission material.
-  A July 20 connection-UX follow-through replaces the disabled unavailable
-  actions with provider-specific **Connect now** guides. Each guide links to the
-  official credential console and authorization documentation, names the exact
-  public desktop build settings, separates build setup from account consent,
-  previews requested access and the local content-discard boundary, and offers
-  a status recheck before browser authorization. Focused Chat setup and sync
-  tests pass 17/17 and the authoritative root build passes. Browser verification
-  covered all three missing-setup guides, modal focus entry and wrapping, Escape,
-  and focus trapping with no console or page errors; it does not claim a live
-  provider authorization, native Keychain exercise, or packaged-app proof.
+  A July 20 connection-UX follow-through replaces duplicated provider-guide
+  metadata with one shared integration capability registry. In an unconfigured
+  build, **Connect now** opens end-user copy that says the connector is
+  unavailable, keeps operator requirements behind progressive disclosure, and
+  points back to the existing sanitized local import instead of instructing the
+  user to configure build variables. In a configured build, the same modal
+  presents access review, system-browser authorization, native content-free
+  filtering, bounded initial-transfer progress, retryable failure, and intact-run
+  completion without dismissing itself during an active step. Typed readiness
+  codes cross the native boundary while unknown or older payloads normalize to
+  generic safe copy. Slack capability truth records desktop PKCE availability,
+  user-scope-only redirects, rotating 30-day refresh tokens, and the applicable
+  1-request/minute, 15-row history limit; Google records loopback PKCE and its
+  restricted read scope; Webex remains confidential and uses the existing
+  token-only HTTPS broker. Native secret wrappers use the narrow `zeroize`
+  dependency so transient authorization, token, self-id, and serialized
+  credential/cursor buffers clear on drop without changing Keychain
+  serialization; no generic provider SDK was added. Live provider authorization,
+  provider-console configuration, Google restricted-scope verification, the
+  deployed Webex broker, packaged-app behavior, and account-level transfers
+  remain explicitly unclaimed. Focused Chat contracts pass 78/78, native Chat
+  tests pass 35/35, and the authoritative root build, Cargo check, Rust format
+  check, diff check, and live-registry root package audit pass; the audit reports
+  zero vulnerabilities. Rendered browser review at the 1024×720 minimum covered
+  the unavailable-build flow in light and dark themes with no page errors. The
+  configured live-account authorization and transfer flow remains unclaimed.
 
 - **July 20 production Manager Mode:** The desktop Manager Mode replaced its
   synthetic roster, metrics, briefing, history, and coordination queue with

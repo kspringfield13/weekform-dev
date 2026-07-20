@@ -1913,6 +1913,29 @@ h3 {
   content: "";
 }
 
+.chat-connect-steps > li.is-current .chat-connect-step-number {
+  border-color: color-mix(in srgb, currentColor 52%, var(--border));
+  color: var(--text);
+  background: var(--surface-muted);
+}
+
+.chat-connect-dialog.is-slack .chat-connect-steps > li.is-current .chat-connect-step-number {
+  color: #36c5f0;
+}
+
+.chat-connect-dialog.is-google_chat .chat-connect-steps > li.is-current .chat-connect-step-number {
+  color: #4285f4;
+}
+
+.chat-connect-dialog.is-webex .chat-connect-steps > li.is-current .chat-connect-step-number {
+  color: #00bceb;
+}
+
+.chat-connect-steps > li.is-complete .chat-connect-step-number {
+  border-color: color-mix(in srgb, var(--success) 38%, var(--border));
+  color: var(--success);
+}
+
 .chat-connect-step-number {
   position: relative;
   z-index: 1;
@@ -2008,6 +2031,77 @@ h3 {
 .chat-connect-privacy svg {
   margin-top: 1px;
   color: var(--success);
+}
+
+.chat-connect-unavailable {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+}
+
+.chat-connect-unavailable > svg {
+  margin-top: 1px;
+  color: var(--warning);
+}
+
+.chat-connect-unavailable strong,
+.chat-connect-operator summary {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.chat-connect-unavailable p,
+.chat-connect-operator p,
+.chat-connect-provider-note {
+  margin: 4px 0 0;
+  color: var(--text-subtle);
+  font-size: 10px;
+  line-height: 1.48;
+}
+
+.chat-connect-provider-note {
+  padding-left: 10px;
+  border-left: 2px solid var(--border-strong);
+}
+
+.chat-connect-operator {
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.chat-connect-operator summary {
+  cursor: pointer;
+}
+
+.chat-connect-operator[open] summary {
+  margin-bottom: 7px;
+}
+
+.chat-connect-stay-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+
+.chat-connect-stay-open svg {
+  color: var(--success);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-connect-dialog .spin {
+    animation: none !important;
+  }
 }
 
 .chat-connect-build-detail {

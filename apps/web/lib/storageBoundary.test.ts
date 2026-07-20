@@ -94,3 +94,31 @@ test("request-fresh coordinator is mounted on both authenticated workload surfac
     assert.match(source, /export const dynamic = "force-dynamic"/, `${relativePath} must opt out of caching`);
   }
 });
+
+test("background Web updates do not render developer status chrome", () => {
+  const requestFreshness = readFileSync(
+    path.join(WEB_ROOT, "components/RequestFreshnessRefresh.tsx"),
+    "utf8",
+  );
+  const realtime = readFileSync(
+    path.join(WEB_ROOT, "components/PersonalReplicaRealtime.tsx"),
+    "utf8",
+  );
+  const sources = requestFreshness + realtime;
+
+  for (const statusCopy of [
+    "Checked for approved updates",
+    "Request-fresh server data",
+    "Private live updates connected",
+    "Ephemeral signed-in channel",
+  ]) {
+    assert.doesNotMatch(sources, new RegExp(statusCopy));
+  }
+  assert.match(requestFreshness, /setInterval/);
+  assert.match(requestFreshness, /router\.refresh\(\)/);
+  assert.match(realtime, /\.on\("broadcast"/);
+  assert.match(realtime, /\.subscribe\(\)/);
+  assert.match(realtime, /router\.refresh\(\)/);
+  assert.match(requestFreshness, /return null;/);
+  assert.match(realtime, /return null;/);
+});

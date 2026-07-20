@@ -1,14 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useTransition } from "react";
 
 import { createRealtimeClient } from "@/lib/supabase/browser";
 
 export function PersonalReplicaRealtime({ userId }: { userId: string }) {
   const router = useRouter();
-  const [connected, setConnected] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
 
   useEffect(() => {
     const supabase = createRealtimeClient();
@@ -24,9 +23,7 @@ export function PersonalReplicaRealtime({ userId }: { userId: string }) {
           if (!active) return;
           startTransition(() => router.refresh());
         })
-        .subscribe((status) => {
-          if (active) setConnected(status === "SUBSCRIBED");
-        });
+        .subscribe();
     });
 
     return () => {
@@ -35,14 +32,5 @@ export function PersonalReplicaRealtime({ userId }: { userId: string }) {
     };
   }, [router, userId]);
 
-  return (
-    <div className="status-line" aria-live="polite">
-      <span>
-        {connected
-          ? pending ? "A Mac update arrived — refreshing…" : "Private live updates connected"
-          : "Live updates unavailable — 15-second refresh remains active"}
-      </span>
-      <span>Ephemeral signed-in channel · no browser workload cache</span>
-    </div>
-  );
+  return null;
 }

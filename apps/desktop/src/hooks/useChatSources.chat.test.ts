@@ -259,6 +259,7 @@ test("a failed initial sync does not turn a saved authorization into a failed co
   const syncError = new Error("provider temporarily unavailable");
 
   const result = await authorizeThenSyncChatSource({
+    onPhase: (phase) => events.push(phase),
     authorize: async () => {
       events.push("authorized");
     },
@@ -271,7 +272,14 @@ test("a failed initial sync does not turn a saved authorization into a failed co
     },
   });
 
-  assert.deepEqual(events, ["authorized", "connection-audited", "sync-attempted"]);
+  assert.deepEqual(events, [
+    "browser_authorization",
+    "authorized",
+    "connection-audited",
+    "native_filtering",
+    "sync-attempted",
+    "transfer_error",
+  ]);
   assert.equal(result.syncCompleted, false);
   assert.equal(result.syncError, syncError);
 });
@@ -282,6 +290,7 @@ test("an authorization failure never starts sync or records a successful connect
 
   await assert.rejects(
     authorizeThenSyncChatSource({
+      onPhase: (phase) => events.push(phase),
       authorize: async () => {
         throw authorizationError;
       },
@@ -295,7 +304,37 @@ test("an authorization failure never starts sync or records a successful connect
     authorizationError,
   );
 
-  assert.deepEqual(events, []);
+  assert.deepEqual(events, ["browser_authorization", "authorization_error"]);
+});
+
+test("connection lifecycle reaches completion only after the initial native transfer", async () => {
+  const phases: string[] = [];
+
+  const result = await authorizeThenSyncChatSource({
+    onPhase: (phase) => phases.push(phase),
+    authorize: async () => undefined,
+    onAuthorized: () => undefined,
+    initialSync: async () => undefined,
+  });
+
+  assert.deepEqual(phases, ["browser_authorization", "native_filtering", "complete"]);
+  assert.equal(result.syncCompleted, true);
+  assert.equal(result.syncError, null);
+});
+
+test("a retained resumable page keeps the initial transfer in progress", async () => {
+  const phases: string[] = [];
+
+  const result = await authorizeThenSyncChatSource({
+    onPhase: (phase) => phases.push(phase),
+    authorize: async () => undefined,
+    onAuthorized: () => undefined,
+    initialSync: async () => "in_progress" as const,
+  });
+
+  assert.deepEqual(phases, ["browser_authorization", "native_filtering"]);
+  assert.equal(result.syncCompleted, false);
+  assert.equal(result.syncError, null);
 });
 
 test("a status refresh failure preserves a saved connection only as last-known state", () => {
@@ -306,6 +345,7 @@ test("a status refresh failure preserves a saved connection only as last-known s
         available: true,
         connected: true,
         stale: false,
+        readinessCode: "ready",
         detail: "Connected in this macOS app.",
       },
       {
@@ -313,6 +353,7 @@ test("a status refresh failure preserves a saved connection only as last-known s
         available: true,
         connected: false,
         stale: false,
+        readinessCode: "ready",
         detail: "Ready to connect.",
       },
     ],
@@ -324,6 +365,7 @@ test("a status refresh failure preserves a saved connection only as last-known s
     available: true,
     connected: true,
     stale: true,
+    readinessCode: "ready",
     detail: "Last known connected; current status could not be read.",
   });
   assert.deepEqual(degraded[1], {
@@ -331,34 +373,42 @@ test("a status refresh failure preserves a saved connection only as last-known s
     available: false,
     connected: false,
     stale: true,
+    readinessCode: "ready",
     detail: "Current status could not be read.",
   });
 });
 
-test("connection status preserves the native verification boundary instead of overstating it", () => {
+test("connection status uses typed readiness and never forwards native setup detail", () => {
   const statuses = normalizeChatStatuses([
     {
       provider: "slack",
-      available: true,
-      connected: true,
-      detail: "Authorization is saved; Sync verifies current provider access.",
+      available: false,
+      connected: false,
+      readinessCode: "missing_client_id",
+      detail: "SLACK_CHAT_CLIENT_ID=/private/operator/value",
     },
     {
       provider: "webex",
-      available: true,
+      available: false,
       connected: false,
-      detail: "Broker URL configured; Connect verifies Webex before saving authorization.",
+      readiness_code: "not_a_real_code",
+      detail: "WEBEX_CHAT_CLIENT_ID is missing",
     },
+    { provider: "google_chat", available: true, connected: false },
   ]);
 
+  const slack = statuses.find((status) => status.provider === "slack");
+  const google = statuses.find((status) => status.provider === "google_chat");
+  const webex = statuses.find((status) => status.provider === "webex");
+  assert.equal(slack?.readinessCode, "missing_client_id");
   assert.equal(
-    statuses.find((status) => status.provider === "slack")?.detail,
-    "Authorization is saved; Sync verifies current provider access.",
+    slack?.detail,
+    "This connector is unavailable in this build.",
   );
-  assert.equal(
-    statuses.find((status) => status.provider === "webex")?.detail,
-    "Broker URL configured; Connect verifies Webex before saving authorization.",
-  );
+  assert.equal(google?.readinessCode, "ready");
+  assert.equal(webex?.readinessCode, "unknown");
+  assert.equal(webex?.detail, "This connector is unavailable in this build.");
+  assert.doesNotMatch(statuses.map((status) => status.detail).join(" "), /CLIENT_ID|private/i);
 });
 
 test("a post-disconnect status failure cannot turn the completed mutation into a failed disconnect", async () => {
@@ -390,6 +440,7 @@ test("a completed disconnect clears last-known connected state before a secondar
         available: true,
         connected: true,
         stale: true,
+        readinessCode: "ready",
         detail: "Last known connected; current status could not be read.",
       },
       {
@@ -397,6 +448,7 @@ test("a completed disconnect clears last-known connected state before a secondar
         available: true,
         connected: false,
         stale: false,
+        readinessCode: "ready",
         detail: "Ready to connect.",
       },
     ],
@@ -408,7 +460,8 @@ test("a completed disconnect clears last-known connected state before a secondar
     available: true,
     connected: false,
     stale: false,
-    detail: "OAuth client configured; Connect verifies provider authorization before saving it.",
+    readinessCode: "ready",
+    detail: "This connector is ready for authorization.",
   });
   assert.equal(statuses[1].provider, "google_chat");
   assert.equal(statuses[1].detail, "Ready to connect.");

@@ -2,9 +2,12 @@ import { importRawEvents, type RawEventImportResult } from "../import/rawEvents"
 import {
   chatMessagesToImport,
   importChatExport,
-  type ChatMessageRecord,
-  type ChatProvider
+  type ChatMessageRecord
 } from "./chatExport";
+import {
+  CHAT_PROVIDER_CAPABILITIES,
+  type ChatProviderId,
+} from "./chatProviderCapabilities";
 
 /**
  * Provider-agnostic workplace-chat source.
@@ -22,9 +25,9 @@ import {
  *
  * There is ONE `chat` `SourceType`; the specific vendor rides on each message's
  * `provider` field, not a dedicated source type (see `chatExport.ts`). The
- * descriptors here exist to label the data-source UI (which vendor the user
- * connects) and to gate which connection methods are loop-safe today — the
- * derived reactive-work signal is identical across vendors.
+ * descriptors here are derived from `chatProviderCapabilities.ts` for legacy
+ * callers that still need the older source shape — the derived reactive-work
+ * signal is identical across vendors.
  *
  * ## Privacy — METADATA ONLY (hard constraint)
  *
@@ -43,7 +46,7 @@ import {
  */
 
 /** Stable id for a chat provider — reuses the per-message vendor id. */
-export type ChatProviderId = Exclude<ChatProvider, "teams">;
+export type { ChatProviderId } from "./chatProviderCapabilities";
 
 /** How a provider's messages reach the app. */
 export type ChatConnectionKind = "file_import" | "oauth";
@@ -92,31 +95,17 @@ export type ChatEventFetcher = (weekId: string) => Promise<ChatMessageRecord[]>;
 /**
  * Compatibility metadata for the exact three providers exposed in Settings.
  * The authoritative live-connector registry and connection details live in
- * `chatSync.ts`.
+ * `chatProviderCapabilities.ts`.
  */
-export const CHAT_PROVIDERS: ChatProviderDescriptor[] = [
-  {
-    id: "slack",
-    label: "Slack",
+export const CHAT_PROVIDERS: ChatProviderDescriptor[] = CHAT_PROVIDER_CAPABILITIES.map(
+  ({ id, label, description }) => ({
+    id,
+    label,
     connection: "oauth",
     loopSafe: true,
-    description: "Connect Slack through the native desktop authorization flow."
-  },
-  {
-    id: "google_chat",
-    label: "Google Chat",
-    connection: "oauth",
-    loopSafe: true,
-    description: "Connect Google Chat through the native desktop authorization flow."
-  },
-  {
-    id: "webex",
-    label: "Webex",
-    connection: "oauth",
-    loopSafe: true,
-    description: "Connect Webex through the native desktop authorization flow and OAuth broker."
-  }
-];
+    description,
+  }),
+);
 
 /** Look up a provider descriptor by id. */
 export function getChatProvider(id: ChatProviderId): ChatProviderDescriptor | undefined {

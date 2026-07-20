@@ -207,21 +207,30 @@ its review-coverage counts. Provider, workspace, conversation, person, Chat
 event timing, response-pattern, and volume details are never manager snapshot
 fields.
 
-Slack uses user-scoped authorization-code OAuth with PKCE over a loopback
-callback; the registered Slack app must be configured to issue rotating refresh
-tokens because the native client does not carry a client secret. Google Chat
-uses Google's installed-app authorization-code flow with PKCE and a loopback
-callback, requesting `chat.spaces.readonly` and `chat.messages.readonly` plus
-identity. Google classifies `chat.messages.readonly` as restricted, so a
-production OAuth app can require verification. Slack and Google token exchange
-and refresh occur directly between the Mac and the provider.
+Slack uses its [generally available desktop authorization-code flow with
+PKCE](https://docs.slack.dev/changelog/2026/03/30/pkce/) over a loopback
+callback. Slack desktop redirects grant user scopes only; the registered app
+must issue rotating tokens, and Slack's PKCE refresh tokens expire after 30
+days. For non-Marketplace apps, Slack can limit
+[`conversations.history`](https://api.slack.com/methods/conversations.history)
+to one request per minute and 15 rows per request, so a bounded transfer may
+need resumable pages and visible retry guidance. Google Chat uses Google's
+[macOS installed-app flow](https://developers.google.com/identity/protocols/oauth2/native-app)
+with the system browser, loopback callback, and PKCE, requesting
+`chat.spaces.readonly` and `chat.messages.readonly` plus identity. Google
+classifies [`chat.messages.readonly` as
+restricted](https://developers.google.com/workspace/chat/authenticate-authorize),
+so a production OAuth app can require verification. Slack and Google token
+exchange and refresh occur directly between the Mac and the provider.
 
-Webex also uses authorization code with PKCE, but Webex requires the registered
-integration's confidential secret at token exchange and refresh. The Mac sends
-only the authorization or refresh credential to the configured HTTPS Weekform
-broker; the broker adds the server-only secret, exchanges with Webex, allowlists
-the token response, and returns it with `no-store`. Chat messages and canonical
-Chat evidence never transit that broker or weekform.dev. Only the optional
+Webex also uses authorization code with PKCE, but [Webex
+Integrations](https://developer.webex.com/docs/integrations) require the
+registered integration's confidential secret at token exchange and refresh.
+The Mac sends only the authorization or refresh credential to the configured
+HTTPS Weekform broker; the broker adds the server-only secret, exchanges with
+Webex, allowlists the token response, and returns it with `no-store`. Chat
+messages and canonical Chat evidence never transit that broker or weekform.dev.
+Only the optional
 provider-free derived replica and separate approved aggregate snapshot can
 reach weekform.dev under the boundaries above. Before any Webex exchange, the
 broker now requires a distributed Supabase lease and replay-safe receipt with a
@@ -238,7 +247,23 @@ replace the implemented distributed limiter or the deployment logging review.
 Refresh tokens, provider self identifiers, bounded pagination cursors, and the
 hash salt live in macOS Keychain and are excluded from React app state and
 Weekform exports. On the Mac, access tokens are held only for the native
-provider request.
+provider request. Native secret wrappers clear PKCE verifiers, authorization
+codes, access and refresh tokens, provider self identifiers, and serialized
+credential/cursor buffers on drop. The narrow `zeroize` dependency implements
+that memory-clearing boundary without replacing the existing Keychain format or
+adding a provider SDK.
+
+The connection wizard is an end-user flow, not a build-configuration form. An
+unconfigured native build says that the connector is unavailable and keeps
+operator-only requirements behind an expandable disclosure; it never asks the
+user to set a build variable or paste a secret. The existing sanitized local
+JSON import remains available. A configured connector first shows the requested
+access, then system-browser authorization, native content-free filtering,
+bounded initial-transfer progress, retryable errors, and completion. The wizard
+does not dismiss itself while authorization or transfer is active. Native
+readiness reaches React only as an allowlisted code; missing or unknown codes
+remain backward-compatible and render generic safe copy rather than native
+configuration detail.
 Disconnect removes the selected provider's local token and cursor and stops
 future Weekform transfers; it retains already derived evidence for review and
 does not revoke the provider-side grant. Users can revoke that grant in the

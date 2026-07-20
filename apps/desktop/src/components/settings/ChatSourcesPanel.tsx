@@ -10,9 +10,9 @@ import {
   Upload,
 } from "lucide-react";
 import {
-  CHAT_PROVIDERS,
+  CHAT_PROVIDER_CAPABILITIES,
   type ChatProviderId,
-} from "../../../../../packages/integrations/src/chat/chatSync";
+} from "../../../../../packages/integrations/src/chat/chatProviderCapabilities";
 import type {
   ChatCoverageState,
   ChatSourcesController,
@@ -28,16 +28,11 @@ const COVERAGE_LABELS: Record<ChatCoverageState, string> = {
   permission_limited: "Permission-limited",
 };
 
-function providerNote(provider: ChatProviderId): string | null {
-  if (provider !== "webex") return null;
-  return "A configured secure OAuth token broker is required. It exchanges authorization credentials only; chat sync remains between this Mac and Webex.";
-}
-
 function statusLabel(status: { available: boolean; connected: boolean; stale: boolean } | undefined): string {
   if (status?.stale) return "Status unknown";
   if (status?.connected) return "Connected";
   if (status?.available) return "Ready";
-  return "Setup needed";
+  return "Unavailable";
 }
 
 export function ChatSourcesPanel({
@@ -52,7 +47,7 @@ export function ChatSourcesPanel({
   const { range, rangeError, rangeInput } = controller;
   const rangeFeedbackId = "chat-range-feedback";
   const [wizardProvider, setWizardProvider] = useState<ChatProviderId | null>(null);
-  const wizardDescriptor = CHAT_PROVIDERS.find((provider) => provider.id === wizardProvider);
+  const wizardDescriptor = CHAT_PROVIDER_CAPABILITIES.find((provider) => provider.id === wizardProvider);
   const wizardStatus = controller.statuses.find((status) => status.provider === wizardProvider);
   const wizardActivity = wizardProvider ? controller.activity[wizardProvider] : null;
 
@@ -113,11 +108,10 @@ export function ChatSourcesPanel({
       )}
 
       <div className="calendar-provider-list">
-        {CHAT_PROVIDERS.map((provider) => {
+        {CHAT_PROVIDER_CAPABILITIES.map((provider) => {
           const status = controller.statuses.find((candidate) => candidate.provider === provider.id);
           const activity = controller.activity[provider.id];
-          const busy = activity.phase === "connecting" || activity.phase === "syncing" || activity.phase === "disconnecting";
-          const note = providerNote(provider.id);
+          const busy = activity.phase === "authorizing" || activity.phase === "syncing" || activity.phase === "disconnecting";
           const receipt = activity.receipt;
           const errorId = `chat-${provider.id}-error`;
           return (
@@ -133,12 +127,12 @@ export function ChatSourcesPanel({
                     {statusLabel(status)}
                   </span>
                 </div>
-                <p>{provider.description} {note}</p>
+                <p>{provider.description}</p>
                 <div className="calendar-provider-meta" aria-live="polite">
                   <span>{status
                     ? status.available || status.connected || status.stale
                       ? status.detail
-                      : "Connector setup is missing from this desktop build. Open the guide to get the required credential."
+                      : "This connector is unavailable in this build. Open the connection window for details or use the sanitized local import below."
                     : "Checking native connector availability…"}</span>
                   {receipt ? (
                     <>
@@ -217,14 +211,14 @@ export function ChatSourcesPanel({
                     className="settings-control"
                     type="button"
                     disabled={busy}
-                    aria-busy={activity.phase === "connecting"}
+                    aria-busy={activity.phase === "authorizing"}
                     aria-describedby={activity.message ? errorId : undefined}
                     onClick={() => setWizardProvider(provider.id)}
                   >
-                    {activity.phase === "connecting"
+                    {activity.phase === "authorizing"
                       ? <LoaderCircle className="spin" size={15} aria-hidden />
                       : <Link2 size={15} aria-hidden />}
-                    <span>{activity.phase === "connecting" ? "Connecting…" : "Connect now"}</span>
+                    <span>{activity.phase === "authorizing" ? "Authorizing…" : "Connect now"}</span>
                   </button>
                 )}
               </div>
@@ -261,20 +255,17 @@ export function ChatSourcesPanel({
           {legacyImportError && <small className="import-error" role="alert">{legacyImportError}</small>}
         </div>
       )}
-      {wizardProvider && wizardDescriptor && (
+      {wizardProvider && wizardDescriptor && wizardActivity && (
         <ChatConnectWizard
           provider={wizardProvider}
-          label={wizardDescriptor.label}
           status={wizardStatus}
+          activity={wizardActivity}
           rangeIsValid={Boolean(range)}
-          busy={wizardActivity?.phase === "connecting"}
           refreshing={controller.refreshingStatuses}
           onClose={() => setWizardProvider(null)}
-          onRecheck={() => void controller.refreshStatuses().catch(() => undefined)}
-          onConnect={() => {
-            setWizardProvider(null);
-            void controller.connect(wizardProvider).catch(() => undefined);
-          }}
+          onRecheck={controller.refreshStatuses}
+          onConnect={() => controller.connect(wizardProvider)}
+          onSync={() => controller.sync(wizardProvider)}
         />
       )}
     </section>

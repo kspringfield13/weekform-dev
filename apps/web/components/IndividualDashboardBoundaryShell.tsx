@@ -21,8 +21,7 @@ export function IndividualDashboardBoundaryShell({ children }: { children: React
     <div className="web-individual-app app individual-dashboard-boundary-shell">
       <header className="web-app-toolbar" aria-hidden="true">
         <div className="web-toolbar-title">
-          <strong>Your week, ready to review</strong>
-          <span>Private evidence stays on your Mac</span>
+          <strong>Your week, ready to take shape</strong>
         </div>
         <div className="web-toolbar-state"><i /> Connecting to your review-safe workspace</div>
         <div className="web-toolbar-actions">

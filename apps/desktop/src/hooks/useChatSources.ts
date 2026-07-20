@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   CHAT_PROVIDERS,
   normalizeChatRange,
-  providerDescriptor,
   type ChatAttentionGrade,
   type ChatAttentionSignal,
   type ChatEvidenceEventV1,
@@ -18,8 +17,21 @@ export interface ChatConnectionStatus {
   connected: boolean;
   /** The last successful status read is retained when the native check fails. */
   stale: boolean;
+  /** Safe, typed native readiness. `unknown` preserves older native payloads. */
+  readinessCode: ChatConnectorReadinessCode;
   detail: string;
 }
+
+export type NativeChatConnectorReadinessCode =
+  | "ready"
+  | "missing_client_id"
+  | "missing_redirect_uri"
+  | "invalid_redirect_uri"
+  | "missing_broker_url"
+  | "invalid_broker_url"
+  | "broker_security_review_required";
+
+export type ChatConnectorReadinessCode = NativeChatConnectorReadinessCode | "unknown";
 
 export type ChatCoverageState =
   | "complete"
@@ -73,7 +85,7 @@ export interface ChatSourceSyncResult {
 }
 
 export interface ChatProviderActivity {
-  phase: "idle" | "connecting" | "syncing" | "disconnecting" | "error";
+  phase: "idle" | "authorizing" | "syncing" | "disconnecting" | "error";
   message: string | null;
   last_synced_at: string | null;
   receipt: ChatSyncReceipt | null;
@@ -210,6 +222,7 @@ function unavailableStatuses(detail: string): ChatConnectionStatus[] {
     available: false,
     connected: false,
     stale: false,
+    readinessCode: "unknown",
     detail,
   }));
 }
@@ -280,16 +293,31 @@ function safeNativeError(error: unknown, action: ConnectionAction | "status"): s
   return "Weekform could not complete the connection. No chat evidence was imported.";
 }
 
-function nativeStatusDetail(provider: ChatProviderId, available: boolean, connected: boolean): string {
+function nativeStatusDetail(available: boolean, connected: boolean): string {
   if (connected) return "Authorization is saved; Sync verifies current provider access.";
-  if (!available) {
-    return providerDescriptor(provider).requiresBroker
-      ? "Unavailable until a secure Webex OAuth token broker is configured."
-      : "Unavailable until this provider's OAuth client is configured.";
+  if (!available) return "This connector is unavailable in this build.";
+  return "This connector is ready for authorization.";
+}
+
+const CHAT_READINESS_CODES = new Set<NativeChatConnectorReadinessCode>([
+  "ready",
+  "missing_client_id",
+  "missing_redirect_uri",
+  "invalid_redirect_uri",
+  "missing_broker_url",
+  "invalid_broker_url",
+  "broker_security_review_required",
+]);
+
+function normalizeReadinessCode(
+  value: unknown,
+  available: boolean,
+  connected: boolean,
+): ChatConnectorReadinessCode {
+  if (typeof value === "string" && CHAT_READINESS_CODES.has(value as NativeChatConnectorReadinessCode)) {
+    return value as NativeChatConnectorReadinessCode;
   }
-  return providerDescriptor(provider).requiresBroker
-    ? "Broker URL configured; Connect verifies Webex before saving authorization."
-    : "OAuth client configured; Connect verifies provider authorization before saving it.";
+  return available || connected ? "ready" : "unknown";
 }
 
 /** Apply the known successful mutation before the best-effort status refresh. */
@@ -302,7 +330,7 @@ export function markChatStatusDisconnected(
         ...status,
         connected: false,
         stale: false,
-        detail: nativeStatusDetail(provider, status.available, false),
+        detail: nativeStatusDetail(status.available, false),
       }
     : status);
 }
@@ -312,27 +340,36 @@ export function normalizeChatStatuses(value: unknown): ChatConnectionStatus[] {
   const received = new Map<ChatProviderId, {
     available: boolean;
     connected: boolean;
-    detail: string | null;
+    readinessCode: ChatConnectorReadinessCode;
   }>();
   for (const candidate of value) {
     const record = asRecord(candidate);
     if (!record || !isProvider(record.provider)) continue;
     const available = record.available === true;
-    const detail = stringField(record, "detail");
+    const connected = available && record.connected === true;
     received.set(record.provider, {
       available,
-      connected: available && record.connected === true,
-      detail: detail && detail.length <= 1_000 ? detail : null,
+      connected,
+      readinessCode: normalizeReadinessCode(
+        record.readiness_code ?? record.readinessCode,
+        available,
+        connected,
+      ),
     });
   }
   return CHAT_PROVIDERS.map(({ id }) => {
-    const status = received.get(id) ?? { available: false, connected: false, detail: null };
+    const status = received.get(id) ?? {
+      available: false,
+      connected: false,
+      readinessCode: "unknown" as const,
+    };
     return {
       provider: id,
       available: status.available,
       connected: status.connected,
       stale: false,
-      detail: status.detail ?? nativeStatusDetail(id, status.available, status.connected),
+      readinessCode: status.readinessCode,
+      detail: nativeStatusDetail(status.available, status.connected),
     };
   });
 }
@@ -604,17 +641,37 @@ export function chatSyncOperationalState(
 export async function authorizeThenSyncChatSource(input: {
   authorize: () => Promise<void>;
   onAuthorized: () => void;
-  initialSync: () => Promise<void>;
+  initialSync: () => Promise<void | Exclude<ChatSyncOperationalState, "blocked">>;
+  onPhase?: (phase: ChatConnectionLifecyclePhase) => void;
 }): Promise<{ syncCompleted: boolean; syncError: unknown | null }> {
-  await input.authorize();
-  input.onAuthorized();
+  input.onPhase?.("browser_authorization");
   try {
-    await input.initialSync();
+    await input.authorize();
+  } catch (authorizationError) {
+    input.onPhase?.("authorization_error");
+    throw authorizationError;
+  }
+  input.onAuthorized();
+  input.onPhase?.("native_filtering");
+  try {
+    const outcome = await input.initialSync();
+    if (outcome === "in_progress") {
+      return { syncCompleted: false, syncError: null };
+    }
+    input.onPhase?.("complete");
     return { syncCompleted: true, syncError: null };
   } catch (syncError) {
+    input.onPhase?.("transfer_error");
     return { syncCompleted: false, syncError };
   }
 }
+
+export type ChatConnectionLifecyclePhase =
+  | "browser_authorization"
+  | "authorization_error"
+  | "native_filtering"
+  | "transfer_error"
+  | "complete";
 
 /** A secondary status read can become stale, but it cannot undo a completed disconnect. */
 export async function disconnectThenRefreshChatSource(input: {
@@ -762,12 +819,13 @@ export function useChatSources(input: {
           : {}),
         receipt,
       });
-      if (!transferSucceeded) {
+      if (operationalState === "blocked") {
         // Authorization may still be valid, but this read did not constitute a
         // successful transfer. Reject so connect's initial-sync boundary records
         // it as retryable without asking the user to authorize again.
         throw new Error("CHAT_SYNC_BLOCKED_RECEIPT");
       }
+      return operationalState;
     } catch (error) {
       if (error instanceof Error && error.message === "CHAT_SYNC_BLOCKED_RECEIPT") {
         throw error;
@@ -782,7 +840,7 @@ export function useChatSources(input: {
   }, [rangeResult, setProviderActivity]);
 
   const connect = useCallback(async (provider: ChatProviderId) => {
-    setProviderActivity(provider, { phase: "connecting", message: null });
+    setProviderActivity(provider, { phase: "authorizing", message: null, receipt: null });
     try {
       await authorizeThenSyncChatSource({
         authorize: () => invoke<void>("connect_chat_source", { provider }),
@@ -795,7 +853,8 @@ export function useChatSources(input: {
                   available: true,
                   connected: true,
                   stale: false,
-                  detail: nativeStatusDetail(provider, true, true),
+                  readinessCode: "ready",
+                  detail: nativeStatusDetail(true, true),
                 }
               : status
           )));
@@ -818,10 +877,9 @@ export function useChatSources(input: {
     }
   }, [refreshStatuses, setProviderActivity, transfer]);
 
-  const sync = useCallback(
-    (provider: ChatProviderId) => transfer(provider),
-    [transfer],
-  );
+  const sync = useCallback(async (provider: ChatProviderId): Promise<void> => {
+    await transfer(provider);
+  }, [transfer]);
 
   const disconnect = useCallback(async (provider: ChatProviderId) => {
     setProviderActivity(provider, { phase: "disconnecting", message: null });
