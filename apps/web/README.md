@@ -17,8 +17,11 @@ pattern, wired through the Next.js 16
   names, screenshots, and the complete deterministic personal workload model
   stay in the Mac app. The optional private Web replica contains only the
   review-safe allowlist documented in `docs/PRIVACY.md`.
-- The website has no `localStorage`, `sessionStorage`, IndexedDB, or
-  application-managed persistent browser workload cache. Authenticated pages
+- The website stores one user-scoped, versioned `localStorage` preference for
+  whether the first-run Web workspace intro was completed. It contains no
+  workload, identity details, role, team data, or auth material. The website
+  has no `sessionStorage`, IndexedDB, or application-managed persistent browser
+  workload cache. Authenticated pages
   and actions call Supabase from the Next.js server under the signed-in user's
   RLS session. One ephemeral browser client subscribes to the signed-in user's
   private Broadcast topic and only calls `router.refresh()`; it does not cache rows.
@@ -106,9 +109,10 @@ configured.
   active memberships to owner/manager roles, opens a sole managed team directly,
   or offers a team chooser when more than one is available
 - `/admin` — compatibility redirect to `/manager-access`; no standalone portal
-- `/dashboard` — protected; private personal replica/review requests, profile
-  greeting, the signed-in user's teams and role in each, a create-team form
-  (calls the `create_team_with_owner` RPC), and an entry point to `/invite`
+- `/dashboard` — protected; a Desktop-style first-run welcome and guided tour,
+  a role-aware workspace shell, private personal replica/review requests,
+  profile greeting, the signed-in user's teams and role in each, a create-team
+  form (calls the `create_team_with_owner` RPC), and an entry point to `/invite`
 - `/teams/[teamId]` — protected; owners/managers see the active roster
   (memberships + profiles), a member-invite form, and sent invites with
   status; plain members see an honest limited view (RLS hides the roster)

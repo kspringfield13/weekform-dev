@@ -22,6 +22,8 @@ import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
 import { PersonalReplicaRealtime } from "@/components/PersonalReplicaRealtime";
 import { listOwnPersonalReplicas, type PersonalReplicaView } from "@/lib/personalReplica";
 import { deletePersonalReplicaHistory, queuePersonalReviewCommand } from "./personalActions";
+import { managerAccessMemberships } from "@/lib/managerAccess";
+import { WebWorkspaceIntro } from "@/components/WebWorkspaceIntro";
 
 export const metadata: Metadata = { title: "Weekform Web" };
 export const dynamic = "force-dynamic";
@@ -90,17 +92,19 @@ export default async function DashboardPage({
     await listOwnLatestSnapshots(supabase, user.id);
   const { replicas: personalReplicas, error: personalReplicaError } =
     await listOwnPersonalReplicas(supabase);
+  const managedTeams = managerAccessMemberships(teams);
 
   return (
     <>
       <SiteHeader />
-      <main className="container">
-        <div className="page-head">
-          <h1>Weekform Web</h1>
+      <main className="container workspace-shell">
+        <div className="workspace-hero" id="workspace-overview">
+          <span className="workspace-eyebrow">Private workload intelligence</span>
+          <h1>Your week, ready for decisions.</h1>
           <p>
-            Welcome, {greetingName}. Review the workload snapshots you chose to
-            share, coordinate commitments, and open the right team workspace.
-            Raw activity and the full evidence loop remain on your Mac.
+            Welcome, {greetingName}. Review what your Mac prepared, coordinate
+            only approved signals, and decide what fits next without exposing
+            the raw evidence behind your week.
           </p>
           <div className="status-line">
             <span>
@@ -115,6 +119,21 @@ export default async function DashboardPage({
           </div>
         </div>
 
+        <nav className="workspace-nav" aria-label="Web workspace">
+          <a href="#personal-workspace">Private review</a>
+          <a href="#teams">Teams</a>
+          {managedTeams.length > 0 ? <a href="#manager-entry">Manager</a> : null}
+          <a href="#sharing">Sharing</a>
+        </nav>
+        <WebWorkspaceIntro userId={user.id} hasManagerAccess={managedTeams.length > 0} />
+
+        <div className="workspace-decision-path" aria-label="How Weekform Web works">
+          <div><span>01</span><strong>Review</strong><small>Inspect approved, derived workload signals.</small></div>
+          <div><span>02</span><strong>Decide</strong><small>See headroom, risk, and what needs attention.</small></div>
+          <div><span>03</span><strong>Request</strong><small>Send changes to your Mac for approval.</small></div>
+          <div><span>04</span><strong>Coordinate</strong><small>Share only the summary you intended.</small></div>
+        </div>
+
         <RequestFreshnessRefresh />
         <PersonalReplicaRealtime userId={user.id} />
 
@@ -124,7 +143,14 @@ export default async function DashboardPage({
           </div>
         ) : null}
 
-        <section aria-labelledby="teams-title">
+        <PersonalWorkspaceSection replicas={personalReplicas} error={personalReplicaError} />
+
+        <section id="teams" className="workspace-section" aria-labelledby="teams-title">
+          <div className="workspace-section-heading">
+            <span>Optional coordination</span>
+            <h2>Teams</h2>
+            <p>Create or join a team only when shared planning improves the decision.</p>
+          </div>
           {teamsError ? (
             <div className="error-panel" role="alert">
               <h2>Your teams could not be loaded</h2>
@@ -238,12 +264,27 @@ export default async function DashboardPage({
           </div>
         </section>
 
+        {managedTeams.length > 0 ? (
+          <section id="manager-entry" className="manager-entry" aria-labelledby="manager-entry-title">
+            <div>
+              <span className="badge">Manager Access</span>
+              <h2 id="manager-entry-title">Coordinate from approved signals—not raw activity.</h2>
+              <p>
+                Open the manager workspace for member-approved summaries, briefings,
+                scenarios, and approval-gated coordination actions.
+              </p>
+            </div>
+            <Link href="/manager-access" className="button button-primary">
+              Open Manager Access <span aria-hidden="true">→</span>
+            </Link>
+          </section>
+        ) : null}
+
         <SharedWorkloadSection
           teams={teams}
           snapshots={ownSnapshots}
           snapshotsError={snapshotsError}
         />
-        <PersonalWorkspaceSection replicas={personalReplicas} error={personalReplicaError} />
       </main>
       <SiteFooter />
     </>
@@ -267,10 +308,15 @@ const REVIEW_CATEGORIES = [
 function PersonalWorkspaceSection({ replicas, error }: { replicas: PersonalReplicaView[]; error: string | null }) {
   const current = replicas[0] ?? null;
   return (
-    <section aria-labelledby="personal-workspace-title">
-      <div className="panel">
+    <section id="personal-workspace" className="workspace-section" aria-labelledby="personal-workspace-title">
+      <div className="workspace-section-heading">
+        <span>Individual workspace</span>
+        <h2 id="personal-workspace-title">Private review</h2>
+        <p>Your review-safe week from the Mac, with every change returned for approval.</p>
+      </div>
+      <div className="panel workspace-primary-panel">
         <span className="badge">Private to you</span>
-        <h2 id="personal-workspace-title">Your Web review workspace</h2>
+        <h3>Your Web review workspace</h3>
         <p>
           This surface mirrors only review-safe derived fields from Weekform for Mac. Raw capture,
           app and window titles, evidence, notes, project and stakeholder names, screenshots, and
@@ -388,9 +434,14 @@ function SharedWorkloadSection({
   );
 
   return (
-    <section aria-labelledby="sharing-title">
+    <section id="sharing" className="workspace-section" aria-labelledby="sharing-title">
+      <div className="workspace-section-heading">
+        <span>Consent boundary</span>
+        <h2 id="sharing-title">Shared workload</h2>
+        <p>One inspectable view of exactly what each team can see from you.</p>
+      </div>
       <div className="panel">
-        <h2 id="sharing-title">Your shared workload</h2>
+        <h3>Your shared workload</h3>
         {snapshotsError ? (
           <div className="form-alert" role="alert">
             Your shared snapshots could not be loaded right now. Reload the

@@ -18,7 +18,6 @@ function productionSources(directory: string): string[] {
 
 test("production web source has no browser workload persistence", () => {
   const forbidden = [
-    /\blocalStorage\b/,
     /\bsessionStorage\b/,
     /\bindexedDB\b/i,
   ];
@@ -27,15 +26,27 @@ test("production web source has no browser workload persistence", () => {
   for (const relativeDir of PRODUCTION_DIRS) {
     for (const file of productionSources(path.join(WEB_ROOT, relativeDir))) {
       const source = readFileSync(file, "utf8");
+      const relativePath = path.relative(WEB_ROOT, file);
+      if (/\blocalStorage\b/.test(source) && relativePath !== "components/WebWorkspaceIntro.tsx") {
+        violations.push(`${relativePath} uses localStorage outside the onboarding preference`);
+      }
       for (const pattern of forbidden) {
         if (pattern.test(source)) {
-          violations.push(`${path.relative(WEB_ROOT, file)} matches ${pattern}`);
+          violations.push(`${relativePath} matches ${pattern}`);
         }
       }
     }
   }
 
   assert.deepEqual(violations, []);
+
+  const onboarding = readFileSync(
+    path.join(WEB_ROOT, "components/WebWorkspaceIntro.tsx"),
+    "utf8",
+  );
+  assert.match(onboarding, /localStorage\.getItem\(storageKey\)/);
+  assert.match(onboarding, /localStorage\.setItem\(storageKey, "complete"\)/);
+  assert.doesNotMatch(onboarding, /JSON\.stringify|payload|snapshot|replica/i);
 });
 
 test("client components can use only the ephemeral Realtime client, never server workload modules", () => {

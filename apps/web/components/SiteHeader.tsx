@@ -41,18 +41,20 @@ export async function SiteHeader({ variant = "default" }: { variant?: "default" 
         <nav className="nav-links" aria-label="Primary">
           {signedIn ? (
             <>
-              <Link href={WEB_ENTRY.href} className="button button-ghost">
-                Web app
+              <Link href={WEB_ENTRY.href} className="button button-ghost nav-web-app">
+                <span className="nav-label-long">Web app</span>
+                <span className="nav-label-short">Web</span>
               </Link>
               {managerAccess ? (
-                <Link href="/manager-access" className="button button-ghost">
-                  Manager Access
+                <Link href="/manager-access" className="button button-ghost nav-manager-access">
+                  <span className="nav-label-long">Manager Access</span>
+                  <span className="nav-label-short">Manager</span>
                 </Link>
               ) : null}
-              <Link href={MAC_ENTRY.href} className="button button-ghost">
+              <Link href={MAC_ENTRY.href} className="button button-ghost nav-download-mac">
                 Download Mac
               </Link>
-              <form action={signOut}>
+              <form action={signOut} className="nav-signout">
                 <button type="submit" className="button button-secondary">
                   Sign out
                 </button>

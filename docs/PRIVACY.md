@@ -83,8 +83,11 @@ general local prototype store remains unencrypted even though raw capture journa
 ## Weekform.com browser and persistence boundary
 
 The account/team website uses server-side Supabase API calls under the signed-in
-user's row-level-security session. It has no browser `localStorage`,
-`sessionStorage`, IndexedDB, or application-managed persistent workload cache.
+user's row-level-security session. It stores one user-scoped, versioned
+`localStorage` preference recording only whether the Web workspace intro was
+completed. That preference contains no workload data, email address, role,
+team record, credential, or auth token. The website has no `sessionStorage`,
+IndexedDB, or application-managed persistent workload cache.
 The private Web workspace mounts one ephemeral browser Supabase client solely to
 subscribe to the signed-in user's private Broadcast topic; the event requests a
 fresh server render and is not a workload cache. Client components otherwise keep only

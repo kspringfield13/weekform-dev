@@ -232,6 +232,27 @@ the alignment QA.
   contract tests cover the layered sign-in hierarchy. The optimized Next.js
   build and browser verification remain separate release gates.
 
+### Role-aware Weekform Web intro and workspace
+
+- **Date:** July 19, 2026
+- **Outcome:** the authenticated Web workspace now follows the Desktop first-run
+  rhythm: a focused welcome, keyboard-accessible guided tour, completion/skip,
+  and replay. Every user sees the private-review, optional-team, sharing, and
+  Mac-boundary steps; authorized owners/managers receive one additional Manager
+  Access step. The dashboard is organized around real anchored destinations and
+  a visible review-decide-request-coordinate path instead of a single long form.
+- **Boundary:** completion stores only a versioned, user-scoped browser
+  preference—never workload or auth data. Manager orientation is derived from
+  active owner/manager memberships, while authorization remains in Supabase RLS.
+  The intro explicitly states that browsers do not perform native capture and
+  that review requests require approval on the Mac.
+- **Evidence:** contracts were written red-first for individual/manager step
+  composition, storage scoping, target coverage, and workspace structure. A
+  production-backed synthetic user exercised password sign-in, first-run
+  completion/replay, team creation, manager-role detection, and Manager Access;
+  desktop and 390px browser checks caught and corrected overlay clipping and a
+  signed-in header overflow before release.
+
 The hackathon-readiness and provenance task is supplemental evidence:
 
 ### Native-to-cloud personal Web workspace
