@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
+  BUNDLED_ARTIFACT,
   RELEASE_INFO,
   formatTtl,
   getReleasePresentation,
@@ -105,7 +106,7 @@ test("formatTtl renders whole minutes and singular/plural seconds", () => {
 });
 
 test("an unpublished DMG keeps the default website release fail-closed", () => {
-  const presentation = getReleasePresentation(null);
+  const presentation = getReleasePresentation(null, null);
 
   assert.equal(presentation.kind, "pending");
   assert.equal(presentation.title, "Mac release is being finalized");
@@ -115,6 +116,16 @@ test("an unpublished DMG keeps the default website release fail-closed", () => {
     JSON.stringify(presentation),
     /bucket|credentials|Developer ID|notarization/i,
   );
+});
+
+test("the bundled DMG is presented as the active website release", () => {
+  const presentation = getReleasePresentation(null);
+
+  assert.equal(presentation.kind, "available");
+  assert.equal(presentation.action.label, "Download now");
+  assert.equal(presentation.action.href, "/download/artifact");
+  assert.equal(presentation.filename, BUNDLED_ARTIFACT.filename);
+  assert.match(presentation.note, /6\.1 MB/);
 });
 
 test("configured artifact becomes an active, filename-specific download", () => {
