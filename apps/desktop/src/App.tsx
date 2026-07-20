@@ -128,7 +128,10 @@ import {
   resolveSettingsTab,
 } from "./services/adminPortal";
 import { deriveWeeklyReviewState } from "./services/weeklyReview";
-import { resolveGettingStartedExit } from "./services/gettingStartedFlow";
+import {
+  resolveGettingStartedDemoExit,
+  resolveGettingStartedExit,
+} from "./services/gettingStartedFlow";
 import {
   clearAgentSessionStorage,
   readAgentSessionStorage,
@@ -1747,6 +1750,42 @@ export function App() {
     ].slice(-1000));
   }
 
+  // The preview is entirely synthetic and in-memory. Persist the user's setup
+  // outcome before navigating so the wizard does not reappear when they leave
+  // demo mode, and describe the destination truthfully in the local audit log.
+  function openDemoSimulation() {
+    if (gettingStartedStatus !== "unseen") return;
+    const demoExit = resolveGettingStartedDemoExit(paused);
+    setGettingStartedStatus(demoExit.status);
+    setAuditEvents((current) => [
+      ...current,
+      createAuditEvent({
+        type: "onboarding",
+        source: "onboarding",
+        title: "Simulated week opened from setup",
+        summary:
+          demoExit.auditOutcome === "enabled"
+            ? "The first-run setup was completed with activity tracking enabled, then the synthetic week preview was opened."
+            : "The first-run setup was deferred without activity tracking, then the synthetic week preview was opened.",
+        privacy_level: "local_only",
+        details: {
+          outcome: demoExit.auditOutcome,
+          destination: demoExit.destination,
+          synthetic_data: true,
+          stored_locally: true,
+          sent_to_cloud: false
+        }
+      })
+    ].slice(-1000));
+
+    window.setTimeout(() => {
+      void appPersistence
+        .flushLatest()
+        .then(() => window.location.assign(demoExit.href))
+        .catch(() => undefined);
+    }, 0);
+  }
+
   // Connect OpenAI from the getting-started wizard with a pasted API key. Uses
   // the same OpenAI defaults Settings would apply, so the saved config is
   // identical to one entered under Settings → AI Assistance.
@@ -2825,6 +2864,7 @@ export function App() {
           onRetentionDaysChange={changeRetentionDays}
           onConnectOpenAiKey={connectOpenAiKeyFromWizard}
           onConnectViaCodexPlan={connectViaCodexPlanFromWizard}
+          onOpenDemo={openDemoSimulation}
           onDismiss={finishGettingStarted}
         />
       )}

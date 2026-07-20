@@ -684,6 +684,26 @@ The hackathon-readiness and provenance task is supplemental evidence:
   handoff, the defer handoff, the visible Replay walkthrough control,
   keyboard-focused primary actions, and a clean console.
 
+- **July 20 onboarding clarity follow-through:** The same six-step wizard now
+  uses a persistent labeled setup rail, a distinct decision-led title for every
+  step, direct radio-card retention choices, and a Codex-first AI step that
+  recommends ChatGPT/Codex for the full Weekform experience while keeping the
+  Platform API-key form inside a collapsed advanced disclosure. Continuing
+  without AI remains explicit. The final page summarizes tracking, raw-sample
+  retention, and AI state. Dense
+  privacy and permission paragraphs were replaced with scannable, truth-preserving
+  evidence/control rows; the data flow and approval boundaries are unchanged. The
+  final page also restores a clearly labeled synthetic-week preview alongside the
+  normal Settings handoff. That preview flushes the onboarding outcome before
+  navigation, opens the populated weekly demo without loading the user's data,
+  and returns to the real profile without reopening the wizard. Six focused
+  presentation contracts plus six setup-flow contracts pass, the complete
+  desktop service suite passes 248/248, and the authoritative root build passes.
+  Browser verification walked all six screens at the native 1024×720 minimum,
+  checked the final and AI layouts in dark and light themes, verified the API-key
+  disclosure opens only on request, exercised the simulated-week entry and exit
+  path, and found no console warnings or errors.
+
 - **July 20 ChatGPT/Codex-plan connection:** Weekform can now use OpenAI's
   Codex app-server with OpenAI-managed ChatGPT sign-in instead of trying to mint
   or copy a Platform API key from a subscription account. The native boundary

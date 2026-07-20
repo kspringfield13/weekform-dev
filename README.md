@@ -5,9 +5,9 @@
 <p align="center"><strong>Know what fits before you commit.</strong></p>
 
 <p align="center">
-  A local-first macOS workload intelligence app for analysts, with an opt-in team cloud layer.<br>
-  Turn the work already happening across your week into reviewable evidence and reliable capacity —<br>
-  and share only the aggregates you approve with a team you choose.
+  A local-first macOS workload intelligence app for anyone, with an opt-in team cloud layer.<br>
+  Turn the work already happening across your week into reviewable evidence and reliable capacity, <br>
+  and share only the data you approve with a team you choose.
 </p>
 
 <p align="center">
@@ -21,22 +21,21 @@
 </p>
 
 ![Weekform weekly capacity view with synthetic demo data](docs/assets/weekform-weekly-capacity.png)
-
-<p align="center"><sub>Weekly capacity in Weekform. Every value shown above comes from synthetic demo data.</sub></p>
+<p align="center"><sub>Weekly capacity view in Weekform</sub></p>
 
 > [!IMPORTANT]
-> Weekform is an early prototype, not a production workforce-management system. Capacity estimates are planning aids and should be reviewed before they are shared or used for decisions.
+> Weekform is an early prototype, not a production workforce-management system (yet). Capacity estimates are planning aids and should be reviewed before they are shared or used for decisions.
 
 ## The problem
 
-Teams routinely commit to more than the week can absorb because nobody can see, honestly, how much of each person's week is already spoken for. The existing tools that try to answer this either demand manual time tracking that nobody sustains, or slide into surveillance — screenshots, keystrokes, message content — which destroys the trust the data was supposed to build.
+Teams routinely commit to more than the week can absorb because nobody can see, honestly, how much of each person's week is already spoken for. The existing tools that try to answer this either demand manual time tracking that nobody does, or slides into surveillance via screenshots, keystrokes, message content, which destroys the trust the data was supposed to build.
 
-Weekform takes a third path:
+Weekform takes a new path:
 
-- **On each Mac**, Weekform turns calendar events and foreground-app activity into work blocks the user can confirm, relabel, or exclude. It then explains how much of the week is allocated, what is driving delivery risk, and how much new planned work can fit without likely slippage. Every inference keeps its evidence; every correction is auditable; AI assistance is optional and opt-in.
-- **For teams**, Weekform adds a cloud layer that shares only versioned, allowlist-built weekly aggregates — never raw activity, window titles, or evidence — and only after the member has previewed the exact payload and recorded consent. Managers get an honest capacity picture; members keep control of their own data.
+- **On each Mac**, Weekform turns calendar events, foreground-app activity, team chats, and more into work blocks the user can confirm, relabel, or exclude. It then explains how much of the week is allocated, what is driving delivery risk, and how much new planned work can fit without likely slippage. Every inference keeps its evidence; every correction is auditable; AI assistance is optional and opt-in.
+- **For teams**, Weekform adds a cloud layer that shares only versioned, allowlist-built weekly aggregates, but only after the team member has previewed the exact payload and recorded consent. Managers get an honest capacity picture; members keep control of their own data.
 
-Weekform is a private planning aid — not an employee-monitoring product.
+Weekform is a private planning aid, not an employee-monitoring product.
 
 ## Local-first, consent-first architecture
 
@@ -45,17 +44,16 @@ Raw activity data starts local and stays under the user's control. Network-backe
 **On the desktop:**
 
 - Active-window capture records the application name, front-window title, and timestamp — not keystrokes.
-- Outlook `.ics` and normalized Chat/git exports are parsed locally. The three live Chat options are Slack, Google Chat, and Webex; their native transfers discard ambient inbound traffic and message content before React app state. Legacy Teams files remain import-only compatibility, not a fourth connector.
+- Outlook `.ics` and normalized Chat/git exports are parsed locally. The three live Chat options are Slack, Google Chat, and Webex; their native transfers discard ambient inbound traffic and message content before React app state.
 - Work blocks, corrections, audit events, and settings are persisted locally with Tauri Store; the web and demo builds use browser storage as a fallback.
 - Tracking can be paused immediately from the app or menu bar.
-- Visual Context is disabled by default and rate-limited. When enabled, a screenshot can be sent to the selected AI provider; after a successful read, the app attempts to remove the temporary local image before the provider request. OpenAI requests use `store: false`.
+- Visual Context is disabled by default and rate-limited. When enabled, a screenshot can be sent to the selected AI provider; after a successful read, the app attempts to remove the temporary local image before the provider request.
 - Other AI features run only when enabled or triggered and receive structured context for the requested workflow.
 - Retention is user-controlled, and local data can be exported or reset from Settings.
 
 **In the team cloud layer:**
 
 - Sharing is off until the member completes an explicit, ordered flow: sign in, select exactly one recipient team, turn sharing on, choose a share level and per-metric toggles, review the **exact JSON payload** that would upload, and record consent. Only then does a manually approved "Sync Now" upload one `SharedWorkloadSnapshotV1` row.
-- The shared snapshot is built by an allowlist (`packages/inference/src/sharedSnapshot.ts`), covered by focused privacy tests (`npm run test:cloud`). The preview and the upload are the same object; a disabled metric is omitted, never sent as zero.
 - An optional auto-sync preference exists but is off by default, and scheduled sync only runs while the app is open. There is no background sync while the app is closed.
 - Members can delete previously synced snapshots from the cloud, and disconnecting or resetting local data clears the session, policy, and sync state. Every connect, policy change, sync, deletion, pause, and disconnect emits a local audit event.
 - Server-side access is governed by Postgres Row Level Security policies in the Supabase schema (see [Limitations](#limitations) for their current verification status).
@@ -87,13 +85,6 @@ reviewable workload without treating availability or message volume as work:
   separate consent edge and receives only member-approved aggregate snapshot
   fields—never Chat source detail.
 
-Credentials, provider self identifiers, resumable cursors, and the local hash
-salt stay in macOS Keychain. Disconnect removes the selected local token and
-cursor but retains existing review evidence; Raw evidence retention expires the
-canonical evidence while keeping derived work blocks; Reset Local Data attempts
-to clear the full Chat connection and evidence state. See the privacy document
-for the exact provider, retention, AI, Web, and Manager boundaries.
-
 ## Manager and member workflow
 
 The team layer connects the web app (`apps/web`) and the desktop app:
@@ -106,17 +97,6 @@ The team layer connects the web app (`apps/web`) and the desktop app:
 6. **Manager's team dashboard** shows the shared weekly aggregates per member.
 7. **Team Briefing** (`/teams/[teamId]/briefing`) generates a narrative for managers from allowlisted aggregates only, with a deterministic fallback when no AI provider is configured.
 8. **Member stays in control:** turning off a metric or deleting synced history is honored by the manager view on the next load; plain members see an honest limited team view rather than the full roster.
-
-## Screenshots
-
-The synthetic-data weekly capacity view above is the current primary product image. The team-cloud walkthrough screenshots are still to be captured (against a seeded local Supabase stack with throwaway Studio users — synthetic data only):
-
-- Web dashboard with a created team and roster (manager view)
-- Invite acceptance page (`/invite`)
-- Account-gated Mac download page (`/download`)
-- Desktop Account & Sharing with the exact shared-payload preview visible
-- Manager team dashboard after a member sync
-- Team Briefing page (`/teams/[teamId]/briefing`)
 
 ## Getting started
 
@@ -177,7 +157,7 @@ bash scripts/install.command
 Already have the repository? Run `bash scripts/install.command` from its root. Re-running the installer rebuilds and reinstalls the current checkout. If you used the source ZIP, you can move the extracted source folder to Trash after Weekform opens.
 
 > [!NOTE]
-> Weekform lives in the macOS menu bar rather than the Dock. When you first resume tracking, macOS may ask for Accessibility permission so the app can identify the foreground application and window title — never your keystrokes. Screen content is not captured unless you explicitly enable Visual Context.
+> Weekform lives in the macOS menu bar rather than the Dock. When you first resume tracking, macOS may ask for Accessibility permission so the app can identify the foreground application and window titles. Screen content is not captured unless you explicitly enable Visual Context.
 
 The app is compiled locally, so this path does not require an Apple Developer signature. The installer downloads source dependencies and any prerequisites you approve; it does not upload Weekform activity data. AI features remain optional.
 
@@ -380,11 +360,11 @@ Weekform predates the July 13–21 submission period. The public submission dist
 
 ## How We Built Weekform with Codex
 
-During Build Week, Kyle Springfield worked with Codex powered by GPT-5.6 as a hands-on product, design, and engineering collaborator. Codex accelerated repository research, option generation, implementation, review, debugging, and validation; Kyle set the product constraints, selected the direction, evaluated the results, and made the final calls. The collaboration was iterative rather than one-shot: propose, inspect, build, run, critique, and refine.
+During Build Week, Kyle and Rohn Springfield each worked with Codex powered by GPT-5.6 as a hands-on product, design, and engineering collaborator. Codex accelerated repository research, option generation, implementation, review, debugging, and validation. Kyle led the product north star, local-first Mac experience, privacy constraints, and submission story; Rohn led Weekform Web, the public landing experience, deployment and authentication, and the Supabase-backed team experience. Both inspected the output, tested the running product, and made the final calls in the areas they owned. The collaboration was iterative rather than one-shot: propose, inspect, build, run, critique, and refine.
 
 The core workload prototype and the first naming exploration existed before July 13. The timeline distinguishes that foundation from selected new work and material refinements during the submission period; it does not claim the inherited product as Build Week output.
 
-| Date | Where Codex and GPT-5.6 accelerated the work | Key product, engineering, and design decisions made by Kyle |
+| Date | Where Codex and GPT-5.6 accelerated the work | Key product, engineering, and design decisions made by Kyle and Rohn |
 | --- | --- | --- |
 | **Before Build Week — July 11** | GPT-5.6 reviewed the product positioning, explored names and marketing angles, recommended **Weekform**, developed the folded-workweek "W" metaphor, and produced image-generation briefs for a compact macOS mark. It also surfaced `weekform.com` when a preliminary WHOIS check returned no match at that time; this was an availability signal, not trademark clearance or proof of registration. | Kyle selected Weekform from the proposed directions, rejected the first logo treatment as not strong enough, and requested clearer toolbar- and iPhone-ready concepts. This ideation is disclosed as prior work, not Build Week output. |
 | **July 13** | After the name was locked, Codex productionized the supplied identity across the interface, native shell, packages, documentation, installer, app icons, and menu-bar assets, then built and visually checked the result. | Kyle supplied the chosen concept and black logo artwork, directed the lockup and compact-header refinements, approved the final identity, and locked the message **"Know what fits before you commit."** He also chose to frame Weekform as a private planning aid—not employee surveillance. |
@@ -394,6 +374,8 @@ The core workload prototype and the first naming exploration existed before July
 | **July 16** | Codex improved the compact menu-bar experience, added Agent-assisted actions for classification, forecasting, and narratives, and implemented focused interaction polish with reduced-motion fallbacks. | Kyle required consequential Agent actions to remain approval-gated and shaped the final compact layout and motion through visual feedback. |
 | **July 18** | Codex performed the submission audit, reconstructed the dated evidence trail, prepared a reproducible installer, migrated the current AI SDK integration, removed retired provider paths, and ran the web, dependency, Rust, and desktop-build checks. In a [follow-up product-presentation task](docs/BUILD_WEEK_2026.md#readme-product-presentation), it also reframed the public README around the product, captured an authentic synthetic-data capacity view, and preserved the technical, privacy, and provenance record. | Kyle chose an OpenAI-first direction for the hackathon, a separate public repository, and a clean history that clearly separates prior work from submission-period work. He set the public presentation bar: lead with the Weekform identity, show the real weekly-capacity experience, and keep the result honest about prototype and licensing status. |
 | **July 18** | In a [focused Week dashboard redesign task](docs/BUILD_WEEK_2026.md#week-dashboard-redesign), Codex mapped Kyle’s reference to the existing capacity data, rebuilt the page around simpler labels and stronger visual hierarchy, and retained the detailed model evidence in an optional explanation layer. Follow-ups aligned the primary panels, added accessible chart detail, and replaced the pastoral hero artwork with a lazy-loaded Three.js capacity signal whose blue, green, and neutral regions encode committed load, dependable headroom, and protected buffer. | Kyle supplied the reference, constrained the redesign to the content below **Weekly capacity**, required the Weekform palette and existing app context to remain intact, and prioritized immediate comprehension over the prior dense presentation. His follow-up direction called for equal-height panels, restrained chart motion, keyboard-accessible detail, and a more modern, technical hero visual instead of the existing illustration. |
+| **July 19 — Weekform Web and teams** | Working with Rohn, Codex helped turn the Web edition into a coherent product path: a responsive public landing page with clear **Open in Web** and **Download for Mac** choices; hardened Vercel monorepo deployment; layered Supabase sign-in with Google, GitHub, and passwordless Magic Links; a private authenticated workspace; role-aware onboarding; and Manager Access. The team flow lets a signed-in user create a team and become its owner, see its roster, create an email-bound one-time invite link that expires after seven days, and let the invited teammate explicitly accept it. Only the invite-token hash is stored, owner/manager permissions are enforced through Supabase RLS, and invitations are copy-link only—no email delivery is claimed. Representative commits include [`59a43ea`](https://github.com/kspringfield13/weekform-dev/commit/59a43ea62c1e72e1aac202cf9b3ba81034a048ad), [`a829486`](https://github.com/kspringfield13/weekform-dev/commit/a829486583330b8b79b8326a9aadf1687000d1a9), [`46b3c53`](https://github.com/kspringfield13/weekform-dev/commit/46b3c53b168ffeb7e1fb19aa2e1045092f735aab), [`9468a27`](https://github.com/kspringfield13/weekform-dev/commit/9468a275d6fbb0750825bfdd429dcbed75ce2205), and [`9d9dd30`](https://github.com/kspringfield13/weekform-dev/commit/9d9dd30fdfd3ce63c8273ef12cea63c88f9ba279). The underlying team-cloud foundation also used the separately documented parallel-agent runbook below. | Rohn directed and integrated the Web experience: he established the landing-page hierarchy, the honest Mac-versus-Web boundary, the layered sign-in flow, the owner/manager/member model, and the end-to-end create-team and invite-member journey. He kept invite acceptance explicit, limited the prototype to secure copyable links instead of implying email delivery, tested the production-oriented Web path, and refined the signed-in workspace around a clear review → decide → request → coordinate flow. |
+| **July 20 — Web parity and release polish** | Rohn continued using Codex to bring the Individual Web workspace closer to the Mac app’s spatial model and workload story, including the Today review queue, Week capacity and forecast views, Agent, History, Settings, review-safe Mac-to-Web explanations, and approval-gated review commands. Follow-up commits refined Weekform branding and the responsive header, placed account and theme controls deliberately, clarified Web-edition boundaries, added the Chat connection wizard, and hardened the Mac download/source-install handoff. Representative commits include [`4e29dc9`](https://github.com/kspringfield13/weekform-dev/commit/4e29dc928ed04678e03240af381d3fe2887572f2), [`b8bcfef`](https://github.com/kspringfield13/weekform-dev/commit/b8bcfef46e3de5a8701f8ed0410bf90207415796), [`6e5bde9`](https://github.com/kspringfield13/weekform-dev/commit/6e5bde9de4c95f542226a4165e0829d25b158c6a), and [`b00a0f2`](https://github.com/kspringfield13/weekform-dev/commit/b00a0f25d57b4f141d48b3375e3382b42e04f342). | Rohn chose to make the Web edition feel recognizably Weekform without pretending it performs native capture. He reviewed the desktop/mobile hierarchy, tightened the landing and authenticated navigation, preserved the local-data boundary, and rejected unsafe download shortcuts when signing/notarization evidence was incomplete. |
 
 ### The parallel-agent runbook for the team cloud layer
 
@@ -404,7 +386,7 @@ The Team Clawfather cloud slice (Supabase schema and RLS, the Next.js web app, d
 - **Faster exploration:** GPT-5.6 could inspect the product and codebase together, turn positioning ideas into concrete UI and identity options, and test those ideas against implementation constraints.
 - **Safer cross-cutting changes:** Codex traced a decision across TypeScript, Rust, Tauri configuration, package metadata, assets, privacy documentation, and installer behavior instead of treating each file as an isolated edit.
 - **Shorter feedback loops:** Codex repeatedly paired implementation with type-checking, production builds, Rust checks, dependency audits, and review of the running interface.
-- **More review capacity:** Focused Codex reviews surfaced accessibility, data-integrity, privacy, and edge-case issues while Kyle concentrated on product judgment and visual critique.
+- **More review capacity:** Focused Codex reviews surfaced accessibility, data-integrity, privacy, and edge-case issues while Kyle and Rohn concentrated on product judgment and visual critique in the areas they led.
 
 The primary Build Week project task for `/feedback` is **`019f6058-ca64-7510-bcc5-f9416f981036`**. The dated baseline, selected commit evidence, supporting Codex tasks, and current submission notes are maintained in [Build Week provenance](docs/BUILD_WEEK_2026.md).
 
