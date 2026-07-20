@@ -558,6 +558,24 @@ The hackathon-readiness and provenance task is supplemental evidence:
   remain separate because the sandbox denies local server binding. Package audit
   is separately blocked by registry DNS (`ENOTFOUND`).
 
+- **July 20 review-protocol compatibility hardening (not yet deployed):** the
+  released v1 queue, table shape, registration signature, and direct completion
+  behavior remain available while a separate v2 queue owns the two-phase claim,
+  durable local-application receipt, and idempotent completion protocol. Pending
+  v1 rows are never moved, copied, or rollout-deleted. The new desktop polls and
+  drains v1 with the released RPC path and persists an explicit protocol on every
+  local outbox item, preventing cross-protocol lifecycle calls. Web advances to
+  v2 only when every active device advertises v2 and the v1 backlog is empty;
+  per-user transaction locks serialize routing with registration, and pending v2
+  work blocks a v1 downgrade. A foreign v2 Mac can close an `ack_pending` row
+  from its durable receipt without reapplying the local mutation, preserving the
+  original device attribution and emitting recovery audit evidence; this closes
+  command lifecycle but does not claim the unavailable Mac uploaded a newer Web
+  replica. Red-first protocol tests now pass 77/77, the complete local Supabase
+  suite passes 372/372, desktop service tests pass 233/233, Web tests pass
+  535/535, and both root and Web production builds pass. No hosted migration,
+  Web deployment, or public desktop release is claimed by this entry.
+
 - **July 20 atomic Today Confirm-all follow-through:** Individual Web Today now
   exposes the Desktop-primary `Confirm all N` action for review-safe blocks that
   do not already have a current pending, applied, or conflict request. Web sends

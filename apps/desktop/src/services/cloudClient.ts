@@ -399,15 +399,15 @@ export async function deleteMySnapshotsForTeam(
   }
 }
 
-/** Register or refresh this signed-in Mac device. Server derives user_id from auth.uid(). */
-export async function registerWeekformDevice(
+/** Register or refresh this signed-in Mac and advertise isolated review protocol v2. */
+export async function registerWeekformDeviceV2(
   env: CloudEnv,
   session: PersistedCloudSession,
   deviceId: string,
   deviceName: string,
 ): Promise<CloudResult<null>> {
   try {
-    const response = await fetch(`${env.url}/rest/v1/rpc/register_weekform_device`, {
+    const response = await fetch(`${env.url}/rest/v1/rpc/register_weekform_device_v2`, {
       method: "POST",
       headers: authHeaders(env, session.accessToken),
       body: JSON.stringify({ p_device_id: deviceId, p_device_name: deviceName }),
@@ -451,7 +451,7 @@ export async function syncPersonalReplicaBatch(
   }
 }
 
-function parseReviewCommand(value: unknown): ReviewCommandV1 | null {
+function parseReviewCommand(value: unknown, protocolVersion: 1 | 2): ReviewCommandV1 | null {
   if (typeof value !== "object" || value === null) return null;
   const row = value as Record<string, unknown>;
   if (
@@ -462,29 +462,37 @@ function parseReviewCommand(value: unknown): ReviewCommandV1 | null {
     || (row.action !== "confirm" && row.action !== "exclude" && row.action !== "relabel")
     || row.status !== "pending" || typeof row.created_at !== "string"
   ) return null;
-  const applicationPhase = row.application_phase === null
+  const applicationPhase = protocolVersion === 1
     ? null
-    : row.application_phase === "apply_pending" || row.application_phase === "ack_pending"
-      ? row.application_phase
-      : undefined;
-  const claimedByDevice = row.claimed_by_device === null
+    : row.application_phase === null
+      ? null
+      : row.application_phase === "apply_pending" || row.application_phase === "ack_pending"
+        ? row.application_phase
+        : undefined;
+  const claimedByDevice = protocolVersion === 1
     ? null
-    : typeof row.claimed_by_device === "string"
-      && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.claimed_by_device)
-      ? row.claimed_by_device
-      : undefined;
-  const claimedAt = row.claimed_at === null
+    : row.claimed_by_device === null
+      ? null
+      : typeof row.claimed_by_device === "string"
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(row.claimed_by_device)
+        ? row.claimed_by_device
+        : undefined;
+  const claimedAt = protocolVersion === 1
     ? null
-    : typeof row.claimed_at === "string" && Number.isFinite(Date.parse(row.claimed_at))
-      ? new Date(row.claimed_at).toISOString()
-      : undefined;
-  const rawClaimOwner = Array.isArray(row.claim_owner)
-    ? row.claim_owner[0]
-    : row.claim_owner;
+    : row.claimed_at === null
+      ? null
+      : typeof row.claimed_at === "string" && Number.isFinite(Date.parse(row.claimed_at))
+        ? new Date(row.claimed_at).toISOString()
+        : undefined;
+  const rawClaimOwner = protocolVersion === 1
+    ? null
+    : Array.isArray(row.claim_owner)
+      ? row.claim_owner[0]
+      : row.claim_owner;
   const claimOwnerRecord = typeof rawClaimOwner === "object" && rawClaimOwner !== null
     ? rawClaimOwner as Record<string, unknown>
     : null;
-  const claimOwnerRevoked = applicationPhase === null
+  const claimOwnerRevoked = protocolVersion === 1 || applicationPhase === null
     ? null
     : claimOwnerRecord?.revoked_at === null
       ? false
@@ -517,6 +525,7 @@ function parseReviewCommand(value: unknown): ReviewCommandV1 | null {
   const patch = row.action === "relabel" ? rawPatch as ReviewCommandV1["patch"] : null;
   return {
     schemaVersion: 1,
+    protocolVersion,
     commandId: row.command_id,
     blockId: row.block_id,
     weekId: row.week_id,
@@ -532,6 +541,31 @@ function parseReviewCommand(value: unknown): ReviewCommandV1 | null {
     claimedAt,
     claimOwnerRevoked,
   };
+}
+
+export async function fetchPendingReviewCommandsV1(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+): Promise<CloudResult<ReviewCommandV1[]>> {
+  const pageSize = 200;
+  const select = "command_id,block_id,week_id,expected_revision,action,patch,status,created_at";
+  try {
+    const commands: ReviewCommandV1[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const query = `select=${select}&status=eq.pending&order=created_at.asc&limit=${pageSize}&offset=${offset}`;
+      const response = await fetch(`${env.url}/rest/v1/review_commands?${query}`, {
+        headers: authHeaders(env, session.accessToken),
+      });
+      if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not load legacy Web review requests"), status: response.status };
+      const body: unknown = await response.json();
+      const rows = Array.isArray(body) ? body : [];
+      commands.push(...rows.map((value) => parseReviewCommand(value, 1)).filter((value): value is ReviewCommandV1 => value !== null));
+      if (rows.length < pageSize) break;
+    }
+    return { ok: true, value: commands };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
 }
 
 export async function fetchPendingReviewCommandsV2(
@@ -550,7 +584,7 @@ export async function fetchPendingReviewCommandsV2(
       if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not load Web review requests"), status: response.status };
       const body: unknown = await response.json();
       const rows = Array.isArray(body) ? body : [];
-      commands.push(...rows.map(parseReviewCommand).filter((value): value is ReviewCommandV1 => value !== null));
+      commands.push(...rows.map((value) => parseReviewCommand(value, 2)).filter((value): value is ReviewCommandV1 => value !== null));
       if (rows.length < pageSize) break;
     }
     return { ok: true, value: commands };
@@ -648,6 +682,33 @@ export async function completeReviewCommandV2(
       }),
     });
     if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not acknowledge the Web review request"), status: response.status };
+    return { ok: true, value: (await response.json()) === true };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
+/** Released v1 terminal edge used only for immutable legacy queue rows. */
+export async function completeReviewCommandV1(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  deviceId: string,
+  commandId: string,
+  status: Exclude<ReviewCommandStatus, "pending">,
+  reason: string | null,
+): Promise<CloudResult<boolean>> {
+  try {
+    const response = await fetch(`${env.url}/rest/v1/rpc/complete_review_command`, {
+      method: "POST",
+      headers: authHeaders(env, session.accessToken),
+      body: JSON.stringify({
+        p_device_id: deviceId,
+        p_command_id: commandId,
+        p_status: status,
+        p_reason: reason,
+      }),
+    });
+    if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not acknowledge the legacy Web review request"), status: response.status };
     return { ok: true, value: (await response.json()) === true };
   } catch {
     return { ok: false, message: NETWORK_ERROR_MESSAGE };

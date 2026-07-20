@@ -131,6 +131,7 @@ test("an enabled non-empty personal queue flushes immediately and nothing else d
 test("review command is conflict-visible and cannot apply against a stale block revision", () => {
   const command: ReviewCommandV1 = {
     schemaVersion: 1,
+    protocolVersion: 1,
     commandId: "command-1",
     blockId: "block-1",
     weekId: "2026-W29",
@@ -152,6 +153,7 @@ test("review command is conflict-visible and cannot apply against a stale block 
 test("approved confirm changes only the allowlisted review field", () => {
   const command: ReviewCommandV1 = {
     schemaVersion: 1,
+    protocolVersion: 1,
     commandId: "command-2",
     blockId: "block-1",
     weekId: "2026-W29",
@@ -315,6 +317,7 @@ test("upgrade drops unsent legacy replica batches with provider-bearing Chat ids
 
 const reviewApplication: ReviewCommandApplicationV1 = {
   schemaVersion: 1,
+  protocolVersion: 2,
   commandId: "81000000-0000-4000-8000-000000000001",
   blockId: "block-1",
   weekId: "2026-W29",
@@ -354,6 +357,32 @@ test("review application outbox migrates safely and rejects non-allowlisted payl
     ],
   }, () => "fallback-device");
   assert.deepEqual(parsed.reviewOutbox, [valid]);
+
+  const legacyCommand = { ...reviewApplication } as Record<string, unknown>;
+  delete legacyCommand.protocolVersion;
+  const legacy = parsePersonalSyncState({
+    deviceId: "device-1",
+    deviceName: "Weekform for Mac",
+    cursor: 0,
+    queue: [],
+    reviewOutbox: [{ ...valid, command: legacyCommand }],
+  }, () => "fallback-device");
+  assert.equal(legacy.reviewOutbox?.[0]?.command.protocolVersion, 2,
+    "pre-protocol outbox entries migrate only to the isolated v2 path they originally represented");
+});
+
+test("outbox persistence keeps legacy and v2 lifecycle protocols explicit", () => {
+  const v1 = enqueueReviewCommandApplication([], {
+    command: { ...reviewApplication, protocolVersion: 1 },
+    phase: "apply_pending",
+    now: "2026-07-20T12:01:00.000Z",
+  });
+  const v2 = enqueueReviewCommandApplication(v1, {
+    command: { ...reviewApplication, commandId: "81000000-0000-4000-8000-000000000002", protocolVersion: 2 },
+    phase: "apply_pending",
+    now: "2026-07-20T12:01:00.000Z",
+  });
+  assert.deepEqual(v2.map((item) => item.command.protocolVersion), [1, 2]);
 });
 
 test("review application outbox advances monotonically and retry metadata is durable", () => {

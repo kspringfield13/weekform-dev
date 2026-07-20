@@ -14,13 +14,16 @@ import type { PersistedCloudSession } from "./cloudPolicy";
 import type { WorkloadSnapshotRow } from "./cloudPolicy";
 import {
   claimReviewCommandV2,
+  completeReviewCommandV1,
   completeReviewCommandV2,
   deleteMySnapshotsForTeam,
+  fetchPendingReviewCommandsV1,
   fetchPendingReviewCommandsV2,
   fetchTeamMemberships,
   getCloudEnv,
   isCloudConfigured,
   markReviewCommandAppliedLocallyV2,
+  registerWeekformDeviceV2,
   reviewCommandExistsV2,
   refreshSession,
   signInWithOAuth,
@@ -558,6 +561,69 @@ test("delete/upsert failures surface the server message without throwing", async
 // Review command two-phase claim/application lifecycle
 // ---------------------------------------------------------------------------
 
+test("registerWeekformDeviceV2 advertises protocol support before reading the isolated inbox", async () => {
+  await withFetch(
+    () => jsonResponse({ id: "82000000-0000-4000-8000-000000000001" }),
+    async (requests) => {
+      const result = await registerWeekformDeviceV2(
+        env,
+        makeSession(),
+        "82000000-0000-4000-8000-000000000001",
+        "Synthetic Mac",
+      );
+      assert.deepEqual(result, { ok: true, value: null });
+      assert.equal(requests[0].url, `${env.url}/rest/v1/rpc/register_weekform_device_v2`);
+      assert.deepEqual(JSON.parse(requests[0].body ?? ""), {
+        p_device_id: "82000000-0000-4000-8000-000000000001",
+        p_device_name: "Synthetic Mac",
+      });
+    },
+  );
+});
+
+test("fetchPendingReviewCommandsV1 keeps legacy rows on the released table and tags protocol explicitly", async () => {
+  const row = {
+    command_id: "81000000-0000-4000-8000-000000000001",
+    block_id: "block-1",
+    week_id: "2026-W29",
+    expected_revision: "0123456789abcdef",
+    action: "confirm",
+    patch: null,
+    status: "pending",
+    created_at: "2026-07-20T12:00:00.000Z",
+  };
+  await withFetch(
+    () => jsonResponse([row]),
+    async (requests) => {
+      const result = await fetchPendingReviewCommandsV1(env, makeSession());
+      assert.ok(result.ok);
+      assert.equal(result.value[0]?.protocolVersion, 1);
+      assert.equal(result.value[0]?.applicationPhase, null);
+      assert.match(requests[0].url, /\/rest\/v1\/review_commands\?/);
+      assert.doesNotMatch(requests[0].url, /application_phase|claimed_by_device|review_commands_v2/);
+    },
+  );
+});
+
+test("completeReviewCommandV1 drains legacy work only through the released completion RPC", async () => {
+  await withFetch(
+    () => jsonResponse(true),
+    async (requests) => {
+      const result = await completeReviewCommandV1(
+        env,
+        makeSession(),
+        "82000000-0000-4000-8000-000000000001",
+        "81000000-0000-4000-8000-000000000001",
+        "applied",
+        "Approved on this Mac.",
+      );
+      assert.deepEqual(result, { ok: true, value: true });
+      assert.equal(requests[0].url, `${env.url}/rest/v1/rpc/complete_review_command`);
+      assert.doesNotMatch(requests[0].url, /_v2$/);
+    },
+  );
+});
+
 test("fetchPendingReviewCommandsV2 accepts only allowlisted isolated-v2 lifecycle fields", async () => {
   const row = {
     command_id: "81000000-0000-4000-8000-000000000001",
@@ -579,6 +645,7 @@ test("fetchPendingReviewCommandsV2 accepts only allowlisted isolated-v2 lifecycl
       const result = await fetchPendingReviewCommandsV2(env, makeSession());
       assert.ok(result.ok);
       assert.equal(result.value.length, 1);
+      assert.equal(result.value[0].protocolVersion, 2);
       assert.equal(result.value[0].applicationPhase, "apply_pending");
       assert.equal(result.value[0].claimedByDevice, row.claimed_by_device);
       assert.equal(result.value[0].claimedAt, row.claimed_at);

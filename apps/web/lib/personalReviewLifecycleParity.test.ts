@@ -7,7 +7,7 @@ const globalStyles = readFileSync(new URL("../app/globals.css", import.meta.url)
 const dashboardSource = readFileSync(new URL("../app/dashboard/page.tsx", import.meta.url), "utf8");
 const actionsSource = readFileSync(new URL("../app/dashboard/personalActions.ts", import.meta.url), "utf8");
 const migrationSource = readFileSync(
-  new URL("../../../supabase/migrations/202607200001_review_command_duplicate_safety.sql", import.meta.url),
+  new URL("../../../supabase/migrations/202607200005_review_command_two_phase.sql", import.meta.url),
   "utf8",
 );
 
@@ -37,14 +37,16 @@ test("pending requests cannot be duplicated through UI, server action, or concur
   assert.match(todaySource, /requestLocked\s*=\s*status\s*!==\s*null\s*&&\s*status\s*!==\s*["']rejected["']/);
   assert.match(todaySource, /disabled=\{requestLocked\}/);
   assert.match(actionsSource, /from\(["']review_commands["']\)/);
+  assert.match(actionsSource, /from\(["']review_commands_v2["']\)/);
   assert.match(actionsSource, /eq\(["']status["'],\s*["']pending["']\)/);
   assert.match(actionsSource, /already waiting for approval/i);
-  assert.match(migrationSource, /create unique index/i);
-  assert.match(migrationSource, /where status = 'pending'/i);
+  assert.match(actionsSource, /rpc\(["']queue_review_command_compatible["']/);
+  assert.match(migrationSource, /review_command_pending_targets/);
+  assert.match(migrationSource, /review_commands_v1_reserve_pending_target/);
+  assert.match(migrationSource, /review_commands_v2_reserve_pending_target/);
   assert.match(migrationSource, /on conflict[\s\S]*do nothing/i);
-  assert.match(migrationSource, /is not distinct from/i);
   assert.match(migrationSource, /for update/i);
-  assert.match(migrationSource, /another review request is already pending for this block revision/i);
+  assert.match(migrationSource, /another review protocol already has a pending request for this block revision/i);
 });
 
 test("lifecycle view stays review-safe and ephemeral", () => {
@@ -53,7 +55,13 @@ test("lifecycle view stays review-safe and ephemeral", () => {
   assert.doesNotMatch(todaySource, /localStorage|sessionStorage|indexedDB/i);
 });
 
-test("queue RPC validates the server boundary and owns pending lifecycle fields", () => {
+test("compatible queue routes to a validated protocol-specific server boundary", () => {
+  assert.match(migrationSource, /create or replace function public\.queue_review_command_compatible/);
+  assert.match(migrationSource, /review_protocol_version\s*<>\s*2/);
+  assert.match(migrationSource, /from public\.review_commands[\s\S]*status = 'pending'/);
+  assert.match(migrationSource, /pg_advisory_xact_lock/);
+  assert.match(migrationSource, /return public\.queue_review_command_v2/);
+  assert.match(migrationSource, /return public\.queue_review_command\(/);
   assert.match(migrationSource, /actor uuid := auth\.uid\(\)/);
   assert.match(migrationSource, /btrim\(p_block_id\) <> p_block_id/);
   assert.match(migrationSource, /p_week_id !~ ['"]\^\[0-9\]\{4\}-W/);
@@ -65,12 +73,12 @@ test("queue RPC validates the server boundary and owns pending lifecycle fields"
   );
   assert.match(
     migrationSource,
-    /not coalesce\(jsonb_typeof\(p_patch -> ['"]blockerFlag['"]\) = ['"]boolean['"], false\)/,
+    /not coalesce\(\s*jsonb_typeof\(p_patch -> ['"]blockerFlag['"]\) = ['"]boolean['"], false\)/,
     "JSON null must not bypass boolean patch validation",
   );
   assert.match(migrationSource, /not coalesce\(p_patch ->> ['"]category['"] in/);
   assert.match(migrationSource, /user_id, block_id, week_id, expected_revision, action, patch, created_by/);
-  assert.match(migrationSource, /values \(actor, p_block_id, p_week_id, p_expected_revision, p_action, p_patch, actor\)/);
-  assert.match(migrationSource, /revoke all on function public\.queue_review_command[\s\S]*from public, anon, authenticated/);
-  assert.match(migrationSource, /grant execute on function public\.queue_review_command[\s\S]*to authenticated/);
+  assert.match(migrationSource, /values\s*\(\s*actor,\s*p_block_id,\s*p_week_id,\s*p_expected_revision,\s*p_action,\s*p_patch,\s*actor/);
+  assert.match(migrationSource, /revoke all on function public\.queue_review_command_compatible[\s\S]*from public, anon, authenticated/);
+  assert.match(migrationSource, /grant execute on function public\.queue_review_command_compatible[\s\S]*to authenticated/);
 });

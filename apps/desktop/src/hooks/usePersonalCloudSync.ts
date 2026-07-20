@@ -11,11 +11,13 @@ import {
 } from "../../../../packages/inference/src/personalReplica";
 import {
   claimReviewCommandV2,
+  completeReviewCommandV1,
   completeReviewCommandV2,
+  fetchPendingReviewCommandsV1,
   fetchPendingReviewCommandsV2,
   getCloudEnv,
   markReviewCommandAppliedLocallyV2,
-  registerWeekformDevice,
+  registerWeekformDeviceV2,
   reviewCommandExistsV2,
   syncPersonalReplicaBatch,
 } from "../services/cloudClient";
@@ -134,7 +136,7 @@ export function usePersonalCloudSync(input: {
     const env = getCloudEnv();
     const session = await current.getFreshSession();
     if (!env || !session) return { ok: false as const, message: "Sign in to sync your Web workspace." };
-    const result = await registerWeekformDevice(
+    const result = await registerWeekformDeviceV2(
       env,
       session,
       current.personalSyncState.deviceId,
@@ -235,10 +237,38 @@ export function usePersonalCloudSync(input: {
       }
       const ready = await ensureDevice();
       if (!operation.isCurrent() || !ready.ok) return;
-      const result = await fetchPendingReviewCommandsV2(ready.env, ready.session);
-      if (!operation.isCurrent() || !result.ok) return;
+      // Legacy rows are immutable and must be drained through v1. Poll both
+      // isolated queues until the server's compatibility gate naturally stops
+      // producing v1 work.
+      const legacyResult = await fetchPendingReviewCommandsV1(ready.env, ready.session);
+      if (!operation.isCurrent() || !legacyResult.ok) return;
+      const v2Result = await fetchPendingReviewCommandsV2(ready.env, ready.session);
+      if (!operation.isCurrent() || !v2Result.ok) return;
       const current = accountRef.current;
-      const ownedClaims = result.value.filter((command) => command.applicationPhase
+      const foreignAckReceipts = v2Result.value.filter((command) => (
+        command.applicationPhase === "ack_pending"
+        && command.claimedByDevice !== null
+        && command.claimedByDevice !== current.personalSyncState.deviceId
+      ));
+      const recoveredIds = new Set<string>();
+      for (const command of foreignAckReceipts) {
+        const recovered = await claimReviewCommandV2(
+          ready.env,
+          ready.session,
+          current.personalSyncState.deviceId,
+          command.commandId,
+        );
+        if (!operation.isCurrent()) return;
+        if (recovered.ok && recovered.value === "applied") {
+          recoveredIds.add(command.commandId);
+          current.emitAudit(
+            "personal_sync_success",
+            "Recovered a durable review receipt from another Mac without reapplying its local change",
+            { command_id: command.commandId, recovered_receipt: true },
+          );
+        }
+      }
+      const ownedClaims = v2Result.value.filter((command) => command.applicationPhase
         && command.claimedByDevice === current.personalSyncState.deviceId);
       if (ownedClaims.length > 0) {
         const now = new Date().toISOString();
@@ -256,9 +286,12 @@ export function usePersonalCloudSync(input: {
         if (!operation.isCurrent()) return;
       }
       const nowMs = Date.now();
-      setPendingCommands(result.value.filter((command) => (
-        command.applicationPhase === null && command.claimedByDevice === null
-      ) || reviewCommandClaimIsRecoverable(command, nowMs)));
+      setPendingCommands([
+        ...legacyResult.value,
+        ...v2Result.value.filter((command) => !recoveredIds.has(command.commandId) && ((
+          command.applicationPhase === null && command.claimedByDevice === null
+        ) || reviewCommandClaimIsRecoverable(command, nowMs))),
+      ]);
     } catch {
       // Strict cloud persistence exposes its actionable error on the account.
     } finally {
@@ -276,14 +309,23 @@ export function usePersonalCloudSync(input: {
     try {
       const ready = await ensureDevice();
       if (!operation.isCurrent() || !ready.ok) return false;
-      const result = await completeReviewCommandV2(
-        ready.env,
-        ready.session,
-        accountRef.current.personalSyncState.deviceId,
-        command.commandId,
-        status,
-        reason,
-      );
+      const result = command.protocolVersion === 1
+        ? await completeReviewCommandV1(
+            ready.env,
+            ready.session,
+            accountRef.current.personalSyncState.deviceId,
+            command.commandId,
+            status,
+            reason,
+          )
+        : await completeReviewCommandV2(
+            ready.env,
+            ready.session,
+            accountRef.current.personalSyncState.deviceId,
+            command.commandId,
+            status,
+            reason,
+          );
       if (!operation.isCurrent() || !result.ok || !result.value) return false;
       setPendingCommands((current) => current.filter((entry) => entry.commandId !== command.commandId));
       return true;
@@ -300,6 +342,22 @@ export function usePersonalCloudSync(input: {
       if (!command) return false;
       const ready = await ensureDevice();
       if (!operation.isCurrent() || !ready.ok) return false;
+      if (command.protocolVersion === 1) {
+        // v1 has no claim RPC. Persist protocol-owned work before the local CAS;
+        // resumeReviewApplications will use only the released completion RPC.
+        const now = new Date().toISOString();
+        await accountRef.current.setPersonalSyncStateDurably((state) => ({
+          ...state,
+          reviewOutbox: enqueueReviewCommandApplication(state.reviewOutbox ?? [], {
+            command,
+            phase: "apply_pending",
+            now,
+          }),
+        }));
+        if (!operation.isCurrent()) return false;
+        setPendingCommands((current) => current.filter((entry) => entry.commandId !== command.commandId));
+        return true;
+      }
       // This durable server claim is the acknowledgement boundary. Local reviewed
       // truth is not touched in this callback; the persisted outbox resumes it.
       const claimed = await claimReviewCommandV2(
@@ -364,66 +422,67 @@ export function usePersonalCloudSync(input: {
         return;
       }
 
-      // Reconfirm/renew apply_pending ownership before every retry. The server
-      // may lease-reclaim only a never-recorded application; ack_pending can
-      // never move to another device.
-      const confirmedClaim = await claimReviewCommandV2(
-        ready.env,
-        ready.session,
-        currentAccount.personalSyncState.deviceId,
-        item.command.commandId,
-      );
-      if (!operation.isCurrent()) return;
-      if (!confirmedClaim.ok) {
-        const exists = await reviewCommandExistsV2(
+      if (item.command.protocolVersion === 2) {
+        // Reconfirm/renew apply_pending ownership before every v2 retry. Legacy
+        // rows have no claim protocol and never enter this branch.
+        const confirmedClaim = await claimReviewCommandV2(
           ready.env,
           ready.session,
+          currentAccount.personalSyncState.deviceId,
           item.command.commandId,
         );
         if (!operation.isCurrent()) return;
-        if (exists.ok && !exists.value) {
+        if (!confirmedClaim.ok) {
+          const exists = await reviewCommandExistsV2(
+            ready.env,
+            ready.session,
+            item.command.commandId,
+          );
+          if (!operation.isCurrent()) return;
+          if (exists.ok && !exists.value) {
+            await currentAccount.setPersonalSyncStateDurably((state) => ({
+              ...state,
+              reviewOutbox: removeReviewCommandApplication(
+                state.reviewOutbox ?? [], item.command.commandId,
+              ),
+              lastError: "A pending Web review request was deleted before this Mac could finish it.",
+            }));
+            currentAccount.emitAudit(
+              "personal_sync_failure",
+              "A deleted Web review request was removed from the Mac retry outbox",
+              { command_id: item.command.commandId, terminally_deleted: true },
+            );
+            return;
+          }
+          await currentAccount.setPersonalSyncStateDurably((state) => ({
+            ...state,
+            reviewOutbox: markReviewCommandApplicationAttempt(
+              state.reviewOutbox ?? [], item.command.commandId,
+              confirmedClaim.message, new Date().toISOString(),
+            ),
+          }));
+          return;
+        }
+        if (confirmedClaim.value === "applied"
+          || confirmedClaim.value === "rejected"
+          || confirmedClaim.value === "conflict") {
           await currentAccount.setPersonalSyncStateDurably((state) => ({
             ...state,
             reviewOutbox: removeReviewCommandApplication(
               state.reviewOutbox ?? [], item.command.commandId,
             ),
-            lastError: "A pending Web review request was deleted before this Mac could finish it.",
           }));
-          currentAccount.emitAudit(
-            "personal_sync_failure",
-            "A deleted Web review request was removed from the Mac retry outbox",
-            { command_id: item.command.commandId, terminally_deleted: true },
-          );
           return;
         }
-        await currentAccount.setPersonalSyncStateDurably((state) => ({
-          ...state,
-          reviewOutbox: markReviewCommandApplicationAttempt(
-            state.reviewOutbox ?? [], item.command.commandId,
-            confirmedClaim.message, new Date().toISOString(),
-          ),
-        }));
-        return;
-      }
-      if (confirmedClaim.value === "applied"
-        || confirmedClaim.value === "rejected"
-        || confirmedClaim.value === "conflict") {
-        await currentAccount.setPersonalSyncStateDurably((state) => ({
-          ...state,
-          reviewOutbox: removeReviewCommandApplication(
-            state.reviewOutbox ?? [], item.command.commandId,
-          ),
-        }));
-        return;
-      }
-      if (confirmedClaim.value === "ack_pending" && item.phase === "apply_pending") {
-        await currentAccount.setPersonalSyncStateDurably((state) => ({
-          ...state,
-          reviewOutbox: markReviewCommandApplicationPhase(
-            state.reviewOutbox ?? [], item.command.commandId, "ack_pending", new Date().toISOString(),
-          ),
-        }));
-        return;
+        if (confirmedClaim.value === "ack_pending" && item.phase === "apply_pending") {
+          await currentAccount.setPersonalSyncStateDurably((state) => ({
+            ...state,
+            reviewOutbox: markReviewCommandApplicationPhase(
+              state.reviewOutbox ?? [], item.command.commandId, "ack_pending", new Date().toISOString(),
+            ),
+          }));
+          return;
+        }
       }
 
       // The network wait above may span a local edit. Re-read and compare the
@@ -432,18 +491,27 @@ export function usePersonalCloudSync(input: {
       const application = mutateBlocksAtomically((currentBlocks) =>
         applyReviewCommandToCurrentBlocks(currentBlocks, item.command));
       if (application.kind === "conflict") {
-        const completed = await completeReviewCommandV2(
-          ready.env,
-          ready.session,
-          currentAccount.personalSyncState.deviceId,
-          item.command.commandId,
-          "conflict",
-          "The local block changed before the claimed review request could be applied.",
-        );
+        const completed = item.command.protocolVersion === 1
+          ? await completeReviewCommandV1(
+              ready.env,
+              ready.session,
+              currentAccount.personalSyncState.deviceId,
+              item.command.commandId,
+              "conflict",
+              "The local block changed before the legacy review request could be applied.",
+            )
+          : await completeReviewCommandV2(
+              ready.env,
+              ready.session,
+              currentAccount.personalSyncState.deviceId,
+              item.command.commandId,
+              "conflict",
+              "The local block changed before the claimed review request could be applied.",
+            );
         if (!operation.isCurrent()) return;
         await currentAccount.setPersonalSyncStateDurably((state) => ({
           ...state,
-          reviewOutbox: completed.ok && completed.value
+          reviewOutbox: completed.ok && (completed.value || item.command.protocolVersion === 1)
             ? removeReviewCommandApplication(state.reviewOutbox ?? [], item.command.commandId)
             : markReviewCommandApplicationAttempt(
                 state.reviewOutbox ?? [], item.command.commandId,
@@ -456,13 +524,16 @@ export function usePersonalCloudSync(input: {
 
       if (application.kind === "applied") {
         const block = application.before;
+        const correctionReason = item.command.protocolVersion === 1
+          ? "User approved an immutable legacy Weekform Web review request on this Mac"
+          : "User approved a server-claimed Weekform Web review request on this Mac";
         if (application.block === null) {
           addCorrection({
             work_block_id: block.work_block_id,
             field: "exclude",
             old_value: block.project_name,
             new_value: "excluded",
-            reason: "User approved a server-claimed Weekform Web review request on this Mac",
+            reason: correctionReason,
           });
         } else {
           for (const field of application.changedFields) {
@@ -472,7 +543,7 @@ export function usePersonalCloudSync(input: {
                 field: "verification",
                 old_value: "unverified",
                 new_value: "verified",
-                reason: "User approved a server-claimed Weekform Web review request on this Mac",
+                reason: correctionReason,
               });
               continue;
             }
@@ -482,7 +553,7 @@ export function usePersonalCloudSync(input: {
               field: field as UserCorrection["field"],
               old_value: String(block[modelField]),
               new_value: String(application.block[modelField]),
-              reason: "User approved a server-claimed Weekform Web review request on this Mac",
+              reason: correctionReason,
             });
           }
         }
@@ -524,56 +595,82 @@ export function usePersonalCloudSync(input: {
         return;
       }
 
-      const marked = await markReviewCommandAppliedLocallyV2(
-        ready.env,
-        ready.session,
-        currentAccount.personalSyncState.deviceId,
-        item.command.commandId,
-      );
-      if (!operation.isCurrent()) return;
-      if (!marked.ok || !marked.value) {
-        if (marked.ok) {
-          const exists = await reviewCommandExistsV2(
+      if (item.command.protocolVersion === 2) {
+        const marked = await markReviewCommandAppliedLocallyV2(
+          ready.env,
+          ready.session,
+          currentAccount.personalSyncState.deviceId,
+          item.command.commandId,
+        );
+        if (!operation.isCurrent()) return;
+        if (!marked.ok || !marked.value) {
+          if (marked.ok) {
+            const exists = await reviewCommandExistsV2(
+              ready.env,
+              ready.session,
+              item.command.commandId,
+            );
+            if (!operation.isCurrent()) return;
+            if (exists.ok && !exists.value) {
+              await currentAccount.setPersonalSyncStateDurably((state) => ({
+                ...state,
+                reviewOutbox: removeReviewCommandApplication(
+                  state.reviewOutbox ?? [], item.command.commandId,
+                ),
+                lastError: "A Web review request was deleted after local approval; the local reviewed change was retained.",
+              }));
+              currentAccount.emitAudit(
+                "personal_sync_failure",
+                "A deleted Web review request could not receive its local application receipt; the reviewed Mac change was retained",
+                { command_id: item.command.commandId, terminally_deleted: true },
+              );
+              return;
+            }
+          }
+          const message = marked.ok ? "The review application receipt was not accepted." : marked.message;
+          await currentAccount.setPersonalSyncStateDurably((state) => ({
+            ...state,
+            reviewOutbox: markReviewCommandApplicationAttempt(
+              state.reviewOutbox ?? [], item.command.commandId, message, new Date().toISOString(),
+            ),
+          }));
+          return;
+        }
+      }
+      const completed = item.command.protocolVersion === 1
+        ? await completeReviewCommandV1(
             ready.env,
             ready.session,
+            currentAccount.personalSyncState.deviceId,
             item.command.commandId,
+            "applied",
+            "Approved on this Mac through the legacy review protocol.",
+          )
+        : await completeReviewCommandV2(
+            ready.env,
+            ready.session,
+            currentAccount.personalSyncState.deviceId,
+            item.command.commandId,
+            "applied",
+            "Approved on this Mac.",
           );
-          if (!operation.isCurrent()) return;
-          if (exists.ok && !exists.value) {
-            await currentAccount.setPersonalSyncStateDurably((state) => ({
-              ...state,
-              reviewOutbox: removeReviewCommandApplication(
-                state.reviewOutbox ?? [], item.command.commandId,
-              ),
-              lastError: "A Web review request was deleted after local approval; the local reviewed change was retained.",
-            }));
-            currentAccount.emitAudit(
-              "personal_sync_failure",
-              "A deleted Web review request could not receive its local application receipt; the reviewed Mac change was retained",
-              { command_id: item.command.commandId, terminally_deleted: true },
-            );
-            return;
-          }
-        }
-        const message = marked.ok ? "The review application receipt was not accepted." : marked.message;
+      if (!operation.isCurrent()) return;
+      if (completed.ok && !completed.value && item.command.protocolVersion === 1) {
         await currentAccount.setPersonalSyncStateDurably((state) => ({
           ...state,
-          reviewOutbox: markReviewCommandApplicationAttempt(
-            state.reviewOutbox ?? [], item.command.commandId, message, new Date().toISOString(),
+          reviewOutbox: removeReviewCommandApplication(
+            state.reviewOutbox ?? [], item.command.commandId,
           ),
+          lastError: "A legacy Web review request was already terminal or deleted; the local reviewed change was retained.",
         }));
+        currentAccount.emitAudit(
+          "personal_sync_failure",
+          "A legacy review completion lost its server race; the idempotent local result was retained",
+          { command_id: item.command.commandId, protocol_version: 1 },
+        );
         return;
       }
-      const completed = await completeReviewCommandV2(
-        ready.env,
-        ready.session,
-        currentAccount.personalSyncState.deviceId,
-        item.command.commandId,
-        "applied",
-        "Approved on this Mac.",
-      );
-      if (!operation.isCurrent()) return;
-      if (completed.ok && !completed.value) {
+      if (completed.ok && !completed.value && item.command.protocolVersion === 2) {
         const exists = await reviewCommandExistsV2(
           ready.env,
           ready.session,

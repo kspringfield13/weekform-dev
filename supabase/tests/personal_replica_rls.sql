@@ -6,7 +6,7 @@ begin;
 set local role postgres;
 set local search_path = public, extensions;
 create extension if not exists pgtap;
-select plan(34);
+select plan(32);
 
 select has_table('public', 'weekform_devices', 'device registry exists');
 select has_table('public', 'personal_replica_batches', 'idempotent batch receipts exist');
@@ -101,22 +101,6 @@ select throws_ok(
   '42501',
   'permission denied for table review_commands',
   'A cannot bypass the completion RPC'
-);
-
-select is(
-  public.claim_review_command(
-    '72000000-0000-4000-8000-000000000001',
-    (select command_id from public.review_commands where block_id = 'block-1')
-  ),
-  'apply_pending',
-  'registered Mac claims the command before local mutation'
-);
-select ok(
-  public.mark_review_command_applied_locally(
-    '72000000-0000-4000-8000-000000000001',
-    (select command_id from public.review_commands where block_id = 'block-1')
-  ),
-  'registered Mac records local application before terminal completion'
 );
 
 select lives_ok(

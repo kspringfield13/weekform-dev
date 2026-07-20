@@ -19,20 +19,38 @@ function between(start: string, end: string): string {
   return source.slice(from, to);
 }
 
-test("approval obtains a server claim and queues durable work without mutating local truth", () => {
+test("approval keeps legacy and v2 protocols separated before local mutation", () => {
   const approval = between("const approveCommand", "const rejectCommand");
+  assert.match(approval, /command\.protocolVersion === 1/);
   assert.match(approval, /await claimReviewCommandV2/);
   assert.match(approval, /await accountRef\.current\.setPersonalSyncStateDurably/);
+  const v2Approval = approval.slice(approval.indexOf("// This durable server claim"));
   assert.ok(
-    approval.indexOf("await claimReviewCommandV2") < approval.indexOf("await accountRef.current.setPersonalSyncStateDurably"),
-    "the server claim must precede the durable local outbox",
+    v2Approval.indexOf("await claimReviewCommandV2") < v2Approval.indexOf("await accountRef.current.setPersonalSyncStateDurably"),
+    "the v2 server claim must precede its durable local outbox",
   );
   assert.doesNotMatch(approval, /setBlocks\(/);
   assert.doesNotMatch(approval, /addCorrection\(/);
 });
 
+test("refresh polls immutable v1 backlog and v2 inbox, and receipt recovery never enters the local outbox", () => {
+  const refresh = between("const refreshCommands", "const finishCommand");
+  assert.match(refresh, /fetchPendingReviewCommandsV1/);
+  assert.match(refresh, /fetchPendingReviewCommandsV2/);
+  assert.match(refresh, /applicationPhase === "ack_pending"/);
+  assert.match(refresh, /await claimReviewCommandV2/);
+  assert.match(refresh, /Recovered a durable review receipt/);
+  const recoveryStart = refresh.indexOf("foreignAckReceipts");
+  const outboxStart = refresh.indexOf("ownedClaims");
+  assert.ok(recoveryStart >= 0 && outboxStart >= 0);
+  const recovery = refresh.slice(recoveryStart, outboxStart);
+  assert.doesNotMatch(recovery, /enqueueReviewCommandApplication|mutateBlocksAtomically|addCorrection/);
+});
+
 test("outbox resumption applies locally before application and terminal acknowledgements", () => {
   const resume = between("const resumeReviewApplications", "// Flush as soon");
+  assert.match(resume, /item\.command\.protocolVersion === 1/);
+  assert.match(resume, /completeReviewCommandV1/);
   const applyAt = resume.indexOf("mutateBlocksAtomically(");
   const durableAckAt = resume.indexOf("await currentAccount.setPersonalSyncStateDurably", applyAt);
   const localBarrierAt = resume.indexOf("await persistLatestLocalState", durableAckAt);

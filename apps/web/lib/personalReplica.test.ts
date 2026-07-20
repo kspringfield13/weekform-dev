@@ -333,13 +333,43 @@ test("review-command loading fails closed instead of hiding malformed lifecycle 
     created_at: "2026-07-20T12:00:00.000Z",
     decided_at: "2026-07-20T12:05:00.000Z",
   };
-  const client = (data: unknown, error: { message?: string } | null = null) => ({
-    from() { return { select() { return { eq() { return { order() { return { limit: async () => ({ data, error }) }; } }; } }; } }; },
+  const requestedTables: string[] = [];
+  const client = (
+    v1Data: unknown,
+    v1Error: { message?: string } | null = null,
+    v2Data: unknown = [],
+    v2Error: { message?: string } | null = null,
+  ) => ({
+    from(table: string) {
+      requestedTables.push(table);
+      const data = table === "review_commands_v2" ? v2Data : v1Data;
+      const error = table === "review_commands_v2" ? v2Error : v1Error;
+      return { select() { return { eq() { return { order() { return { limit: async () => ({ data, error }) }; } }; } }; } };
+    },
   });
 
   const success = await listOwnReviewCommands(client([canonical]), "2026-W29");
   assert.equal(success.error, null);
   assert.equal(success.commands[0]?.status, "applied");
+  assert.deepEqual(requestedTables.slice(0, 2), ["review_commands", "review_commands_v2"]);
+
+  const v2Pending = {
+    ...canonical,
+    command_id: "019c6e27-e55b-73d1-87d8-4e01f1f75044",
+    status: "pending",
+    created_at: "2026-07-20T12:06:00.000Z",
+    decided_at: null,
+  };
+  const merged = await listOwnReviewCommands(client([canonical], null, [v2Pending]), "2026-W29");
+  assert.equal(merged.error, null);
+  assert.deepEqual(merged.commands.map((command) => command.commandId), [
+    v2Pending.command_id,
+    canonical.command_id,
+  ]);
+
+  const identicalCollision = await listOwnReviewCommands(client([v2Pending], null, [v2Pending]), "2026-W29");
+  assert.equal(identicalCollision.error, null);
+  assert.equal(identicalCollision.commands.length, 1, "an impossible identical cross-table UUID collision is deduplicated safely");
 
   const invalid = await listOwnReviewCommands(client([{ ...canonical, raw_evidence: "secret" }]), "2026-W29");
   assert.deepEqual(invalid, {
@@ -387,6 +417,9 @@ test("review-command loading fails closed instead of hiding malformed lifecycle 
     commands: [],
     error: "Weekform Web received invalid review-request status data. Reload after your Mac syncs again.",
   });
+
+  const failedV2 = await listOwnReviewCommands(client([], null, null, { message: "private v2 diagnostic" }), "2026-W29");
+  assert.deepEqual(failedV2, failed);
 });
 
 

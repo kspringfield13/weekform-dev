@@ -351,20 +351,45 @@ export async function listOwnReviewCommands(client: ReviewCommandsClient, weekId
   error: string | null;
 }> {
   if (weekId === null) return { commands: [], error: null };
-  const { data, error } = await client
+  // Protocol histories stay in isolated queues. Read both so Web preserves
+  // released v1 history while showing the v2 lifecycle; identity dedupe is a
+  // fail-safe for an impossible cross-table UUID collision, not row movement.
+  const { data: v1Data, error: v1Error } = await client
     .from("review_commands")
     .select("command_id,block_id,week_id,expected_revision,action,status,created_at,decided_at")
     .eq("week_id", weekId)
     .order("created_at", { ascending: false })
     .limit(101);
-  if (error) return { commands: [], error: REVIEW_COMMAND_LOAD_ERROR };
-  if (!Array.isArray(data)) return { commands: [], error: REVIEW_COMMAND_INTEGRITY_ERROR };
-  if (data.length > 100) return { commands: [], error: REVIEW_COMMAND_OVERFLOW_ERROR };
-  const commands = data.map(parseReviewCommandRow);
+  const { data: v2Data, error: v2Error } = await client
+    .from("review_commands_v2")
+    .select("command_id,block_id,week_id,expected_revision,action,status,created_at,decided_at")
+    .eq("week_id", weekId)
+    .order("created_at", { ascending: false })
+    .limit(101);
+  if (v1Error || v2Error) return { commands: [], error: REVIEW_COMMAND_LOAD_ERROR };
+  if (!Array.isArray(v1Data) || !Array.isArray(v2Data)) {
+    return { commands: [], error: REVIEW_COMMAND_INTEGRITY_ERROR };
+  }
+  if (v1Data.length > 100 || v2Data.length > 100) {
+    return { commands: [], error: REVIEW_COMMAND_OVERFLOW_ERROR };
+  }
+  const commands = [...v1Data, ...v2Data].map(parseReviewCommandRow);
   if (commands.some((command) => command === null)) {
     return { commands: [], error: REVIEW_COMMAND_INTEGRITY_ERROR };
   }
-  const parsedCommands = commands as ReviewCommandView[];
+  const byId = new Map<string, ReviewCommandView>();
+  for (const command of commands as ReviewCommandView[]) {
+    const existing = byId.get(command.commandId);
+    if (existing && JSON.stringify(existing) !== JSON.stringify(command)) {
+      return { commands: [], error: REVIEW_COMMAND_INTEGRITY_ERROR };
+    }
+    byId.set(command.commandId, command);
+  }
+  if (byId.size > 100) return { commands: [], error: REVIEW_COMMAND_OVERFLOW_ERROR };
+  const parsedCommands = [...byId.values()].sort((left, right) => (
+    right.createdAt.localeCompare(left.createdAt)
+      || right.commandId.localeCompare(left.commandId)
+  ));
   if (parsedCommands.some((command) => command.weekId !== weekId)
     || new Set(parsedCommands.map((command) => command.commandId)).size !== parsedCommands.length) {
     return { commands: [], error: REVIEW_COMMAND_INTEGRITY_ERROR };

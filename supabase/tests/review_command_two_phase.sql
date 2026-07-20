@@ -4,7 +4,7 @@ begin;
 set local role postgres;
 set local search_path = public, extensions;
 create extension if not exists pgtap;
-select plan(52);
+select plan(80);
 
 select has_table('public', 'review_commands', 'released v1 queue remains available');
 select has_table('public', 'review_commands_v2', 'isolated v2 queue exists');
@@ -17,8 +17,12 @@ select has_column('public', 'review_commands_v2', 'application_phase', 'v2 comma
 select has_column('public', 'review_commands_v2', 'claimed_by_device', 'v2 commands record the claiming device');
 select has_column('public', 'review_commands_v2', 'claimed_at', 'v2 commands record claim time');
 select has_column('public', 'review_commands_v2', 'application_recorded_at', 'v2 commands record local application time');
+select has_column('public', 'weekform_devices', 'review_protocol_version', 'registered devices advertise review protocol capability');
 select has_function('public', 'complete_review_command', array['uuid','uuid','text','text'], 'released v1 completion RPC remains available');
+select has_function('public', 'register_weekform_device_v2', array['uuid','text'], 'v2 device registration RPC exists');
 select has_function('public', 'queue_review_command_v2', array['text','text','text','text','jsonb'], 'v2 queue RPC exists');
+select has_function('public', 'queue_review_command_compatible', array['text','text','text','text','jsonb'], 'capability-aware single queue RPC exists');
+select has_function('public', 'queue_review_confirm_batch_compatible', array['jsonb'], 'capability-aware batch queue RPC exists');
 select has_function('public', 'claim_review_command_v2', array['uuid','uuid'], 'v2 claim RPC exists');
 select has_function('public', 'mark_review_command_applied_locally_v2', array['uuid','uuid'], 'v2 local application receipt RPC exists');
 select has_function('public', 'complete_review_command_v2', array['uuid','uuid','text','text'], 'v2 completion RPC exists');
@@ -27,6 +31,8 @@ select is(has_function_privilege('anon', 'public.complete_review_command(uuid,uu
 select ok(has_function_privilege('authenticated', 'public.claim_review_command_v2(uuid,uuid)', 'EXECUTE'), 'authenticated v2 devices can claim');
 select is(has_function_privilege('anon', 'public.claim_review_command_v2(uuid,uuid)', 'EXECUTE'), false, 'anonymous callers cannot claim through v2');
 select is(has_table_privilege('authenticated', 'public.review_commands_v2', 'INSERT'), false, 'clients cannot bypass the v2 queue RPC');
+select is(has_function_privilege('authenticated', 'public.queue_review_command_v2(text,text,text,text,jsonb)', 'EXECUTE'), false, 'clients cannot bypass capability routing through the internal v2 single queue');
+select is(has_function_privilege('authenticated', 'public.queue_review_confirm_batch_v2(jsonb)', 'EXECUTE'), false, 'clients cannot bypass capability routing through the internal v2 batch queue');
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -72,8 +78,8 @@ select lives_ok(
 );
 
 select lives_ok(
-  $$ select public.queue_review_command('block-two-phase','2026-W29','fedcba9876543210','confirm',null) $$,
-  'a released-client review command is queued'
+  $$ select public.queue_review_command_compatible('block-two-phase','2026-W29','fedcba9876543210','confirm',null) $$,
+  'an old-only device fleet routes a new review command to v1'
 );
 select is(
   (select count(*)::integer from public.review_commands where block_id = 'block-two-phase' and status = 'pending'),
@@ -85,11 +91,13 @@ select is(
   0,
   'v2 clients cannot enumerate a v1 pending request'
 );
+set local role postgres;
 select throws_ok(
   $$ select public.queue_review_command_v2('block-two-phase','2026-W29','fedcba9876543210','confirm',null) $$,
   'P0001', 'another review protocol already has a pending request for this block revision',
   'v2 cannot race an existing v1 request for the same revision'
 );
+set local role authenticated;
 select ok(
   public.complete_review_command(
     '84000000-0000-4000-8000-000000000001',
@@ -109,23 +117,95 @@ select is(
 );
 
 select lives_ok(
-  $$ select public.queue_review_command_v2('block-two-phase','2026-W29','fedcba9876543210','confirm',null) $$,
-  'a v2 command can be queued after the v1 request terminalizes'
+  $$ select public.queue_review_command('block-two-phase','2026-W29','fedcba9876543210','exclude',null) $$,
+  'a legacy v1 backlog request exists before the desktop upgrade'
+);
+create temporary table captured_v1_backlog as
+select command_id
+from public.review_commands
+where block_id = 'block-two-phase' and status = 'pending';
+select lives_ok(
+  $$ select public.register_weekform_device_v2('84000000-0000-4000-8000-000000000001', 'Primary Synthetic Mac') $$,
+  'the upgraded primary Mac advertises v2 without moving legacy pending work'
 );
 select is(
-  (select count(*)::integer from public.review_commands where block_id = 'block-two-phase' and status = 'pending'),
+  (select count(*)::integer from public.weekform_devices
+    where user_id = '83000000-0000-4000-8000-000000000001'
+      and revoked_at is null and review_protocol_version = 2),
+  1,
+  'one v2 and one v1 device form a mixed fleet'
+);
+select is(
+  (select command_id from public.review_commands where block_id = 'block-two-phase' and status = 'pending'),
+  (select command_id from captured_v1_backlog),
+  'pending v1 identity is unchanged after a v2 device registers'
+);
+select is(
+  (select count(*)::integer from public.review_commands_v2 where block_id = 'block-two-phase' and status = 'pending'),
   0,
-  'released clients cannot enumerate a v2 pending request'
+  'v2 registration never copies the pending v1 row'
+);
+select is(
+  public.queue_review_command_compatible('block-two-phase','2026-W29','fedcba9876543210','exclude',null),
+  (select command_id from captured_v1_backlog),
+  'a mixed fleet continues routing through the released v1 queue'
+);
+select lives_ok(
+  $$ select public.register_weekform_device_v2('84000000-0000-4000-8000-000000000002', 'Secondary Synthetic Mac') $$,
+  'the secondary Mac upgrades to v2 without moving legacy pending work'
+);
+select is(
+  (select count(*)::integer from public.weekform_devices
+    where user_id = '83000000-0000-4000-8000-000000000001'
+      and revoked_at is null and review_protocol_version = 1),
+  0,
+  'every active device now advertises v2'
+);
+select is(
+  public.queue_review_command_compatible('block-two-phase','2026-W29','fedcba9876543210','exclude',null),
+  (select command_id from captured_v1_backlog),
+  'an all-v2 fleet still routes v1 while the v1 backlog is nonempty'
+);
+select is(
+  (select command_id from public.review_commands where block_id = 'block-two-phase' and status = 'pending'),
+  (select command_id from captured_v1_backlog),
+  'the all-v2 registration path leaves pending v1 identity untouched'
+);
+select ok(
+  public.complete_review_command(
+    '84000000-0000-4000-8000-000000000001',
+    (select command_id from captured_v1_backlog),
+    'applied','Drained through the released v1 path.'
+  ),
+  'the upgraded desktop can drain legacy backlog through the v1 completion RPC'
+);
+select is(
+  (select count(*)::integer from public.review_commands where status = 'pending'),
+  0,
+  'the v1 backlog is empty only after v1 terminal completion'
+);
+select lives_ok(
+  $$ select public.queue_review_command_compatible('block-two-phase','2026-W29','fedcba9876543210','confirm',null) $$,
+  'an all-v2 fleet with zero v1 backlog routes new work to v2'
 );
 select is(
   (select count(*)::integer from public.review_commands_v2 where block_id = 'block-two-phase' and status = 'pending'),
   1,
-  'v2 clients see exactly one v2 pending request'
+  'the isolated v2 inbox receives work only after the compatibility gate opens'
 );
 select throws_ok(
-  $$ select public.queue_review_command('block-two-phase','2026-W29','fedcba9876543210','exclude',null) $$,
-  'P0001', 'another review protocol already has a pending request for this block revision',
-  'v1 cannot race an existing v2 request for the same revision'
+  $$ select public.register_weekform_device(
+    '84000000-0000-4000-8000-000000000001', 'Primary Synthetic Mac running v1 too early'
+  ) $$,
+  'P0001', 'upgrade required: v2 review requests are still pending',
+  'a pending v2 request blocks a concurrent or later v1 capability downgrade'
+);
+select is(
+  (select review_protocol_version from public.weekform_devices
+    where user_id = '83000000-0000-4000-8000-000000000001'
+      and id = '84000000-0000-4000-8000-000000000001'),
+  2::smallint,
+  'a rejected v1 registration leaves the v2 capability intact'
 );
 select is(
   public.claim_review_command_v2(
@@ -192,8 +272,8 @@ select is(
 );
 
 select lives_ok(
-  $$ select public.queue_review_command_v2('block-two-phase','2026-W29','fedcba9876543210','exclude',null) $$,
-  'an expired-lease v2 request is queued'
+  $$ select public.queue_review_command_compatible('block-two-phase','2026-W29','fedcba9876543210','confirm',null) $$,
+  'an all-v2 fleet with no legacy backlog keeps routing to v2'
 );
 select is(
   public.claim_review_command_v2(
@@ -226,11 +306,11 @@ select ok(
 );
 
 select lives_ok(
-  $$ select public.queue_review_command_v2(
+  $$ select public.queue_review_command_compatible(
     'block-two-phase','2026-W29','fedcba9876543210','relabel',
     '{"category":"QA / data validation"}'::jsonb
   ) $$,
-  'an ack_pending non-steal v2 request is queued'
+  'the all-v2 fleet queues a receipt-recovery request in v2'
 );
 select is(
   public.claim_review_command_v2(
@@ -238,7 +318,7 @@ select is(
     (select command_id from public.review_commands_v2 where block_id = 'block-two-phase' and status = 'pending')
   ),
   'apply_pending',
-  'primary claims the non-steal v2 request'
+  'primary claims the v2 receipt-recovery request'
 );
 select ok(
   public.mark_review_command_applied_locally_v2(
@@ -256,27 +336,73 @@ set revoked_at = now()
 where user_id = '83000000-0000-4000-8000-000000000001'
   and id = '84000000-0000-4000-8000-000000000001';
 set local role authenticated;
-select throws_ok(
-  $$ select public.claim_review_command_v2(
+select is(
+  public.claim_review_command_v2(
     '84000000-0000-4000-8000-000000000002',
     (select command_id from public.review_commands_v2 where block_id = 'block-two-phase' and status = 'pending')
-  ) $$,
-  'P0001', 'review command claimed by another device',
-  'ack_pending is never stolen even when old and owner-revoked'
+  ),
+  'applied',
+  'another v2 Mac terminalizes the durable ack_pending receipt without reclaiming application'
 );
+select is(
+  public.claim_review_command_v2(
+    '84000000-0000-4000-8000-000000000002',
+    (select command_id from public.review_commands_v2
+      where block_id = 'block-two-phase' and status = 'applied'
+      order by decided_at desc limit 1)
+  ),
+  'applied',
+  'a lost receipt-recovery response is safe for the recovering Mac to retry'
+);
+select is(
+  (select decided_by_device from public.review_commands_v2
+    where block_id = 'block-two-phase' and status = 'applied'
+    order by decided_at desc limit 1),
+  '84000000-0000-4000-8000-000000000001'::uuid,
+  'recovered terminal history attributes the local application to the original owner'
+);
+select is(
+  (select application_phase from public.review_commands_v2
+    where block_id = 'block-two-phase' and status = 'applied'
+    order by decided_at desc limit 1),
+  'ack_pending',
+  'receipt recovery preserves the durable acknowledgement instead of creating a second application phase'
+);
+
 set local role postgres;
 update public.weekform_devices
 set revoked_at = null
 where user_id = '83000000-0000-4000-8000-000000000001'
   and id = '84000000-0000-4000-8000-000000000001';
 set local role authenticated;
-select ok(
-  public.complete_review_command_v2(
-    '84000000-0000-4000-8000-000000000001',
-    (select command_id from public.review_commands_v2 where block_id = 'block-two-phase' and status = 'pending'),
-    'applied','Original owner retains the ack receipt.'
-  ),
-  'original v2 owner can finish ack_pending after recovery'
+select lives_ok(
+  $$ select public.register_weekform_device(
+    '84000000-0000-4000-8000-000000000001', 'Primary Synthetic Mac running v1'
+  ) $$,
+  'relaunching a released client re-registers the same device id through v1'
+);
+select is(
+  (select review_protocol_version from public.weekform_devices
+    where user_id = '83000000-0000-4000-8000-000000000001'
+      and id = '84000000-0000-4000-8000-000000000001'),
+  1::smallint,
+  'v1 re-registration explicitly downgrades the same device capability'
+);
+select lives_ok(
+  $$ select public.queue_review_command_compatible(
+    'block-two-phase','2026-W29','fedcba9876543210','exclude',null
+  ) $$,
+  'a downgraded mixed fleet routes new work back to v1'
+);
+select is(
+  (select count(*)::integer from public.review_commands where status = 'pending'),
+  1,
+  'the mixed-fleet request is visible to released v1 clients'
+);
+select is(
+  (select count(*)::integer from public.review_commands_v2 where status = 'pending'),
+  0,
+  'the mixed-fleet request is not stranded in v2'
 );
 
 set local "request.jwt.claim.sub" = '83000000-0000-4000-8000-000000000002';

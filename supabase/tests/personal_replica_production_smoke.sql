@@ -6,7 +6,7 @@ begin;
 set local role postgres;
 set local search_path = public, extensions;
 create extension if not exists pgtap;
-select plan(34);
+select plan(32);
 
 select has_table('public', 'weekform_devices', 'device registry exists');
 select has_table('public', 'personal_replica_batches', 'batch receipt table exists');
@@ -152,22 +152,6 @@ select throws_ok(
   '42501',
   'permission denied for table review_commands',
   'authenticated actor cannot bypass the completion RPC'
-);
-
-select is(
-  public.claim_review_command(
-    '75000000-0000-4000-8000-000000000001',
-    (select command_id from public.review_commands where block_id = 'production-block-1')
-  ),
-  'apply_pending',
-  'registered actor A device claims the request before local mutation'
-);
-select ok(
-  public.mark_review_command_applied_locally(
-    '75000000-0000-4000-8000-000000000001',
-    (select command_id from public.review_commands where block_id = 'production-block-1')
-  ),
-  'registered actor A device records the local application receipt'
 );
 
 select is(

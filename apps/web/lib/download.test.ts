@@ -311,6 +311,15 @@ test("artifact route has no bundled public-DMG fallback", () => {
   assert.doesNotMatch(source, /BUNDLED_ARTIFACT|bundledArtifactUrl|\/downloads\//);
 });
 
+test("artifact route forces the verified filename and disables response caching", () => {
+  const source = readFileSync(
+    new URL("../app/download/artifact/route.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /download:\s*RELEASE_INFO\.artifactFilename/);
+  assert.match(source, /Cache-Control["']:\s*["']private, no-store, max-age=0["']/);
+});
+
 test("artifact plan: storage signing failure → 303 back to the styled /download page", async () => {
   const { deps } = trackedDeps({ createSignedUrl: async () => null });
   const plan = await planArtifactResponse(deps);

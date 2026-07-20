@@ -44,7 +44,10 @@ export async function queuePersonalReviewCommand(formData: FormData): Promise<vo
   if (!supabase) redirect(workspaceNotice("daily", "Weekform Cloud is not configured."));
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/app");
-  const { data: pending, error: pendingError } = await supabase
+  // Both protocol queues remain isolated and immutable across the rollout.
+  // Check both for a clearer preflight message; the compatible RPC and private
+  // cross-protocol reservation remain the authoritative concurrency boundary.
+  const { data: pendingV1, error: pendingV1Error } = await supabase
     .from("review_commands")
     .select("command_id")
     .eq("block_id", input.blockId)
@@ -52,18 +55,28 @@ export async function queuePersonalReviewCommand(formData: FormData): Promise<vo
     .eq("expected_revision", input.expectedRevision)
     .eq("status", "pending")
     .limit(1);
-  if (pendingError) redirect(workspaceNotice("daily", "Review request status could not be checked. No new request was queued."));
-  if (pending && pending.length > 0) {
+  const { data: pendingV2, error: pendingV2Error } = await supabase
+    .from("review_commands_v2")
+    .select("command_id")
+    .eq("block_id", input.blockId)
+    .eq("week_id", input.weekId)
+    .eq("expected_revision", input.expectedRevision)
+    .eq("status", "pending")
+    .limit(1);
+  if (pendingV1Error || pendingV2Error) {
+    redirect(workspaceNotice("daily", "Review request status could not be checked. No new request was queued."));
+  }
+  if ((pendingV1 && pendingV1.length > 0) || (pendingV2 && pendingV2.length > 0)) {
     redirect(workspaceNotice("daily", "A request for this block is already waiting for approval on your Mac."));
   }
-  const { error } = await supabase.rpc("queue_review_command", {
+  const { error } = await supabase.rpc("queue_review_command_compatible", {
     p_block_id: input.blockId,
     p_week_id: input.weekId,
     p_expected_revision: input.expectedRevision,
     p_action: input.action,
     p_patch: input.patch,
   });
-  if (error) redirect(workspaceNotice("daily", error.message.includes("conflict") || error.message.includes("duplicate") || error.message.includes("already pending")
+  if (error) redirect(workspaceNotice("daily", error.message.includes("conflict") || error.message.includes("duplicate") || error.message.includes("pending request") || error.message.includes("already pending")
     ? "A request for this block is already waiting for approval, or the block changed on your Mac. Wait for the latest status and try again."
     : "The review request could not be queued."));
   revalidatePath("/app");
@@ -87,13 +100,16 @@ export async function queuePersonalReviewConfirmBatch(formData: FormData): Promi
   if (!supabase) redirect(workspaceNotice("daily", "Weekform Cloud is not configured."));
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/app");
-  const { error } = await supabase.rpc("queue_review_confirm_batch", {
+  const { error } = await supabase.rpc("queue_review_confirm_batch_compatible", {
     p_targets: commands,
   });
   if (error) {
     redirect(workspaceNotice(
       "daily",
-      error.message.includes("conflict") || error.message.includes("already commanded")
+      error.message.includes("conflict")
+        || error.message.includes("already commanded")
+        || error.message.includes("pending request")
+        || error.message.includes("already pending")
         ? "Confirm all was not queued because a block changed or already has a different request. Reload and try again. No review requests were queued."
         : "Confirm all could not be queued. No review requests were queued.",
     ));

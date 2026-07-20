@@ -8,6 +8,28 @@
 
 create schema if not exists private;
 
+-- Capability describes the protocol advertised by the binary that most
+-- recently registered this device id. Recreating the released v1 RPC below is
+-- intentional: launching v1 again must downgrade the device so Web routing
+-- cannot assume an unavailable v2 consumer.
+alter table public.weekform_devices
+  add column if not exists review_protocol_version smallint not null default 1;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conrelid = 'public.weekform_devices'::regclass
+      and conname = 'weekform_devices_review_protocol_version_check'
+  ) then
+    alter table public.weekform_devices
+      add constraint weekform_devices_review_protocol_version_check
+      check (review_protocol_version in (1, 2));
+  end if;
+end;
+$$;
+
 create table if not exists public.review_commands_v2 (
   user_id uuid not null references auth.users(id) on delete cascade,
   command_id uuid not null default gen_random_uuid(),
@@ -206,6 +228,81 @@ drop trigger if exists review_commands_v2_release_pending_target
 create trigger review_commands_v2_release_pending_target
 after update of status or delete on public.review_commands_v2
 for each row execute function private.release_review_command_pending_target('2');
+
+create or replace function public.register_weekform_device(
+  p_device_id uuid,
+  p_device_name text
+) returns public.weekform_devices
+language plpgsql security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  actor uuid := auth.uid();
+  result public.weekform_devices;
+begin
+  if actor is null then raise exception 'authentication required'; end if;
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('weekform:review-protocol:' || actor::text, 0)
+  );
+  if exists (
+    select 1 from public.review_commands_v2
+    where user_id = actor and status = 'pending'
+  ) then
+    raise exception 'upgrade required: v2 review requests are still pending';
+  end if;
+  if p_device_name is null or char_length(btrim(p_device_name)) not between 1 and 80 then
+    raise exception 'invalid device name';
+  end if;
+  insert into public.weekform_devices(
+    id, user_id, device_name, last_seen_at, revoked_at, review_protocol_version
+  ) values (
+    p_device_id, actor, left(btrim(p_device_name), 80), now(), null, 1
+  )
+  on conflict (user_id, id) do update
+    set device_name = excluded.device_name,
+        last_seen_at = now(),
+        review_protocol_version = 1
+    where public.weekform_devices.revoked_at is null
+  returning * into result;
+  if result.id is null then raise exception 'device revoked'; end if;
+  return result;
+end;
+$$;
+
+create or replace function public.register_weekform_device_v2(
+  p_device_id uuid,
+  p_device_name text
+) returns public.weekform_devices
+language plpgsql security definer
+set search_path = pg_catalog, public
+as $$
+declare
+  actor uuid := auth.uid();
+  result public.weekform_devices;
+begin
+  if actor is null then raise exception 'authentication required'; end if;
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('weekform:review-protocol:' || actor::text, 0)
+  );
+  if p_device_name is null or char_length(btrim(p_device_name)) not between 1 and 80 then
+    raise exception 'invalid device name';
+  end if;
+  insert into public.weekform_devices(
+    id, user_id, device_name, last_seen_at, revoked_at, review_protocol_version
+  ) values (
+    p_device_id, actor, left(btrim(p_device_name), 80), now(), null, 2
+  )
+  on conflict (user_id, id) do update
+    set device_name = excluded.device_name,
+        last_seen_at = now(),
+        review_protocol_version = 2
+    where public.weekform_devices.revoked_at is null
+  returning * into result;
+  if result.id is null then raise exception 'device revoked'; end if;
+
+  return result;
+end;
+$$;
 
 create or replace function public.queue_review_command_v2(
   p_block_id text,
@@ -407,6 +504,87 @@ begin
 end;
 $$;
 
+-- Web advances only when every active desktop advertises v2 and the immutable
+-- v1 backlog is empty. A pending v1 row is never moved, copied, or deleted by
+-- rollout code; v2 desktops drain it through the released v1 lifecycle.
+create or replace function public.queue_review_command_compatible(
+  p_block_id text,
+  p_week_id text,
+  p_expected_revision text,
+  p_action text,
+  p_patch jsonb default null
+) returns uuid
+language plpgsql security definer
+set search_path = pg_catalog, public
+as $$
+declare actor uuid := auth.uid();
+begin
+  if actor is null then raise exception 'authentication required'; end if;
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('weekform:review-protocol:' || actor::text, 0)
+  );
+  if exists (
+    select 1
+    from public.weekform_devices
+    where user_id = actor
+      and revoked_at is null
+  ) and not exists (
+    select 1
+    from public.weekform_devices
+    where user_id = actor
+      and revoked_at is null
+      and review_protocol_version <> 2
+  ) and not exists (
+    select 1
+    from public.review_commands
+    where user_id = actor
+      and status = 'pending'
+  ) then
+    return public.queue_review_command_v2(
+      p_block_id, p_week_id, p_expected_revision, p_action, p_patch
+    );
+  end if;
+  return public.queue_review_command(
+    p_block_id, p_week_id, p_expected_revision, p_action, p_patch
+  );
+end;
+$$;
+
+create or replace function public.queue_review_confirm_batch_compatible(
+  p_targets jsonb
+) returns uuid[]
+language plpgsql security definer
+set search_path = pg_catalog, public
+as $$
+declare actor uuid := auth.uid();
+begin
+  if actor is null then raise exception 'authentication required'; end if;
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('weekform:review-protocol:' || actor::text, 0)
+  );
+  if exists (
+    select 1
+    from public.weekform_devices
+    where user_id = actor
+      and revoked_at is null
+  ) and not exists (
+    select 1
+    from public.weekform_devices
+    where user_id = actor
+      and revoked_at is null
+      and review_protocol_version <> 2
+  ) and not exists (
+    select 1
+    from public.review_commands
+    where user_id = actor
+      and status = 'pending'
+  ) then
+    return public.queue_review_confirm_batch_v2(p_targets);
+  end if;
+  return public.queue_review_confirm_batch(p_targets);
+end;
+$$;
+
 create or replace function public.claim_review_command_v2(
   p_device_id uuid,
   p_command_id uuid
@@ -420,6 +598,7 @@ declare
   current_phase text;
   current_claim uuid;
   current_claimed_at timestamptz;
+  current_application_recorded_at timestamptz;
   current_decider uuid;
   claim_owner_revoked boolean;
 begin
@@ -429,8 +608,10 @@ begin
     where user_id = actor and id = p_device_id and revoked_at is null
   ) then raise exception 'device not registered'; end if;
 
-  select status, application_phase, claimed_by_device, claimed_at, decided_by_device
-    into current_status, current_phase, current_claim, current_claimed_at, current_decider
+  select status, application_phase, claimed_by_device, claimed_at,
+      application_recorded_at, decided_by_device
+    into current_status, current_phase, current_claim, current_claimed_at,
+      current_application_recorded_at, current_decider
   from public.review_commands_v2
   where user_id = actor and command_id = p_command_id
   for update;
@@ -439,6 +620,10 @@ begin
   if current_status <> 'pending' then
     if current_decider = p_device_id
       and current_status in ('applied', 'rejected', 'conflict')
+    then return current_status; end if;
+    if current_status = 'applied'
+      and current_phase = 'ack_pending'
+      and current_application_recorded_at is not null
     then return current_status; end if;
     raise exception 'review command no longer pending';
   end if;
@@ -457,6 +642,22 @@ begin
       where user_id = actor and command_id = p_command_id;
     end if;
     return current_phase;
+  end if;
+  -- ack_pending is a durable server receipt that the original owner already
+  -- persisted the local result. Another active v2 desktop may finalize that
+  -- receipt without claiming or reapplying the local mutation. Attribution
+  -- remains with the device that actually recorded the application.
+  if current_phase = 'ack_pending'
+    and current_application_recorded_at is not null
+    and current_claim is not null
+  then
+    update public.review_commands_v2
+    set status = 'applied',
+        decided_at = now(),
+        decision_reason = 'Recovered from a durable local application receipt.',
+        decided_by_device = current_claim
+    where user_id = actor and command_id = p_command_id;
+    return 'applied';
   end if;
   select exists (
     select 1 from public.weekform_devices
@@ -626,6 +827,8 @@ for each row execute function public.broadcast_personal_sync_change();
 
 comment on table public.review_commands_v2 is
   'Isolated v2 review queue. Released clients remain on review_commands and cannot select these rows.';
+comment on column public.weekform_devices.review_protocol_version is
+  'Review-command protocol advertised by the binary that most recently registered this device id; defaults to released protocol v1.';
 comment on column public.review_commands_v2.application_phase is
   'Server-owned v2 phase: apply_pending after claim, ack_pending after local application is durably recorded.';
 comment on function public.complete_review_command(uuid,uuid,text,text) is
@@ -637,9 +840,17 @@ revoke all on function private.reserve_review_command_pending_target()
   from public, anon, authenticated;
 revoke all on function private.release_review_command_pending_target()
   from public, anon, authenticated;
+revoke all on function public.register_weekform_device(uuid,text)
+  from public, anon, authenticated;
+revoke all on function public.register_weekform_device_v2(uuid,text)
+  from public, anon, authenticated;
 revoke all on function public.queue_review_command_v2(text,text,text,text,jsonb)
   from public, anon, authenticated;
 revoke all on function public.queue_review_confirm_batch_v2(jsonb)
+  from public, anon, authenticated;
+revoke all on function public.queue_review_command_compatible(text,text,text,text,jsonb)
+  from public, anon, authenticated;
+revoke all on function public.queue_review_confirm_batch_compatible(jsonb)
   from public, anon, authenticated;
 revoke all on function public.claim_review_command_v2(uuid,uuid)
   from public, anon, authenticated;
@@ -652,9 +863,13 @@ revoke all on function public.complete_review_command_v2(uuid,uuid,text,text)
 revoke all on function public.delete_personal_replica_history()
   from public, anon, authenticated;
 
-grant execute on function public.queue_review_command_v2(text,text,text,text,jsonb)
+grant execute on function public.register_weekform_device(uuid,text)
   to authenticated;
-grant execute on function public.queue_review_confirm_batch_v2(jsonb)
+grant execute on function public.register_weekform_device_v2(uuid,text)
+  to authenticated;
+grant execute on function public.queue_review_command_compatible(text,text,text,text,jsonb)
+  to authenticated;
+grant execute on function public.queue_review_confirm_batch_compatible(jsonb)
   to authenticated;
 grant execute on function public.claim_review_command_v2(uuid,uuid)
   to authenticated;

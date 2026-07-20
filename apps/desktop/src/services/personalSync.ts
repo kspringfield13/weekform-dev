@@ -48,6 +48,10 @@ export function createDefaultPersonalSyncState(
 }
 
 const REVIEW_APPLICATION_KEYS = new Set([
+  "schemaVersion", "protocolVersion", "commandId", "blockId", "weekId", "expectedRevision",
+  "action", "patch", "createdAt",
+]);
+const LEGACY_REVIEW_APPLICATION_KEYS = new Set([
   "schemaVersion", "commandId", "blockId", "weekId", "expectedRevision",
   "action", "patch", "createdAt",
 ]);
@@ -72,9 +76,17 @@ function recordWithExactKeys(value: unknown, keys: ReadonlySet<string>): Record<
 }
 
 function parseReviewApplication(value: unknown): ReviewCommandApplicationV1 | null {
-  const record = recordWithExactKeys(value, REVIEW_APPLICATION_KEYS);
+  const record = recordWithExactKeys(value, REVIEW_APPLICATION_KEYS)
+    ?? recordWithExactKeys(value, LEGACY_REVIEW_APPLICATION_KEYS);
+  // The durable outbox predates protocol tagging only in the isolated-v2
+  // implementation, so that one local migration defaults to v2. Every newly
+  // persisted command carries an explicit immutable protocol.
+  const protocolVersion = record?.protocolVersion === undefined
+    ? 2
+    : record.protocolVersion;
   if (!record
     || record.schemaVersion !== 1
+    || (protocolVersion !== 1 && protocolVersion !== 2)
     || typeof record.commandId !== "string" || record.commandId.length === 0 || record.commandId.length > 80
     || typeof record.blockId !== "string" || record.blockId.length === 0 || record.blockId.length > 160
     || typeof record.weekId !== "string" || !/^[0-9]{4}-W(0[1-9]|[1-4][0-9]|5[0-3])$/.test(record.weekId)
@@ -98,6 +110,7 @@ function parseReviewApplication(value: unknown): ReviewCommandApplicationV1 | nu
   }
   return {
     schemaVersion: 1,
+    protocolVersion,
     commandId: record.commandId,
     blockId: record.blockId,
     weekId: record.weekId,
@@ -199,6 +212,7 @@ export function parsePersonalSyncState(
 function persistedReviewApplication(command: ReviewCommandApplicationV1): ReviewCommandApplicationV1 {
   return {
     schemaVersion: 1,
+    protocolVersion: command.protocolVersion,
     commandId: command.commandId,
     blockId: command.blockId,
     weekId: command.weekId,
@@ -209,7 +223,7 @@ function persistedReviewApplication(command: ReviewCommandApplicationV1): Review
   };
 }
 
-/** Add or resume a server-claimed command without ever regressing ack_pending. */
+/** Add or resume a protocol-tagged command without ever regressing ack_pending. */
 export function enqueueReviewCommandApplication(
   outbox: readonly ReviewCommandOutboxItemV1[],
   input: { command: ReviewCommandApplicationV1; phase: ReviewCommandApplicationPhase; now: string },

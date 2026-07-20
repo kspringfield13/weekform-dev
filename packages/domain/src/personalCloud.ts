@@ -72,8 +72,8 @@ export interface PersonalReplicaSyncStateV1 {
   sourceClock: string | null;
   queue: PersonalReplicaSyncQueueItemV1[];
   /**
-   * Durable, privacy-allowlisted application receipts for server-claimed review
-   * commands. Optional only for source compatibility with v1 state written before
+   * Durable, privacy-allowlisted application receipts for protocol-owned review
+   * commands. Optional only for source compatibility with state written before
    * the outbox existed; every parser/default normalizes it to an array.
    */
   reviewOutbox?: ReviewCommandOutboxItemV1[];
@@ -85,6 +85,7 @@ export interface PersonalReplicaSyncStateV1 {
 export type ReviewCommandAction = "confirm" | "exclude" | "relabel";
 export type ReviewCommandStatus = "pending" | "applied" | "rejected" | "conflict";
 export type ReviewCommandApplicationPhase = "apply_pending" | "ack_pending";
+export type ReviewCommandProtocolVersion = 1 | 2;
 
 export interface ReviewCommandPatchV1 {
   category?: WorkCategory;
@@ -96,6 +97,8 @@ export interface ReviewCommandPatchV1 {
 /** Minimal command projection safe to persist in the local retry outbox. */
 export interface ReviewCommandApplicationV1 {
   schemaVersion: 1;
+  /** Immutable queue/RPC ownership. A persisted v1 row must never call v2 RPCs. */
+  protocolVersion: ReviewCommandProtocolVersion;
   commandId: string;
   blockId: string;
   weekId: string;

@@ -5,7 +5,7 @@ import test from "node:test";
 const todaySource = readFileSync(new URL("../components/PersonalTodayScreen.tsx", import.meta.url), "utf8");
 const actionsSource = readFileSync(new URL("../app/dashboard/personalActions.ts", import.meta.url), "utf8");
 const stylesSource = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-const migrationUrl = new URL("../../../supabase/migrations/202607200002_review_confirm_batch.sql", import.meta.url);
+const migrationUrl = new URL("../../../supabase/migrations/202607200005_review_command_two_phase.sql", import.meta.url);
 const migrationSource = existsSync(migrationUrl) ? readFileSync(migrationUrl, "utf8") : "";
 
 test("Web Today exposes Desktop's primary confirm-all header action with the eligible count", () => {
@@ -40,14 +40,14 @@ test("confirm-all server action validates first and calls only the transactional
   assert.match(actionsSource, /reviewConfirmBatchInput/);
   assert.match(actionsSource, /text\(formData,\s*["']targets["']\)/);
   assert.match(actionsSource, /JSON\.parse/);
-  assert.match(actionsSource, /rpc\(["']queue_review_confirm_batch["']/);
+  assert.match(actionsSource, /rpc\(["']queue_review_confirm_batch_compatible["']/);
   assert.doesNotMatch(actionsSource, /queuePersonalReviewConfirmBatch[\s\S]*?\.from\(["']review_commands["']\)[\s\S]*?\.insert\(/);
   assert.match(actionsSource, /No review requests were queued/i);
   assert.match(actionsSource, /requests? sent to your Mac/i);
 });
 
-test("batch RPC derives confirmation behavior and owns identity and lifecycle fields", () => {
-  assert.match(migrationSource, /create or replace function public\.queue_review_confirm_batch\(\s*p_targets jsonb/);
+test("v2 batch RPC derives confirmation behavior and owns identity and lifecycle fields", () => {
+  assert.match(migrationSource, /create or replace function public\.queue_review_confirm_batch_v2\(\s*p_targets jsonb/);
   assert.match(migrationSource, /actor uuid := auth\.uid\(\)/);
   assert.match(migrationSource, /jsonb_typeof\(p_targets\)\s*(?:<>|!=)\s*'array'/);
   assert.match(migrationSource, /jsonb_array_length\(p_targets\)[\s\S]*between 1 and 50/);
@@ -60,15 +60,18 @@ test("batch RPC derives confirmation behavior and owns identity and lifecycle fi
   assert.match(migrationSource, /if replica_conflict[\s\S]*replica revision conflict/);
   assert.match(migrationSource, /userVerified/);
   assert.match(migrationSource, /for update/);
-  assert.match(migrationSource, /insert into public\.review_commands\s*\([\s\S]*user_id[\s\S]*action[\s\S]*patch[\s\S]*created_by/);
+  assert.match(migrationSource, /insert into public\.review_commands_v2\s*\([\s\S]*user_id[\s\S]*action[\s\S]*patch[\s\S]*created_by/);
   assert.match(migrationSource, /values\s*\([\s\S]*actor[\s\S]*'confirm'[\s\S]*null[\s\S]*actor/);
   assert.match(migrationSource, /on conflict[\s\S]*do nothing/);
   assert.match(migrationSource, /another review request is already pending/i);
 });
 
-test("batch RPC is security-definer and authenticated-only", () => {
+test("compatible batch routing is security-definer and authenticated-only", () => {
+  assert.match(migrationSource, /create or replace function public\.queue_review_confirm_batch_compatible/);
+  assert.match(migrationSource, /return public\.queue_review_confirm_batch_v2/);
+  assert.match(migrationSource, /return public\.queue_review_confirm_batch\(/);
   assert.match(migrationSource, /language plpgsql security definer/);
   assert.match(migrationSource, /set search_path = pg_catalog, public/);
-  assert.match(migrationSource, /revoke all on function public\.queue_review_confirm_batch\(jsonb\)[\s\S]*from public, anon, authenticated/);
-  assert.match(migrationSource, /grant execute on function public\.queue_review_confirm_batch\(jsonb\)[\s\S]*to authenticated/);
+  assert.match(migrationSource, /revoke all on function public\.queue_review_confirm_batch_compatible\(jsonb\)[\s\S]*from public, anon, authenticated/);
+  assert.match(migrationSource, /grant execute on function public\.queue_review_confirm_batch_compatible\(jsonb\)[\s\S]*to authenticated/);
 });

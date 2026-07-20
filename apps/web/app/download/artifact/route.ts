@@ -3,9 +3,14 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
 import {
+  RELEASE_INFO,
   parseArtifactConfig,
   planArtifactResponse,
 } from "@/lib/download";
+
+const ARTIFACT_RESPONSE_HEADERS = {
+  "Cache-Control": "private, no-store, max-age=0",
+} as const;
 
 /**
  * Authenticated bridge for the official packaged Weekform artifact.
@@ -38,14 +43,22 @@ export async function GET(request: Request) {
       );
       const { data, error } = await serviceClient.storage
         .from(config.bucket)
-        .createSignedUrl(config.path, config.signedUrlTtlSeconds);
+        .createSignedUrl(config.path, config.signedUrlTtlSeconds, {
+          download: RELEASE_INFO.artifactFilename,
+        });
       return error || !data?.signedUrl ? null : data.signedUrl;
     },
     requestUrl: request.url,
   });
 
   if (plan.kind === "json") {
-    return NextResponse.json(plan.body, { status: plan.status });
+    return NextResponse.json(plan.body, {
+      status: plan.status,
+      headers: ARTIFACT_RESPONSE_HEADERS,
+    });
   }
-  return NextResponse.redirect(plan.url, { status: plan.status });
+  return NextResponse.redirect(plan.url, {
+    status: plan.status,
+    headers: ARTIFACT_RESPONSE_HEADERS,
+  });
 }
