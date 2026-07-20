@@ -265,7 +265,8 @@ test("an available official release retires the direct beta route without mintin
   assert.ok(config);
   const officialConfig = downloadModule.parseArtifactConfig({
     WEEKFORM_ARTIFACT_BUCKET: "weekform-releases",
-    WEEKFORM_ARTIFACT_PATH: "releases/Weekform_0.1.0_universal.dmg",
+    WEEKFORM_ARTIFACT_PATH:
+      `releases/stable/${"c".repeat(64)}/Weekform_0.1.0_universal.dmg`,
     NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
     SUPABASE_SERVICE_ROLE_KEY: "service-role-secret",
     WEEKFORM_ARTIFACT_DEVELOPER_ID_SIGNED: "true",
