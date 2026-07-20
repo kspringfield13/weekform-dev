@@ -4,6 +4,7 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import {
   BETA_RELEASE_INFO,
+  parseArtifactConfig,
   parseBetaArtifactConfig,
   planBetaArtifactResponse,
 } from "@/lib/download";
@@ -32,6 +33,7 @@ export async function GET(request: Request) {
       return { userId: error || !user ? null : user.id };
     },
     config: parseBetaArtifactConfig(process.env),
+    officialConfig: parseArtifactConfig(process.env),
     createSignedUrl: async (config) => {
       const serviceClient = createServiceClient(
         config.supabaseUrl,

@@ -66,6 +66,7 @@ type ExpectedBetaExports = {
     supabaseConfigured: boolean;
     getUser: () => Promise<{ userId: string | null }>;
     config: BetaArtifactConfig | null;
+    officialConfig?: downloadModule.ArtifactConfig | null;
     createSignedUrl: (config: BetaArtifactConfig) => Promise<string | null>;
     requestUrl: string;
   }) => Promise<BetaArtifactPlan>;
@@ -151,7 +152,22 @@ test("a Developer-ID-signed beta parses without claiming notarization", () => {
   assert.equal("stapled" in config.releaseProof, false);
 });
 
-test("beta presentation uses the exact label, action, filename, and pending-notarization disclosure", () => {
+test("beta config binds its content-addressed object path to the declared SHA", () => {
+  const parseBetaArtifactConfig = requireBetaExport("parseBetaArtifactConfig");
+
+  assert.equal(
+    parseBetaArtifactConfig({
+      ...BETA_ENV,
+      WEEKFORM_BETA_ARTIFACT_PATH:
+        `releases/beta/${"a".repeat(64)}/${BETA_FILENAME}`,
+    }),
+    null,
+    "a mismatched object path must never support checksum-verified copy",
+  );
+  assert.ok(parseBetaArtifactConfig(BETA_ENV));
+});
+
+test("beta presentation uses the exact label, action, filename, and unnotarized disclosure", () => {
   const betaReleaseInfo = requireBetaExport("BETA_RELEASE_INFO");
   const parseBetaArtifactConfig = requireBetaExport("parseBetaArtifactConfig");
   const getBetaReleasePresentation = requireBetaExport(
@@ -167,8 +183,11 @@ test("beta presentation uses the exact label, action, filename, and pending-nota
   assert.equal(presentation.action.label, "Download Beta");
   assert.equal(presentation.action.href, BETA_ROUTE);
   assert.equal(presentation.filename, BETA_FILENAME);
-  assert.match(presentation.disclosure, /Apple notarization is pending/i);
-  assert.doesNotMatch(presentation.disclosure, /Apple-notarized|stapled/i);
+  assert.match(
+    presentation.disclosure,
+    /not Apple-notarized or stapled/i,
+  );
+  assert.doesNotMatch(presentation.disclosure, /notarization is pending/i);
 });
 
 test("download page renders the separate beta presentation without the old preview label", () => {
@@ -237,6 +256,45 @@ test("configured beta returns only a short-lived private signed-URL redirect", a
     status: 307,
     url: "https://example.supabase.co/storage/v1/object/sign/weekform-releases/beta?token=short-lived",
   });
+});
+
+test("an available official release retires the direct beta route without minting a beta URL", async () => {
+  const planBetaArtifactResponse = requireBetaExport("planBetaArtifactResponse");
+  const parseBetaArtifactConfig = requireBetaExport("parseBetaArtifactConfig");
+  const config = parseBetaArtifactConfig(BETA_ENV);
+  assert.ok(config);
+  const officialConfig = downloadModule.parseArtifactConfig({
+    WEEKFORM_ARTIFACT_BUCKET: "weekform-releases",
+    WEEKFORM_ARTIFACT_PATH: "releases/Weekform_0.1.0_universal.dmg",
+    NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+    SUPABASE_SERVICE_ROLE_KEY: "service-role-secret",
+    WEEKFORM_ARTIFACT_DEVELOPER_ID_SIGNED: "true",
+    WEEKFORM_ARTIFACT_NOTARIZED: "true",
+    WEEKFORM_ARTIFACT_STAPLED: "true",
+    WEEKFORM_ARTIFACT_SHA256: "c".repeat(64),
+    WEEKFORM_ARTIFACT_VERIFIED_AT: "2026-07-20T20:00:00.000Z",
+  });
+  assert.ok(officialConfig);
+  let betaSigningCalls = 0;
+
+  const response = await planBetaArtifactResponse({
+    supabaseConfigured: true,
+    getUser: async () => ({ userId: "signed-in-user" }),
+    config,
+    officialConfig,
+    createSignedUrl: async () => {
+      betaSigningCalls += 1;
+      return "https://storage.example/obsolete-beta";
+    },
+    requestUrl: `https://weekform.dev${BETA_ROUTE}`,
+  });
+
+  assert.deepEqual(response, {
+    kind: "redirect",
+    status: 303,
+    url: "https://weekform.dev/download/artifact",
+  });
+  assert.equal(betaSigningCalls, 0);
 });
 
 test("beta route is private/no-store, forces the beta filename, and has no public fallback", () => {

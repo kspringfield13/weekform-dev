@@ -4692,9 +4692,54 @@ button.text-link {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  margin-right: 10px;
+  gap: 10px;
+  margin-right: 12px;
   min-width: 0;
+}
+
+.web-toolbar-display-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 4%, transparent);
+  padding: 2px;
+}
+
+.web-toolbar-account-actions,
+.web-toolbar-identity {
+  display: inline-flex;
+  align-items: center;
+}
+
+.web-toolbar-account-actions {
+  gap: 8px;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  padding-left: 10px;
+}
+
+.web-toolbar-account-actions form { display: flex; }
+
+.web-toolbar-identity { gap: 7px; min-width: 0; }
+
+.web-toolbar-account-avatar {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 650;
+  text-transform: uppercase;
 }
 
 .web-toolbar-product {
@@ -4728,7 +4773,7 @@ button.text-link {
 }
 
 .web-toolbar-account {
-  max-width: 190px;
+  max-width: 176px;
   overflow: hidden;
   color: var(--text-subtle);
   font-size: 11px;
@@ -4737,6 +4782,10 @@ button.text-link {
 }
 
 .web-toolbar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-height: 28px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -4746,20 +4795,49 @@ button.text-link {
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background-color 140ms ease;
 }
 
-.web-toolbar-button:hover { color: var(--text); background: var(--hover-background); }
+.web-toolbar-button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--hover-background);
+}
+
+.web-toolbar-display-controls .web-display-button {
+  height: 26px;
+  min-height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  transform: none;
+}
+
+.web-toolbar-display-controls .web-display-button:hover {
+  background: var(--hover-background);
+  transform: none;
+}
 
 .web-theme-toggle-button {
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
+  width: auto;
+  min-width: 30px;
+  padding-inline: 8px;
 }
 
 .web-theme-toggle-button svg { width: 14px; height: 14px; }
+.theme-toggle-label { line-height: 1; }
 
-.web-window-button { gap: 6px; padding-inline: 8px; }
+.web-window-button { padding-inline: 8px; }
 .web-window-glyph { width: 14px; height: 14px; flex: 0 0 auto; }
+
+.web-sign-out-button {
+  border-color: transparent;
+  color: var(--text-subtle);
+  background: transparent;
+  padding-inline: 7px;
+}
+
+.web-sign-out-button svg { width: 13px; height: 13px; }
 
 /* The Web compact window mirrors the Desktop action while keeping the Web
    boundary honest: review-safe synced signals only, no capture controls. */
@@ -6170,10 +6248,14 @@ button.text-link {
 @media (max-width: 520px) {
   .web-toolbar-title { padding-inline: 12px 8px; }
   .web-toolbar-title span,
-  .web-toolbar-account { display: none; }
+  .web-toolbar-identity { display: none; }
   .web-toolbar-actions { gap: 4px; margin-right: 8px; }
+  .web-toolbar-display-controls { gap: 0; }
+  .web-toolbar-account-actions { border-left: 0; padding-left: 0; }
   .web-toolbar-product { min-width: 104px; padding-inline: 10px; }
+  .web-theme-toggle-button,
   .web-window-button { width: 30px; padding: 0; }
+  .web-theme-toggle-button .theme-toggle-label,
   .web-window-button > span { display: none; }
   .web-toolbar-button { padding-inline: 8px; }
   .web-individual-app .workspace-shell { padding-inline: 12px; }

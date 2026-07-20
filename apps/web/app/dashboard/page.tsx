@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Download, UserPlus, UsersRound } from "lucide-react";
+import { Download, LogOut, UserPlus, UsersRound } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import { getOrCreateProfile } from "@/lib/profile";
@@ -161,9 +161,17 @@ export default async function DashboardPage({
       managerHref={managerHref}
       accountActions={(
         <>
-          <span className="web-toolbar-account" title={user.email ?? undefined}>{user.email}</span>
+          <span className="web-toolbar-identity">
+            <span className="web-toolbar-account-avatar" aria-hidden="true">
+              {user.email?.slice(0, 1).toUpperCase() ?? "W"}
+            </span>
+            <span className="web-toolbar-account" title={user.email ?? undefined}>{user.email}</span>
+          </span>
           <form action={signOut}>
-            <button className="web-toolbar-button" type="submit">Sign out</button>
+            <button className="web-toolbar-button web-sign-out-button" type="submit">
+              <LogOut aria-hidden="true" />
+              <span>Sign out</span>
+            </button>
           </form>
         </>
       )}

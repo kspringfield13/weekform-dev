@@ -213,6 +213,7 @@ export function parseBetaArtifactConfig(
     || !developerIdSigned
     || !sha256
     || !/^[a-f0-9]{64}$/.test(sha256)
+    || path !== `releases/beta/${sha256}/${BETA_RELEASE_INFO.artifactFilename}`
     || !verifiedAt
     || !isCanonicalUtcTimestamp(verifiedAt)
   ) {
@@ -283,7 +284,7 @@ export function getBetaReleasePresentation(
     title: "Beta Version",
     action: { label: "Download Beta", href: "/download/beta" },
     filename: BETA_RELEASE_INFO.artifactFilename,
-    disclosure: `Developer ID signed and checksum-verified ${verifiedDate}. Apple notarization is pending, so macOS may prevent this beta from launching. Use it only for evaluation; the final release will replace it here. Your private link lasts ${formatTtl(config.signedUrlTtlSeconds)}.`,
+    disclosure: `Developer ID signed and checksum-verified ${verifiedDate}. This beta is not Apple-notarized or stapled, so macOS may block it. Use it only for evaluation; the final release will replace it here. Your private link lasts ${formatTtl(config.signedUrlTtlSeconds)}.`,
   };
 }
 
@@ -374,18 +375,27 @@ export async function planArtifactResponse(deps: {
 
 /** The beta route keeps its proof and failure copy separate from the release. */
 export async function planBetaArtifactResponse(
-  deps: PrivateArtifactPlanDeps<BetaArtifactConfig>,
+  deps: PrivateArtifactPlanDeps<BetaArtifactConfig> & {
+    officialConfig?: ArtifactConfig | null;
+  },
 ): Promise<ArtifactPlan> {
   return planPrivateArtifactResponse(deps, {
     unavailableMessage:
       "The Weekform Beta Version is not fully configured. Return to /download for current availability.",
     errorQuery: "beta",
+    replacementUrl: deps.officialConfig
+      ? new URL("/download/artifact", deps.requestUrl).toString()
+      : null,
   });
 }
 
 async function planPrivateArtifactResponse<Config>(
   deps: PrivateArtifactPlanDeps<Config>,
-  copy: { unavailableMessage: string; errorQuery: "artifact" | "beta" },
+  copy: {
+    unavailableMessage: string;
+    errorQuery: "artifact" | "beta";
+    replacementUrl?: string | null;
+  },
 ): Promise<ArtifactPlan> {
   if (!deps.supabaseConfigured) {
     return {
@@ -410,6 +420,10 @@ async function planPrivateArtifactResponse<Config>(
         message: "Sign in to download Weekform.",
       },
     };
+  }
+
+  if (copy.replacementUrl) {
+    return { kind: "redirect", status: 303, url: copy.replacementUrl };
   }
 
   if (!deps.config) {

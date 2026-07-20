@@ -44,6 +44,18 @@ test("public and authenticated Web chrome both expose the shared theme toggle", 
   assert.match(workspace, /<ThemeToggle/);
 });
 
+test("the authenticated Web header presents theme and compact mode as labeled display controls", () => {
+  assert.match(toggle, /showLabel\s*=\s*false/);
+  assert.match(toggle, /theme-toggle-label/);
+  assert.match(
+    workspace,
+    /className="web-toolbar-display-controls"[\s\S]*role="group"[\s\S]*aria-label="Display controls"/,
+  );
+  assert.match(workspace, /<ThemeToggle[^>]*showLabel/);
+  assert.match(workspace, /<span>Compact<\/span>/);
+  assert.match(globals, /\.web-toolbar-display-controls\s*\{/);
+});
+
 test("explicit theme selectors cover the public, authenticated, and compact surfaces", () => {
   assert.match(globals, /:root\[data-theme="dark"\]\s*\{/);
   assert.match(globals, /:root\[data-theme="dark"\]\s+\.web-individual-app\.app\s*\{/);

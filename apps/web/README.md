@@ -250,10 +250,11 @@ minting a short-lived private Storage URL.
 While Apple's notarization service processes the final DMG, `/download` may
 offer an explicitly separate **Beta Version** through `/download/beta`. The
 beta requires its own Developer ID signature, checksum, timestamp, private
-object, and server-side session re-check. Its disclosure states that Apple
-notarization is pending; beta configuration can never satisfy or weaken the
-official signed/notarized/stapled release gate. Once the official configuration
-is complete, the page always prefers the trusted release.
+object, and server-side session re-check. Its disclosure states that the exact
+beta is not Apple-notarized or stapled; beta configuration can never satisfy or
+weaken the official signed/notarized/stapled release gate. Once the official
+configuration is complete, the page and direct beta route retire in favor of
+the trusted release.
 
 **To publish a trusted private artifact:**
 

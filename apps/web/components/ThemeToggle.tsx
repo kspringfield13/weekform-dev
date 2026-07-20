@@ -46,7 +46,13 @@ function applyTheme(theme: WebTheme) {
   document.documentElement.style.colorScheme = theme;
 }
 
-export function ThemeToggle({ className = "" }: { className?: string }) {
+export function ThemeToggle({
+  className = "",
+  showLabel = false,
+}: {
+  className?: string;
+  showLabel?: boolean;
+}) {
   const [theme, setTheme] = useState<WebTheme>("dark");
 
   useEffect(() => {
@@ -68,7 +74,8 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
   }, []);
 
   const targetTheme = nextWebTheme(theme);
-  const label = `Use ${targetTheme} mode`;
+  const label = `Switch to ${targetTheme} mode`;
+  const visibleLabel = targetTheme === "dark" ? "Dark" : "Light";
 
   const toggleTheme = () => {
     applyTheme(targetTheme);
@@ -86,11 +93,11 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
       type="button"
       className={`theme-toggle-button${className ? ` ${className}` : ""}`}
       aria-label={label}
-      aria-pressed={theme === "dark"}
       title={label}
       onClick={toggleTheme}
     >
       {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+      {showLabel ? <span className="theme-toggle-label">{visibleLabel}</span> : null}
     </button>
   );
 }

@@ -362,18 +362,29 @@ export function IndividualWorkspaceShell({
           <i aria-hidden="true" /> API-connected · no workload cache
         </div>
         <div className="web-toolbar-actions">
-          <ThemeToggle className="web-toolbar-button web-theme-toggle-button" />
-          <button
-            className="web-toolbar-button web-window-button"
-            type="button"
-            aria-label="Use compact Web window"
-            title="Use compact Web window"
-            onClick={activateCompactWindow}
+          <div
+            className="web-toolbar-display-controls"
+            role="group"
+            aria-label="Display controls"
           >
-            <CompactWindowIcon />
-            <span>Compact</span>
-          </button>
-          {accountActions}
+            <ThemeToggle
+              className="web-toolbar-button web-display-button web-theme-toggle-button"
+              showLabel
+            />
+            <button
+              className="web-toolbar-button web-display-button web-window-button"
+              type="button"
+              aria-label="Open compact Web window"
+              title="Open compact Web window"
+              onClick={activateCompactWindow}
+            >
+              <CompactWindowIcon />
+              <span>Compact</span>
+            </button>
+          </div>
+          <div className="web-toolbar-account-actions">
+            {accountActions}
+          </div>
         </div>
         <div className="web-toolbar-product" aria-label="Weekform Web">
           <strong>Weekform</strong>
