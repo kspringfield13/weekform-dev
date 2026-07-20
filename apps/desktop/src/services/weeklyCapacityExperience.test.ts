@@ -111,3 +111,36 @@ test("capacity dashboard removes decorative motion when reduced motion is reques
   assert.match(reducedMotionSource, /animation:\s*none\s*!important/);
   assert.match(reducedMotionSource, /transition-duration:\s*0\.01ms\s*!important/);
 });
+
+test("estimate explainer uses an accessible visual hierarchy instead of repeated prose", () => {
+  const explainerSource = sourceBetween(
+    capacityScreenSource,
+    '<details className="week-dashboard-explainability">',
+    "</details>",
+  );
+
+  assert.match(explainerSource, /className="week-dashboard-commitment-visual"/);
+  assert.match(explainerSource, /role="img"/);
+  assert.match(explainerSource, /aria-label=\{committedCompositionLabel\}/);
+  assert.match(explainerSource, /className="week-dashboard-detail-group week-dashboard-risk-group"/);
+  assert.match(explainerSource, /className="week-dashboard-interruption-insights"/);
+  assert.doesNotMatch(explainerSource, /Reactive work counts at/);
+});
+
+test("estimate explainer gives delivery-risk signals more room and aligned rows", () => {
+  const explainerStyles = sourceBetween(
+    stylesSource,
+    ".week-dashboard-explainability {",
+    "/* Capacity reduced-motion contract",
+  );
+
+  assert.match(
+    explainerStyles,
+    /\.week-dashboard-detail-grid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 0\.9fr\) minmax\(0, 1\.1fr\)/,
+  );
+  assert.match(
+    explainerStyles,
+    /\.week-dashboard-risk-group \.risk-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(124px, 0\.9fr\) minmax\(96px, 1\.1fr\) 48px/,
+  );
+  assert.match(explainerStyles, /\.week-dashboard-risk-group \.risk-caption/);
+});

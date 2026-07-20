@@ -5,39 +5,66 @@
 <p align="center"><strong>Know what fits before you commit.</strong></p>
 
 <p align="center">
-  A local-first macOS workload intelligence app for anyone, with an opt-in team cloud layer.<br>
-  Turn the work already happening across your week into reviewable evidence and reliable capacity, <br>
-  and share only the data you approve with a team you choose.
+  A local-first macOS workload intelligence app for individual analysts.<br>
+  Turn the work that actually happened into reviewable evidence, understand what is putting delivery at risk, <br>
+  and see how much new planned work can reliably fit next.
 </p>
 
 <p align="center">
-  <a href="#the-problem">Problem</a> ·
-  <a href="#local-first-consent-first-architecture">Architecture</a> ·
-  <a href="#manager-and-member-workflow">Team workflow</a> ·
+  <a href="#the-moment-before-you-say-yes">Use case</a> ·
+  <a href="#from-scattered-signals-to-a-defensible-decision">Core loop</a> ·
+  <a href="#privacy-and-user-control">Privacy</a> ·
   <a href="#getting-started">Getting started</a> ·
   <a href="#development">Development</a> ·
-  <a href="#limitations">Limitations</a> ·
-  <a href="#openai-build-week-2026">Build Week</a>
+  <a href="#how-we-built-weekform-with-codex">Built with Codex</a>
 </p>
 
 ![Weekform weekly capacity view with synthetic demo data](docs/assets/weekform-weekly-capacity.png)
 <p align="center"><sub>Weekly capacity view in Weekform</sub></p>
 
 > [!IMPORTANT]
-> Weekform is an early prototype, not a production workforce-management system (yet). Capacity estimates are planning aids and should be reviewed before they are shared or used for decisions.
+> Weekform is an early prototype. Its capacity estimates are deterministic planning aids, not validated performance science or employee evaluations. Review the underlying work before using an estimate to make or share a decision.
 
-## The problem
+## The moment before you say yes
 
-Teams routinely commit to more than the week can absorb because nobody can see, honestly, how much of each person's week is already spoken for. The existing tools that try to answer this either demand manual time tracking that nobody does, or slides into surveillance via screenshots, keystrokes, message content, which destroys the trust the data was supposed to build.
+Weekform is for the moment someone asks: **Can you take this on next week?**
 
-Weekform takes a new path:
+Calendars show scheduled time. Task trackers show intended work. Activity logs show fragments. None of them tells an analyst whether a new commitment will fit after recurring work, reactive requests, carryover, and fragmented focus have taken their share of the week.
 
-- **On each Mac**, Weekform turns calendar events, foreground-app activity, team chats, and more into work blocks the user can confirm, relabel, or exclude. It then explains how much of the week is allocated, what is driving delivery risk, and how much new planned work can fit without likely slippage. Every inference keeps its evidence; every correction is auditable; AI assistance is optional and opt-in.
-- **For teams**, Weekform adds a cloud layer that shares only versioned, allowlist-built weekly aggregates, but only after the team member has previewed the exact payload and recorded consent. Managers get an honest capacity picture; members keep control of their own data.
+Weekform turns limited local signals into work blocks the analyst can correct, then models the week so they can:
 
-Weekform is a private planning aid, not an employee-monitoring product.
+- decide whether a new project, analysis, or deadline can fit;
+- explain why delivery or focus is at risk with evidence rather than intuition;
+- separate planned progress from reactive load and recurring work;
+- protect a realistic focus block before accepting more work; and
+- learn whether forecasts and time-saving changes actually helped.
 
-## Local-first, consent-first architecture
+It is built first for individual analysts, with a path to other knowledge workers who face the same interruption-heavy planning problem. It is not a task-list replacement, a manual timesheet, a universal productivity score, or an employee-monitoring system.
+
+### A concrete decision
+
+In the synthetic demo, 56% of the week is already committed, 21% has been reactive, and the model leaves 24% reliable capacity for new planned work. A two-day analysis is roughly 40% of a standard week, so the useful answer is not “there are open calendar slots.” It is: **reduce the scope, move the date, or protect more capacity before committing.**
+
+Reliable capacity is not “free time.” It is the amount of new planned work the model estimates the week can absorb while preserving a delivery buffer.
+
+## From scattered signals to a defensible decision
+
+```text
+limited evidence → reviewed truth → deterministic workload model
+→ evidence-grounded decision → approval-gated action → observed outcome
+```
+
+| Step | What Weekform does | Why it matters |
+| --- | --- | --- |
+| **Observe** | Uses limited calendar, foreground-app, import, and content-free attention signals. | Reconstructs the week without asking the user to maintain another timer. |
+| **Review** | Turns activity into candidate work blocks that can be confirmed, relabeled, annotated, or excluded. | Inference never silently becomes truth. |
+| **Model** | Calculates committed load, reactive load, fragmentation, carryover, and reliable new-work capacity. | The core answer is deterministic and inspectable. |
+| **Decide** | Explains what fits, what is at risk, and which assumption drives the result. | A user can make a narrower commitment or defend a tradeoff. |
+| **Act and learn** | Keeps proposed changes approval-gated, then compares forecasts and reclaimed time with observed outcomes. | Guidance can improve against the user's own baseline instead of a generic score. |
+
+The optional team layer comes after this personal loop. A user can preview and approve a small weekly aggregate for a chosen team; raw activity and unreviewed evidence are not the team product.
+
+## Privacy and user control
 
 Raw activity data starts local and stays under the user's control. Network-backed features are optional and disclose when provider processing is involved.
 
@@ -85,9 +112,9 @@ reviewable workload without treating availability or message volume as work:
   separate consent edge and receives only member-approved aggregate snapshot
   fields—never Chat source detail.
 
-## Manager and member workflow
+## Optional team sharing
 
-The team layer connects the web app (`apps/web`) and the desktop app:
+Weekform does not require a manager or a team account. When a user chooses to share, the optional team layer connects the web app (`apps/web`) and the desktop app:
 
 1. **Manager** signs up at the web app with email/password, creates a team from the dashboard, and sees their role and roster.
 2. **Manager invites a member** by generating a one-time, hashed-token invite link and sharing it out of band (copy-link only — no email delivery is built).
@@ -100,39 +127,7 @@ The team layer connects the web app (`apps/web`) and the desktop app:
 
 ## Getting started
 
-### Web app (`apps/web`)
-
-The web surface hosts the landing page, email/password auth, team dashboards, invites, briefing, and the account-gated Mac download. It is a self-contained Next.js workspace with its own lockfile:
-
-```bash
-cd apps/web
-npm install
-cp .env.example .env.local   # then fill in your Supabase values
-npm run dev                  # http://localhost:3000
-```
-
-From the repository root, `npm run web:dev` and `npm run web:build` wrap the same workspace. The app builds and runs with **no** environment variables set: auth forms render disabled with an honest "not configured" notice, and protected pages show a setup panel. With Supabase configured, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the only secret key (`SUPABASE_SERVICE_ROLE_KEY`) is optional and read in exactly one server route that mints short-lived signed download URLs. See [apps/web/README.md](apps/web/README.md) for the full variable table, route list, and Supabase dashboard configuration.
-
-### Supabase migration and local stack
-
-The team cloud schema — profiles, teams, memberships, hashed-token invites, shared snapshots, RLS policies, and triggers — lives in [`supabase/migrations/202607190001_team_cloud_v1.sql`](supabase/migrations/202607190001_team_cloud_v1.sql). With the Supabase CLI installed:
-
-```bash
-supabase start      # local stack
-supabase db reset   # applies migrations, then runs supabase/seed.sql
-```
-
-An RLS behavior test script exists at `supabase/tests/team_cloud_rls.sql` and a four-actor expectation matrix at `docs/hackathon/TEAM_CLAWFATHER_RLS_MATRIX.md`; note their live-execution status under [Limitations](#limitations).
-
-### Demo accounts and seed data
-
-`supabase/seed.sql` is synthetic-only: every identity, team, email, and metric is invented, and it contains no passwords, service keys, project URLs, or real email addresses. It targets a **local** stack only (`supabase db reset`), where it runs as a role that bypasses RLS.
-
-Seeded `auth.users` rows have `NULL encrypted_password`, so they **cannot be signed into**. To exercise sign-in interactively:
-
-1. `supabase start`
-2. Create throwaway users in Studio (Auth → Users → Add user) or via the local auth API.
-3. The `on_auth_user_created` trigger bootstraps their profiles; the seed file's header documents substituting their UUIDs into the `public.*` rows.
+Weekform for Mac is the primary experience. The [browser demo](#try-the-browser-demo) is the fastest way to understand the decision loop with synthetic data; the source installer exercises the full native app.
 
 ### Install Weekform (desktop)
 
@@ -171,19 +166,44 @@ OPENAI_VISION_MODEL=
 
 The desktop scripts default `DEVELOPER_DIR` to Apple's standalone Command Line Tools. Export it first if you want to build with a specific Xcode installation.
 
+### Optional Web and team layer (`apps/web`)
+
+The web surface hosts the landing page, email/password auth, team dashboards, invites, briefing, and the account-gated Mac download. It is a self-contained Next.js workspace with its own lockfile:
+
+```bash
+cd apps/web
+npm install
+cp .env.example .env.local   # then fill in your Supabase values
+npm run dev                  # http://localhost:3000
+```
+
+From the repository root, `npm run web:dev` and `npm run web:build` wrap the same workspace. The app builds and runs with **no** environment variables set: auth forms render disabled with an honest "not configured" notice, and protected pages show a setup panel. With Supabase configured, set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`; the only secret key (`SUPABASE_SERVICE_ROLE_KEY`) is optional and read in exactly one server route that mints short-lived signed download URLs. See [apps/web/README.md](apps/web/README.md) for the full variable table, route list, and Supabase dashboard configuration.
+
+The team cloud schema — profiles, teams, memberships, hashed-token invites, shared snapshots, RLS policies, and triggers — lives in [`supabase/migrations/202607190001_team_cloud_v1.sql`](supabase/migrations/202607190001_team_cloud_v1.sql). With the Supabase CLI installed:
+
+```bash
+supabase start      # local stack
+supabase db reset   # applies migrations, then runs supabase/seed.sql
+```
+
+An RLS behavior test script exists at `supabase/tests/team_cloud_rls.sql` and a four-actor expectation matrix at `docs/hackathon/TEAM_CLAWFATHER_RLS_MATRIX.md`; note their live-execution status under [Limitations](#limitations).
+
+`supabase/seed.sql` is synthetic-only: every identity, team, email, and metric is invented, and it contains no passwords, service keys, project URLs, or real email addresses. Seeded `auth.users` rows have `NULL encrypted_password`, so they cannot be used to sign in. Create throwaway users in local Supabase Studio or through the local auth API for an interactive team demo.
+
 ## How it works
 
-Weekform follows a reviewable pipeline from raw signals to a capacity estimate:
+Weekform follows a reviewable pipeline from limited signals to a workload decision:
 
 ```text
-capture → sessionize → classify → review → model → summarize
+capture → sessionize → classify → review → model → decide → act → learn
 ```
 
 1. **Capture limited signals locally.** Foreground-app metadata, bounded calendar sources, content-free attention evidence from Slack, Google Chat, or Webex, normalized local imports, and git-log exports can contribute evidence.
 2. **Build candidate work blocks.** Contiguous activity becomes sessions with category, work mode, planned status, project, confidence, and source evidence.
 3. **Keep the user in control.** Confirm, relabel, annotate, or exclude any inferred block before treating it as reviewed work.
 4. **Model the week.** See allocation, reactive load, meeting density, fragmentation, carryover risk, and reliable headroom for new work.
-5. **Explain the result.** Inspect the audit trail, ask the Agent questions, forecast next week, or draft an editable weekly summary.
+5. **Explain and act.** Inspect the audit trail, ask the Agent questions, forecast next week, draft an editable summary, or approve a proposed change.
+6. **Learn from the outcome.** Compare forecasts and acted-on acceleration plays with what actually happened; keep uncertainty and misses visible.
 
 ### Product surfaces
 
@@ -193,10 +213,12 @@ capture → sessionize → classify → review → model → summarize
 | **Week** | Understand capacity, forecast next week, inspect AI usage, and prepare a weekly summary. |
 | **Agent** | Ask questions about your workload and find evidence-cited opportunities to reclaim time. |
 | **History** | Review the activity ledger, corrections, privacy events, and flagged visual captures. |
-| **Account & Sharing** | Connect a weekform.dev account, preview the exact shared payload, and control team sync. |
-| **Web dashboard** | Create teams, invite members, view shared aggregates, and generate the Team Briefing. |
+| **Account & Sharing** *(optional)* | Connect a weekform.dev account, preview the exact shared payload, and control team sync. |
+| **Web dashboard** *(optional)* | Create teams, invite members, view shared aggregates, and generate the Team Briefing. |
 
 ### Current capabilities
+
+**Personal Mac experience:**
 
 - Native macOS menu-bar app built with Tauri 2, React, TypeScript, and Rust
 - Reviewable work blocks with confidence, evidence, project, category, mode, and status
@@ -206,6 +228,9 @@ capture → sessionize → classify → review → model → summarize
 - Conversational workload Agent and a deterministic Acceleration engine for time-saving plays
 - Optional AI-assisted classification, review suggestions, forecasts, narratives, and visual context
 - Local JSON or CSV export, configurable retention, immediate pause, and prototype data reset
+
+**Optional connected experience:**
+
 - Opt-in team cloud sharing with payload preview, consent recording, manual Sync Now, and an optional in-app scheduled sync
 - Next.js web app with teams, hashed-token invites, manager dashboards, Team Briefing, and an account-gated Mac download
 
@@ -236,6 +261,8 @@ npm run demo
 ```
 
 This opens the weekly-capacity view at `http://127.0.0.1:5173/?demo=1&screen=weekly`. Native capture, menu-bar behavior, and native AI commands are unavailable in the browser-only demo.
+
+For the shortest product tour, follow the [three-minute demo script](docs/hackathon/WEEKFORM_3_MINUTE_DEMO.md): review a questionable block, watch the capacity model respond, make a concrete commitment decision, and see how Weekform learns from outcomes.
 
 ## Development
 
@@ -351,7 +378,17 @@ Weekform predates the July 13–21 submission period. The public submission dist
 
 ## How We Built Weekform with Codex
 
-During Build Week, Kyle and Rohn Springfield each worked with Codex powered by GPT-5.6 as a hands-on product, design, and engineering collaborator. Codex accelerated repository research, option generation, implementation, review, debugging, and validation. Kyle led the product north star, local-first Mac experience, privacy constraints, and submission story; Rohn led Weekform Web, the public landing experience, deployment and authentication, and the Supabase-backed team experience. Both inspected the output, tested the running product, and made the final calls in the areas they owned. The collaboration was iterative rather than one-shot: propose, inspect, build, run, critique, and refine.
+During Build Week, Kyle and Rohn Springfield each worked with Codex powered by GPT-5.6 as a hands-on product, design, and engineering collaborator. Codex accelerated repository research, option generation, implementation, review, debugging, and validation. Kyle led the product north star, local-first Mac experience, privacy constraints, and submission story; Rohn led Weekform Web, the public landing experience, deployment and authentication, and the Supabase-backed team experience. Both inspected the output, tested the running product, and made the final calls in the areas they owned.
+
+The collaboration was an evidence loop rather than a one-shot prompt:
+
+1. **Frame one outcome.** Kyle or Rohn defined the user decision, visible proof, scope, and non-negotiable privacy or approval boundaries.
+2. **Map the real system.** Codex traced the relevant state, inference, interface, native boundary, persistence, tests, and documentation before changing it.
+3. **Build a coherent slice.** Codex implemented the smallest end-to-end result that a user or judge could actually exercise.
+4. **Run and critique.** Codex ran the relevant build and focused gates, inspected the real interface, and surfaced accessibility, data-integrity, privacy, and edge-case issues.
+5. **Keep the human gate.** Kyle or Rohn reviewed the running result, accepted or redirected it, and made the final product and design decision.
+
+For example, in the Week dashboard redesign, Kyle supplied the decision hierarchy and visual direction. Codex mapped that intent to the existing deterministic capacity model, rebuilt the interface, preserved the explanation layer, added reduced-motion and keyboard-accessible behavior, and validated the result. Kyle reviewed the running experience and directed the follow-up refinements. The [three-minute demo](docs/hackathon/WEEKFORM_3_MINUTE_DEMO.md) uses this example to explain the build process without presenting Codex as a substitute for product judgment.
 
 The core workload prototype and the first naming exploration existed before July 13. The timeline distinguishes that foundation from selected new work and material refinements during the submission period; it does not claim the inherited product as Build Week output.
 

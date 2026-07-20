@@ -5,6 +5,7 @@ import type { computeWeeklyCapacitySnapshot } from "../../../../../packages/infe
 import { normalizeWeekId } from "../../../../../packages/inference/src/capacity";
 import { WEEKLY_BASELINE_HOURS } from "../../../../../packages/integrations/src/internal/normalize";
 import { formatIsoWeekLabel, pct } from "../../lib/format";
+import { buildSmoothTrendPath } from "../../lib/trendPath";
 
 type Snapshot = ReturnType<typeof computeWeeklyCapacitySnapshot>;
 
@@ -32,6 +33,7 @@ const PAD = { l: 34, r: 14, t: 14, b: 30 };
 const PLOT_W = VB_W - PAD.l - PAD.r;
 const PLOT_H = VB_H - PAD.t - PAD.b;
 const Y_TICKS = [0, 25, 50, 75, 100];
+const X_GRID_DIVISIONS = 12;
 
 function clampPct(value: number): number {
   return Math.min(Math.max(value, 0), 100);
@@ -105,13 +107,13 @@ export function CapacityTrendChart({
   }
 
   return (
-    <section className="capacity-section">
-      <div className="section-title">
+    <section className="capacity-section capacity-trend-section">
+      <div className="section-title trend-title">
         <h2>Weekly capacity over the last {weeks.length} weeks</h2>
-        <span>% of a {WEEKLY_BASELINE_HOURS}-hour week</span>
+        <span className="trend-unit">% of a {WEEKLY_BASELINE_HOURS}-hour week</span>
       </div>
 
-      <div className="trend-legend" role="list">
+      <div className="capacity-trend-legend" role="list">
         {legend.map((item) => {
           const Icon = item.direction === "up" ? ArrowUp : item.direction === "down" ? ArrowDown : Minus;
           const signed = `${item.delta > 0 ? "+" : ""}${item.delta}`;
@@ -155,6 +157,29 @@ export function CapacityTrendChart({
         aria-label={`Line chart of weekly capacity metrics across the last ${weeks.length} weeks`}
         aria-describedby={dataTableId}
       >
+        <rect
+          className="trend-plot-surface"
+          x={PAD.l}
+          y={PAD.t}
+          width={PLOT_W}
+          height={PLOT_H}
+          rx={10}
+        />
+
+        {Array.from({ length: X_GRID_DIVISIONS + 1 }, (_, index) => {
+          const gridX = PAD.l + (index / X_GRID_DIVISIONS) * PLOT_W;
+          return (
+            <line
+              className="trend-gridline trend-gridline-vertical"
+              key={`x-${index}`}
+              x1={gridX}
+              x2={gridX}
+              y1={PAD.t}
+              y2={PAD.t + PLOT_H}
+            />
+          );
+        })}
+
         {Y_TICKS.map((tick) => (
           <g key={tick}>
             <line
@@ -184,9 +209,11 @@ export function CapacityTrendChart({
         ))}
 
         {SERIES.map((series) => {
-          const points = weeks
-            .map((week, index) => `${x(index)},${y(week.snapshot[series.key])}`)
-            .join(" ");
+          const points = weeks.map((week, index) => ({
+            x: x(index),
+            y: y(week.snapshot[series.key]),
+          }));
+          const path = buildSmoothTrendPath(points);
           return (
             <g
               className={`trend-series ${series.className}`}
@@ -198,19 +225,27 @@ export function CapacityTrendChart({
               onMouseEnter={() => setHoveredSeries(series.key)}
               onMouseLeave={() => setHoveredSeries(null)}
             >
-              <polyline className="trend-line" points={points} />
+              <path className="trend-line-halo" d={path} />
+              <path className="trend-line" d={path} />
               {weeks.map((week, index) => (
-                <circle
-                  className="trend-dot"
-                  key={week.week_id}
-                  cx={x(index)}
-                  cy={y(week.snapshot[series.key])}
-                  r={3}
-                >
-                  <title>
-                    {formatIsoWeekLabel(week.week_id)} — {series.label}: {pct(Math.round(week.snapshot[series.key]))}
-                  </title>
-                </circle>
+                <g key={week.week_id}>
+                  <circle
+                    className="trend-dot-halo"
+                    cx={x(index)}
+                    cy={y(week.snapshot[series.key])}
+                    r={6}
+                  />
+                  <circle
+                    className="trend-dot"
+                    cx={x(index)}
+                    cy={y(week.snapshot[series.key])}
+                    r={2.7}
+                  >
+                    <title>
+                      {formatIsoWeekLabel(week.week_id)} — {series.label}: {pct(Math.round(week.snapshot[series.key]))}
+                    </title>
+                  </circle>
+                </g>
               ))}
             </g>
           );

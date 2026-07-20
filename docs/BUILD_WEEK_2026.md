@@ -865,6 +865,18 @@ The public product-presentation refresh is recorded in a separate in-period task
 
 This task is supporting evidence for the public presentation only. It does not replace the primary Project-thread value used for `/feedback`.
 
+### End-user positioning and three-minute demo
+
+The final positioning and product-demo narrative were refined in a separate in-period task:
+
+- **Codex Session ID:** `019f81e2-cb5a-7c60-b548-dc312f8ea687`
+- **Date:** July 20, 2026
+- **Outcome:** Codex reframed the README around the individual analyst's commitment decision, made the reviewed-evidence → deterministic-model → action-and-learning loop explicit, moved the optional team layer behind the personal value, and prepared a timed three-minute product demo with truthful screen actions and a concise explanation of the human–Codex build process.
+- **Observable evidence:** The script uses the synthetic demo's verified review correction from Planned to Unplanned, which changes reliable capacity from 24% to 17%, committed load from 56% to 63%, and reactive load from 21% to 30%. It then uses the existing forecast-bias, forecast-track-record, acceleration, and realized-savings surfaces without claiming that the browser demo proves native capture or AI commands.
+- **Human product direction:** Kyle requested a clearer end-user use case, a README refresh, and a three-minute flow that explains both the application and how Codex supported the build. The resulting story keeps the workload decision and user control ahead of integrations, team breadth, or AI spectacle.
+
+This task is positioning and presentation evidence. It does not claim new workload-model functionality or replace the primary Project-thread value used for `/feedback`.
+
 ### Week dashboard redesign
 
 The Week dashboard simplification is recorded in a separate in-period task:
@@ -873,6 +885,13 @@ The Week dashboard simplification is recorded in a separate in-period task:
 - **Date:** July 18, 2026
 - **Outcome:** Codex rebuilt the weekly-capacity content below the breadcrumb around clearer labels, stronger visual hierarchy, and a simpler container layout while preserving the existing capacity data, app context, and Weekform palette. The model breakdown, personal baselines, delivery-risk inputs, and privacy-safe interruption evidence remain available in a collapsed explanation layer. Follow-ups aligned the two primary panels, added reduced-motion-aware chart entrances and keyboard-accessible detail, and replaced the pastoral hero artwork with a lazy-loaded Three.js capacity signal. Its segmented surface uses the live committed-load and reliable-capacity values, updates with the app theme, pauses offscreen or while hidden, respects reduced motion, and retains a polished static fallback when WebGL is unavailable.
 - **Human design direction:** Kyle supplied the visual reference, limited the redesign to the Week dashboard below “Weekly capacity,” required reuse of the app’s existing data and context, and prioritized immediate comprehension over the prior dense presentation. His follow-up direction called for equal-height panels, restrained chart motion, detail available to both pointer and keyboard users, and a higher-quality animated hero graphic with a modern technical character.
+
+### Forecast trajectory chart refresh
+
+- **Date:** July 20, 2026
+- **Outcome:** Codex refreshed the weekly-capacity trajectory on Forecast with cubic curves that preserve every observed weekly value, low-opacity series halos, luminous point markers, a softly tinted square plotting grid, line-shaped legend keys, and responsive light/dark treatments. The existing five deterministic series, values, deltas, hover/focus isolation, SVG description, and screen-reader data table remain intact.
+- **Observable evidence:** The synthetic four-week demo was reviewed in dark and light themes and at the native 1024×720 minimum. Hover isolation continued to dim peer series, the browser console had no application errors, the focused curve tests passed 2/2, the 273-test desktop service suite passed, and the authoritative root build exited 0.
+- **Human design direction:** Kyle supplied the before state and a modern dark-green reference, specifically requesting a closer theme and structure with more rounded lines.
 
 Only the session IDs and concise evidence summaries are intended for publication. Raw Codex rollout/session files can contain prompts, local paths, tool output, or other private context and are not part of the repository.
 

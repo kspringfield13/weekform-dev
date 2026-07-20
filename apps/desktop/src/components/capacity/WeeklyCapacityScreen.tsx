@@ -48,11 +48,11 @@ const BASELINE_METRICS: Array<{
 ];
 
 const COMMITTED_PART_GLOSS: Record<string, string> = {
-  recurring: "Standing meetings, recurring reports, and other fixed work.",
-  reactive: `Unplanned work, counted at ${Math.round(REACTIVE_DISCOUNT_FACTOR * 100)}% because interruptions reduce sustainable throughput.`,
-  carryover: "Unfinished work likely to spill into next week.",
-  fragmentation: "Capacity lost to short, scattered work blocks and context switching.",
-  wip: "Extra load from keeping too many projects moving at once.",
+  recurring: "Standing work",
+  reactive: `Unplanned work × ${Math.round(REACTIVE_DISCOUNT_FACTOR * 100)}% impact`,
+  carryover: "May spill into next week",
+  fragmentation: "Cost of scattered blocks",
+  wip: "Cost of parallel projects",
 };
 
 const CATEGORY_LABELS: Partial<Record<WorkCategory, string>> = {
@@ -298,8 +298,15 @@ export function WeeklyCapacityScreen({
       { key: "fragmentation", label: "Context switching", value: snapshot.fragmentation_penalty_pct },
       { key: "wip", label: "Too much parallel work", value: snapshot.wip_penalty_pct },
     ].filter((part) => part.value > 0);
-    return { parts, reactiveContribution };
+    const total = parts.reduce((sum, part) => sum + part.value, 0);
+    return { parts, total };
   }, [snapshot]);
+
+  const committedCompositionLabel = committedBreakdown.parts.length > 0
+    ? `${pct(snapshot.committed_utilization_pct)} committed: ${committedBreakdown.parts
+      .map((part) => `${part.label} ${pct(part.value)}`)
+      .join(", ")}.`
+    : "No committed load yet.";
 
   const baselines = useMemo(() => {
     const prior = snapshotHistory
@@ -643,7 +650,7 @@ export function WeeklyCapacityScreen({
           <span className="week-dashboard-explainability-icon"><Info size={17} aria-hidden="true" /></span>
           <span>
             <strong>How this estimate is built</strong>
-            <small>Review commitments, recent comparisons, and delivery-risk signals</small>
+            <small>See what changed, what is committed, and what could disrupt delivery</small>
           </span>
           <ChevronDown className="week-dashboard-explainability-chevron" size={17} aria-hidden="true" />
         </summary>
@@ -651,8 +658,8 @@ export function WeeklyCapacityScreen({
           {baselineChips.length > 0 && (
             <section className="week-dashboard-baselines" aria-labelledby="week-baselines-heading">
               <div className="week-dashboard-detail-heading">
-                <h3 id="week-baselines-heading">Compared with your recent {baselines.week_count}-week median</h3>
-                <span>Personal context, not a generic benchmark</span>
+                <h3 id="week-baselines-heading">Versus your recent {baselines.week_count}-week median</h3>
+                <span>Your history, not a benchmark</span>
               </div>
               <div className="week-dashboard-baseline-list">
                 {baselineChips.map((chip) => {
@@ -672,8 +679,8 @@ export function WeeklyCapacityScreen({
           <div className="week-dashboard-detail-grid">
             <section className="week-dashboard-detail-group" aria-labelledby="week-committed-heading">
               <div className="week-dashboard-detail-heading">
-                <h3 id="week-committed-heading">What makes up the {pct(snapshot.committed_utilization_pct)} committed load</h3>
-                <span>These parts add up to the committed estimate</span>
+                <h3 id="week-committed-heading">{pct(snapshot.committed_utilization_pct)} committed</h3>
+                <span>Five inputs this week</span>
               </div>
               {committedBreakdown.parts.length === 0 && (
                 <p className="week-dashboard-empty-note">
@@ -681,9 +688,34 @@ export function WeeklyCapacityScreen({
                   adjustments appear here as the week is tracked.
                 </p>
               )}
+              {committedBreakdown.parts.length > 0 && (
+                <div
+                  className="week-dashboard-commitment-visual"
+                  role="img"
+                  aria-label={committedCompositionLabel}
+                >
+                  <span className="week-dashboard-commitment-track" aria-hidden="true">
+                    {committedBreakdown.parts.map((part, index) => (
+                      <i
+                        key={part.key}
+                        className={`is-${part.key}`}
+                        style={{
+                          width: `${(part.value / Math.max(committedBreakdown.total, 1)) * 100}%`,
+                          animationDelay: `${45 + index * 45}ms`,
+                        }}
+                      />
+                    ))}
+                  </span>
+                  <span className="week-dashboard-commitment-total" aria-hidden="true">
+                    <strong>{pct(snapshot.committed_utilization_pct)}</strong>
+                    <small>of week</small>
+                  </span>
+                </div>
+              )}
               <ul className="week-dashboard-detail-list">
                 {committedBreakdown.parts.map((part) => (
                   <li key={part.key}>
+                    <i className={`is-${part.key}`} aria-hidden="true" />
                     <span>
                       <span>{part.label}</span>
                       <small>{COMMITTED_PART_GLOSS[part.key]}</small>
@@ -692,14 +724,9 @@ export function WeeklyCapacityScreen({
                   </li>
                 ))}
               </ul>
-              {committedBreakdown.reactiveContribution > 0 && (
-                <p>
-                  Reactive work counts at {Math.round(REACTIVE_DISCOUNT_FACTOR * 100)}% of face value because interrupted work delivers less sustainable throughput.
-                </p>
-              )}
             </section>
 
-            <section className="week-dashboard-detail-group" aria-labelledby="week-risk-heading">
+            <section className="week-dashboard-detail-group week-dashboard-risk-group" aria-labelledby="week-risk-heading">
               <div className="week-dashboard-detail-heading">
                 <h3 id="week-risk-heading">Delivery-risk signals</h3>
                 <span>Lower is better</span>
@@ -710,14 +737,14 @@ export function WeeklyCapacityScreen({
                   value={snapshot.context_switch_score}
                   tooltip="Task-switching cost index: 0 = minimal, 100 = very high burden"
                   hint="/100"
-                  caption={snapshot.fragmentation_penalty_pct > 0 ? `Costs about ${pct(snapshot.fragmentation_penalty_pct)} of the committed week` : undefined}
+                  caption={snapshot.fragmentation_penalty_pct > 0 ? `${pct(snapshot.fragmentation_penalty_pct)} load impact` : undefined}
                 />
                 <RiskRow
                   label="Too much parallel work"
                   value={snapshot.wip_load_score}
                   tooltip="Pressure from keeping several projects in progress at once"
                   hint="/100"
-                  caption={snapshot.wip_penalty_pct > 0 ? `Costs about ${pct(snapshot.wip_penalty_pct)} of the committed week` : undefined}
+                  caption={snapshot.wip_penalty_pct > 0 ? `${pct(snapshot.wip_penalty_pct)} load impact` : undefined}
                 />
                 <RiskRow
                   label="Carryover risk"
@@ -739,7 +766,7 @@ export function WeeklyCapacityScreen({
                   displayValue={blockerCount}
                   tooltip="Number of work blocks flagged as blocked this week"
                   dangerActive={blockerCount > 0}
-                  caption={snapshot.blocked_pct > 0 ? `${pct(snapshot.blocked_pct)} of the week is in blocked work` : undefined}
+                  caption={snapshot.blocked_pct > 0 ? `${pct(snapshot.blocked_pct)} of week blocked` : undefined}
                 />
               </div>
             </section>
@@ -749,31 +776,40 @@ export function WeeklyCapacityScreen({
             <section className="week-dashboard-interruptions" aria-labelledby="week-interruptions-heading">
               <div className="week-dashboard-detail-heading">
                 <h3 id="week-interruptions-heading"><Zap size={15} aria-hidden="true" />Chat response patterns</h3>
-                <span>Modeled from observed, content-free actions</span>
+                <span>Observed actions only · no message content</span>
               </div>
-              <ul>
-                <li><strong>{interruptionLoad.observed_response_episode_count}</strong><span>observed response episodes</span></li>
-                <li><strong>{Math.round(interruptionLoad.active_hours * 60)}m</strong><span>modeled unioned response span</span></li>
-                <li><strong>{formatCount(interruptionLoad.directed_response_episode_count)}</strong><span>followed a directed signal</span></li>
-                <li><strong>{interruptionLoad.focus_overlap_pct}%</strong><span>focus blocks with chat co-occurrence</span></li>
+              <ul className="week-dashboard-interruption-stats">
+                <li><strong>{interruptionLoad.observed_response_episode_count}</strong><span>response episodes</span></li>
+                <li><strong>{Math.round(interruptionLoad.active_hours * 60)}m</strong><span>modeled response span</span></li>
+                <li><strong>{formatCount(interruptionLoad.directed_response_episode_count)}</strong><span>directed signals</span></li>
+                <li><strong>{interruptionLoad.focus_overlap_pct}%</strong><span>focus overlap</span></li>
               </ul>
-              {interruptionLoad.peak_day && interruptionLoad.active_day_count >= 2 && (
-                <p>
-                  Observed response activity peaked on <strong>{interruptionLoad.peak_day}</strong>
-                  {interruptionLoad.peak_hour !== null && <> around <strong>{formatHourOfDay(interruptionLoad.peak_hour)}</strong></>}.
-                  {interruptionLoad.calm_day && interruptionLoad.calm_day !== interruptionLoad.peak_day && (
-                    <> Your quietest active day was <strong>{interruptionLoad.calm_day}</strong>—a good candidate for protected focus time.</>
+              {(interruptionLoad.peak_day && interruptionLoad.active_day_count >= 2) || interruptionLoad.after_hours_episode_count > 0 ? (
+                <div className="week-dashboard-interruption-insights">
+                  {interruptionLoad.peak_day && interruptionLoad.active_day_count >= 2 && (
+                    <div>
+                      <span>Peak response activity</span>
+                      <strong>
+                        {interruptionLoad.peak_day}
+                        {interruptionLoad.peak_hour !== null && <> · {formatHourOfDay(interruptionLoad.peak_hour)}</>}
+                      </strong>
+                      {interruptionLoad.calm_day && interruptionLoad.calm_day !== interruptionLoad.peak_day && (
+                        <small>{interruptionLoad.calm_day} was quietest—consider protecting it for focus.</small>
+                      )}
+                    </div>
                   )}
-                </p>
-              )}
-              {interruptionLoad.after_hours_episode_count > 0 && (
-                <p>
-                  <strong>{interruptionLoad.after_hours_pct}%</strong> of observed response episodes occurred outside the prototype core-hours window ({formatHourOfDay(CORE_HOURS_START)}–{formatHourOfDay(CORE_HOURS_END)}).
-                </p>
-              )}
+                  {interruptionLoad.after_hours_episode_count > 0 && (
+                    <div>
+                      <span>Outside core hours</span>
+                      <strong>{interruptionLoad.after_hours_pct}%</strong>
+                      <small>{formatHourOfDay(CORE_HOURS_START)}–{formatHourOfDay(CORE_HOURS_END)}</small>
+                    </div>
+                  )}
+                </div>
+              ) : null}
               {chatStakeholders && chatStakeholders.groups.length > 0 && (
                 <div className="week-dashboard-stakeholders">
-                  <span>Observed episodes by provider</span>
+                  <span>By provider</span>
                   <div>
                     {chatStakeholders.groups.map((group) => (
                       <span key={group.label} title={`${group.episode_count} observed ${group.episode_count === 1 ? "episode" : "episodes"}`}>

@@ -6132,26 +6132,82 @@ select {
   height: 100%;
 }
 
-/* Capacity trends — multi-week line chart. Series colour is driven through
-   `color` so the inline SVG can use currentColor for both line and dots. */
-.trend-legend {
+/* Capacity trends — a quiet instrument field with continuous, softly luminous
+   paths. Series colour is driven through `color` so SVG evidence and legend
+   keys always stay paired across themes. */
+.capacity-section.capacity-trend-section {
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--success) 5%, transparent), transparent 34%),
+    var(--surface);
+}
+
+.trend-title {
+  align-items: baseline;
+}
+
+.trend-unit {
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--background-subtle) 76%, transparent);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px !important;
+  white-space: nowrap;
+}
+
+.capacity-trend-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 18px;
-  margin-bottom: 16px;
+  gap: 6px 10px;
+  margin-bottom: 14px;
 }
 
 .trend-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  font-size: 12px;
+  gap: 6px;
+  min-height: 26px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  outline-offset: 2px;
+  transition: background-color 120ms ease, opacity 120ms ease;
+}
+
+.trend-legend-item:hover,
+.trend-legend-item:focus-visible {
+  background: color-mix(in srgb, currentColor 8%, transparent);
 }
 
 .trend-legend-swatch {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
+  position: relative;
+  width: 20px;
+  height: 8px;
+}
+
+.trend-legend-swatch::before,
+.trend-legend-swatch::after {
+  position: absolute;
+  content: "";
+}
+
+.trend-legend-swatch::before {
+  top: 3px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 7px color-mix(in srgb, currentColor 38%, transparent);
+}
+
+.trend-legend-swatch::after {
+  top: 1px;
+  left: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
   background: currentColor;
 }
 
@@ -6161,7 +6217,9 @@ select {
 
 .trend-legend-value {
   color: var(--text);
-  font-size: 13px;
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .trend-legend-delta {
@@ -6187,30 +6245,65 @@ select {
   display: block;
   width: 100%;
   height: auto;
+  overflow: visible;
+}
+
+.trend-plot-surface {
+  fill: color-mix(in srgb, var(--success) 2.5%, var(--background-subtle));
+  stroke: color-mix(in srgb, var(--success) 8%, var(--border));
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
 .trend-gridline {
-  stroke: var(--border);
+  stroke: color-mix(in srgb, var(--success) 7%, var(--border));
   stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.trend-gridline-vertical {
+  opacity: 0.56;
 }
 
 .trend-axis-label {
   fill: var(--text-subtle);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
 }
 
+.trend-line-halo,
 .trend-line {
   fill: none;
   stroke: currentColor;
-  stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.trend-line-halo {
+  stroke-width: 11;
+  opacity: 0.1;
+  transition: opacity 120ms ease;
+}
+
+.trend-line {
+  stroke-width: 2.35;
+}
+
+.trend-series:hover .trend-line-halo {
+  opacity: 0.2;
+}
+
+.trend-dot-halo {
+  fill: currentColor;
+  opacity: 0.12;
 }
 
 .trend-dot {
   fill: currentColor;
-  stroke: var(--background);
-  stroke-width: 1.5;
+  stroke: color-mix(in srgb, var(--surface) 82%, transparent);
+  stroke-width: 1.25;
+  vector-effect: non-scaling-stroke;
 }
 
 .trend-allocated {
@@ -6231,6 +6324,39 @@ select {
 
 .trend-meeting {
   color: #f59e0b;
+}
+
+html[data-theme="dark"] .capacity-section.capacity-trend-section {
+  border-color: color-mix(in srgb, #4ade80 10%, var(--border));
+  background:
+    radial-gradient(circle at 78% 10%, rgba(41, 126, 76, 0.13), transparent 35%),
+    linear-gradient(180deg, rgba(20, 48, 32, 0.18), transparent 42%),
+    var(--surface);
+}
+
+html[data-theme="dark"] .trend-plot-surface {
+  fill: color-mix(in srgb, #173522 36%, var(--background));
+  stroke: color-mix(in srgb, #65d88b 13%, var(--border));
+}
+
+html[data-theme="dark"] .trend-gridline {
+  stroke: color-mix(in srgb, #69d990 9%, var(--border));
+}
+
+@media (max-width: 720px) {
+  .trend-title {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .capacity-trend-legend {
+    gap: 4px 6px;
+  }
+
+  .trend-legend-item {
+    padding-inline: 4px;
+  }
 }
 
 .risk-list {
@@ -16983,7 +17109,7 @@ html[data-theme="dark"] .capacity-signal-field-glow {
 .week-dashboard-detail-group,
 .week-dashboard-interruptions {
   min-width: 0;
-  padding: 14px;
+  padding: 16px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
@@ -17046,31 +17172,112 @@ html[data-theme="dark"] .capacity-signal-field-glow {
 
 .week-dashboard-detail-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
   gap: 16px;
+}
+
+.week-dashboard-commitment-visual {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background-subtle);
+}
+
+.week-dashboard-commitment-track {
+  display: flex;
+  gap: 2px;
+  width: 100%;
+  height: 12px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-muted);
+}
+
+.week-dashboard-commitment-track > i {
+  display: block;
+  min-width: 3px;
+  height: 100%;
+  transform-origin: left center;
+  animation: week-dashboard-bar-in 220ms var(--week-ease-out) backwards;
+}
+
+.week-dashboard-commitment-total {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--text-subtle);
+}
+
+.week-dashboard-commitment-total strong {
+  color: var(--text);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.week-dashboard-commitment-total small {
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.week-dashboard-commitment-track .is-recurring,
+.week-dashboard-detail-list .is-recurring {
+  background: var(--week-blue);
+}
+
+.week-dashboard-commitment-track .is-reactive,
+.week-dashboard-detail-list .is-reactive {
+  background: var(--week-orange);
+}
+
+.week-dashboard-commitment-track .is-carryover,
+.week-dashboard-detail-list .is-carryover {
+  background: var(--week-purple);
+}
+
+.week-dashboard-commitment-track .is-fragmentation,
+.week-dashboard-detail-list .is-fragmentation {
+  background: #6b8ea0;
+}
+
+.week-dashboard-commitment-track .is-wip,
+.week-dashboard-detail-list .is-wip {
+  background: var(--week-green);
 }
 
 .week-dashboard-detail-list {
   display: grid;
   gap: 2px;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 
 .week-dashboard-detail-list li {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 42px;
-  padding: 4px 6px;
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 39px;
+  padding: 4px 5px;
   border-radius: 6px;
   color: var(--text-muted);
   font-size: 11px;
 }
 
+.week-dashboard-detail-list li > i {
+  display: block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+
 .week-dashboard-detail-list li > span {
   display: grid;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
@@ -17082,8 +17289,8 @@ html[data-theme="dark"] .capacity-signal-field-glow {
 
 .week-dashboard-detail-list li small {
   color: var(--text-subtle);
-  font-size: 10px;
-  line-height: 1.4;
+  font-size: 9px;
+  line-height: 1.35;
 }
 
 .week-dashboard-detail-list li:hover {
@@ -17111,13 +17318,48 @@ html[data-theme="dark"] .capacity-signal-field-glow {
   color: var(--text-muted);
 }
 
-.week-dashboard-detail-group .risk-list {
-  gap: 8px;
-  margin-top: 10px;
+.week-dashboard-risk-group .risk-list {
+  gap: 0;
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
-.week-dashboard-detail-group .risk-row {
-  min-height: 32px;
+.week-dashboard-risk-group .risk-row {
+  grid-template-columns: minmax(124px, 0.9fr) minmax(96px, 1.1fr) 48px;
+  align-items: center;
+  gap: 12px;
+  min-height: 43px;
+  padding: 6px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.week-dashboard-risk-group .risk-row:last-child {
+  border-bottom: 0;
+}
+
+.week-dashboard-risk-group .risk-row-label > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 15px;
+}
+
+.week-dashboard-risk-group .risk-caption {
+  margin: 1px 0 0;
+  color: var(--text-subtle);
+  font-size: 9px;
+  line-height: 13px;
+}
+
+.week-dashboard-risk-group .risk-track {
+  height: 6px;
+}
+
+.week-dashboard-risk-group .risk-row > strong {
+  min-width: 48px;
+  font-size: 11px;
+  line-height: 15px;
 }
 
 .week-dashboard-interruptions .week-dashboard-detail-heading h3 {
@@ -17130,14 +17372,14 @@ html[data-theme="dark"] .capacity-signal-field-glow {
   color: var(--week-orange);
 }
 
-.week-dashboard-interruptions > ul {
+.week-dashboard-interruptions > .week-dashboard-interruption-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
 
-.week-dashboard-interruptions > ul li {
+.week-dashboard-interruptions > .week-dashboard-interruption-stats li {
   display: grid;
   gap: 4px;
   min-width: 0;
@@ -17147,18 +17389,56 @@ html[data-theme="dark"] .capacity-signal-field-glow {
   background: var(--background-subtle);
 }
 
-.week-dashboard-interruptions > ul strong {
+.week-dashboard-interruptions > .week-dashboard-interruption-stats strong {
   color: var(--text);
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 15px;
 }
 
-.week-dashboard-interruptions > ul span {
+.week-dashboard-interruptions > .week-dashboard-interruption-stats span {
   overflow: hidden;
   color: var(--text-subtle);
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.week-dashboard-interruption-insights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.week-dashboard-interruption-insights > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-left: 2px solid color-mix(in srgb, var(--week-orange) 72%, var(--border));
+  border-radius: 0 7px 7px 0;
+  background: var(--background-subtle);
+}
+
+.week-dashboard-interruption-insights span,
+.week-dashboard-interruption-insights small {
+  color: var(--text-subtle);
+  font-size: 9px;
+  line-height: 13px;
+}
+
+.week-dashboard-interruption-insights strong {
+  color: var(--text);
+  font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 13px;
+  white-space: nowrap;
+}
+
+.week-dashboard-interruption-insights small {
+  grid-column: 1 / -1;
 }
 
 .week-dashboard-stakeholders {
@@ -17279,6 +17559,10 @@ html[data-theme="dark"] .capacity-signal-field-glow {
     grid-template-columns: 1fr;
   }
 
+  .week-dashboard-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
   .week-dashboard-time-layout {
     grid-template-columns: minmax(150px, 0.7fr) minmax(200px, 1.3fr);
   }
@@ -17304,9 +17588,8 @@ html[data-theme="dark"] .capacity-signal-field-glow {
     justify-content: center;
   }
 
-  .week-dashboard-detail-grid,
   .week-dashboard-baseline-list,
-  .week-dashboard-interruptions > ul {
+  .week-dashboard-interruptions > .week-dashboard-interruption-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -17315,7 +17598,8 @@ html[data-theme="dark"] .capacity-signal-field-glow {
   .week-dashboard-metrics,
   .week-dashboard-detail-grid,
   .week-dashboard-baseline-list,
-  .week-dashboard-interruptions > ul {
+  .week-dashboard-interruptions > .week-dashboard-interruption-stats,
+  .week-dashboard-interruption-insights {
     grid-template-columns: 1fr;
   }
 
@@ -17357,6 +17641,7 @@ html[data-theme="dark"] .capacity-signal-field-glow {
   .week-dashboard-explainability-chevron,
   .capacity-signal-canvas,
   .capacity-signal-fallback,
+  .week-dashboard-commitment-track > i,
   .week-dashboard-coverage-bar > span,
   .week-dashboard-category-track > span,
   .week-dashboard-donut,
