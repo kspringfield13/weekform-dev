@@ -622,6 +622,7 @@ export function ModelPricingPanel({
         </div>
       </div>
 
+      <div className="model-pricing-content">
       {unpricedDetected.length > 0 && (
         <div className="pricing-detected-callout">
           <div className="pricing-detected-copy">
@@ -662,6 +663,7 @@ export function ModelPricingPanel({
 
       {rows.length === 0 ? (
         <EmptyState
+          className="model-pricing-empty"
           icon={CircleDollarSign}
           title="No model prices configured"
           description="Choose a reviewed provider price or add an exact model ID manually."
@@ -972,6 +974,7 @@ export function ModelPricingPanel({
           local usage and manual prices are never sent.
         </p>
       </details>
+      </div>
 
       <div className="model-pricing-footer">
         <div
