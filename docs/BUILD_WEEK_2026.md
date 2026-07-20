@@ -796,6 +796,16 @@ The hackathon-readiness and provenance task is supplemental evidence:
   build, and live Supabase/browser proof are recorded separately; repository
   code alone is not claimed as deployed production evidence.
 
+- **July 20 capacity drill-in parity:** The desktop sidebar's Reliable capacity
+  card is now keyboard- and pointer-actionable in both workspace modes. The
+  shared modal shows the individual's deterministic local weekly breakdown in
+  Individual mode and an approved-summary-only team median, spread, signal
+  bands, and sharing coverage in Manager mode. Missing team values remain
+  unknown and do not enter the median. Seven focused red-first contracts, the
+  254-test desktop service suite, the root production build, and browser checks
+  at 1024x720 in light and dark themes passed. The local Manager browser run
+  proved the fail-closed empty state, not live authenticated team data.
+
 - **Codex Session ID:** `019f75f1-73fc-7850-98a4-c23ec0aae893`
 - **Task title:** `Prepare Weekform for Build Week`
 - **Started:** July 18, 2026 at 11:56:26 AM EDT (15:56:26Z)
