@@ -34,6 +34,14 @@ test("Mac calls to action attempt the installed app before their download fallba
   assert.match(source, /visibilitychange/);
   assert.match(source, /window\.location\.assign\(fallbackHref\)/);
   assert.match(source, /href=\{fallbackHref\}/);
+  const fallbackDelay = source.match(
+    /DOWNLOAD_FALLBACK_DELAY_MS\s*=\s*([\d_]+)/,
+  );
+  assert.ok(fallbackDelay, "the not-installed fallback delay must stay explicit");
+  assert.ok(
+    Number(fallbackDelay[1].replaceAll("_", "")) >= 10_000,
+    "Chrome's first-open confirmation needs enough time before download fallback",
+  );
 });
 
 test("the packaged Mac app owns the Weekform scheme and focuses one existing instance", () => {

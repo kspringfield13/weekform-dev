@@ -3,7 +3,10 @@
 import type { AnchorHTMLAttributes, MouseEvent, ReactNode } from "react";
 
 const WEEKFORM_OPEN_URL = "weekform://open?source=weekform.dev";
-const DOWNLOAD_FALLBACK_DELAY_MS = 2200;
+// Chrome shows a browser-owned confirmation before opening a custom scheme the
+// first time. Keep the fallback long enough for a person to read and accept it;
+// accepting the prompt blurs the page and cancels this timer immediately.
+const DOWNLOAD_FALLBACK_DELAY_MS = 12_000;
 
 type MacAppLinkProps = Omit<
   AnchorHTMLAttributes<HTMLAnchorElement>,
