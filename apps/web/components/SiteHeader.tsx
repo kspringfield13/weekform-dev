@@ -15,7 +15,15 @@ const MAC_ENTRY = productEntry("mac");
  * configured) to swap the auth controls, and renders a plain marketing
  * header otherwise.
  */
-export async function SiteHeader({ variant = "default" }: { variant?: "default" | "immersive" }) {
+interface SiteHeaderProps {
+  activePage?: "account";
+  variant?: "default" | "immersive";
+}
+
+export async function SiteHeader({
+  activePage,
+  variant = "default",
+}: SiteHeaderProps) {
   const supabase = await createClient();
   let signedIn = false;
   let managerAccess = false;
@@ -54,11 +62,6 @@ export async function SiteHeader({ variant = "default" }: { variant?: "default" 
               <Link href={MAC_ENTRY.href} className="button button-ghost nav-download-mac">
                 Download Mac
               </Link>
-              <form action={signOut} className="nav-signout">
-                <button type="submit" className="button button-secondary">
-                  Sign out
-                </button>
-              </form>
             </>
           ) : (
             <>
@@ -68,13 +71,25 @@ export async function SiteHeader({ variant = "default" }: { variant?: "default" 
               <Link href="/#privacy" className="button button-ghost nav-privacy">
                 Privacy
               </Link>
-              <Link href="/login" className="button button-ghost">
-                Sign in
-              </Link>
-              <Link href={WEB_ENTRY.href} className="button button-primary header-cta">
-                Open Web app
-              </Link>
             </>
+          )}
+          <Link
+            href="/login"
+            className="button button-ghost nav-account"
+            aria-current={activePage === "account" ? "page" : undefined}
+          >
+            Account
+          </Link>
+          {signedIn ? (
+            <form action={signOut} className="nav-signout">
+              <button type="submit" className="button button-secondary">
+                Sign out
+              </button>
+            </form>
+          ) : (
+            <Link href={WEB_ENTRY.href} className="button button-primary header-cta">
+              Open Web app
+            </Link>
           )}
         </nav>
       </div>

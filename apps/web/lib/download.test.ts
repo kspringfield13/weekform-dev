@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import {
   RELEASE_INFO,
   formatTtl,
+  getReleasePresentation,
   isArtifactConfigured,
   parseArtifactConfig,
 } from "./download";
@@ -103,6 +104,31 @@ test("formatTtl renders whole minutes and singular/plural seconds", () => {
   assert.equal(formatTtl(1), "1 second");
 });
 
+test("an unpublished DMG keeps the default website release fail-closed", () => {
+  const presentation = getReleasePresentation(null);
+
+  assert.equal(presentation.kind, "pending");
+  assert.equal(presentation.title, "Mac release is being finalized");
+  assert.equal(presentation.action.label, "Open Weekform Web");
+  assert.equal(presentation.action.href, "/app");
+  assert.doesNotMatch(
+    JSON.stringify(presentation),
+    /bucket|credentials|Developer ID|notarization/i,
+  );
+});
+
+test("configured artifact becomes an active, filename-specific download", () => {
+  const config = parseArtifactConfig(FULL_ENV);
+  assert.ok(config);
+
+  const presentation = getReleasePresentation(config);
+  assert.equal(presentation.kind, "available");
+  assert.equal(presentation.action.label, "Download now");
+  assert.equal(presentation.action.href, "/download/artifact");
+  assert.equal(presentation.filename, RELEASE_INFO.artifactFilename);
+  assert.match(presentation.note, /5 minutes/);
+});
+
 test("RELEASE_INFO carries non-empty version, date, and macOS requirement copy", () => {
   assert.ok(RELEASE_INFO.version.length > 0);
   assert.ok(RELEASE_INFO.generatedDate.length > 0);
@@ -114,21 +140,23 @@ test("RELEASE_INFO carries non-empty version, date, and macOS requirement copy",
   assert.ok(RELEASE_INFO.tips.length >= 3);
 });
 
-test("download page offers one Mac-native DMG action with no developer setup path", () => {
+test("download page keeps unavailable releases out of disabled-button limbo", () => {
   const source = readFileSync(
     new URL("../app/download/page.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.equal(source.match(/Download now/g)?.length, 1);
-  assert.match(source, /RELEASE_INFO\.artifactFilename/);
+  assert.match(source, /getReleasePresentation/);
+  assert.match(source, /releasePresentation\.kind === "available"/);
+  assert.match(source, /releasePresentation\.action\.label/);
+  assert.match(source, /releasePresentation\.filename/);
   assert.match(source, /RELEASE_INFO\.releaseNotes/);
   assert.match(source, /RELEASE_INFO\.features/);
   assert.match(source, /RELEASE_INFO\.tips/);
   assert.match(source, /Open the DMG/);
   assert.doesNotMatch(
     source,
-    /npm ci|desktop:dev|xattr -dr|Download source archive|git clone/,
+    /aria-disabled|is-disabled|private release bucket credentials|Developer ID certificate|notarization pending|npm ci|desktop:dev|xattr -dr|Download source archive|git clone/,
   );
 });
 
@@ -198,13 +226,12 @@ test("artifact plan: unauthenticated → 401 and the service-key step never runs
   assert.equal(calls.createSignedUrl, 0, "service-key step must not run");
 });
 
-test("artifact plan: signed in but no private bucket → honest 503 fallback, no signing", async () => {
+test("artifact plan: signed in but no verified artifact host → honest 503", async () => {
   const { deps, calls } = trackedDeps({ config: null });
   const plan = await planArtifactResponse(deps);
   assert.ok(plan.kind === "json");
   assert.equal(plan.status, 503);
   assert.equal(plan.body.error, "artifact_not_configured");
-  assert.match(plan.body.message, /DMG/);
   assert.equal(calls.getUser, 1);
   assert.equal(calls.createSignedUrl, 0, "service-key step must not run");
 });

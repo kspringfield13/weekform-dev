@@ -4,7 +4,11 @@ import { redirect } from "next/navigation";
 
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
-import { RELEASE_INFO, formatTtl, parseArtifactConfig } from "@/lib/download";
+import {
+  RELEASE_INFO,
+  getReleasePresentation,
+  parseArtifactConfig,
+} from "@/lib/download";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
@@ -118,12 +122,7 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
   }
 
   const artifactConfig = parseArtifactConfig(process.env);
-  const downloadActionContent = (
-    <>
-      <DownloadGlyph />
-      <span>Download now</span>
-    </>
-  );
+  const releasePresentation = getReleasePresentation(artifactConfig);
 
   return (
     <>
@@ -155,40 +154,51 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
               <span>{RELEASE_INFO.architecture}</span>
             </div>
 
-            <div className="download-action-row">
-              {artifactConfig ? (
-                <a
-                  href="/download/artifact"
-                  className="button button-primary download-primary-action"
-                  aria-describedby="download-action-note"
-                >
-                  {downloadActionContent}
-                </a>
-              ) : (
-                <span
-                  className="button button-primary download-primary-action is-disabled"
-                  aria-disabled="true"
-                  aria-describedby="download-action-note"
-                >
-                  {downloadActionContent}
-                </span>
-              )}
-              <span className="download-file-label">
-                {RELEASE_INFO.artifactFilename}
-              </span>
-            </div>
-
-            <p id="download-action-note" className="download-action-note">
-              {artifactConfig
-                ? `Your private link lasts ${formatTtl(artifactConfig.signedUrlTtlSeconds)}. Open the DMG, move Weekform to Applications, and launch it.`
-                : "The DMG has been created locally, but this deployment does not yet have the private release bucket credentials needed to publish it."}
-            </p>
-
-            <p className="download-verification-note">
-              <span aria-hidden="true">●</span>
-              {RELEASE_INFO.verification}. A Developer ID certificate and Apple
-              notarization are still required for warning-free launch on other Macs.
-            </p>
+            {releasePresentation.kind === "available" ? (
+              <>
+                <div className="download-action-row">
+                  <a
+                    href={releasePresentation.action.href}
+                    className="button button-primary download-primary-action"
+                    aria-describedby="download-action-note"
+                  >
+                    <DownloadGlyph />
+                    <span>{releasePresentation.action.label}</span>
+                  </a>
+                  <span className="download-file-label">
+                    {releasePresentation.filename}
+                  </span>
+                </div>
+                <p id="download-action-note" className="download-action-note">
+                  {releasePresentation.note}
+                </p>
+              </>
+            ) : (
+              <div className="download-pending-wrap">
+                <div className="download-pending-state" role="status">
+                  <span className="download-pending-mark" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                  <div className="download-pending-copy">
+                    <p className="download-section-label">Mac release</p>
+                    <h2>{releasePresentation.title}</h2>
+                    <p>{releasePresentation.body}</p>
+                  </div>
+                  <Link
+                    href={releasePresentation.action.href}
+                    className="button button-primary download-web-action"
+                  >
+                    {releasePresentation.action.label}
+                  </Link>
+                </div>
+                <details className="download-release-disclosure">
+                  <summary>Release status</summary>
+                  <p>{releasePresentation.detail}</p>
+                </details>
+              </div>
+            )}
           </div>
 
           <ExampleWeek />
@@ -206,7 +216,11 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
           </ol>
         </section>
 
-        <section className="download-content-section" aria-labelledby="release-notes-title">
+        <section
+          id="release-notes"
+          className="download-content-section"
+          aria-labelledby="release-notes-title"
+        >
           <div className="download-section-heading">
             <p className="download-section-label">Release notes</p>
             <h2 id="release-notes-title">What changed in {RELEASE_INFO.version}</h2>

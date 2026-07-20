@@ -324,51 +324,143 @@ const REVIEW_CATEGORIES = [
 function PersonalWorkspaceSection({ replicas, error }: { replicas: PersonalReplicaView[]; error: string | null }) {
   const current = replicas[0] ?? null;
   return (
-    <section id="personal-workspace" className="workspace-section" aria-labelledby="personal-workspace-title">
-      <div className="workspace-section-heading">
-        <span>Individual workspace</span>
-        <h2 id="personal-workspace-title">Private review</h2>
-        <p>Your review-safe week from the Mac, with every change returned for approval.</p>
-      </div>
-      <div className="panel workspace-primary-panel">
-        <span className="badge">Private to you</span>
-        <h3>Your Web review workspace</h3>
-        <p>
-          This surface mirrors only review-safe derived fields from Weekform for Mac. Raw capture,
-          app and window titles, evidence, notes, project and stakeholder names, screenshots, and
-          AI credentials stay on the Mac. Every Web action below creates a request; it does not
-          change local truth until you approve it in the desktop app.
-        </p>
-        {error ? (
-          <div className="form-alert" role="alert">Your private Web workspace could not be loaded.</div>
-        ) : !current ? (
-          <div className="empty-state">
-            <h3>No private replica yet</h3>
-            <p>In Weekform for Mac, open Account &amp; Sharing and enable the Private Web workspace.</p>
-            <Link href="/download" className="button button-secondary">Open the Mac setup</Link>
+    <section
+      id="personal-workspace"
+      className="workspace-section hybrid-workspace"
+      aria-labelledby="personal-workspace-title"
+    >
+      <header className="hybrid-heading">
+        <span className="hybrid-kicker">The Hybrid Weekform model</span>
+        <div>
+          <h2 id="personal-workspace-title">
+            Two surfaces. <span>One private source of truth.</span>
+          </h2>
+          <p>
+            Your Mac understands the work. The Web gives you a safe place to
+            review the week and request changes from anywhere.
+          </p>
+        </div>
+      </header>
+
+      <div className="hybrid-model" aria-label="How the hybrid Weekform model works">
+        <article className="hybrid-surface hybrid-surface-mac">
+          <div className="hybrid-surface-meta">
+            <span>01 · On your Mac</span>
+            <span className="hybrid-state"><i aria-hidden="true" /> Private source of truth</span>
           </div>
-        ) : (
-          <>
-            <div className="metric-grid compact-metrics">
-              <div className="metric"><span>Reliable new-work capacity</span><strong>{Math.round(current.payload.capacity.reliableNewWorkCapacityPct)}%</strong></div>
-              <div className="metric"><span>Allocated</span><strong>{Math.round(current.payload.capacity.allocatedPct)}%</strong></div>
-              <div className="metric"><span>Reactive</span><strong>{Math.round(current.payload.capacity.reactivePct)}%</strong></div>
-              <div className="metric"><span>Context switching</span><strong>{Math.round(current.payload.capacity.contextSwitchScore)}/100</strong></div>
+          <h3>Your Mac holds the full picture.</h3>
+          <p>
+            It captures activity, builds your workload model, and keeps the
+            sensitive evidence behind every result on your device.
+          </p>
+          <div className="hybrid-local-fields" aria-label="Data that stays on your Mac">
+            <span>Raw activity</span>
+            <span>App &amp; window titles</span>
+            <span>Evidence &amp; notes</span>
+            <span>Screenshots &amp; AI keys</span>
+          </div>
+        </article>
+
+        <div className="hybrid-transfer" aria-hidden="true">
+          <span>Review-safe sync</span>
+          <div><i /><b>→</b><i /></div>
+          <small>Only derived fields</small>
+        </div>
+
+        <article className="hybrid-surface hybrid-surface-web">
+          <div className="hybrid-surface-meta">
+            <span>02 · On the Web</span>
+            <span className="hybrid-state"><i aria-hidden="true" /> Private to you</span>
+          </div>
+          <h3>The Web gets only what you need to review.</h3>
+          <p>
+            See capacity, workload categories, work modes, and review status—
+            without uploading the raw evidence that produced them.
+          </p>
+          <div className="hybrid-web-fields">
+            <span>Capacity</span>
+            <span>Category</span>
+            <span>Work mode</span>
+            <span>Review status</span>
+          </div>
+          <strong className="hybrid-never">Raw activity never comes here.</strong>
+        </article>
+
+        <div className="hybrid-return-rail">
+          <span className="hybrid-return-arrow" aria-hidden="true">←</span>
+          <div>
+            <span>03 · Approval loop</span>
+            <strong>Every change returns to your Mac.</strong>
+            <p>
+              A Web action creates a request. Your local workload changes only
+              after you approve it in the desktop app.
+            </p>
+          </div>
+          <span className="hybrid-approval-chip">Approve on Mac</span>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="form-alert hybrid-load-error" role="alert">
+          Your private Web workspace could not be loaded. Reload the page to try again.
+        </div>
+      ) : !current ? (
+        <div className="hybrid-setup">
+          <div className="hybrid-setup-copy">
+            <span>Connect your private workspace</span>
+            <h3>Bring your review-safe week to the Web.</h3>
+            <p>
+              Setup happens on the Mac, where your private source of truth lives.
+              You can turn the connection off again at any time.
+            </p>
+            <Link href="/download" className="button button-primary">
+              Get Weekform for Mac <span aria-hidden="true">→</span>
+            </Link>
+          </div>
+          <ol aria-label="Private Web workspace setup steps">
+            <li>
+              <span>1</span>
+              <div><strong>Open Weekform for Mac</strong><small>Your Mac must be signed in to the same account.</small></div>
+            </li>
+            <li>
+              <span>2</span>
+              <div><strong>Choose Account &amp; Sharing</strong><small>Your sharing controls stay in the desktop app.</small></div>
+            </li>
+            <li>
+              <span>3</span>
+              <div><strong>Turn on Private Web workspace</strong><small>Your review-safe week will appear here after sync.</small></div>
+            </li>
+          </ol>
+        </div>
+      ) : (
+        <div className="panel workspace-primary-panel hybrid-review-data">
+          <div className="hybrid-data-heading">
+            <div>
+              <span className="badge">Private to you</span>
+              <h3>Your review-safe week</h3>
             </div>
-            <div className="status-line">
-              <span>{current.weekId} · {current.payload.blocks.length} review-safe block{current.payload.blocks.length === 1 ? "" : "s"}</span>
-              <span>Received {formatDateTime(current.syncedAt)}</span>
-            </div>
-            <details className="disclosure">
-              <summary>Delete private Web history</summary>
-              <p>Turn the Private Web workspace off on your Mac first, or a later desktop sync can recreate the current week.</p>
-              <form action={deletePersonalReplicaHistory}>
-                <FormSubmitButton className="button button-danger" pendingLabel="Deleting Web history…">
-                  Delete replicas and pending requests
-                </FormSubmitButton>
-              </form>
-            </details>
-            {current.payload.blocks.length === 0 ? <p>No blocks are available for this week.</p> : (
+            <span>{current.weekId} · Received {formatDateTime(current.syncedAt)}</span>
+          </div>
+          <div className="metric-grid compact-metrics">
+            <div className="metric"><span>Reliable new-work capacity</span><strong>{Math.round(current.payload.capacity.reliableNewWorkCapacityPct)}%</strong></div>
+            <div className="metric"><span>Allocated</span><strong>{Math.round(current.payload.capacity.allocatedPct)}%</strong></div>
+            <div className="metric"><span>Reactive</span><strong>{Math.round(current.payload.capacity.reactivePct)}%</strong></div>
+            <div className="metric"><span>Context switching</span><strong>{Math.round(current.payload.capacity.contextSwitchScore)}/100</strong></div>
+          </div>
+          <div className="status-line">
+            <span>{current.payload.blocks.length} review-safe block{current.payload.blocks.length === 1 ? "" : "s"}</span>
+            <span>Ephemeral browser view · no workload cache</span>
+          </div>
+          <details className="disclosure">
+            <summary>Delete private Web history</summary>
+            <p>Turn the Private Web workspace off on your Mac first, or a later desktop sync can recreate the current week.</p>
+            <form action={deletePersonalReplicaHistory}>
+              <FormSubmitButton className="button button-danger" pendingLabel="Deleting Web history…">
+                Delete replicas and pending requests
+              </FormSubmitButton>
+            </form>
+          </details>
+          {current.payload.blocks.length === 0 ? <p>No blocks are available for this week.</p> : (
               <ul className="member-grid personal-review-grid" style={{ listStyle: "none", padding: 0 }}>
                 {current.payload.blocks.map((block) => (
                   <li className="member-card" key={block.blockId}>
@@ -415,10 +507,9 @@ function PersonalWorkspaceSection({ replicas, error }: { replicas: PersonalRepli
                   </li>
                 ))}
               </ul>
-            )}
-          </>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

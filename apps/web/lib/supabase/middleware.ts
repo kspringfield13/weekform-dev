@@ -4,7 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 import { isProtectedWebPath } from "../protectedPaths";
 import { getSupabaseEnv } from "./config";
 
-const AUTH_PAGES = ["/login", "/signup"];
+const AUTH_REDIRECT_PAGES = ["/signup"];
 
 /**
  * Session refresh + route protection, per the official Supabase SSR pattern.
@@ -49,7 +49,7 @@ export async function updateSession(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const isProtected = isProtectedWebPath(pathname);
-  const isAuthPage = AUTH_PAGES.some(
+  const isAuthRedirectPage = AUTH_REDIRECT_PAGES.some(
     (page) => pathname === page || pathname.startsWith(`${page}/`),
   );
 
@@ -65,7 +65,7 @@ export async function updateSession(request: NextRequest) {
     return redirect;
   }
 
-  if (user && isAuthPage) {
+  if (user && isAuthRedirectPage) {
     const url = request.nextUrl.clone();
     url.pathname = "/app";
     url.search = "";

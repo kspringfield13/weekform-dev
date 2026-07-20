@@ -158,13 +158,13 @@ always links or names it.
 `apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/Weekform_0.1.0_universal.dmg`.
 It contains Apple silicon and Intel slices plus the standard Applications
 shortcut. The app is ad-hoc signed, not Developer ID signed or Apple-notarized.
-The private Storage bucket and service-role credential are not configured on
-this machine, so `/download` shows the full release experience with an honest
-unavailable action instead of sending people into source-build instructions.
-`/download/artifact` mirrors this state with a `503` rather than pretending a
-published package exists.
+The verified DMG is copied into the Web release at a content-addressed static
+path. A signed-in visitor gets one active **Download now** action; the
+authenticated `/download/artifact` route redirects to that website-hosted DMG
+when private Storage is unconfigured. The downloaded file is a normal `.dmg`,
+not a ZIP or source archive.
 
-**To enable the real signed-URL path** once a packaged artifact exists:
+**To move the artifact to a private signed-URL path:**
 
 1. After Developer ID signing and Apple notarization, create a **private**
    Supabase Storage bucket (e.g. `weekform-releases`) and upload the DMG at
@@ -178,8 +178,8 @@ published package exists.
      role (secret); do **not** prefix it `NEXT_PUBLIC_`
    - optionally `WEEKFORM_ARTIFACT_SIGNED_URL_TTL_SECONDS` (default `300`,
      clamped to `30`-`3600`)
-4. Redeploy. `/download` will enable its single "Download now" action. The
-   action hits `/download/artifact`, which re-checks the session server-side
+4. Redeploy. The existing single "Download now" action hits
+   `/download/artifact`, which re-checks the session server-side
    and 307-redirects to a signed URL minted with
    `storage.from(bucket).createSignedUrl(path, ttl)`. The service-role key is
    read only inside that route handler and is never sent to the browser or
@@ -209,26 +209,25 @@ published package exists.
   `docs/hackathon/TEAM_CLAWFATHER_RLS_MATRIX.md` (all cells EXPECTED, not
   VERIFIED). Run the flow against a configured Supabase project before
   claiming it verified.
-- **The signed-URL artifact path has NOT been exercised end-to-end.** There
+- **The optional private signed-URL artifact path has NOT been exercised end-to-end.** There
   is no live Supabase project, private bucket, or uploaded artifact on this
   machine, so `/download/artifact`'s configured branch (session check ->
-  service-role client -> `createSignedUrl` -> redirect -> URL expiration ->
   bucket policy) is real code but has only been verified by
-  code inspection and the unconfigured (`503` fallback) branch, which was
-  manually exercised. Run it against a configured Supabase project with an
-  uploaded artifact before claiming the signed-download path verified.
+  code inspection. The bundled website artifact path is separately covered by
+  a byte-level checksum test and production route verification. Run the private
+  path against a configured Supabase project with an uploaded artifact before
+  claiming that optional path verified.
 
 ## Known limitations
 
 - Integration/RLS behavior is unexecuted (see "Testing status" above).
-- The signed-URL artifact path is unexecuted end-to-end (see "Testing
-  status" above); only the unconfigured-fallback branch has been manually
-  verified.
+- The optional private signed-URL artifact path is unexecuted end-to-end (see
+  "Testing status" above); production currently uses the bundled Web artifact.
 - Invites are member-role only; manager-role invites, invite revocation UI,
   and role changes are not built yet (revocation is permitted by RLS but has
   no button).
-- The universal macOS artifact exists locally but is not Developer ID signed,
-  notarized, uploaded, or attached to the production `/download` action.
+- The universal macOS artifact is attached to the website download action but
+  is not Developer ID signed or Apple-notarized.
 - Sessions are standard Supabase cookie sessions; this is a prototype, not
   audited production auth.
 

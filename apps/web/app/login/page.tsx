@@ -5,14 +5,16 @@ import {
   login,
   loginWithMagicLink,
   loginWithOAuth,
+  signOut,
 } from "@/app/auth/actions";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
+import { createClient } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safeNextPath";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
 
-export const metadata: Metadata = { title: "Sign in" };
+export const metadata: Metadata = { title: "Account" };
 
 interface LoginPageProps {
   searchParams: Promise<{ error?: string; notice?: string; next?: string }>;
@@ -22,14 +24,50 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
   const configured = isSupabaseConfigured();
   const next = safeNextPath(params.next);
+  const supabase = await createClient();
+  const user = supabase ? (await supabase.auth.getUser()).data.user : null;
+
+  if (user) {
+    return (
+      <>
+        <SiteHeader activePage="account" />
+        <main className="auth-wrap">
+          <div className="container-narrow">
+            <div className="auth-card">
+              <h1>Account</h1>
+              <p>Access your Individual and Manager workspaces, plus the Weekform app for macOS.</p>
+              <div className="account-session">
+                <span className="account-session-label">Signed in as</span>
+                <strong>{user.email ?? "Weekform account"}</strong>
+                <div className="account-session-actions">
+                  <Link href="/app" className="button button-primary">
+                    Open Web app
+                  </Link>
+                  <form action={signOut}>
+                    <FormSubmitButton
+                      className="button button-secondary"
+                      pendingLabel="Signing out…"
+                    >
+                      Sign out
+                    </FormSubmitButton>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+        <SiteFooter />
+      </>
+    );
+  }
 
   return (
     <>
-      <SiteHeader />
+      <SiteHeader activePage="account" />
       <main className="auth-wrap">
         <div className="container-narrow">
           <div className="auth-card">
-            <h1>Sign in</h1>
+            <h1>Account</h1>
             <p>Access your Individual and Manager workspaces, plus the Weekform app for macOS.</p>
 
             {!configured ? (

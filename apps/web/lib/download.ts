@@ -16,7 +16,6 @@ export const RELEASE_INFO = {
   artifactFilename: "Weekform_0.1.0_universal.dmg",
   architecture: "Apple silicon and Intel",
   releaseChannel: "Build Week preview",
-  verification: "Developer preview — notarization pending",
   releaseNotes: [
     {
       title: "A clearer weekly close",
@@ -44,6 +43,18 @@ export const RELEASE_INFO = {
   ],
 } as const;
 
+/**
+ * Release artifact shipped with the website and served by its static CDN.
+ * The content-addressed directory makes cache updates explicit while keeping
+ * the downloaded filename familiar to Mac users.
+ */
+export const BUNDLED_ARTIFACT = {
+  filename: RELEASE_INFO.artifactFilename,
+  href: `/downloads/9f93bedd11eb1813/${RELEASE_INFO.artifactFilename}`,
+  sizeLabel: "6.1 MB",
+  sha256: "9f93bedd11eb1813d7e07d9a405f8196de39f6765916ba2ce250d19cf194c5d6",
+} as const;
+
 export interface ArtifactConfig {
   /** Supabase Storage bucket holding the official packaged artifact. */
   bucket: string;
@@ -56,6 +67,21 @@ export interface ArtifactConfig {
   /** How long a signed URL stays valid, in seconds. */
   signedUrlTtlSeconds: number;
 }
+
+export type ReleasePresentation =
+  | {
+      kind: "available";
+      action: { label: "Download now"; href: "/download/artifact" };
+      filename: string;
+      note: string;
+    }
+  | {
+      kind: "pending";
+      title: "Mac release is being finalized";
+      body: string;
+      action: { label: "Open Weekform Web"; href: "/app" };
+      detail: string;
+    };
 
 const DEFAULT_SIGNED_URL_TTL_SECONDS = 300; // 5 minutes
 const MIN_SIGNED_URL_TTL_SECONDS = 30;
@@ -95,6 +121,46 @@ export function isArtifactConfigured(
   env: Record<string, string | undefined>,
 ): boolean {
   return parseArtifactConfig(env) !== null;
+}
+
+/**
+ * Turn infrastructure availability into user-facing release behavior.
+ *
+ * An unpublished artifact is never presented as a disabled download. The
+ * visitor gets a useful next action, while the active download state remains
+ * filename-specific and explains the short-lived private link.
+ */
+export function getReleasePresentation(
+  config: ArtifactConfig | null,
+  bundledArtifact: typeof BUNDLED_ARTIFACT | null = BUNDLED_ARTIFACT,
+): ReleasePresentation {
+  if (!config && !bundledArtifact) {
+    return {
+      kind: "pending",
+      title: "Mac release is being finalized",
+      body:
+        "The Mac installer is completing its final release checks. You can keep using Weekform Web with the same account in the meantime.",
+      action: { label: "Open Weekform Web", href: "/app" },
+      detail:
+        "The installer will appear here after Apple distribution verification and secure release hosting are complete.",
+    };
+  }
+
+  if (!config && bundledArtifact) {
+    return {
+      kind: "available",
+      action: { label: "Download now", href: "/download/artifact" },
+      filename: bundledArtifact.filename,
+      note: `${bundledArtifact.sizeLabel}. Open the DMG, move Weekform to Applications, and launch it.`,
+    };
+  }
+
+  return {
+    kind: "available",
+    action: { label: "Download now", href: "/download/artifact" },
+    filename: RELEASE_INFO.artifactFilename,
+    note: `Your private link lasts ${formatTtl(config!.signedUrlTtlSeconds)}. Open the DMG, move Weekform to Applications, and launch it.`,
+  };
 }
 
 /**
@@ -141,6 +207,8 @@ export async function planArtifactResponse(deps: {
   getUser: () => Promise<{ userId: string | null }>;
   /** Parsed private-bucket config, or null when unconfigured. */
   config: ArtifactConfig | null;
+  /** Website-hosted artifact URL used when private Storage is unconfigured. */
+  bundledArtifactUrl: string | null;
   /** Mint a signed URL; resolves null on storage failure. Service-key step. */
   createSignedUrl: (config: ArtifactConfig) => Promise<string | null>;
   /** The incoming request URL, base for the styled-page error redirect. */
@@ -172,6 +240,13 @@ export async function planArtifactResponse(deps: {
   }
 
   if (!deps.config) {
+    if (deps.bundledArtifactUrl) {
+      return {
+        kind: "redirect",
+        status: 307,
+        url: deps.bundledArtifactUrl,
+      };
+    }
     return {
       kind: "json",
       status: 503,

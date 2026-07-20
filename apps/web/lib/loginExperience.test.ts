@@ -6,10 +6,37 @@ const loginSource = readFileSync(
   new URL("../app/login/page.tsx", import.meta.url),
   "utf8",
 );
+const headerSource = readFileSync(
+  new URL("../components/SiteHeader.tsx", import.meta.url),
+  "utf8",
+);
+const middlewareSource = readFileSync(
+  new URL("./supabase/middleware.ts", import.meta.url),
+  "utf8",
+);
 const stylesSource = readFileSync(
   new URL("../app/globals.css", import.meta.url),
   "utf8",
 );
+
+test("Account remains an active header destination after sign-in", () => {
+  assert.match(loginSource, /<h1>Account<\/h1>/);
+  assert.match(
+    headerSource,
+    /<Link[\s\S]*?href="\/login"[\s\S]*?aria-current=\{activePage === "account" \? "page" : undefined\}[\s\S]*?>\s*Account\s*<\/Link>/,
+  );
+  assert.equal(
+    headerSource.match(/href="\/login"/g)?.length,
+    1,
+    "Account should be one persistent navigation item, not separate signed-in and signed-out links",
+  );
+  assert.match(loginSource, /<SiteHeader activePage="account" \/>/);
+  assert.match(loginSource, /if \(user\) \{[\s\S]*?Signed in as[\s\S]*?action=\{signOut\}/);
+  assert.doesNotMatch(
+    middlewareSource,
+    /AUTH_REDIRECT_PAGES\s*=\s*\[[^\]]*"\/login"/,
+  );
+});
 
 test("login prioritizes Google and GitHub before Magic Link and password", () => {
   const social = loginSource.indexOf('className="oauth-options"');

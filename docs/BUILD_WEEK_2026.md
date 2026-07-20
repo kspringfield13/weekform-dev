@@ -273,6 +273,25 @@ the alignment QA.
 
 The hackathon-readiness and provenance task is supplemental evidence:
 
+### Hybrid Weekform Web explanation
+
+- **Date:** July 19, 2026
+- **Outcome:** the Individual `/app` workspace now leads its private-review
+  section with a plain-language Mac-to-Web model: the Mac holds the sensitive
+  source of truth, the Web receives only review-safe derived fields, and every
+  requested change returns to the Mac for approval. The previous dense replica
+  paragraph and oversized empty state are replaced by a visual boundary map and
+  a three-step Mac setup path.
+- **Boundary:** the redesign does not widen the replica allowlist or change sync,
+  review-command, approval, persistence, or sharing behavior. Its labels mirror
+  `docs/PRIVACY.md`: raw activity, titles, evidence, notes, screenshots, and AI
+  credentials remain outside the Web workspace.
+- **Evidence:** the explanatory contract was written red-first and passes; Web
+  typecheck, the optimized Next.js build, and the authoritative root build pass.
+  Dark-theme browser checks at 1440px and 430px show the Mac → Web → Mac approval
+  sequence without horizontal overflow. The full Web suite has three unrelated
+  bundled-DMG failures in the concurrently changing download lane.
+
 ### Native-to-cloud personal Web workspace
 
 - **User-visible outcome:** Weekform for Mac can explicitly enable a private, review-safe Web replica. The authenticated Web dashboard shows derived capacity and reviewable blocks, sends confirm/exclude/relabel requests, and states that the Mac must approve every request. Private Supabase Broadcast invalidations refresh the server-rendered view; the 15-second request-fresh loop remains the fallback.

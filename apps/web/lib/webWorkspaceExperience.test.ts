@@ -47,3 +47,29 @@ test("the Web dashboard has a crafted workspace shell and guided-tour treatment"
     assert.match(stylesSource, new RegExp(`\\.${className}`));
   }
 });
+
+test("the private workspace explains the hybrid Mac and Web approval model", () => {
+  for (const phrase of [
+    "Your Mac holds the full picture",
+    "The Web gets only what you need to review",
+    "Every change returns to your Mac",
+    "Raw activity never comes here",
+  ]) {
+    assert.match(dashboardSource, new RegExp(phrase));
+  }
+
+  for (const className of [
+    "hybrid-workspace",
+    "hybrid-model",
+    "hybrid-surface",
+    "hybrid-return-rail",
+    "hybrid-setup",
+  ]) {
+    assert.match(stylesSource, new RegExp(`\\.${className}`));
+  }
+
+  assert.match(dashboardSource, /aria-label="How the hybrid Weekform model works"/);
+  assert.match(dashboardSource, /Open Weekform for Mac/);
+  assert.match(dashboardSource, /Turn on Private Web workspace/);
+  assert.doesNotMatch(dashboardSource, /Open the Mac setup/);
+});

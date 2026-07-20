@@ -202,6 +202,12 @@ a {
   display: none;
 }
 
+.nav-account[aria-current="page"] {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: var(--background-subtle);
+}
+
 .site-footer {
   border-top: 1px solid var(--border);
   padding: 54px 0 30px;
@@ -2013,6 +2019,35 @@ button.text-link {
   margin: 0 0 22px;
 }
 
+.account-session {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 18px;
+  background: var(--background-subtle);
+}
+
+.account-session-label {
+  color: var(--text-subtle);
+  font-size: 11px;
+  font-weight: 620;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.account-session strong {
+  overflow-wrap: anywhere;
+  font-size: 15px;
+}
+
+.account-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
 .oauth-options {
   display: grid;
   gap: 10px;
@@ -2415,6 +2450,399 @@ button.text-link {
   letter-spacing: -0.02em;
 }
 
+/* The hybrid workspace is a product boundary, not a generic dashboard card. */
+.hybrid-workspace {
+  padding-top: clamp(64px, 8vw, 92px);
+}
+
+.hybrid-heading {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.25fr) minmax(0, 1fr);
+  gap: clamp(28px, 6vw, 76px);
+  align-items: start;
+}
+
+.hybrid-kicker,
+.hybrid-setup-copy > span {
+  color: var(--decision);
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 670;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.hybrid-heading h2 {
+  max-width: 790px;
+  margin: 0;
+  font-size: clamp(35px, 5.2vw, 61px);
+  font-weight: 620;
+  letter-spacing: -0.06em;
+  line-height: 0.98;
+}
+
+.hybrid-heading h2 span {
+  display: block;
+  color: var(--text-subtle);
+}
+
+.hybrid-heading p {
+  max-width: 660px;
+  margin: 22px 0 0;
+  color: var(--text-muted);
+  font-size: clamp(15px, 1.8vw, 18px);
+  line-height: 1.55;
+}
+
+.hybrid-model {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 128px minmax(0, 1fr);
+  gap: 10px;
+  overflow: hidden;
+  margin-top: clamp(30px, 5vw, 52px);
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 24px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px color-mix(in srgb, var(--text) 9%, transparent);
+}
+
+.hybrid-surface {
+  display: flex;
+  flex-direction: column;
+  min-height: 350px;
+  padding: clamp(25px, 3.5vw, 38px);
+  border-radius: 16px;
+}
+
+.hybrid-surface-mac {
+  color: #f4f3ed;
+  background:
+    radial-gradient(circle at 94% 5%, rgba(255, 255, 255, 0.1), transparent 30%),
+    #1b1e1b;
+}
+
+.hybrid-surface-web {
+  border: 1px solid color-mix(in srgb, var(--decision) 20%, var(--border));
+  background:
+    radial-gradient(circle at 92% 2%, color-mix(in srgb, var(--decision) 16%, transparent), transparent 34%),
+    color-mix(in srgb, var(--decision-soft) 58%, var(--surface));
+}
+
+.hybrid-surface-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 620;
+  letter-spacing: 0.08em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.hybrid-surface-mac .hybrid-surface-meta {
+  color: rgba(244, 243, 237, 0.58);
+}
+
+.hybrid-surface-web .hybrid-surface-meta {
+  color: var(--decision-ink);
+}
+
+.hybrid-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.hybrid-state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #70d78d;
+  box-shadow: 0 0 0 4px rgba(112, 215, 141, 0.1);
+}
+
+.hybrid-surface h3 {
+  max-width: 430px;
+  margin: auto 0 12px;
+  font-size: clamp(25px, 3.3vw, 38px);
+  font-weight: 620;
+  letter-spacing: -0.048em;
+  line-height: 1.03;
+}
+
+.hybrid-surface > p {
+  max-width: 440px;
+  margin: 0 0 24px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.hybrid-surface-mac > p {
+  color: rgba(244, 243, 237, 0.67);
+}
+
+.hybrid-surface-web > p {
+  color: var(--text-muted);
+}
+
+.hybrid-local-fields,
+.hybrid-web-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border-radius: 9px;
+}
+
+.hybrid-local-fields {
+  border: 1px solid rgba(244, 243, 237, 0.12);
+  background: rgba(244, 243, 237, 0.12);
+}
+
+.hybrid-local-fields span,
+.hybrid-web-fields span {
+  padding: 9px 10px;
+  font-size: 10px;
+  font-weight: 580;
+}
+
+.hybrid-local-fields span {
+  color: rgba(244, 243, 237, 0.74);
+  background: #1b1e1b;
+}
+
+.hybrid-web-fields {
+  border: 1px solid color-mix(in srgb, var(--decision) 18%, var(--border));
+  background: color-mix(in srgb, var(--decision) 15%, var(--border));
+}
+
+.hybrid-web-fields span {
+  color: var(--decision-ink);
+  background: color-mix(in srgb, var(--decision-soft) 72%, var(--surface));
+}
+
+.hybrid-never {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 13px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.hybrid-never::before {
+  content: "";
+  width: 13px;
+  height: 1px;
+  background: var(--decision);
+}
+
+.hybrid-transfer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--text-subtle);
+  text-align: center;
+}
+
+.hybrid-transfer > span,
+.hybrid-transfer > small {
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 8px;
+  font-weight: 620;
+  letter-spacing: 0.07em;
+  line-height: 1.3;
+  text-transform: uppercase;
+}
+
+.hybrid-transfer > div {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  width: 100%;
+  gap: 7px;
+}
+
+.hybrid-transfer i {
+  height: 1px;
+  background: var(--border-strong);
+}
+
+.hybrid-transfer b {
+  color: var(--decision);
+  font-size: 18px;
+  font-weight: 430;
+}
+
+.hybrid-return-rail {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: center;
+  min-height: 116px;
+  padding: 22px 26px;
+  border-radius: 16px;
+  color: var(--decision-ink);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--decision) 16%, var(--surface)), var(--decision-soft));
+}
+
+.hybrid-return-arrow {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--decision) 28%, var(--border));
+  border-radius: 999px;
+  font-size: 22px;
+}
+
+.hybrid-return-rail > div {
+  display: grid;
+  grid-template-columns: auto minmax(180px, auto) minmax(280px, 1fr);
+  gap: 10px 22px;
+  align-items: center;
+}
+
+.hybrid-return-rail > div > span {
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hybrid-return-rail > div > strong {
+  font-size: 16px;
+  letter-spacing: -0.02em;
+}
+
+.hybrid-return-rail p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.hybrid-approval-chip {
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--decision) 28%, var(--border));
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.hybrid-setup {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(420px, 1.2fr);
+  gap: clamp(34px, 6vw, 84px);
+  align-items: center;
+  margin-top: 16px;
+  padding: clamp(28px, 5vw, 52px);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--background-subtle);
+}
+
+.hybrid-setup-copy h3 {
+  max-width: 420px;
+  margin: 12px 0 10px;
+  font-size: clamp(24px, 3vw, 34px);
+  font-weight: 630;
+  letter-spacing: -0.045em;
+  line-height: 1.06;
+}
+
+.hybrid-setup-copy p {
+  max-width: 430px;
+  margin: 0 0 22px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.hybrid-setup ol {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: hybrid-setup;
+}
+
+.hybrid-setup li {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 14px;
+  min-height: 76px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.hybrid-setup li:last-child {
+  border-bottom: 0;
+}
+
+.hybrid-setup li > span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-subtle);
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 10px;
+}
+
+.hybrid-setup li div {
+  display: grid;
+  gap: 3px;
+}
+
+.hybrid-setup li strong {
+  font-size: 13px;
+}
+
+.hybrid-setup li small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.hybrid-load-error,
+.hybrid-review-data {
+  margin-top: 16px;
+}
+
+.hybrid-data-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.hybrid-data-heading h3 {
+  margin: 10px 0 0;
+  font-size: 24px;
+  letter-spacing: -0.035em;
+}
+
+.hybrid-data-heading > span {
+  color: var(--text-subtle);
+  font-size: 11px;
+}
+
 .manager-entry {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2724,12 +3152,6 @@ button.text-link {
   stroke-width: 1.7;
 }
 
-.download-primary-action.is-disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
 .download-file-label {
   color: var(--text-subtle);
   font-family: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -2744,23 +3166,107 @@ button.text-link {
   line-height: 1.55;
 }
 
-.download-verification-note {
+.download-pending-wrap {
+  max-width: 600px;
+  margin-top: 30px;
+}
+
+.download-pending-state {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: start;
+  gap: 4px 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-muted) 62%, transparent);
+}
+
+.download-pending-mark {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  max-width: 62ch;
-  margin: 18px 0 0;
-  padding-top: 17px;
-  border-top: 1px solid var(--border);
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  width: 38px;
+  height: 38px;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--signal-blue) 24%, var(--border));
+  border-radius: 11px;
+  color: var(--signal-blue);
+  background: color-mix(in srgb, var(--signal-blue) 9%, var(--surface));
+}
+
+.download-pending-mark i {
+  display: block;
+  width: 3px;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+.download-pending-mark i:nth-child(1) {
+  height: 8px;
+  opacity: 0.5;
+}
+
+.download-pending-mark i:nth-child(2) {
+  height: 14px;
+  opacity: 0.72;
+}
+
+.download-pending-mark i:nth-child(3) {
+  height: 19px;
+}
+
+.download-pending-copy .download-section-label {
+  margin-bottom: 6px;
+}
+
+.download-pending-copy h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 670;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+
+.download-pending-copy > p:last-child {
+  margin: 7px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.download-web-action {
+  grid-column: 2;
+  justify-self: start;
+  min-height: 42px;
+  margin-top: 10px;
+  padding: 9px 15px;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.download-release-disclosure {
+  margin: 10px 0 0 52px;
   color: var(--text-subtle);
   font-size: 11px;
   line-height: 1.5;
 }
 
-.download-verification-note span {
-  color: var(--warning);
-  font-size: 8px;
-  line-height: 1.8;
+.download-release-disclosure summary {
+  width: max-content;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: 590;
+}
+
+.download-release-disclosure summary:hover {
+  color: var(--text);
+}
+
+.download-release-disclosure p {
+  max-width: 56ch;
+  margin: 7px 0 0;
 }
 
 .download-product-preview {
@@ -3217,6 +3723,23 @@ button.text-link {
   }
   .download-file-label {
     text-align: center;
+  }
+  .download-pending-state {
+    grid-template-columns: 34px minmax(0, 1fr);
+    padding: 16px;
+  }
+  .download-pending-mark {
+    width: 34px;
+    height: 34px;
+    padding: 8px;
+  }
+  .download-web-action {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    margin-top: 12px;
+  }
+  .download-release-disclosure {
+    margin-left: 0;
   }
   .download-product-preview {
     border-radius: 14px;
@@ -3746,6 +4269,39 @@ button.text-link {
 }
 
 @media (max-width: 900px) {
+  .hybrid-heading {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .hybrid-model {
+    grid-template-columns: 1fr;
+  }
+  .hybrid-transfer {
+    min-height: 86px;
+  }
+  .hybrid-transfer > div {
+    width: min(180px, 70%);
+    transform: rotate(90deg);
+  }
+  .hybrid-return-rail {
+    grid-column: 1;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .hybrid-return-rail > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .hybrid-return-arrow {
+    transform: rotate(90deg);
+  }
+  .hybrid-approval-chip {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .hybrid-setup {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
   .workspace-decision-path {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -3837,6 +4393,40 @@ button.text-link {
 }
 
 @media (max-width: 600px) {
+  .hybrid-workspace {
+    padding-top: 54px;
+  }
+  .hybrid-heading h2 {
+    font-size: clamp(34px, 11vw, 48px);
+  }
+  .hybrid-model {
+    margin-inline: -8px;
+    border-radius: 20px;
+    padding: 7px;
+  }
+  .hybrid-surface {
+    min-height: 330px;
+    padding: 25px 22px;
+  }
+  .hybrid-surface-meta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .hybrid-return-rail {
+    gap: 14px;
+    padding: 22px 18px;
+  }
+  .hybrid-return-arrow {
+    width: 40px;
+    height: 40px;
+  }
+  .hybrid-setup {
+    padding: 27px 22px;
+  }
+  .hybrid-data-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
   .workspace-hero {
     padding-top: 46px;
   }
