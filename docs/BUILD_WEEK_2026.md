@@ -290,10 +290,16 @@ the alignment QA.
   page now offers the public source ZIP and guided local-build installer while
   the trusted DMG gate remains pending. The installer removes only its exact
   redundant `target/release/bundle/macos/Weekform.app` after the Applications
-  copy succeeds, and the desktop root now renders a local-data-safe recovery
-  screen instead of an empty white webview if React rendering fails. Focused
-  red-first regressions, the root build, desktop/web suites, optimized Web build,
-  shell syntax check, and both dependency audits passed before deployment.
+  copy succeeds. Web Inspector traced the packaged white window to Tauri's
+  `freezePrototype` hardening: freezing `Object.prototype.toString` caused Zod's
+  namespace initialization to throw before React could mount. The incompatible
+  freeze is now disabled while the production CSP remains enforced, and the
+  desktop root also renders a local-data-safe recovery screen for later React
+  failures. A source install rendered the full Capacity surface and two
+  menu-bar reopen passes each moved the native window count from zero to one.
+  Focused red-first regressions, the root build, desktop/web suites, optimized
+  Web build, shell syntax check, and both dependency audits passed before
+  deployment.
 
 ### Layered Supabase sign-in
 

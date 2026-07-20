@@ -52,7 +52,9 @@ test("packaged and development webviews have explicit script-safe CSP baselines"
   assert.match(csp, /connect-src 'self' ipc: http:\/\/ipc\.localhost https: wss:/);
   assert.match(devCsp, /http:\/\/127\.0\.0\.1:5173/);
   assert.match(devCsp, /ws:\/\/127\.0\.0\.1:5173/);
-  assert.equal(tauriConfig.app?.security?.freezePrototype, true);
+  // WebKit fails before React mounts when this freezes Object.prototype.toString:
+  // Zod's namespace initializer defines its own toString during module startup.
+  assert.equal(tauriConfig.app?.security?.freezePrototype, false);
 });
 
 test("frontend plugin capabilities expose only the operations Weekform uses", () => {
