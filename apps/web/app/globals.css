@@ -5504,9 +5504,16 @@ button.text-link {
 .personal-forecast-trajectory-dot.is-meeting,
 .personal-forecast-trajectory-legend .is-meeting { color: var(--decision); }
 .personal-forecast-axis-label { fill: var(--text-subtle); font-family: "Geist Mono Variable", monospace; font-size: 10px; }
-.personal-forecast-trajectory-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; }
-.personal-forecast-trajectory-legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--text-subtle); font-size: 10px; }
+.personal-forecast-trajectory-legend { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.personal-forecast-trajectory-legend > span { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 6px; border: 1px solid transparent; border-radius: 8px; padding: 7px 8px; color: var(--text-subtle); font-size: 10px; transition: border-color 120ms ease, opacity 120ms ease; }
+.personal-forecast-trajectory-legend > span:focus-visible { border-color: var(--focus); outline: 2px solid color-mix(in srgb, var(--focus) 28%, transparent); outline-offset: 1px; }
 .personal-forecast-trajectory-legend i { width: 9px; height: 2px; background: currentColor; }
+.personal-forecast-trajectory-legend strong { color: var(--text); font-family: "Geist Mono Variable", monospace; font-size: 11px; }
+.personal-forecast-trajectory-legend small { display: inline-flex; grid-column: 2 / -1; align-items: center; gap: 2px; color: var(--text-subtle); font-family: "Geist Mono Variable", monospace; font-size: 9px; }
+.personal-forecast-trajectory-legend > span[data-tone="good"] small { color: var(--success); }
+.personal-forecast-trajectory-legend > span[data-tone="bad"] small { color: var(--warning); }
+.personal-forecast-trajectory-line,
+.personal-forecast-trajectory-dot { transition: opacity 120ms ease; }
 .personal-forecast-track-record { display: grid; gap: 10px; border-top: 1px solid var(--border); padding-top: 12px; }
 .personal-forecast-track-record > div { display: grid; gap: 3px; }
 .personal-forecast-track-record > div strong { font-size: 13px; }
@@ -5629,6 +5636,7 @@ button.text-link {
   .personal-forecast-scenarios { grid-template-columns: 1fr; }
   .personal-forecast-trajectory > header { align-items: stretch; flex-direction: column; }
   .personal-forecast-delta { align-self: flex-start; }
+  .personal-forecast-trajectory-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .personal-forecast-track-record li { grid-template-columns: 1fr auto; }
   .personal-forecast-track-record li small { grid-column: 1 / -1; }
   .personal-agent-page-header { align-items: center; }

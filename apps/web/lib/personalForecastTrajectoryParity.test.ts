@@ -99,10 +99,15 @@ test("duplicate-week forecast and trajectory use the freshest replica independen
 });
 
 test("Web Forecast renders an accessible observed-baseline track record with an explicit accuracy boundary", () => {
-  const source = readFileSync(
+  const screenSource = readFileSync(
     new URL("../components/PersonalForecastScreen.tsx", import.meta.url),
     "utf8",
   );
+  const trajectorySource = readFileSync(
+    new URL("../components/PersonalForecastTrajectory.tsx", import.meta.url),
+    "utf8",
+  );
+  const source = `${screenSource}\n${trajectorySource}`;
 
   assert.match(source, /Weekly capacity trajectory/);
   assert.match(source, /Synced baseline track record/);

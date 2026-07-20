@@ -3,6 +3,32 @@
   overflow-y: auto;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.clearButton {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: var(--surface-elevated);
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 570;
+}
+
+.clearButton:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
 .emptyState {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
@@ -86,6 +112,25 @@
   text-transform: uppercase;
 }
 
+.messageMeta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.messageMeta button {
+  border: 0;
+  color: var(--text-subtle);
+  background: transparent;
+  padding: 7px 0 0;
+  font: inherit;
+  font-size: 10px;
+}
+
+.messageMeta button:hover {
+  color: var(--text);
+}
+
 .evidence {
   margin-top: 11px;
   border-top: 1px solid var(--border);
@@ -121,6 +166,66 @@
   font-weight: 600;
 }
 
+.macActionCard {
+  display: grid;
+  gap: 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--surface-elevated) 88%, transparent);
+  padding: 13px 14px;
+}
+
+.macActionCard > strong {
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.macActionCard > p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.actionEyebrow {
+  color: var(--text-subtle);
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.macActionCard .actionBoundary {
+  border-top: 1px solid var(--border);
+  margin-top: 3px;
+  padding-top: 8px;
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+
+.followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+.followups button {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--surface-elevated);
+  padding: 6px 9px;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.followups button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
 .thinking {
   display: flex;
   align-items: center;
@@ -132,6 +237,10 @@
 }
 
 .error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   border: 1px solid color-mix(in srgb, var(--danger) 44%, var(--border));
   border-radius: 9px;
   background: color-mix(in srgb, var(--danger) 8%, var(--surface));
@@ -140,6 +249,28 @@
   font-size: 11px;
 }
 
+.error button {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, var(--border));
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--surface-elevated);
+  padding: 5px 9px;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.clearButton:focus-visible,
+.messageMeta button:focus-visible,
+.followups button:focus-visible,
+.error button:focus-visible,
+.macLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 @media (max-width: 680px) {
+  .headerActions { align-items: flex-end; }
   .userMessage { max-width: 88%; }
 }

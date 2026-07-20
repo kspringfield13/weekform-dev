@@ -69,6 +69,11 @@ const STARTER_ACTIONS = [
   },
 ] as const;
 
+const FOLLOW_UP_QUESTIONS = [
+  "Explain the evidence behind that answer.",
+  "What is the safest commitment I can make next?",
+] as const;
+
 interface AgentReply {
   answer: string;
   evidence: string[];
@@ -108,11 +113,14 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
   const [turns, setTurns] = useState<ConversationTurn[]>([]);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failedQuestion, setFailedQuestion] = useState<string | null>(null);
+  const [copiedTurnIndex, setCopiedTurnIndex] = useState<number | null>(null);
 
   async function ask(nextQuestion: string) {
     const cleanQuestion = nextQuestion.trim();
     if (!hasSignal || isSending || !cleanQuestion || cleanQuestion.length > 600) return;
     setError(null);
+    setFailedQuestion(null);
     setIsSending(true);
     try {
       const response = await fetch("/api/personal-agent", {
@@ -126,16 +134,19 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
           ? (payload as { error: string }).error
           : "Weekform Agent could not answer right now. Try again.";
         setError(message);
+        setFailedQuestion(cleanQuestion);
         return;
       }
       if (!isAgentReply(payload)) {
         setError("Weekform Agent returned an invalid response. Nothing was applied.");
+        setFailedQuestion(cleanQuestion);
         return;
       }
       setTurns((current) => [...current, { ...payload, question: cleanQuestion }].slice(-24));
       setQuestion("");
     } catch {
       setError("Weekform Agent could not reach the server. Check your connection and try again.");
+      setFailedQuestion(cleanQuestion);
     } finally {
       setIsSending(false);
     }
@@ -144,6 +155,25 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void ask(question);
+  }
+
+  function clearConversation() {
+    setTurns([]);
+    setQuestion("");
+    setError(null);
+    setFailedQuestion(null);
+    setCopiedTurnIndex(null);
+  }
+
+  async function copyResponse(turn: ConversationTurn, index: number) {
+    try {
+      await navigator.clipboard.writeText(turn.answer);
+      setCopiedTurnIndex(index);
+      window.setTimeout(() => setCopiedTurnIndex((current) => current === index ? null : current), 1_500);
+    } catch {
+      setError("Weekform Agent could not copy this response. Select the text and copy it manually.");
+      setFailedQuestion(null);
+    }
   }
 
   return (
@@ -157,10 +187,17 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
           </div>
           <p>Understand your capacity and decide what to work on next.</p>
         </div>
-        <span className={`personal-agent-freshness${hasSignal ? "" : " is-waiting"}`}>
-          <span aria-hidden="true" />
-          {currentStatus}
-        </span>
+        <div className={styles.headerActions}>
+          <span className={`personal-agent-freshness${hasSignal ? "" : " is-waiting"}`}>
+            <span aria-hidden="true" />
+            {currentStatus}
+          </span>
+          {turns.length ? (
+            <button className={styles.clearButton} type="button" aria-label="Clear temporary chat" onClick={clearConversation}>
+              <span aria-hidden="true">⌫</span> Clear
+            </button>
+          ) : null}
+        </div>
       </header>
 
       <div className="personal-agent-workspace-body">
@@ -180,7 +217,7 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
           <span className="personal-agent-briefing-boundary">Private supporting evidence stays local</span>
         </section>
 
-        <section className="personal-agent-starters" aria-label="Suggested agent actions">
+        {turns.length === 0 && !isSending ? <section className="personal-agent-starters" aria-label="Suggested agent actions">
           <div className="personal-agent-starter-heading">
             <span>Common questions</span>
             <p>Grounded only in the review-safe summary published by your Mac. Raw supporting evidence stays local.</p>
@@ -201,7 +238,7 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
               </button>
             ))}
           </div>
-        </section>
+        </section> : null}
 
         <div className={`personal-agent-chat-shell${turns.length ? ` ${styles.hasConversation}` : ""}`} aria-live="polite">
           {!hasSignal ? <div className="personal-agent-boundary" role="status">
@@ -235,16 +272,41 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
                 <article className={styles.agentMessage} aria-label="Weekform Agent answer">
                   <span className={styles.avatar}><AgentSignalMark size={15} /></span>
                   <div>
-                    <p className={styles.answer}>{turn.answer}</p>
-                    <span className={styles.responseMode}>{responseLabel(turn)}</span>
-                    {turn.evidence.length ? (
-                      <details className={styles.evidence}>
-                        <summary>{turn.evidence.length} review-safe evidence reference{turn.evidence.length === 1 ? "" : "s"}</summary>
-                        <ul>{turn.evidence.map((item) => <li key={item}>{item}</li>)}</ul>
-                      </details>
-                    ) : null}
-                    {turn.limitations.map((limitation) => <p className={styles.limitation} key={limitation}>{limitation}</p>)}
-                    {turn.mode === "mac_handoff" ? <Link className={styles.macLink} href="/download">Get Weekform for Mac</Link> : null}
+                    {turn.mode === "mac_handoff" ? <div className={styles.macActionCard} role="group" aria-label="Mac approval required">
+                        <span className={styles.actionEyebrow}>{responseLabel(turn)}</span>
+                        <strong>Continue this action in Weekform for Mac</strong>
+                        <p>{turn.answer}</p>
+                        <p className={styles.actionBoundary}>Web Ask cannot approve or run changes. Review the action and its evidence on your Mac.</p>
+                        <Link className={styles.macLink} href="/download">Get Weekform for Mac <span aria-hidden="true">→</span></Link>
+                      </div> : (
+                      <>
+                        <p className={styles.answer}>{turn.answer}</p>
+                        <div className={styles.messageMeta}>
+                          <span className={styles.responseMode}>{responseLabel(turn)}</span>
+                          <button
+                            type="button"
+                            onClick={() => void copyResponse(turn, index)}
+                            aria-label={copiedTurnIndex === index ? "Copied" : "Copy response"}
+                          >
+                            {copiedTurnIndex === index ? "Copied" : "Copy"}
+                          </button>
+                        </div>
+                        {turn.evidence.length ? (
+                          <details className={styles.evidence}>
+                            <summary>{turn.evidence.length} review-safe evidence reference{turn.evidence.length === 1 ? "" : "s"}</summary>
+                            <ul>{turn.evidence.map((item) => <li key={item}>{item}</li>)}</ul>
+                          </details>
+                        ) : null}
+                        {turn.limitations.map((limitation) => <p className={styles.limitation} key={limitation}>{limitation}</p>)}
+                        {index === turns.length - 1 && !isSending ? (
+                          <div className={styles.followups} role="group" aria-label="Suggested follow-up questions">
+                            {FOLLOW_UP_QUESTIONS.map((followUp) => (
+                              <button type="button" key={followUp} onClick={() => void ask(followUp)}>{followUp} <span aria-hidden="true">→</span></button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 </article>
               </div>
@@ -253,7 +315,10 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
           {isSending ? <div className={styles.thinking} role="status"><AgentSignalMark size={15} /> Reviewing published signals…</div> : null}
         </div>
 
-        {error ? <div className={styles.error} role="alert">{error}</div> : null}
+        {error ? <div className={styles.error} role="alert">
+          <span>{error}</span>
+          {failedQuestion ? <button type="button" disabled={isSending} onClick={() => void ask(failedQuestion)}>Retry</button> : null}
+        </div> : null}
         <form className="personal-agent-composer" onSubmit={submit}>
           <textarea
             rows={1}
