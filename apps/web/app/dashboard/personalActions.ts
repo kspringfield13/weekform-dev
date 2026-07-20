@@ -11,6 +11,10 @@ function text(formData: FormData, key: string): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function workspaceNotice(screen: "daily" | "setup", message: string): string {
+  return `/app?screen=${screen}&notice=${encodeURIComponent(message)}`;
+}
+
 export async function queuePersonalReviewCommand(formData: FormData): Promise<void> {
   const action = text(formData, "action");
   const patch = action === "relabel"
@@ -23,9 +27,9 @@ export async function queuePersonalReviewCommand(formData: FormData): Promise<vo
     action,
     patch,
   });
-  if (!input) redirect("/app?notice=That review request was invalid.");
+  if (!input) redirect(workspaceNotice("daily", "That review request was invalid."));
   const supabase = await createClient();
-  if (!supabase) redirect("/app?notice=Weekform Cloud is not configured.");
+  if (!supabase) redirect(workspaceNotice("daily", "Weekform Cloud is not configured."));
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/app");
   const { error } = await supabase.rpc("queue_review_command", {
@@ -35,18 +39,18 @@ export async function queuePersonalReviewCommand(formData: FormData): Promise<vo
     p_action: input.action,
     p_patch: input.patch,
   });
-  if (error) redirect(`/app?notice=${encodeURIComponent(error.message.includes("conflict") ? "That block changed on your Mac. Wait for the latest replica and try again." : "The review request could not be queued.")}`);
+  if (error) redirect(workspaceNotice("daily", error.message.includes("conflict") ? "That block changed on your Mac. Wait for the latest replica and try again." : "The review request could not be queued."));
   revalidatePath("/app");
-  redirect("/app?notice=Review request sent to your Mac. It will not change local truth until you approve it there.");
+  redirect(workspaceNotice("daily", "Review request sent to your Mac. It will not change local truth until you approve it there."));
 }
 
 export async function deletePersonalReplicaHistory(): Promise<void> {
   const supabase = await createClient();
-  if (!supabase) redirect("/app?notice=Weekform Cloud is not configured.");
+  if (!supabase) redirect(workspaceNotice("setup", "Weekform Cloud is not configured."));
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login?next=/app");
   const { error } = await supabase.rpc("delete_personal_replica_history");
-  if (error) redirect("/app?notice=Your private Web history could not be deleted.");
+  if (error) redirect(workspaceNotice("setup", "Your private Web history could not be deleted."));
   revalidatePath("/app");
-  redirect("/app?notice=Your private Web replicas and pending review requests were deleted. Turn the Web workspace off on your Mac first if you do not want it recreated.");
+  redirect(workspaceNotice("setup", "Your private Web replicas and pending review requests were deleted. Turn the Web workspace off on your Mac first if you do not want it recreated."));
 }

@@ -24,6 +24,14 @@ const modeToggleUrl = new URL(
   "../components/WorkspaceModeToggle.tsx",
   import.meta.url,
 );
+const individualShellSource = readFileSync(
+  new URL("../components/IndividualWorkspaceShell.tsx", import.meta.url),
+  "utf8",
+);
+const personalActionsSource = readFileSync(
+  new URL("../app/dashboard/personalActions.ts", import.meta.url),
+  "utf8",
+);
 
 test("/app renders the authenticated Weekform workspace instead of redirecting to the legacy dashboard URL", () => {
   assert.doesNotMatch(appEntrySource, /redirect\(["']\/dashboard/);
@@ -53,4 +61,56 @@ test("primary Web app return paths target /app rather than /dashboard", () => {
     const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
     assert.doesNotMatch(source, /["'`]\/dashboard(?:[?"'`])/);
   }
+});
+
+test("/app restores a validated Desktop-equivalent screen from the URL", () => {
+  assert.match(
+    dashboardSource,
+    /searchParams:\s*Promise<\{[^}]*screen\?:\s*string/s,
+    "the authenticated route must accept the same screen query contract as Desktop",
+  );
+  assert.match(
+    dashboardSource,
+    /<IndividualWorkspaceShell[\s\S]*initialScreen=\{params\.screen\}/,
+    "the server route must pass the requested screen into the client shell",
+  );
+  assert.match(individualShellSource, /initialScreen:\s*string\s*\|\s*undefined/);
+  assert.match(
+    individualShellSource,
+    /resolveIndividualWorkspaceRoute\(initialScreen\)/,
+    "the shell must validate URL state through the shared route contract",
+  );
+});
+
+test("Individual workspace navigation remains addressable through browser history", () => {
+  assert.match(
+    individualShellSource,
+    /history\.pushState\(/,
+    "primary and context navigation must write a canonical screen URL",
+  );
+  assert.match(
+    individualShellSource,
+    /addEventListener\(["']popstate["']/,
+    "Back and Forward must restore the matching Individual surface",
+  );
+  assert.match(
+    individualShellSource,
+    /screenForIndividualWorkspaceRoute\(/,
+    "URL writes must use the same canonical mapping as URL reads",
+  );
+  assert.doesNotMatch(
+    individualShellSource,
+    /onClick=\{\(\) => setActiveSubview\(view\.id\)\}/,
+    "mouse and keyboard context navigation must share the addressable route path",
+  );
+});
+
+test("approval-gated Web actions return feedback to the surface that initiated them", () => {
+  assert.match(personalActionsSource, /workspaceNotice\(["']daily["']/);
+  assert.match(personalActionsSource, /workspaceNotice\(["']setup["']/);
+  assert.match(
+    dashboardSource,
+    /<div className=["']container workspace-shell["']>[\s\S]*?params\.notice[\s\S]*?<div data-web-view=["']today["']>/,
+    "action feedback must be visible before the conditional surface trees, not only inside Week Capacity",
+  );
 });

@@ -30,6 +30,8 @@ use tauri::{
     WebviewWindowBuilder, WindowEvent, Wry,
 };
 
+mod calendar_sources;
+
 const MAIN_WINDOW_LABEL: &str = "main";
 const COMPACT_WINDOW_WIDTH: u32 = 620;
 const COMPACT_WINDOW_HEIGHT: u32 = 850;
@@ -2406,6 +2408,10 @@ pub fn run() {
             connect_openai_via_codex,
             connect_openai_via_chatgpt,
             start_cloud_oauth,
+            calendar_sources::calendar_source_statuses,
+            calendar_sources::connect_calendar_source,
+            calendar_sources::sync_calendar_source,
+            calendar_sources::disconnect_calendar_source,
             present_main_window,
             chat_with_agent,
             ai_complete,

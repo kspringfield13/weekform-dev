@@ -33,6 +33,10 @@ import { PersonalForecastScreen } from "@/components/PersonalForecastScreen";
 import { PersonalAgentWorkspace } from "@/components/PersonalAgentWorkspace";
 import { PersonalTodayScreen } from "@/components/PersonalTodayScreen";
 import { PersonalWeeklyReviewScreen } from "@/components/PersonalWeeklyReviewScreen";
+import { PersonalAIUsageScreen } from "@/components/PersonalAIUsageScreen";
+import { PersonalSummaryScreen } from "@/components/PersonalSummaryScreen";
+import { PersonalAccelerationScreen } from "@/components/PersonalAccelerationScreen";
+import { PersonalSkillsLibraryScreen } from "@/components/PersonalSkillsLibraryScreen";
 import {
   IndividualHistoryView,
   IndividualSettingsView,
@@ -43,7 +47,7 @@ export const metadata: Metadata = { title: "Weekform Web" };
 export const dynamic = "force-dynamic";
 
 interface DashboardPageProps {
-  searchParams: Promise<{ team_error?: string; notice?: string }>;
+  searchParams: Promise<{ team_error?: string; notice?: string; screen?: string }>;
 }
 
 function formatDate(iso: string): string {
@@ -109,7 +113,11 @@ export default async function DashboardPage({
   const { teams, error: teamsError } = await listUserTeams(supabase, user.id);
   const { snapshots: ownSnapshots, error: snapshotsError } =
     await listOwnLatestSnapshots(supabase, user.id);
-  const { replicas: personalReplicas, error: personalReplicaError } =
+  const {
+    replicas: personalReplicas,
+    error: personalReplicaError,
+    errorKind: personalReplicaErrorKind,
+  } =
     await listOwnPersonalReplicas(supabase);
   const managedTeams = managerAccessMemberships(teams);
   const managerHref = getSingleManagerTeamPath(managedTeams) ?? "/manager-access";
@@ -130,8 +138,29 @@ export default async function DashboardPage({
           </form>
         </>
       )}
+      initialScreen={params.screen}
     >
       <div className="container workspace-shell">
+        {personalReplicaError ? (
+          <div className="form-alert web-replica-alert" role="alert">
+            {personalReplicaErrorKind === "integrity" ? (
+              <>
+                <strong>Your private Web data could not be validated.</strong>
+                <p>No workload replica is being shown. Resync from Weekform for Mac, then reload this page.</p>
+              </>
+            ) : personalReplicaErrorKind === "load" ? (
+              <>
+                <strong>Your private Web data could not be loaded.</strong>
+                <p>No workload replica is being shown. Reload this page or check your connection.</p>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        {params.notice ? (
+          <div className="form-notice" role="status">
+            {params.notice}
+          </div>
+        ) : null}
         <div data-web-view="today">
           <PersonalTodayScreen replicas={personalReplicas} error={personalReplicaError} />
         </div>
@@ -139,12 +168,6 @@ export default async function DashboardPage({
         <div data-web-subview="capacity">
         <RequestFreshnessRefresh />
         <PersonalReplicaRealtime userId={user.id} />
-
-        {params.notice ? (
-          <div className="form-notice" role="status">
-            {params.notice}
-          </div>
-        ) : null}
 
         <PersonalCapacityScreen replicas={personalReplicas} error={personalReplicaError} />
         </div>
@@ -155,18 +178,10 @@ export default async function DashboardPage({
           <PersonalWeeklyReviewScreen replicas={personalReplicas} error={personalReplicaError} />
         </div>
         <div data-web-subview="usage">
-          <MacOnlyParityScreen
-            eyebrow="AI usage"
-            title="Usage intelligence stays with your local AI activity."
-            detail="Provider calls, token imports, model pricing, and budgets are not part of the review-safe Web replica. Open the Mac app to inspect the desktop AI Usage view."
-          />
+          <PersonalAIUsageScreen />
         </div>
         <div data-web-subview="summary">
-          <MacOnlyParityScreen
-            eyebrow="Weekly summary"
-            title="Narratives stay grounded in private evidence on Mac."
-            detail="The Web replica has capacity facts, but not prompts, evidence, or generated narratives. Weekform Web will not invent a summary from fields it did not receive."
-          />
+          <PersonalSummaryScreen replicas={personalReplicas} error={personalReplicaError} />
         </div>
         </div>
 
@@ -343,51 +358,17 @@ export default async function DashboardPage({
             <PersonalAgentWorkspace replica={currentReplica?.payload ?? null} />
           </div>
           <div data-web-subview="accelerate">
-            <MacOnlyParityScreen
-              eyebrow="Acceleration"
-              title="Acceleration plays require the private work pattern."
-              detail="The review-safe Web replica does not include workflow evidence, saved play history, or AI credentials. Generate, approve, and track acceleration plays in Weekform for Mac."
+            <PersonalAccelerationScreen
+              replica={currentReplica?.payload ?? null}
+              error={personalReplicaError}
             />
           </div>
           <div data-web-subview="skills">
-            <MacOnlyParityScreen
-              eyebrow="Skills library"
-              title="Saved skills remain in your local Weekform library."
-              detail="Skill instructions and their supporting evidence are not uploaded to the Web workspace. Open Weekform for Mac to inspect or run them."
-            />
+            <PersonalSkillsLibraryScreen />
           </div>
         </div>
       </div>
     </IndividualWorkspaceShell>
-  );
-}
-
-function MacOnlyParityScreen({
-  eyebrow,
-  title,
-  detail,
-}: {
-  eyebrow: string;
-  title: string;
-  detail: string;
-}) {
-  const screenId = `web-${eyebrow.toLowerCase().replace(/[^a-z]+/g, "-")}-title`;
-  return (
-    <section className="web-desktop-screen web-local-boundary-screen" aria-labelledby={screenId}>
-      <header className="web-screen-heading">
-        <div>
-          <span>{eyebrow}</span>
-          <h1 id={screenId}>{title}</h1>
-          <p>{detail}</p>
-        </div>
-      </header>
-      <div className="panel web-screen-empty" role="status">
-        <span className="badge">Mac-only private capability</span>
-        <h2>Continue with the complete local evidence.</h2>
-        <p>Web remains API-connected and ephemeral; it does not cache or reconstruct the omitted private data.</p>
-        <Link className="button button-primary" href="/download">Open Weekform for Mac</Link>
-      </div>
-    </section>
   );
 }
 

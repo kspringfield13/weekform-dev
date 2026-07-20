@@ -117,7 +117,7 @@ export function NarrativeScreen({
         <EmptyState
           icon={FileText}
           title="Narrative generation is waiting."
-          description="Weekform will generate analyst and manager-ready text after Outlook imports or active-window-derived work blocks create enough explainable workload evidence."
+          description="Weekform will generate analyst and manager-ready text after calendar imports or active-window-derived work blocks create enough explainable workload evidence."
         />
       </section>
     );
@@ -176,7 +176,7 @@ export function NarrativeScreen({
             <EmptyState
               icon={FileText}
               title="Ready to generate."
-              description="The prompt will include the current ledger, daily review corrections, weekly capacity metrics, Outlook imports, and active-window session context. It is sent to your configured AI provider only when generation runs."
+              description="The prompt will include the current ledger, daily review corrections, weekly capacity metrics, calendar imports, and active-window session context. It is sent to your configured AI provider only when generation runs."
             >
               <button
                 type="button"

@@ -127,7 +127,9 @@ export interface WorkBlock {
   notes: string | null;
 }
 
-export interface OutlookCalendarEvent {
+export type CalendarEventSource = "outlook_calendar" | "google_calendar" | "apple_calendar";
+
+export interface CalendarEvent {
   calendar_event_id: string;
   uid: string;
   title: string;
@@ -145,9 +147,13 @@ export interface OutlookCalendarEvent {
    * non-recurring or fully-expanded daily/weekly events.
    */
   recurrence_note?: string | null;
-  source: "outlook_ics";
+  /** Provider of record. File imports and live sync use the same provider identity. */
+  source: CalendarEventSource;
   imported_at: string;
 }
+
+/** @deprecated Use CalendarEvent. Retained for persisted-state/source compatibility. */
+export type OutlookCalendarEvent = CalendarEvent;
 
 export interface UserCorrection {
   correction_id: string;

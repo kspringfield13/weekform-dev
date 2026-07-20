@@ -1,4 +1,5 @@
 import type { AccelerationSignal, AuditEvent } from "../../../../packages/domain/src/models";
+import type { CalendarProviderId, CalendarTransferMode } from "../../../../packages/integrations/src/calendar/calendarSync";
 import { formatDurationMinutes } from "./format";
 
 export function createAuditEvent(
@@ -78,27 +79,51 @@ export function createChatImportAuditEvent(input: {
  * "removed" count), making a re-import auditable rather than a silent no-op.
  */
 export function createCalendarImportAuditEvent(input: {
-  fileName: string;
+  fileName?: string;
+  provider?: CalendarProviderId;
+  mode?: CalendarTransferMode;
+  range?: { start_date: string; end_date: string };
   importedEventIds: string[];
   addedCount: number;
   updatedCount: number;
   unchangedCount: number;
   previousEventCount: number;
+  removedCount?: number;
 }): AuditEvent {
-  const { fileName, importedEventIds, addedCount, updatedCount, unchangedCount, previousEventCount } = input;
+  const {
+    fileName = "calendar export",
+    provider = "outlook",
+    mode = "file_import",
+    range,
+    importedEventIds,
+    addedCount,
+    updatedCount,
+    unchangedCount,
+    previousEventCount,
+    removedCount = 0,
+  } = input;
   const importedCount = importedEventIds.length;
+  const providerLabel = provider === "outlook" ? "Outlook Calendar" : provider === "google" ? "Google Calendar" : "Apple Calendar";
+  const action = mode === "live_sync" ? "synced" : "imported";
   return createAuditEvent({
     type: "calendar_import",
-    source: "outlook_ics",
-    title: "Outlook calendar imported",
-    summary: `${importedCount} event${importedCount === 1 ? "" : "s"} parsed from ${fileName}`,
+    source: `${provider}_${mode}`,
+    title: `${providerLabel} ${action}`,
+    summary: mode === "live_sync"
+      ? `${importedCount} event${importedCount === 1 ? "" : "s"} read for ${range?.start_date ?? "selected dates"}–${range?.end_date ?? "selected dates"}`
+      : `${importedCount} event${importedCount === 1 ? "" : "s"} parsed from ${fileName}`,
     privacy_level: "local_only",
     details: {
+      provider,
+      transfer_mode: mode,
       file_name: fileName,
+      range_start: range?.start_date ?? null,
+      range_end: range?.end_date ?? null,
       imported_event_count: importedCount,
       added_event_count: addedCount,
       updated_event_count: updatedCount,
       unchanged_event_count: unchangedCount,
+      removed_event_count: removedCount,
       previous_event_count: previousEventCount,
       event_ids: importedEventIds,
       stored_locally: true,

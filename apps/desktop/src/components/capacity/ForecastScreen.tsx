@@ -57,7 +57,7 @@ export function ForecastScreen({
         <EmptyState
           icon={TrendingUp}
           title="Nothing to forecast."
-          description="The Forecast Agent projects next week's reliable capacity from this week's work blocks. Import Outlook events or classify active-window sessions first, then generate a forecast."
+          description="The Forecast Agent projects next week's reliable capacity from this week's work blocks. Import calendar events or classify active-window sessions first, then generate a forecast."
         >
           <button className="primary-action" type="button" onClick={() => onOpenScreen("setup")}>
             <Upload size={16} aria-hidden />

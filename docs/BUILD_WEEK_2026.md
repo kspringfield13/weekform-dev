@@ -403,6 +403,176 @@ The hackathon-readiness and provenance task is supplemental evidence:
   local Web dev-server port, so authenticated rendered browser proof is not
   claimed in this follow-through.
 
+- **July 20 Weekly Review and Settings parity follow-through:** Week → Review
+  now uses the Desktop close-out composition rather than an inline percentage
+  summary: progress, an ordered checklist, status chips, explicit next actions,
+  and the calm completion footer. Only non-empty, fully reviewed blocks from the
+  positive-allowlist replica can become Ready. Forecast accuracy, narrative
+  evidence, and the completion audit remain visibly Mac-only; Web completion is
+  natively disabled and links to the Mac app instead of inventing success. The
+  Settings surface now also preserves Desktop's one-to-one tab-to-tabpanel
+  relationships, including stable labels, hidden inactive panels, and keyboard
+  focus. Red-first focused contracts pass 9/9; `verify:wave3` passes with
+  154/154 desktop-cloud tests, 288/288 Web tests, and 11/11 generated static
+  pages; the root build, Web typecheck, and diff check pass. Package audit was
+  attempted but registry DNS returned `ENOTFOUND`, and the sandbox denied the
+  local Web server bind with `EPERM`, so neither a fresh vulnerability result
+  nor authenticated rendered browser proof is claimed.
+
+- **July 20 AI Usage and Summary parity follow-through:** Week → AI Usage and
+  Summary now use dedicated Desktop-shaped compositions instead of generic
+  Mac-only placeholder cards. AI Usage preserves the Desktop hierarchy while
+  stating that provider activity, pricing, budgets, and assistant-session
+  detail remain local; it displays no reconstructed token, prompt, cost, or
+  model measurements. Summary derives a deterministic allocation readout only
+  from the existing positive-allowlist personal replica and explicitly does not
+  claim an AI-generated narrative, private evidence, editing, export, or Web
+  completion. Both surfaces hand local-only work back to the Mac app. The
+  change adds no Supabase, API, schema, action, storage, or sync wiring.
+  Red-first focused contracts moved from 0/4 to 4/4; the combined lead-focused
+  suite passes 14/14; `verify:wave3` passes with 154/154 desktop-cloud tests,
+  294/294 Web tests, and 11/11 generated static pages; the authoritative root
+  build, Web typecheck, and diff check pass. An independent read-only critic
+  approved the slice with no blocking issue. Package audit was retried but
+  registry DNS returned `ENOTFOUND`, so no fresh vulnerability result is
+  claimed. Authenticated rendered browser proof also remains unclaimed because
+  the prior sandbox server-bind restriction was not lifted in this iteration.
+
+- **July 20 Agent workspace parity follow-through:** Agent → Ask, Accelerate,
+  and Skills now use dedicated Desktop-shaped compositions instead of the
+  generic Mac-only fallback. Ask follows the Desktop's vertical Agent header,
+  review-safe workload briefing, common-question grid, Mac handoff, and composer
+  hierarchy. Accelerate retains the Desktop decision structure for synthesis,
+  realized savings, and play evidence, while Skills retains the Desktop library
+  empty state and cross-links back to Accelerate. Because the existing Web
+  allowlist contains no raw activity, play evidence, recipes, saved skills,
+  prompts, or AI credentials, every unsupported control is natively disabled,
+  omitted values are explicitly unavailable, and no browser-side substitute is
+  fabricated. The change adds no Supabase, API, schema, action, persistence, or
+  sync wiring. Red-first Agent contracts moved from 0/4 to 9/9 across the focused
+  suites; `verify:wave3` passes with 154/154 desktop-cloud tests, 299/299 Web
+  tests, and 11/11 generated static pages. Web typecheck and diff checks pass.
+  The authoritative root build is not claimed because unrelated concurrent Span
+  Simulator edits currently omit the required `step` and `setStep` props in
+  `SpanSimulatorApp.tsx`. Package audit was retried, but registry DNS returned
+  `ENOTFOUND`; authenticated rendered proof remains a separate pending surface.
+
+- **July 20 operational Individual Web Ask follow-through:** the authenticated
+  Agent → Ask surface now completes a bounded review-safe question loop instead
+  of stopping at disabled Desktop-shaped controls. Starters and typed questions
+  reach a same-origin route that re-authenticates the caller, reloads only that
+  user's latest RLS-scoped personal replica, and reduces it again to week-level
+  aggregate evidence. The mounted conversation is temporary and capped; it is
+  not written to Supabase or browser storage. An explicitly configured
+  server-only personal Agent model can answer through the Responses API with
+  `store: false`; absent configuration, provider failure, timeout, malformed
+  output, or unsupported evidence produces a visibly labeled deterministic
+  fallback. Model answers must retain at least one server-known evidence
+  reference. Explicit state-changing requests run neither a model call nor a
+  mutation and hand off to the approval-gated Mac workflow. Focused Ask/parity
+  contracts pass 21/21, including direct no-store, request-minimization, timeout,
+  invented-evidence, configuration-isolation, and action-boundary checks.
+  `verify:wave3` passes with 157/157 desktop-cloud tests, 334/334 Web tests, and
+  the optimized Next build including dynamic `/api/personal-agent`; Web
+  typecheck, the authoritative root build, and diff checks pass. An independent
+  critic found no blocking issue. Package audit was attempted but registry DNS
+  returned `ENOTFOUND`; the sandbox also denied the local server bind with
+  `EPERM`, so authenticated rendered/network/storage proof is not claimed.
+
+- **July 20 History parity follow-through:** History → Activity and Audit now
+  reuse the Desktop information hierarchy instead of generic Web cards.
+  Activity presents the current review-safe block, compact search, structured
+  block cards, review state, confidence, duration, and modeled capacity. Audit
+  adds pressed scope filters, searchable and expandable Web receipt rows, and
+  explicit no-match recovery. Local audit events and conditional Flagged
+  Captures remain visible as Mac-only boundaries because the existing positive
+  allowlist contains no raw window titles, screenshots, notes, visual summaries,
+  or local audit detail; no Supabase, API, schema, sync, or browser-storage
+  wiring changed. The red-first History contract moved from 0/2 to 9/9 across
+  the focused suites. `verify:wave3` passes with 154/154 desktop-cloud tests,
+  301/301 Web tests, and the optimized Next.js build; the authoritative root
+  build and diff check also pass. Package audit remains environment-blocked by
+  registry DNS (`ENOTFOUND`), and the sandbox denied the local Web server bind
+  with `EPERM`, so authenticated rendered proof is not claimed.
+
+- **July 20 addressable Individual workspace follow-through:** authenticated
+  Individual Web navigation now maps every review-safe Desktop screen to one
+  validated, canonical `?screen=` state. Initial loads restore that surface;
+  sidebar, mouse, and keyboard context navigation update browser history; and
+  Back/Forward resolve through the same allowlist. Unknown, local-only, and
+  cross-section screen/subview combinations fail closed to a valid default
+  instead of hiding every panel. Approval-gated Today review requests now
+  return feedback to Today, while private-history deletion returns feedback to
+  Settings; the notice is rendered above conditional surfaces. This adds no
+  browser workload storage, direct mutation, replica fields, or change to Mac
+  approval authority. The red-first focused contract moved from a missing
+  module and 2 composition failures to 10/10 passing. `verify:wave3` passes
+  with 157/157 desktop-cloud tests, 308/308 Web tests, and the optimized Next.js
+  build with 11 generated static pages; Web typecheck, the authoritative root
+  build, and diff check pass. An independent read-only critic found no code
+  blocker after catching and verifying a mouse-tab routing repair. Package
+  audit remains environment-blocked by registry DNS (`ENOTFOUND`). The sandbox
+  also denied a local server bind and browser-daemon startup, so authenticated
+  rendered Back/Forward proof is explicitly not claimed.
+
+- **July 20 private Web replica integrity follow-through:** the authenticated
+  Individual workspace now validates the complete Desktop replica contract at
+  its server-side read boundary before any derived week reaches a Web screen.
+  Exact positive allowlists, canonical timestamps, ISO weeks, matching
+  row/payload/block identities, deterministic revision formats, block chronology, and
+  Desktop metric ranges fail closed as one batch; a malformed newest row can no
+  longer disappear or expose an older week as current. Every Individual route
+  shows the same assertive, sanitized resync recovery state, while future
+  calendar blocks and independent Desktop/server clock skew remain valid. Web
+  review requests also reject malformed block, week, and revision identifiers
+  before the RPC boundary. This adds no replica fields, browser persistence,
+  direct mutation, or change to Mac approval authority. Red-first focused
+  contracts moved from 5 integrity failures to 19/19 passing; Web typecheck and
+  `verify:wave3` pass with 157/157 desktop-cloud tests, 320/320 Web tests, and
+  the optimized Next.js build. The authoritative root build and diff check also
+  pass. Package audit remains environment-blocked by registry DNS (`ENOTFOUND`),
+  and authenticated rendered browser proof remains a separate pending surface.
+
+- **July 20 Span Simulator decision-cockpit refresh:** The admin-only local
+  simulator now replaces its five-step explanatory wizard with one compact
+  People → Pressure → Time Lens cockpit. The primary canvas keeps role counts,
+  scenario presets, correlated pressure controls, live output estimates,
+  readiness, and launch visible together; schedule, sharing, seed, and fine
+  pressure remain available under Advanced setup. Scenario presets now update
+  the complete deterministic pressure shape rather than changing only the
+  scenario label. Completed runs lead with the resulting reliable capacity and
+  consolidate eight dense tabs into Decision, Evidence, Forecast, and Integrity
+  without removing raw evidence, work-world records, timelines, projections,
+  manager-safe snapshots, validation, export, or audit access. Result-to-result
+  comparison now opens from Results, resets after closing, and traps keyboard
+  focus correctly. Synthetic isolation, the IndexedDB run repository,
+  resumable checkpoints, cancel/resume, archive/delete, export, and live
+  same-origin playback boundaries remain unchanged. Rendered synthetic-data
+  proof covered dark and light themes at `1024×720`, the narrow responsive
+  layout, a completed 26-week generation, a completed one-week live playback,
+  keyboard tab navigation, and a two-run comparison with no browser errors.
+  `test:simulator` passes 22/22, `test:desktop-cloud` passes 157/157, the
+  authoritative root build passes, `npm audit --audit-level=moderate` reports
+  zero vulnerabilities, and `git diff --check` passes. The committed Supabase
+  migration and policy contract remain authored but are still not claimed as
+  live infrastructure proof.
+
+- **July 20 calendar-source parity:** Data Sources now gives Outlook, Google,
+  and Apple Calendar one bounded, provider-neutral path: each can import a local
+  `.ics` file over selected dates, while the native app exposes optional live
+  connection and manual range sync. Google and Outlook use read-only OAuth with
+  PKCE, paginated bounded requests, and Keychain-held refresh tokens; Apple uses
+  explicit EventKit permission. Provider payloads are allowlist-normalized into
+  the inherited reviewable calendar/work-block model, and live reconciliation
+  removes stale events only for that provider and requested range. Automatic
+  refresh runs only while Weekform is open. Focused TypeScript tests pass 6/6,
+  native normalization/boundary tests pass 3/3, the authoritative root build,
+  Cargo check, and release-mode Tauri `.app`/`.dmg` bundle gate pass, and package
+  audit reports zero vulnerabilities. No live Google or
+  Microsoft account proof is claimed because this checkout has no configured
+  provider client ids; no Apple permission grant is claimed without an installed
+  app interaction.
+
 - **Codex Session ID:** `019f75f1-73fc-7850-98a4-c23ec0aae893`
 - **Task title:** `Prepare Weekform for Build Week`
 - **Started:** July 18, 2026 at 11:56:26 AM EDT (15:56:26Z)

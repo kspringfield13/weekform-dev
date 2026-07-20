@@ -336,7 +336,7 @@ export function createDemoState(reference = new Date()): PersistedAppState {
     location: "Zoom",
     organizer: String(organizer),
     attendee_count: Number(attendeeCount),
-    source: "outlook_ics",
+    source: "outlook_calendar",
     imported_at: importedAt.toISOString()
   }));
 

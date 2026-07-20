@@ -330,7 +330,7 @@ export function useDerived(params: UseDerivedParams) {
   const toolbarStatus = useMemo(() => {
     return blocks.length > 0
       ? `${pct(snapshot.reliable_new_work_capacity_pct)} reliable new-work capacity`
-      : `${activeWindowSessions.length} session${activeWindowSessions.length === 1 ? "" : "s"}, ${calendarEvents.length} Outlook event${calendarEvents.length === 1 ? "" : "s"}`;
+      : `${activeWindowSessions.length} session${activeWindowSessions.length === 1 ? "" : "s"}, ${calendarEvents.length} calendar event${calendarEvents.length === 1 ? "" : "s"}`;
   }, [blocks.length, snapshot.reliable_new_work_capacity_pct, activeWindowSessions.length, calendarEvents.length]);
 
   return {

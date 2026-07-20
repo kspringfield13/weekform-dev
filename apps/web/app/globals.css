@@ -4924,6 +4924,7 @@ button.text-link {
 .web-screen-empty h2 { margin: 0 0 8px; }
 .web-local-boundary-screen .web-screen-empty { display: grid; justify-items: start; gap: 10px; max-width: 760px; }
 .web-local-boundary-screen .web-screen-empty p { max-width: 650px; color: var(--text-muted); }
+
 .web-review-summary-grid { margin-top: 18px; }
 
 /* Weekly review mirrors the Desktop close-out ritual while keeping local-only
@@ -5013,7 +5014,7 @@ button.text-link {
 .weekly-review-item-heading .status-chip { padding: 3px 7px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-subtle); font-size: 10px; font-weight: 650; }
 .weekly-review-item-heading .status-chip--success { border-color: color-mix(in srgb, var(--success) 30%, var(--border)); color: var(--success); }
 .weekly-review-item-heading .status-chip--local { border-color: color-mix(in srgb, var(--decision) 28%, var(--border)); color: var(--decision-ink); }
-.weekly-review-item-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 112px; }
+.weekly-review-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 112px; }
 .weekly-review-footer {
   display: flex;
   align-items: center;
@@ -5029,13 +5030,15 @@ button.text-link {
 .weekly-review-footer p { display: grid; gap: 3px; margin: 0; }
 .weekly-review-footer strong { color: var(--text); font-size: 13px; }
 .weekly-review-footer span { color: var(--text-muted); font-size: 12px; line-height: 1.4; }
+.weekly-review-footer-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 
 @media (max-width: 760px) {
   .web-individual-app .weekly-review-header,
-  .weekly-review-footer { align-items: stretch; flex-direction: column; }
+  .web-individual-app .weekly-review-footer { align-items: stretch; flex-direction: column; }
   .weekly-review-summary { min-width: 0; }
-  .weekly-review-item { grid-template-columns: 28px 22px minmax(0, 1fr); }
-  .weekly-review-item-action { grid-column: 3; justify-self: start; }
+  .web-individual-app .weekly-review-item { grid-template-columns: 28px 22px minmax(0, 1fr); }
+  .weekly-review-action { grid-column: 3; justify-self: start; }
+  .weekly-review-footer-actions { align-items: stretch; flex-direction: column; }
 }
 
 /* Today follows the same compact review composition as the desktop screen.
@@ -5253,27 +5256,51 @@ button.text-link {
 .personal-forecast-list { display: grid; gap: 8px; margin: 10px 0 16px; padding: 0; list-style: none; }
 .personal-forecast-list li { display: grid; gap: 3px; border-left: 2px solid var(--border-strong); padding-left: 10px; color: var(--text-muted); font-size: 12px; }
 
-.personal-agent-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 12px; min-height: 540px; }
-.personal-agent-conversation,
-.personal-agent-briefing { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
-.personal-agent-conversation { display: flex; flex-direction: column; min-width: 0; padding: 18px; }
-.personal-agent-conversation > header,
-.personal-agent-briefing > header { display: flex; justify-content: space-between; gap: 12px; }
-.personal-agent-conversation h1 { font-size: 27px; }
-.personal-agent-boundary { display: grid; justify-items: start; gap: 10px; max-width: 620px; margin: auto; padding: 28px; text-align: left; }
-.personal-agent-boundary h2 { font-size: 20px; }
-.personal-agent-boundary p,
-.personal-agent-briefing p { color: var(--text-muted); font-size: 12px; line-height: 1.55; }
-.agent-mark { display: grid; width: 34px; height: 34px; place-items: center; border: 1px solid var(--border); border-radius: 10px; font-size: 21px; }
-.personal-agent-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.personal-agent-composer { display: flex; align-items: center; justify-content: space-between; min-height: 42px; margin-top: auto; border: 1px solid var(--border); border-radius: 10px; color: var(--text-subtle); padding: 8px 10px 8px 14px; font-size: 12px; opacity: 0.68; }
-.personal-agent-composer button { width: 28px; height: 28px; border: 0; border-radius: 7px; color: var(--text-subtle); background: var(--surface-muted); }
-.personal-agent-briefing { padding: 16px; }
-.personal-agent-briefing header span { color: var(--text-subtle); font-size: 10px; }
-.personal-agent-briefing dl { display: grid; gap: 0; margin: 16px 0; }
-.personal-agent-briefing dl div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding: 10px 0; }
-.personal-agent-briefing dt { color: var(--text-muted); font-size: 11px; }
-.personal-agent-briefing dd { margin: 0; font-family: "Geist Mono Variable", monospace; font-size: 13px; }
+.personal-agent-workspace { display: flex; min-height: 100%; flex-direction: column; overflow: hidden; }
+.personal-agent-page-header,
+.personal-agent-title-row,
+.personal-agent-freshness { display: flex; }
+.personal-agent-page-header { flex: 0 0 auto; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 16px; }
+.personal-agent-page-header > div { min-width: 0; }
+.personal-agent-eyebrow { margin: 0 0 6px; color: var(--text-subtle); font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+.personal-agent-title-row { align-items: center; gap: 10px; }
+.personal-agent-title-row h1 { margin: 0; font-size: clamp(25px, 2.6vw, 34px); letter-spacing: 0; line-height: 1.08; }
+.personal-agent-title-icon,
+.personal-agent-boundary-mark { display: grid; flex: 0 0 auto; place-items: center; border: 1px solid var(--border); color: var(--text-muted); background: var(--surface-elevated); }
+.personal-agent-title-icon { width: 30px; height: 30px; border-radius: 9px; }
+.personal-agent-page-header > div > p:last-child { margin: 8px 0 0 40px; color: var(--text-subtle); font-size: 13px; }
+.personal-agent-freshness { align-items: center; gap: 7px; min-height: 32px; color: var(--text-subtle); font-size: 11px; line-height: 1.3; text-align: right; }
+.personal-agent-freshness > span { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 10%, transparent); }
+.personal-agent-freshness.is-waiting > span { background: var(--text-muted); box-shadow: none; }
+.personal-agent-workspace-body { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; gap: 12px; }
+.personal-agent-briefing { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 10px 18px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--surface) 90%, transparent); padding: 10px 12px; }
+.personal-agent-briefing p { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; color: var(--text-subtle); font-size: 11px; line-height: 1.35; }
+.personal-agent-briefing strong { color: var(--text); font-weight: 580; }
+.personal-agent-briefing-boundary { flex: 0 0 auto; color: var(--text-subtle); font-size: 10px; white-space: nowrap; }
+.personal-agent-starters { flex: 0 0 auto; padding: 12px 0 6px; }
+.personal-agent-starter-heading { margin-bottom: 8px; }
+.personal-agent-starter-heading > span { color: var(--text); font-size: 11px; font-weight: 600; }
+.personal-agent-starter-heading p { margin: 2px 0 0; color: var(--text-subtle); font-size: 10px; }
+.personal-agent-starter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.personal-agent-starter-grid > button { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 9px; min-height: 58px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-subtle); background: color-mix(in srgb, var(--surface) 90%, transparent); padding: 9px 10px; text-align: left; }
+.personal-agent-starter-grid > button:disabled { cursor: not-allowed; opacity: 0.62; }
+.personal-agent-starter-grid strong,
+.personal-agent-starter-grid small { display: block; }
+.personal-agent-starter-grid strong { color: var(--text); font-size: 11px; font-weight: 580; }
+.personal-agent-starter-grid small { margin-top: 2px; color: var(--text-subtle); font-size: 10px; line-height: 1.25; }
+.personal-agent-starter-icon { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid var(--border); border-radius: 7px; color: var(--text-muted); background: var(--surface-elevated); font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 16px; }
+.personal-agent-chat-shell { display: grid; flex: 1 1 auto; min-height: 210px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--surface) 94%, transparent); padding: 24px max(22px, calc((100% - 790px) / 2)); box-shadow: 0 16px 42px -34px rgb(0 0 0 / 80%); }
+.personal-agent-boundary { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-content: center; align-items: start; gap: 10px 14px; width: min(100%, 790px); margin: auto; }
+.personal-agent-boundary-mark { width: 38px; height: 38px; border-radius: 10px; }
+.personal-agent-boundary h2 { margin: 0; color: var(--text); font-size: 16px; }
+.personal-agent-boundary p { max-width: 650px; margin: 6px 0 0; color: var(--text-muted); font-size: 12px; line-height: 1.55; }
+.personal-agent-actions { grid-column: 2; display: flex; flex-wrap: wrap; gap: 8px; }
+.personal-agent-composer { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; min-height: 54px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface-elevated); padding: 8px; box-shadow: 0 12px 34px -24px rgb(0 0 0 / 95%); }
+.personal-agent-composer textarea { min-width: 0; min-height: 36px; flex: 1 1 auto; resize: none; border: 0; outline: 0; color: var(--text); background: transparent; padding: 8px 10px 8px 12px; font: inherit; font-size: 13px; line-height: 20px; }
+.personal-agent-composer textarea::placeholder { color: var(--text-subtle); opacity: 1; }
+.personal-agent-composer button { display: grid; width: 36px; height: 36px; flex: 0 0 auto; place-items: center; border: 1px solid var(--border-strong); border-radius: 9px; color: var(--primary-label); background: var(--text); }
+.personal-agent-composer textarea:disabled,
+.personal-agent-composer button:disabled { cursor: not-allowed; opacity: 0.56; }
 
 .ledger-screen > .context-navigation { margin: 14px 0 0; padding: 3px; border: 1px solid var(--border); border-radius: 9px; }
 .audit-toolbar { margin-top: 14px; }
@@ -5338,9 +5365,14 @@ button.text-link {
   .web-individual-app .page-context-navigation { flex-wrap: wrap; overflow-x: auto; padding: 12px 16px 0; }
   .web-screen-heading { align-items: flex-start; flex-direction: column; }
   .web-review-count { min-width: 110px; text-align: left; }
-  .personal-forecast-scenarios,
-  .personal-agent-layout { grid-template-columns: 1fr; }
-  .personal-agent-layout { min-height: 0; }
+  .personal-forecast-scenarios { grid-template-columns: 1fr; }
+  .personal-agent-page-header { align-items: center; }
+  .personal-agent-page-header > div > p:last-child,
+  .personal-agent-freshness { display: none; }
+  .personal-agent-briefing { align-items: flex-start; flex-direction: column; }
+  .personal-agent-briefing-boundary { white-space: normal; }
+  .personal-agent-starter-grid { grid-template-columns: 1fr; }
+  .personal-agent-boundary { grid-template-columns: 38px minmax(0, 1fr); }
   .settings-tabs { grid-template-columns: repeat(6, minmax(132px, 1fr)); }
   .audit-row summary { grid-template-columns: 1fr; }
 }

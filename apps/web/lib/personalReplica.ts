@@ -20,10 +20,34 @@ const CATEGORIES = new Set([
 ]);
 const MODES = new Set(["Deep work", "Reactive", "Collaborative", "Fragmented", "Blocked"]);
 const PLANNED = new Set(["planned", "unplanned", "fixed", "blocked"]);
+const ROW_KEYS = new Set(["replica_id", "week_id", "revision", "synced_at", "payload"]);
+const PAYLOAD_KEYS = new Set([
+  "schemaVersion", "replicaId", "weekId", "generatedAt", "sourceUpdatedAt", "blocks", "capacity",
+]);
 const BLOCK_KEYS = new Set([
   "blockId", "weekId", "startTime", "endTime", "estimatedCapacityPct", "category",
   "mode", "plannedStatus", "confidence", "userVerified", "blockerFlag", "revision",
 ]);
+const CAPACITY_RANGES = {
+  allocatedPct: [0, 100],
+  deepWorkPct: [0, 100],
+  fragmentedWorkPct: [0, 100],
+  meetingPct: [0, 100],
+  reactivePct: [0, 100],
+  plannedPct: [0, 100],
+  blockedPct: [0, 100],
+  reliableNewWorkCapacityPct: [0, 100],
+  committedUtilizationPct: [0, 200],
+  carryoverRiskPct: [0, 100],
+  wipLoadScore: [0, 100],
+  contextSwitchScore: [0, 100],
+  summaryConfidence: [0, 1],
+} as const;
+const CAPACITY_KEYS = new Set(Object.keys(CAPACITY_RANGES));
+const REVISION_PATTERN = /^[0-9a-f]{16}$/;
+const INVALID_REPLICA_ERROR = "Weekform Web received invalid review-safe replica data. Resync from Weekform for Mac.";
+const LOAD_REPLICA_ERROR = "Weekform Web could not load review-safe replica data. Reload this page or check your connection.";
+const MAX_BLOCK_ID_LENGTH = 160;
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -35,16 +59,47 @@ function finite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function parseBlock(value: unknown): PersonalReplicaBlockV1 | null {
+function inRange(value: unknown, min: number, max: number): value is number {
+  return finite(value) && value >= min && value <= max;
+}
+
+function canonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
+}
+
+function weeksInIsoYear(year: number): number {
+  const date = new Date(Date.UTC(year, 11, 28));
+  const day = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7);
+}
+
+function validWeekId(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-W(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const week = Number(match[2]);
+  return week >= 1 && week <= weeksInIsoYear(year);
+}
+
+function parseBlock(value: unknown, weekId: string): PersonalReplicaBlockV1 | null {
   const row = record(value);
-  if (!row || Object.keys(row).some((key) => !BLOCK_KEYS.has(key))) return null;
+  if (!row || Object.keys(row).length !== BLOCK_KEYS.size
+    || Object.keys(row).some((key) => !BLOCK_KEYS.has(key))) return null;
   if (
-    typeof row.blockId !== "string" || typeof row.weekId !== "string"
-    || typeof row.startTime !== "string" || typeof row.endTime !== "string"
-    || !finite(row.estimatedCapacityPct) || !CATEGORIES.has(row.category as string)
+    typeof row.blockId !== "string" || row.blockId.trim() === ""
+    || row.blockId.length > MAX_BLOCK_ID_LENGTH || row.weekId !== weekId
+    || !canonicalTimestamp(row.startTime) || !canonicalTimestamp(row.endTime)
+    || new Date(row.endTime).getTime() <= new Date(row.startTime).getTime()
+    || !inRange(row.estimatedCapacityPct, 0, 100) || !CATEGORIES.has(row.category as string)
     || !MODES.has(row.mode as string) || !PLANNED.has(row.plannedStatus as string)
-    || !finite(row.confidence) || typeof row.userVerified !== "boolean"
+    || !inRange(row.confidence, 0, 1) || typeof row.userVerified !== "boolean"
     || typeof row.blockerFlag !== "boolean" || typeof row.revision !== "string"
+    || !REVISION_PATTERN.test(row.revision)
   ) return null;
   return row as unknown as PersonalReplicaBlockV1;
 }
@@ -60,28 +115,33 @@ export interface PersonalReplicaView {
 export function parsePersonalReplicaRow(value: unknown): PersonalReplicaView | null {
   const row = record(value);
   const payload = record(row?.payload);
-  if (!row || !payload || payload.schemaVersion !== 1 || !Array.isArray(payload.blocks)) return null;
-  const blocks = payload.blocks.map(parseBlock);
-  if (blocks.some((block) => block === null)) return null;
+  if (!row || Object.keys(row).length !== ROW_KEYS.size
+    || Object.keys(row).some((key) => !ROW_KEYS.has(key))
+    || !payload || Object.keys(payload).length !== PAYLOAD_KEYS.size
+    || Object.keys(payload).some((key) => !PAYLOAD_KEYS.has(key))
+    || payload.schemaVersion !== 1 || !Array.isArray(payload.blocks)) return null;
   const capacity = record(payload.capacity);
-  const capacityKeys = [
-    "allocatedPct", "deepWorkPct", "fragmentedWorkPct", "meetingPct", "reactivePct",
-    "plannedPct", "blockedPct", "reliableNewWorkCapacityPct", "committedUtilizationPct",
-    "carryoverRiskPct", "wipLoadScore", "contextSwitchScore", "summaryConfidence",
-  ];
-  if (!capacity || capacityKeys.some((key) => !finite(capacity[key]))) return null;
   if (
-    typeof row.replica_id !== "string" || typeof row.week_id !== "string"
-    || typeof row.revision !== "string" || typeof row.synced_at !== "string"
-    || typeof payload.replicaId !== "string" || typeof payload.weekId !== "string"
-    || typeof payload.generatedAt !== "string" || typeof payload.sourceUpdatedAt !== "string"
+    !capacity || Object.keys(capacity).length !== CAPACITY_KEYS.size
+    || Object.keys(capacity).some((key) => !CAPACITY_KEYS.has(key))
+    || Object.entries(CAPACITY_RANGES).some(([key, [min, max]]) => !inRange(capacity[key], min, max))
+    || typeof row.replica_id !== "string" || row.replica_id !== payload.replicaId
+    || !validWeekId(row.week_id) || row.week_id !== payload.weekId
+    || row.replica_id !== `personal-${row.week_id}`
+    || typeof row.revision !== "string" || !REVISION_PATTERN.test(row.revision)
+    || !canonicalTimestamp(row.synced_at) || !canonicalTimestamp(payload.generatedAt)
+    || !canonicalTimestamp(payload.sourceUpdatedAt)
   ) return null;
+  const blocks = payload.blocks.map((block) => parseBlock(block, row.week_id as string));
+  if (blocks.some((block) => block === null)) return null;
+  const parsedBlocks = blocks as PersonalReplicaBlockV1[];
+  if (new Set(parsedBlocks.map((block) => block.blockId)).size !== parsedBlocks.length) return null;
   return {
     replicaId: row.replica_id,
     weekId: row.week_id,
     revision: row.revision,
     syncedAt: row.synced_at,
-    payload: { ...payload, blocks: blocks as PersonalReplicaBlockV1[], capacity } as unknown as PersonalWorkloadReplicaV1,
+    payload: { ...payload, blocks: parsedBlocks, capacity } as unknown as PersonalWorkloadReplicaV1,
   };
 }
 
@@ -97,6 +157,10 @@ export function reviewCommandInput(value: unknown): ReviewCommandInput | null {
   const input = record(value);
   if (!input || typeof input.blockId !== "string" || typeof input.weekId !== "string"
     || typeof input.expectedRevision !== "string") return null;
+  const canonicalBlockId = input.blockId.trim();
+  if (canonicalBlockId !== input.blockId || canonicalBlockId.length === 0
+    || canonicalBlockId.length > MAX_BLOCK_ID_LENGTH
+    || !validWeekId(input.weekId) || !REVISION_PATTERN.test(input.expectedRevision)) return null;
   if (input.action !== "confirm" && input.action !== "exclude" && input.action !== "relabel") return null;
   if (input.action !== "relabel") {
     return { blockId: input.blockId, weekId: input.weekId, expectedRevision: input.expectedRevision, action: input.action, patch: null };
@@ -130,15 +194,20 @@ interface SupabaseLike {
 export async function listOwnPersonalReplicas(client: SupabaseLike): Promise<{
   replicas: PersonalReplicaView[];
   error: string | null;
+  errorKind: "integrity" | "load" | null;
 }> {
   const { data, error } = await client
     .from("personal_workload_replicas")
     .select("replica_id,week_id,revision,synced_at,payload")
     .order("week_id", { ascending: false })
     .limit(12);
-  if (error) return { replicas: [], error: error.message ?? "Could not load your Web workspace" };
-  const replicas = (Array.isArray(data) ? data : [])
-    .map(parsePersonalReplicaRow)
-    .filter((value): value is PersonalReplicaView => value !== null);
-  return { replicas, error: null };
+  if (error) return { replicas: [], error: LOAD_REPLICA_ERROR, errorKind: "load" };
+  if (!Array.isArray(data)) {
+    return { replicas: [], error: INVALID_REPLICA_ERROR, errorKind: "integrity" };
+  }
+  const replicas = data.map(parsePersonalReplicaRow);
+  if (replicas.some((value) => value === null)) {
+    return { replicas: [], error: INVALID_REPLICA_ERROR, errorKind: "integrity" };
+  }
+  return { replicas: replicas as PersonalReplicaView[], error: null, errorKind: null };
 }

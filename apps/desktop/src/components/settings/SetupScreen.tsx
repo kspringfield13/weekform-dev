@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   AlertCircle,
   BellRing,
-  CalendarCheck,
   CheckCircle2,
   Compass,
   Download,
@@ -39,7 +38,7 @@ import type {
 } from "../../../../../packages/domain/src/models";
 import type { SettingsTab, WindowMode } from "../../lib/types";
 import { getLocalDateKey } from "../../lib/date";
-import { formatAuditTime, formatCount } from "../../lib/format";
+import { formatCount } from "../../lib/format";
 import { AI_UNAVAILABLE_HINT, MAX_PROACTIVE_ALERTS_PER_DAY, MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY } from "../../lib/constants";
 import type { ProactiveAlertSettings } from "../../lib/proactiveAlerts";
 import {
@@ -64,6 +63,9 @@ import { CHAT_PROVIDERS } from "../../../../../packages/integrations/src/chat/ch
 import { ModelPricingPanel } from "./ModelPricingPanel";
 import { CloudAccountPanel } from "./CloudAccountPanel";
 import type { CloudController } from "../../hooks/useCloudSync";
+import type { CalendarSourcesController } from "../../hooks/useCalendarSources";
+import type { CalendarProviderId, CalendarRangeInput } from "../../../../../packages/integrations/src/calendar/calendarSync";
+import { CalendarSourcesPanel } from "./CalendarSourcesPanel";
 
 // Chat sources the prototype can ingest today: local file exports parsed on-device.
 // Providers that would need a native OAuth connector are omitted until one exists.
@@ -122,7 +124,8 @@ export function SetupScreen({
   captureError,
   importError,
   lastCalendarImportSummary,
-  onImportOutlookIcs,
+  calendarSources,
+  onImportCalendar,
   chatImportError,
   onImportChatExport,
   tokenUsageDays,
@@ -163,7 +166,8 @@ export function SetupScreen({
   captureError: string | null;
   importError: string | null;
   lastCalendarImportSummary: string | null;
-  onImportOutlookIcs: (file: File) => void;
+  calendarSources: CalendarSourcesController;
+  onImportCalendar: (provider: CalendarProviderId, file: File, range: CalendarRangeInput) => void;
   chatImportError: string | null;
   onImportChatExport: (file: File) => void;
   tokenUsageDays: TokenUsageDay[];
@@ -194,12 +198,6 @@ export function SetupScreen({
   resetConfirmationRequestId: number;
   onResetConfirmationRequestHandled: () => void;
 }) {
-  const latestImport = calendarEvents.reduce<string | null>((latest, event) => {
-    if (!latest || new Date(event.imported_at) > new Date(latest)) {
-      return event.imported_at;
-    }
-    return latest;
-  }, null);
   const visualCapturesToday = visualContextInsights.filter((insight) => getLocalDateKey(new Date(insight.captured_at)) === getLocalDateKey()).length;
 
   const [draftConfig, setDraftConfig] = useState<AIConfig>(() =>
@@ -493,34 +491,13 @@ export function SetupScreen({
         </span>
       </section>
 
-      <section className="settings-row">
-        <div className="settings-row-icon"><CalendarCheck size={18} aria-hidden /></div>
-        <div>
-          <h3>Outlook calendar</h3>
-          <p>Imports meeting titles and time windows from a local `.ics` export. Email bodies and meeting notes are ignored.</p>
-        </div>
-        <div className="settings-row-status">
-          <strong>{formatCount(calendarEvents.length)} event{calendarEvents.length === 1 ? "" : "s"}</strong>
-          <span>{latestImport ? (
-            <>Imported <time dateTime={latestImport}>{formatAuditTime(latestImport)}</time></>
-          ) : "Not imported yet"}</span>
-          {lastCalendarImportSummary && <small className="import-delta">{lastCalendarImportSummary}</small>}
-          {importError && <small className="import-error" role="alert">{importError}</small>}
-        </div>
-        <label className="settings-control">
-          <Upload size={16} aria-hidden />
-          <span>Import Calendar</span>
-          <input
-            accept=".ics,text/calendar"
-            type="file"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) onImportOutlookIcs(file);
-              event.currentTarget.value = "";
-            }}
-          />
-        </label>
-      </section>
+      <CalendarSourcesPanel
+        events={calendarEvents}
+        controller={calendarSources}
+        importError={importError}
+        lastSummary={lastCalendarImportSummary}
+        onImport={onImportCalendar}
+      />
 
       <section className="settings-row">
         <div className="settings-row-icon"><MessagesSquare size={18} aria-hidden /></div>

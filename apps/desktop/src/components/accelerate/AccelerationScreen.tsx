@@ -341,7 +341,7 @@ export function AccelerationScreen({
           description={
             hasWorkBlocks
               ? `The Acceleration engine only surfaces plays estimated to save at least ${minimumSavingsLabel}. Keep reviewing this week's blocks and higher-leverage patterns will appear here automatically.`
-              : "The Acceleration engine mines your reviewed work for repetitive workflows, tool-able time-sinks, and context-switch hotspots. Import Outlook events or classify active-window sessions first, then revisit this screen."
+              : "The Acceleration engine mines your reviewed work for repetitive workflows, tool-able time-sinks, and context-switch hotspots. Import calendar events or classify active-window sessions first, then revisit this screen."
           }
         >
           <button className="primary-action" type="button" onClick={() => onOpenScreen("setup")}>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Weekform reads calendar event times and titles you choose to turn into reviewable workload evidence.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Weekform reads calendar event times and titles you choose to turn into reviewable workload evidence.</string>
+</dict>
+</plist>

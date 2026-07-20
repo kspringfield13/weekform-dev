@@ -24,6 +24,7 @@ import { buildLocalPlaybackPlan, isAllowedPlaybackUrl } from "./playback";
 import { serializeSimulationJson, serializeWeeklySnapshotsCsv } from "./export";
 import { simulationEndDate, zonedDateTimeToIso } from "./clock";
 import { sha256 } from "./canonical";
+import { applyScenarioPreset, getScenarioPreset } from "./presets";
 
 const REQUIRED_PERSONAS = [
   "Data Analyst",
@@ -72,6 +73,21 @@ test("golden configuration is a valid 26-week New York simulation", () => {
   assert.equal(GOLDEN_SIMULATION_CONFIG.span.unit, "weeks");
   assert.equal(GOLDEN_SIMULATION_CONFIG.timezone, "America/New_York");
   assert.equal(GOLDEN_SIMULATION_CONFIG.seed, "20260718");
+});
+
+test("scenario presets update every correlated pressure control instead of changing only the label", () => {
+  const quiet = applyScenarioPreset(GOLDEN_SIMULATION_CONFIG, "quiet");
+  const incident = applyScenarioPreset(GOLDEN_SIMULATION_CONFIG, "incident");
+
+  assert.equal(quiet.scenario.kind, "quiet");
+  assert.equal(quiet.scenario.title, getScenarioPreset("quiet").title);
+  assert.ok(quiet.scenario.reactiveLoad < incident.scenario.reactiveLoad);
+  assert.ok(quiet.scenario.interruptions < incident.scenario.interruptions);
+  assert.ok(quiet.scenario.fragmentation < incident.scenario.fragmentation);
+  assert.ok(quiet.scenario.projectCount < incident.scenario.projectCount);
+  assert.deepEqual(GOLDEN_SIMULATION_CONFIG.scenario.kind, "quarter-end");
+  assert.equal(validateSimulationConfig(quiet).valid, true);
+  assert.equal(validateSimulationConfig(incident).valid, true);
 });
 
 test("virtual clock preserves local wall time across New York daylight saving time", () => {

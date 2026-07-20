@@ -39,6 +39,8 @@ import type { OnboardingStep } from "../common/OnboardingCard";
 import type { ProactiveAlert, ProactiveAlertSettings } from "../../lib/proactiveAlerts";
 import type { PushToast } from "../../hooks/useToasts";
 import type { CloudController } from "../../hooks/useCloudSync";
+import type { CalendarSourcesController } from "../../hooks/useCalendarSources";
+import type { CalendarProviderId, CalendarRangeInput } from "../../../../../packages/integrations/src/calendar/calendarSync";
 import type { WeeklyReviewState } from "../../services/weeklyReview";
 
 interface ScreenRouterProps {
@@ -101,7 +103,8 @@ interface ScreenRouterProps {
   captureError: string | null;
   importError: string | null;
   lastCalendarImportSummary: string | null;
-  onImportOutlookIcs: (file: File) => void;
+  calendarSources: CalendarSourcesController;
+  onImportCalendar: (provider: CalendarProviderId, file: File, range: CalendarRangeInput) => void;
   chatImportError: string | null;
   onImportChatExport: (file: File) => void;
   // AI usage tracking (setup + usage screens)
@@ -231,7 +234,8 @@ export function ScreenRouter({
   captureError,
   importError,
   lastCalendarImportSummary,
-  onImportOutlookIcs,
+  calendarSources,
+  onImportCalendar,
   chatImportError,
   onImportChatExport,
   tokenUsageDays,
@@ -339,7 +343,8 @@ export function ScreenRouter({
           captureError={captureError}
           importError={importError}
           lastCalendarImportSummary={lastCalendarImportSummary}
-          onImportOutlookIcs={onImportOutlookIcs}
+          calendarSources={calendarSources}
+          onImportCalendar={onImportCalendar}
           chatImportError={chatImportError}
           onImportChatExport={onImportChatExport}
           tokenUsageDays={tokenUsageDays}

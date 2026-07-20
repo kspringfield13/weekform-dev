@@ -97,7 +97,7 @@ export function buildWorkBlockClassifierPrompt({
       "Convert active-window sessions into explainable draft work blocks for an analyst workload ledger. Use evidence from app names, calendar, and derived visual context. Be precise with categories.",
     guardrails: [
       "Classify only the provided active-window sessions.",
-      "Do not create blocks for Outlook meetings; those are imported separately.",
+      "Do not create blocks for calendar meetings; those are imported separately.",
       "Merge adjacent or related sessions when they appear to represent one coherent task.",
       "Every provided session has already passed the product's readiness threshold and should normally be assigned to a work block.",
       "Short duration alone is not a reason to omit a session; merge short fragments with related work when possible.",

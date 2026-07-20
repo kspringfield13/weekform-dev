@@ -695,13 +695,18 @@ function parseChatEvents(value: unknown): RawEvent[] {
  */
 function parseCalendarEvents(value: unknown): OutlookCalendarEvent[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(
-    (entry): entry is OutlookCalendarEvent =>
-      isRecord(entry) &&
-      typeof entry.title === "string" &&
-      typeof entry.start_time === "string" &&
-      typeof entry.end_time === "string"
-  );
+  return value.flatMap((entry) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry.title !== "string" ||
+      typeof entry.start_time !== "string" ||
+      typeof entry.end_time !== "string"
+    ) return [];
+    const source = entry.source === "google_calendar" || entry.source === "apple_calendar"
+      ? entry.source
+      : "outlook_calendar";
+    return [{ ...entry, source } as OutlookCalendarEvent];
+  });
 }
 
 const USAGE_SOURCE_TYPES: ReadonlySet<UsageSourceType> = new Set<UsageSourceType>([

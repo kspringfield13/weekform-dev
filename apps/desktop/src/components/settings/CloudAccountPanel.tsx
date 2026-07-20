@@ -29,7 +29,8 @@ import { ConfirmDialog } from "../common/ConfirmDialog";
 import { SharePreview } from "./SharePreview";
 import {
   getConfiguredManagerAccessSignInUrl,
-  openManagerAccess
+  openManagerAccess,
+  openWeekformWebApp
 } from "../../services/adminPortal";
 
 const SHARE_LEVEL_OPTIONS: Array<{ value: CloudShareLevel; label: string; hint: string }> = [
@@ -41,12 +42,34 @@ const SHARE_LEVEL_OPTIONS: Array<{ value: CloudShareLevel; label: string; hint: 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function AccountSharingHeading() {
+  const [openError, setOpenError] = useState<string | null>(null);
+
+  const openWebApp = async () => {
+    setOpenError(null);
+    try {
+      await openWeekformWebApp();
+    } catch (error) {
+      setOpenError(error instanceof Error ? error.message : "Weekform Web could not be opened.");
+    }
+  };
+
   return (
     <div className="settings-section-heading account-sharing-heading">
-      <div>
+      <div className="account-sharing-heading-copy">
         <span className="account-sharing-eyebrow">Account</span>
-        <h2>Weekform Web</h2>
+        <div className="account-sharing-title-row">
+          <h2>Weekform Web</h2>
+          <button
+            className="settings-control account-sharing-web-app-button"
+            type="button"
+            onClick={() => void openWebApp()}
+          >
+            <ExternalLink size={15} aria-hidden />
+            <span>Open Web App</span>
+          </button>
+        </div>
         <p>Connect your workspace, then choose exactly what leaves this Mac.</p>
+        {openError && <small className="account-sharing-open-error" role="alert">{openError}</small>}
       </div>
     </div>
   );

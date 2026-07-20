@@ -410,15 +410,29 @@ export function writeLocalAdminPortalSession(
   }
 }
 
-/** Open external web authentication without replacing the desktop webview. */
-export async function openManagerAccess(url: string): Promise<void> {
+async function openWeekformBrowserUrl(url: string, blockedMessage: string): Promise<void> {
   if ("__TAURI_INTERNALS__" in window) {
     await openUrl(url);
     return;
   }
 
-  const opened = window.open(url, "_blank", "noopener,noreferrer");
+  const opened = window.open("", "_blank");
   if (!opened) {
-    throw new Error("Your browser blocked the Manager Access window.");
+    throw new Error(blockedMessage);
   }
+  opened.opener = null;
+  opened.location.replace(url);
+}
+
+/** Open external web authentication without replacing the desktop webview. */
+export async function openManagerAccess(url: string): Promise<void> {
+  await openWeekformBrowserUrl(url, "Your browser blocked the Manager Access window.");
+}
+
+/** Open the canonical authenticated Web workspace in the user's browser. */
+export async function openWeekformWebApp(): Promise<void> {
+  await openWeekformBrowserUrl(
+    getWeekformWebAppUrl("/app"),
+    "Your browser blocked the Weekform Web app window."
+  );
 }

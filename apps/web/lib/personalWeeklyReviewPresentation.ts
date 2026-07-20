@@ -42,12 +42,14 @@ export function buildPersonalWeeklyReviewPresentation(
       title: "Review work blocks",
       description: current === null
         ? "Connect Private Web workspace from your Mac before Web can show review-safe block status."
-        : pendingBlocks === 0
+        : pendingBlocks === 0 && current.payload.blocks.length > 0
           ? "Every review-safe work block in this replica is reviewed."
-          : `${pendingBlocks} work block${pendingBlocks === 1 ? " needs" : "s need"} review. Requests remain approval-gated on your Mac.`,
+          : current.payload.blocks.length === 0
+            ? "No review-safe work blocks are present, so Web cannot mark this check ready."
+          : `${pendingBlocks} work block${pendingBlocks === 1 ? " needs" : "s need"} review. Each change requires approval on your Mac.`,
       status: current === null
         ? "mac_only"
-        : pendingBlocks === 0
+        : pendingBlocks === 0 && current.payload.blocks.length > 0
           ? "ready"
           : "needs_attention",
       count: pendingBlocks,
@@ -60,8 +62,8 @@ export function buildPersonalWeeklyReviewPresentation(
       description: "Forecast comparisons and calibration history stay with the complete local workload model.",
       status: "mac_only",
       count: null,
-      actionLabel: "Continue on Mac",
-      target: "mac",
+      actionLabel: "Open Forecast",
+      target: "forecast",
     },
     {
       id: "narrative",
@@ -69,8 +71,8 @@ export function buildPersonalWeeklyReviewPresentation(
       description: "Narrative evidence, prompts, and generated drafts are not included in the review-safe Web replica.",
       status: "mac_only",
       count: null,
-      actionLabel: "Continue on Mac",
-      target: "mac",
+      actionLabel: "Open Summary",
+      target: "summary",
     },
     {
       id: "completion",

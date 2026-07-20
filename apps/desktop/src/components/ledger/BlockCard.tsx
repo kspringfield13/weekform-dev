@@ -14,7 +14,7 @@ import { EvidenceDetails } from "../common/EvidenceDetails";
 // `derived_from`/`evidence` rather than assuming chat here.
 function blockOrigin(workBlockId: string): { label: string; title: string } {
   if (workBlockId.startsWith("calendar-outlook-")) {
-    return { label: "Calendar", title: "Imported from your Outlook calendar" };
+    return { label: "Calendar", title: "Imported from your connected or local calendar" };
   }
   if (workBlockId.startsWith("imported-")) {
     return { label: "Workplace chat", title: "Derived from imported workplace-chat activity" };

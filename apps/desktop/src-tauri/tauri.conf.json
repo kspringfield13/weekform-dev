@@ -33,6 +33,7 @@
     "longDescription": "Weekform turns reviewable local work signals into explainable weekly capacity, delivery risk, and grounded decisions about what fits next.",
     "macOS": {
       "minimumSystemVersion": "13.0",
+      "infoPlist": "Info.plist",
       "dmg": {
         "windowSize": {
           "width": 660,

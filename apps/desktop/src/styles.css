@@ -1706,6 +1706,143 @@ h3 {
   background: currentColor;
 }
 
+.calendar-sources {
+  padding: 16px 14px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.calendar-sources-heading {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+
+.calendar-sources-heading h3,
+.calendar-provider h4 {
+  margin: 0;
+  color: var(--text);
+}
+
+.calendar-sources-heading h3 {
+  font-size: 16px;
+  letter-spacing: -0.32px;
+}
+
+.calendar-sources-heading p {
+  max-width: 690px;
+  margin: 5px 0 0;
+  color: var(--text-subtle);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.calendar-range {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-elevated);
+}
+
+.calendar-range label {
+  display: grid;
+  gap: 3px;
+}
+
+.calendar-range label span {
+  color: var(--text-subtle);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.calendar-range input {
+  width: 126px;
+  min-height: 27px;
+  padding: 0 5px;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+}
+
+.calendar-range-arrow {
+  padding-bottom: 6px;
+  color: var(--text-subtle);
+  font-size: 12px;
+}
+
+.calendar-source-feedback {
+  min-height: 18px;
+  padding: 7px 0 0 48px;
+  font-size: 11px;
+}
+
+.calendar-provider-list {
+  display: grid;
+  gap: 1px;
+  margin: 12px 0 0 48px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--border);
+}
+
+.calendar-provider {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 82px;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.calendar-provider-mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: var(--surface-elevated);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.calendar-provider-mark.is-google { color: #4285f4; }
+.calendar-provider-mark.is-apple { color: var(--text); }
+.calendar-provider-mark.is-outlook { color: #2563eb; }
+
+.calendar-provider-title,
+.calendar-provider-meta,
+.calendar-provider-actions {
+  display: flex;
+  align-items: center;
+}
+
+.calendar-provider-title { gap: 8px; }
+.calendar-provider-title h4 { font-size: 13px; letter-spacing: -0.1px; }
+.calendar-provider-title .source-status { padding: 3px 7px; font-size: 10px; }
+.calendar-provider-copy > p { margin: 3px 0 0; color: var(--text-subtle); font-size: 11px; line-height: 1.4; }
+.calendar-provider-meta { gap: 10px; margin-top: 5px; color: var(--text-subtle); font-size: 10px; }
+.calendar-provider-actions { justify-content: flex-end; gap: 6px; }
+.calendar-provider-actions .settings-control { white-space: nowrap; }
+.calendar-provider-actions .icon-button { width: 32px; height: 32px; }
+
+.calendar-live-note {
+  margin: 9px 0 0 48px;
+  color: var(--text-subtle);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 /* AI assistance spans the settings content measure and collapses cleanly on
    narrower windows so provider configuration stays easy to scan and edit. */
 .ai-assistance {
@@ -7082,6 +7219,25 @@ input:focus {
     text-align: left;
   }
 
+  .calendar-sources-heading {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .calendar-range {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .calendar-provider {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+
+  .calendar-provider-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
   .settings-control,
   .calendar-connect-options,
   .chat-connect-options,
@@ -12265,6 +12421,18 @@ html[data-theme="dark"] .settings-tabs button.is-active {
   padding: 2px 2px 4px;
 }
 
+.account-sharing-heading-copy {
+  min-width: 0;
+  width: 100%;
+}
+
+.account-sharing-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .account-sharing-heading h2 {
   margin: 3px 0 0;
   font-size: 19px;
@@ -12272,11 +12440,31 @@ html[data-theme="dark"] .settings-tabs button.is-active {
   letter-spacing: -0.025em;
 }
 
+.account-sharing-web-app-button {
+  flex: 0 0 auto;
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+.account-sharing-web-app-button span {
+  display: inline;
+  margin: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
 .account-sharing-heading p {
   margin: 5px 0 0;
   color: var(--text-subtle);
   font-size: 12px;
   line-height: 1.5;
+}
+
+.account-sharing-open-error {
+  display: block;
+  margin-top: 5px;
+  color: var(--danger);
+  font-size: 11px;
 }
 
 .account-sharing-eyebrow,

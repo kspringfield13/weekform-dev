@@ -26,14 +26,15 @@ function ArrowIcon() {
 }
 
 function ReviewAction({ item }: { item: PersonalWeeklyReviewItem }) {
-  if (item.target === "today") {
+  if (item.target !== "mac") {
+    const destination = item.target === "today" ? "today" : "week";
     return (
       <button
-        className="button button-secondary weekly-review-item-action"
+        className="button button-secondary weekly-review-action"
         type="button"
         aria-label={`${item.actionLabel}: ${item.title}`}
         onClick={() => window.dispatchEvent(new CustomEvent("weekform:web-navigate", {
-          detail: { destination: "today", subview: "today" },
+          detail: { destination, subview: item.target },
         }))}
       >
         <span>{item.actionLabel}</span>
@@ -44,7 +45,7 @@ function ReviewAction({ item }: { item: PersonalWeeklyReviewItem }) {
 
   return (
     <Link
-      className="button button-secondary weekly-review-item-action"
+      className="button button-secondary weekly-review-action"
       href="/download"
       aria-label={`${item.actionLabel}: ${item.title}`}
     >
@@ -126,7 +127,12 @@ export function PersonalWeeklyReviewScreen({
                 <span>Web cannot record the local completion audit event or mark omitted private checks ready.</span>
               </p>
             </div>
-            <Link className="button button-primary" href="/download">Finish weekly review on Mac</Link>
+            <div className="weekly-review-footer-actions">
+              <button className="button button-secondary" type="button" disabled title="Completion requires the local audit trail">
+                Finish weekly review
+              </button>
+              <Link className="button button-primary" href="/download">Open Weekform for Mac</Link>
+            </div>
           </footer>
         </>
       )}

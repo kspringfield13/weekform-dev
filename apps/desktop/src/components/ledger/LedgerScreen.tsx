@@ -230,7 +230,7 @@ export function LedgerScreen({
         <EmptyState
           icon={Monitor}
           title="No work blocks yet."
-          description="Weekform starts empty. Import an Outlook .ics export or let active-window capture build local sessions, then use Classify sessions to draft reviewable work blocks."
+          description="Weekform starts empty. Connect or import a calendar, or let active-window capture build local sessions, then use Classify sessions to draft reviewable work blocks."
         >
           {unclassifiedSessionCount > 0 ? (
             <button

@@ -1,0 +1,12 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Weekform//Synthetic calendar fixture//EN
+BEGIN:VEVENT
+UID:synthetic-planning-review@example.test
+DTSTAMP:20260720T120000Z
+DTSTART:20260722T140000Z
+DTEND:20260722T150000Z
+SUMMARY:Synthetic planning review
+LOCATION:Example room
+END:VEVENT
+END:VCALENDAR

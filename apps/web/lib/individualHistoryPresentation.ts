@@ -86,3 +86,18 @@ export function buildSyncAuditEntries(
       new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime()
     ));
 }
+
+export function filterSyncAuditEntries(
+  entries: SyncAuditEntry[],
+  query: string,
+): SyncAuditEntry[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return entries;
+  return entries.filter((entry) => [
+    entry.replicaId,
+    entry.weekId,
+    entry.revision,
+    entry.title,
+    entry.summary,
+  ].some((value) => value.toLowerCase().includes(normalized)));
+}

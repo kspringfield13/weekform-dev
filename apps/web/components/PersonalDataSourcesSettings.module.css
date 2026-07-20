@@ -1,0 +1,144 @@
+.section {
+  margin-top: 18px;
+}
+
+.boundary {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 4px;
+  border: 1px solid color-mix(in srgb, var(--decision) 32%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--decision) 7%, var(--surface));
+  padding: 11px 13px;
+}
+
+.boundary strong,
+.handoff strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.boundary span,
+.handoff span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.rows {
+  border-bottom: 1px solid var(--border);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 34px minmax(220px, 1fr) minmax(150px, 0.45fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 78px;
+  border-top: 1px solid var(--border);
+  padding: 11px 10px;
+}
+
+.icon {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+}
+
+.copy h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 24px;
+}
+
+.copy p {
+  max-width: 620px;
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.status {
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.status strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.status span {
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+
+.localBadge {
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--surface);
+  padding: 4px 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.handoff {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 12px 13px;
+}
+
+.handoff > div {
+  display: grid;
+  gap: 3px;
+}
+
+@media (max-width: 880px) {
+  .row {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+  }
+
+  .status {
+    grid-column: 2 / -1;
+    text-align: left;
+  }
+}
+
+@media (max-width: 620px) {
+  .row {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
+  .localBadge {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .status {
+    grid-column: 2;
+  }
+
+  .handoff {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

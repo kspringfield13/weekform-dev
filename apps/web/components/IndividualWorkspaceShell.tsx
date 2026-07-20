@@ -5,21 +5,13 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { WeekformMark } from "@/components/WeekformMark";
-
-type IndividualDestination = "today" | "week" | "agent" | "history" | "settings";
-type IndividualSubview =
-  | "today"
-  | "capacity"
-  | "forecast"
-  | "review"
-  | "usage"
-  | "summary"
-  | "agent"
-  | "accelerate"
-  | "skills"
-  | "activity"
-  | "audit"
-  | "settings";
+import {
+  resolveIndividualWorkspaceRoute,
+  screenForIndividualWorkspaceRoute,
+  type IndividualDestination,
+  type IndividualSubview,
+  type IndividualWorkspaceRoute,
+} from "@/lib/individualWorkspaceRoute";
 
 const DESTINATIONS: Array<{
   id: IndividualDestination;
@@ -61,6 +53,14 @@ const CONTEXT_VIEWS: Partial<Record<IndividualDestination, Array<{ id: Individua
   ],
 };
 
+function pushWorkspaceRoute(route: IndividualWorkspaceRoute) {
+  const screen = screenForIndividualWorkspaceRoute(route);
+  const url = new URL(window.location.href);
+  if (url.searchParams.get("screen") === screen) return;
+  url.searchParams.set("screen", screen);
+  window.history.pushState(null, "", url);
+}
+
 function NavIcon({ id }: { id: IndividualDestination | "manager" }) {
   const paths: Record<typeof id, ReactNode> = {
     today: <><path d="M5 4v3M19 4v3M4 9h16" /><path d="m9 16 2 2 4-5" /><rect x="3" y="5" width="18" height="16" rx="2" /></>,
@@ -81,6 +81,7 @@ export function IndividualWorkspaceShell({
   managerAccessAvailable,
   managerHref,
   accountActions,
+  initialScreen,
 }: {
   children: ReactNode;
   greetingName: string;
@@ -89,34 +90,55 @@ export function IndividualWorkspaceShell({
   managerAccessAvailable: boolean;
   managerHref: string;
   accountActions: ReactNode;
+  initialScreen: string | undefined;
 }) {
-  const [active, setActive] = useState<IndividualDestination>("week");
-  const [activeSubview, setActiveSubview] = useState<IndividualSubview>("capacity");
+  const initialRoute = resolveIndividualWorkspaceRoute(initialScreen);
+  const [active, setActive] = useState<IndividualDestination>(initialRoute.destination);
+  const [activeSubview, setActiveSubview] = useState<IndividualSubview>(initialRoute.subview);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const contextTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
+    const applyRoute = (route: IndividualWorkspaceRoute) => {
+      setActive(route.destination);
+      setActiveSubview(route.subview);
+    };
     const handleNavigate = (event: Event) => {
       const detail = (event as CustomEvent<{ destination?: IndividualDestination; subview?: IndividualSubview }>).detail;
-      const destination = detail?.destination;
-      if (!destination || !DESTINATIONS.some((item) => item.id === destination)) return;
-      setActive(destination);
-      setActiveSubview(detail.subview ?? DEFAULT_SUBVIEW[destination]);
+      const route = resolveIndividualWorkspaceRoute(detail);
+      applyRoute(route);
+      pushWorkspaceRoute(route);
+    };
+    const handlePopState = () => {
+      const screen = new URL(window.location.href).searchParams.get("screen");
+      applyRoute(resolveIndividualWorkspaceRoute(screen));
     };
     window.addEventListener("weekform:web-navigate", handleNavigate);
-    return () => window.removeEventListener("weekform:web-navigate", handleNavigate);
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("weekform:web-navigate", handleNavigate);
+      window.removeEventListener("popstate", handlePopState);
+    };
   }, []);
 
+  const navigateToRoute = (route: IndividualWorkspaceRoute) => {
+    setActive(route.destination);
+    setActiveSubview(route.subview);
+    pushWorkspaceRoute(route);
+  };
+
   const navigate = (destination: (typeof DESTINATIONS)[number]) => {
-    setActive(destination.id);
-    setActiveSubview(DEFAULT_SUBVIEW[destination.id]);
+    navigateToRoute({
+      destination: destination.id,
+      subview: DEFAULT_SUBVIEW[destination.id],
+    });
   };
 
   const contextViews = CONTEXT_VIEWS[active] ?? [];
   const selectContextView = (index: number) => {
     const view = contextViews[index];
     if (!view) return;
-    setActiveSubview(view.id);
+    navigateToRoute({ destination: active, subview: view.id });
     contextTabRefs.current[index]?.focus();
   };
   const handleContextKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -231,7 +253,7 @@ export function IndividualWorkspaceShell({
                   aria-selected={activeSubview === view.id}
                   tabIndex={activeSubview === view.id ? 0 : -1}
                   ref={(element) => { contextTabRefs.current[index] = element; }}
-                  onClick={() => setActiveSubview(view.id)}
+                  onClick={() => navigateToRoute({ destination: active, subview: view.id })}
                   onKeyDown={(event) => handleContextKeyDown(event, index)}
                 >
                   {view.label}

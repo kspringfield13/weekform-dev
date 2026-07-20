@@ -9,7 +9,7 @@ The desktop app can collect:
 - foreground application name
 - front-window title
 - capture timestamp
-- locally imported Outlook calendar metadata
+- optionally imported or live-synced Outlook, Google, and Apple calendar metadata
 - user corrections, exclusions, and confirmations
 - derived activity sessions, work blocks, forecasts, and narratives
 - an audit trail of collection and review events
@@ -18,6 +18,44 @@ The native desktop collector writes each successful foreground sample to an AES-
 
 That browser fallback describes the desktop React app when it is run in web/demo
 mode. It is not the `apps/web` account and team site described below.
+
+## Calendar Sources
+
+Outlook Calendar, Google Calendar, and Apple Calendar are optional sources. All
+three accept a user-selected date range and feed the same local, reviewable
+calendar-event and work-block pipeline. Local `.ics` imports are parsed on the
+device and do not make a network request. Import and live-sync ranges are capped
+at 366 days; the selected end date is inclusive.
+
+Google and Outlook live sync are available only when the desktop build is
+configured with the corresponding public native-app client identifier
+(`GOOGLE_CALENDAR_CLIENT_ID` or `MICROSOFT_CALENDAR_CLIENT_ID`). They use the
+system browser, a random loopback callback port, OAuth authorization code flow
+with PKCE, and read-only calendar scopes. Refresh tokens are stored only in
+macOS Keychain and are excluded from app state and exports. The native process
+requests bounded event pages and returns only event id/UID, title, start/end,
+location, organizer display name when available, attendee count, and all-day
+status to the React layer. Event descriptions, meeting bodies/notes, attendee
+identities, attachments, and email bodies are neither normalized nor stored.
+The provider still processes the account identity and calendar data needed to
+answer the authorized request.
+
+Apple Calendar live sync uses EventKit against the local macOS Calendar store.
+It requires explicit Calendar permission and makes no calendar-provider network
+request from Weekform. If access is denied, the app remains disconnected and
+directs the user to macOS Privacy & Security settings. Disconnect stops future
+reads and removes Weekform's connection marker; macOS permission itself remains
+under System Settings. Previously imported evidence is retained until the user
+excludes it or Reset Local Data clears the app state.
+
+Connected sources refresh a rolling two-weeks-back to six-weeks-ahead range
+every 15 minutes while Weekform is open and online. Manual Sync uses the visible
+selected range. A live sync replaces that provider's events only inside the
+requested range, so provider-side deletions do not remain as current evidence;
+other providers and dates are untouched. Connect, sync, import, disconnect, and
+reset boundaries emit local audit records without storing credentials. Reset
+Local Data attempts to remove all three calendar connection records from
+Keychain in addition to clearing imported calendar events.
 
 ## AI and OpenAI API Data
 
@@ -121,6 +159,36 @@ it also requests a fresh server render every 15 seconds as a fallback. Snapshot 
 selection and web freshness use a server-owned `synced_at` receipt timestamp;
 client `observed_at` and `source_updated_at` remain provenance and cannot win
 latest ordering through clock skew.
+
+## Individual Web Ask (weekform.com, server-side AI)
+
+An authenticated individual can explicitly send a question from the private Web
+workspace. The server re-authenticates the request and reloads that user's latest
+positive-allowlist personal replica under row-level security; it never accepts a
+replica, account identity, team, model, or evidence catalog supplied by the
+browser. Before optional provider processing, Weekform reduces the replica again
+to week-level capacity metrics, review counts, blocker count, and category/work-
+mode counts. Block identifiers, per-block timestamps, revisions, raw activity,
+window or app titles, notes, project or stakeholder names, calendar or chat
+detail, screenshots, audit detail, local evidence, and AI credentials are not
+included.
+
+When both the server-only `OPENAI_API_KEY` and
+`OPENAI_PERSONAL_AGENT_MODEL` are configured, the typed question and minimized evidence catalog are sent to the
+OpenAI Responses API with `store: false`. OpenAI still processes that request.
+The response is schema-checked, and evidence references outside the server-built
+catalog are rejected. Without complete configuration, or after a provider,
+timeout, or validation failure, Weekform returns a visibly labeled deterministic
+answer from the same review-safe aggregates and makes no false model-success
+claim. Requests that would change local truth are not sent to the model or run on
+the Web; they hand off to the approval-gated Mac workflow.
+
+The Web Ask transcript and draft exist only in mounted React state. Weekform does
+not write questions or answers to Supabase, `localStorage`, `sessionStorage`,
+IndexedDB, cookies, or an application-managed cache; reloading the page clears
+them. The API response is marked `no-store`. Standard infrastructure and provider
+processing boundaries still apply, so users should not type sensitive or
+regulated information into Web Ask.
 
 ## Team Briefing (weekform.com, server-side AI)
 

@@ -98,7 +98,7 @@ export function DailyReviewScreen({
         <EmptyState
           icon={CalendarCheck}
           title="Your review queue is empty."
-          description="Weekform will place inferred work here after Outlook meetings are imported or active-window sessions are classified."
+          description="Weekform will place inferred work here after calendar meetings are imported or active-window sessions are classified."
         >
           <button className="primary-action" type="button" onClick={() => onOpenScreen("setup")}>
             <Upload size={16} aria-hidden />
@@ -192,7 +192,7 @@ export function DailyReviewScreen({
           icon={Check}
           className={justCompleted ? "empty-state-celebrate" : undefined}
           title="Everything is confirmed."
-          description="New Outlook imports and active-window-derived blocks will appear here when they need your review."
+          description="New calendar imports and active-window-derived blocks will appear here when they need your review."
         />
       ) : (
         <div className="ledger-list">

@@ -21,6 +21,11 @@ test("Individual Web gives every Desktop Settings tab its own labelled panel", (
   );
   assert.match(
     settingsSource,
+    /aria-controls=\{`web-settings-panel-\$\{item\.id\}`\}/,
+    "each Settings tab must control its matching panel",
+  );
+  assert.match(
+    settingsSource,
     /aria-labelledby=\{`web-settings-tab-\$\{item\.id\}`\}/,
     "each Settings panel must be labelled by its matching tab",
   );
@@ -36,7 +41,7 @@ test("Individual Web gives every Desktop Settings tab its own labelled panel", (
   );
   assert.doesNotMatch(
     settingsSource,
-    /id=["']web-settings-tabpanel["']/,
+    /(?:id|aria-controls)=["']web-settings-tabpanel["']/,
     "a single generic tabpanel cannot preserve the Desktop Settings relationships",
   );
 });

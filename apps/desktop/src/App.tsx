@@ -1,6 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { outlookEventsToWorkBlocks, parseOutlookIcs } from "../../../packages/integrations/src/calendar/outlookIcs";
+import {
+  createCalendarImport,
+  normalizeCalendarRange,
+  mergeCalendarWorkBlocks,
+  providerDescriptor,
+  reconcileCalendarEvents,
+  type CalendarProviderId,
+  type CalendarRange,
+  type CalendarRangeInput,
+  type CalendarTransferMode,
+} from "../../../packages/integrations/src/calendar/calendarSync";
 import { importChatExport } from "../../../packages/integrations/src/chat/chatExport";
 import { dedupeChatCallsAgainstCalendar } from "../../../packages/integrations/src/chat/callDedup";
 import { parseUsageCsv } from "../../../packages/integrations/src/usage/usageCsv";
@@ -10,7 +20,7 @@ import type {
   AccelerationSignal,
   ActiveWindowSample,
   AuditEvent,
-  OutlookCalendarEvent,
+  CalendarEvent,
   RawEvent,
   ReviewCopilotSuggestion,
   SavedSkill,
@@ -67,6 +77,7 @@ import { useTrayStatus } from "./hooks/useTrayStatus";
 import { useToasts } from "./hooks/useToasts";
 import { useCloudAccount } from "./hooks/useCloudAccount";
 import { useCloudSync, type CloudController } from "./hooks/useCloudSync";
+import { useCalendarSources } from "./hooks/useCalendarSources";
 import { usePersonalCloudSync } from "./hooks/usePersonalCloudSync";
 import { screenLabels } from "./lib/ui";
 import {
@@ -113,21 +124,6 @@ const UNDOABLE_CORRECTION_FIELDS = [
   "project_name",
   "stakeholder_group"
 ] as const satisfies readonly (keyof WorkBlock)[];
-
-// True when a re-imported calendar event carries different content than the stored one
-// under the same `calendar_event_id`. Excludes identity/constant fields (`calendar_event_id`,
-// `uid`, `source`) and `imported_at` (stamped fresh on every parse, so it always differs and
-// would misreport an unchanged event as "updated").
-function calendarEventChanged(prior: OutlookCalendarEvent, next: OutlookCalendarEvent): boolean {
-  return (
-    prior.title !== next.title ||
-    prior.start_time !== next.start_time ||
-    prior.end_time !== next.end_time ||
-    prior.location !== next.location ||
-    prior.organizer !== next.organizer ||
-    prior.attendee_count !== next.attendee_count
-  );
-}
 
 export function App() {
   const [isTauriRuntime] = useState(() => isTauriWindow());
@@ -423,6 +419,89 @@ export function App() {
   });
 
   const { blocks, setBlocks, calendarEvents, setCalendarEvents, corrections, setCorrections, reviewSuggestions, setReviewSuggestions, updateBlock, confirmBlock, excludeBlock, addCorrection } = ledger;
+  const calendarEventsRef = useRef(calendarEvents);
+  calendarEventsRef.current = calendarEvents;
+
+  const applyCalendarSourceEvents = useCallback((
+    provider: CalendarProviderId,
+    range: CalendarRange,
+    mode: CalendarTransferMode,
+    incoming: CalendarEvent[],
+    fileName?: string,
+  ) => {
+    const currentCalendarEvents = calendarEventsRef.current;
+    const previousEventCount = currentCalendarEvents.length;
+    const result = reconcileCalendarEvents(currentCalendarEvents, incoming, { provider, range, mode });
+    calendarEventsRef.current = result.events;
+    setCalendarEvents(result.events);
+    setBlocks((current) => {
+      const nonCalendarBlocks = current.filter((block) => !block.work_block_id.startsWith("calendar-"));
+      const calendarBlocks = mergeCalendarWorkBlocks(current, result.events, currentWeekId);
+      const importedBlocks = nonCalendarBlocks.filter((block) => block.work_block_id.startsWith("imported-"));
+      const otherBlocks = nonCalendarBlocks.filter((block) => !block.work_block_id.startsWith("imported-"));
+      const { kept } = dedupeChatCallsAgainstCalendar(importedBlocks, calendarBlocks);
+      return [...otherBlocks, ...kept, ...calendarBlocks].sort(
+        (left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime(),
+      );
+    });
+    const deltaParts = [
+      result.delta.added > 0 ? `+${result.delta.added} new` : null,
+      result.delta.updated > 0 ? `${result.delta.updated} updated` : null,
+      result.delta.removed > 0 ? `${result.delta.removed} removed` : null,
+      result.delta.unchanged > 0 ? `${result.delta.unchanged} unchanged` : null,
+    ].filter((part): part is string => Boolean(part));
+    setLastCalendarImportSummary(
+      `${providerDescriptor(provider).label}: ${deltaParts.length > 0 ? deltaParts.join(" · ") : "No events in range"}`,
+    );
+    setAuditEvents((current) => [
+      ...current,
+      createCalendarImportAuditEvent({
+        provider,
+        mode,
+        range,
+        fileName,
+        importedEventIds: incoming.map((event) => event.calendar_event_id),
+        addedCount: result.delta.added,
+        updatedCount: result.delta.updated,
+        unchangedCount: result.delta.unchanged,
+        removedCount: result.delta.removed,
+        previousEventCount,
+      }),
+    ].slice(-1000));
+  }, [currentWeekId, setBlocks, setCalendarEvents]);
+
+  const calendarSources = useCalendarSources({
+    enabled: isTauriRuntime && !isDemoMode,
+    onEvents: applyCalendarSourceEvents,
+    onDisconnected: (provider) => {
+      setAuditEvents((current) => [
+        ...current,
+        createAuditEvent({
+          type: "calendar_import",
+          source: `${provider}_live_sync`,
+          title: `${providerDescriptor(provider).label} disconnected`,
+          summary: "Automatic calendar reads stopped. Previously imported local evidence was kept.",
+          privacy_level: "local_only",
+          details: { provider, credentials_removed: true, stored_events_kept: true },
+        }),
+      ].slice(-1000));
+    },
+    onConnectionEvent: (provider, action, success) => {
+      setAuditEvents((current) => [
+        ...current,
+        createAuditEvent({
+          type: "calendar_import",
+          source: `${provider}_live_sync`,
+          title: `${providerDescriptor(provider).label} ${action} ${success ? "completed" : "failed"}`,
+          summary: success
+            ? "The optional live calendar connection was stored in macOS Keychain."
+            : `No calendar evidence changed because ${action} did not complete.`,
+          privacy_level: "local_only",
+          details: { provider, action, success, credentials_in_keychain: success && action === "connect" },
+        }),
+      ].slice(-1000));
+    },
+  });
 
   // Late hydrate for ledger-owned state if async load completes after mount.
   // Guard every setter the same way as blocks below: only overwrite when the
@@ -1834,6 +1913,11 @@ export function App() {
     const captureJournalCleared = !isTauriRuntime || await invoke("clear_capture_journal")
       .then(() => true)
       .catch(() => false);
+    const calendarCredentialsCleared = !isTauriRuntime || (await Promise.all(
+      (["outlook", "google", "apple"] as CalendarProviderId[]).map((provider) => (
+        invoke("disconnect_calendar_source", { provider }).then(() => true).catch(() => false)
+      )),
+    )).every(Boolean);
     setBlocks([]);
     setCalendarEvents([]);
     setActiveWindowSamples([]);
@@ -1844,9 +1928,9 @@ export function App() {
         type: "data_reset",
         source: "privacy_control",
         title: "Prototype data reset",
-        summary: cloudCredentialsCleared && captureJournalCleared
-          ? "All local activity, the encrypted capture journal, imports, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and Weekform Web session, replica queue, and sharing policies. Screenshot capture was turned off and tracking paused."
-          : "Local app state was reset, but durable removal of the Keychain cloud session or encrypted capture journal could not be confirmed. Retry Reset Local Data before closing the app.",
+        summary: cloudCredentialsCleared && captureJournalCleared && calendarCredentialsCleared
+          ? "All local activity, the encrypted capture journal, imports, calendar connections, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and Weekform Web session, replica queue, and sharing policies. Screenshot capture was turned off and tracking paused."
+          : "Local app state was reset, but durable removal of a Keychain session, calendar connection, or encrypted capture journal could not be confirmed. Retry Reset Local Data before closing the app.",
         privacy_level: "local_only",
         details: {
           visual_context_enabled: false,
@@ -1858,6 +1942,8 @@ export function App() {
           cloud_clear_requires_retry: !cloudCredentialsCleared,
           encrypted_capture_journal_cleared: captureJournalCleared,
           capture_journal_clear_requires_retry: !captureJournalCleared,
+          calendar_credentials_cleared: calendarCredentialsCleared,
+          calendar_clear_requires_retry: !calendarCredentialsCleared,
           stored_locally: true,
           sent_to_cloud: false
         }
@@ -1916,7 +2002,11 @@ export function App() {
     lastAuditedPausedRef.current = true;
   }
 
-  function importOutlookIcs(file: File) {
+  function importCalendarFile(
+    provider: CalendarProviderId,
+    file: File,
+    rangeInput: CalendarRangeInput,
+  ) {
     setImportError(null);
     const reader = new FileReader();
 
@@ -1926,99 +2016,34 @@ export function App() {
     };
 
     reader.onerror = () => {
-      failImport("Could not read that Outlook export.");
+      failImport(`Could not read that ${providerDescriptor(provider).label} export.`);
     };
 
     reader.onload = () => {
       try {
         const content = String(reader.result ?? "");
-        const importedEvents = parseOutlookIcs(content);
+        const range = normalizeCalendarRange(rangeInput);
+        const importedEvents = createCalendarImport(provider, content, range);
 
         if (importedEvents.length === 0) {
-          failImport("No usable calendar events were found in that .ics file.");
+          failImport("No usable calendar events overlap the selected date range in that .ics file.");
           return;
         }
-
-        // Diff the parsed events against what's already stored so a re-import isn't a
-        // silent no-op. The merge is an UPSERT (below) — it never drops stored events —
-        // so the honest delta is added / updated / unchanged; there is no truthful
-        // "removed" count (an event missing from the new file is retained, not deleted).
-        const priorEventsById = new Map(calendarEvents.map((event) => [event.calendar_event_id, event]));
-        const previousEventCount = calendarEvents.length;
-        let addedCount = 0;
-        let updatedCount = 0;
-        let unchangedCount = 0;
-        importedEvents.forEach((event) => {
-          const prior = priorEventsById.get(event.calendar_event_id);
-          if (!prior) {
-            addedCount += 1;
-          } else if (calendarEventChanged(prior, event)) {
-            updatedCount += 1;
-          } else {
-            unchangedCount += 1;
-          }
-        });
-        const deltaParts: string[] = [];
-        if (addedCount > 0) deltaParts.push(`+${addedCount} new`);
-        if (updatedCount > 0) deltaParts.push(`${updatedCount} updated`);
-        if (unchangedCount > 0) deltaParts.push(`${unchangedCount} unchanged`);
-
-        setCalendarEvents((current) => {
-          const merged = new Map(current.map((event) => [event.calendar_event_id, event]));
-          importedEvents.forEach((event) => merged.set(event.calendar_event_id, event));
-          return [...merged.values()].sort(
-            (left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime()
-          );
-        });
-
-        setBlocks((current) => {
-          const nonCalendarBlocks = current.filter((block) => !block.work_block_id.startsWith("calendar-outlook-"));
-          const currentEvents = new Map(calendarEvents.map((event) => [event.calendar_event_id, event]));
-          importedEvents.forEach((event) => currentEvents.set(event.calendar_event_id, event));
-          const calendarBlocks = outlookEventsToWorkBlocks([...currentEvents.values()], currentWeekId);
-          // Symmetric dedup: importing the calendar after a chat export must also
-          // drop any previously-imported chat call block now covered by a calendar
-          // meeting, so the order of the two imports never double-counts the call.
-          const importedBlocks = nonCalendarBlocks.filter((block) => block.work_block_id.startsWith("imported-"));
-          const otherBlocks = nonCalendarBlocks.filter((block) => !block.work_block_id.startsWith("imported-"));
-          const { kept } = dedupeChatCallsAgainstCalendar(importedBlocks, calendarBlocks);
-          return [...otherBlocks, ...kept, ...calendarBlocks].sort(
-            (left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime()
-          );
-        });
-
+        applyCalendarSourceEvents(provider, range, "file_import", importedEvents, file.name);
         addCorrection({
           work_block_id: currentWeekId,
           field: "calendar_import",
-          old_value: "Outlook events",
+          old_value: `${providerDescriptor(provider).label} events`,
           new_value: `${importedEvents.length} imported`,
           reason: `Imported ${file.name}`
         });
-        setAuditEvents((current) => [
-          ...current,
-          createCalendarImportAuditEvent({
-            fileName: file.name,
-            importedEventIds: importedEvents.map((event) => event.calendar_event_id),
-            addedCount,
-            updatedCount,
-            unchangedCount,
-            previousEventCount
-          })
-        ].slice(-1000));
-        // Persist the delta as a lingering Settings line (the toast auto-expires) so the
-        // user can confirm the calendar stayed in sync after the fact.
-        setLastCalendarImportSummary(deltaParts.length > 0 ? deltaParts.join(" · ") : null);
         const importedCount = importedEvents.length;
-        const baseMessage = `${importedCount} event${importedCount === 1 ? "" : "s"} imported`;
         pushToast({
           tone: "success",
-          message:
-            previousEventCount > 0 && deltaParts.length > 0
-              ? `${baseMessage} (${deltaParts.join(", ")})`
-              : baseMessage,
+          message: `${importedCount} ${providerDescriptor(provider).label} event${importedCount === 1 ? "" : "s"} imported`,
         });
-      } catch {
-        failImport("The .ics file could not be parsed.");
+      } catch (error) {
+        failImport(error instanceof Error ? error.message : "The .ics file could not be parsed.");
       }
     };
 
@@ -2369,7 +2394,8 @@ export function App() {
         captureError={captureError}
         importError={importError}
         lastCalendarImportSummary={lastCalendarImportSummary}
-        onImportOutlookIcs={importOutlookIcs}
+        calendarSources={calendarSources}
+        onImportCalendar={importCalendarFile}
         chatImportError={chatImportError}
         onImportChatExport={importWorkplaceChat}
         tokenUsageDays={tokenUsageDays}

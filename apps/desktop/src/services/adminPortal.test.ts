@@ -21,6 +21,7 @@ import {
   getIndividualWorkspaceUrl,
   getWeekformWebAppUrl,
   managerWorkspaceReducer,
+  openWeekformWebApp,
   toggleManagerComparison,
 } from "./adminPortal";
 
@@ -139,6 +140,50 @@ test("Manager Access opens the production web sign-in and returns to the web app
     getManagerAccessSignInUrl(),
     `${DEFAULT_WEEKFORM_WEB_APP_URL}/login?next=%2Fmanager-access`
   );
+});
+
+test("desktop Account & Sharing opens the canonical Weekform Web app", () => {
+  assert.equal(
+    getWeekformWebAppUrl("/app"),
+    "https://weekform.dev/app"
+  );
+});
+
+test("browser demo detaches the Web app window before navigating it", async () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  let openedInitialUrl: string | null = null;
+  let navigatedTo: string | null = null;
+  const popup = {
+    opener: {} as object | null,
+    location: {
+      replace(url: string) {
+        navigatedTo = url;
+      }
+    }
+  };
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      open(url: string) {
+        openedInitialUrl = url;
+        return popup;
+      }
+    }
+  });
+
+  try {
+    await openWeekformWebApp();
+    assert.equal(openedInitialUrl, "");
+    assert.equal(popup.opener, null);
+    assert.equal(navigatedTo, "https://weekform.dev/app");
+  } finally {
+    if (previousWindow) {
+      Object.defineProperty(globalThis, "window", previousWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, "window");
+    }
+  }
 });
 
 test("Manager Access supports a configured staging web origin", () => {

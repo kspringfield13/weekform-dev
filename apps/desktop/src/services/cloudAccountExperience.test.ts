@@ -28,3 +28,15 @@ test("Account & Sharing uses the Weekform Web name and a dedicated auth card", (
   assert.match(stylesSource, /\.cloud-oauth-options/);
   assert.match(stylesSource, /\.cloud-password-disclosure/);
 });
+
+test("Account & Sharing places an Open Web App control beside the Weekform Web heading", () => {
+  const headingStart = panelSource.indexOf("function AccountSharingHeading()");
+  const headingEnd = panelSource.indexOf("function ManagerAccessSettingsRow()");
+  const headingSource = panelSource.slice(headingStart, headingEnd);
+
+  assert.match(headingSource, /className="account-sharing-title-row"/);
+  assert.match(headingSource, /<h2>Weekform Web<\/h2>/);
+  assert.match(headingSource, /<span>Open Web App<\/span>/);
+  assert.match(headingSource, /openWeekformWebApp\(\)/);
+  assert.match(stylesSource, /\.account-sharing-title-row/);
+});

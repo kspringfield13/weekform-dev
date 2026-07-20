@@ -1,4 +1,4 @@
-import type { OutlookCalendarEvent, WorkBlock } from "../../../domain/src/models";
+import type { CalendarEvent, CalendarEventSource, OutlookCalendarEvent, WorkBlock } from "../../../domain/src/models";
 import {
   WEEKLY_BASELINE_MINUTES,
   capacityPctFromMinutes,
@@ -607,7 +607,11 @@ function parseIcsEvent(lines: string[]): IcsEventRecord | null {
   };
 }
 
-export function parseOutlookIcs(content: string, importedAt = new Date().toISOString()) {
+export function parseOutlookIcs(
+  content: string,
+  importedAt = new Date().toISOString(),
+  source: CalendarEventSource = "outlook_calendar",
+) {
   const lines = unfoldIcsLines(content);
   const records: IcsEventRecord[] = [];
   let currentEventLines: string[] | null = null;
@@ -664,9 +668,9 @@ export function parseOutlookIcs(content: string, importedAt = new Date().toISOSt
     });
   });
 
-  const unique = new Map<string, OutlookCalendarEvent>();
+  const unique = new Map<string, CalendarEvent>();
   expanded.forEach((record) => {
-    const id = `outlook-${stableHash(`${record.uid}-${record.start.toISOString()}`)}`;
+    const id = `${source}-${stableHash(`${record.uid}-${record.start.toISOString()}`)}`;
     unique.set(id, {
       calendar_event_id: id,
       uid: record.uid,
@@ -678,7 +682,7 @@ export function parseOutlookIcs(content: string, importedAt = new Date().toISOSt
       attendee_count: record.attendeeCount,
       all_day: record.allDay,
       recurrence_note: record.recurrenceNote,
-      source: "outlook_ics",
+      source,
       imported_at: importedAt
     });
   });

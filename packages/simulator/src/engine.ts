@@ -609,7 +609,7 @@ function makeIntents(
         location: "Weekform simulator room",
         organizer: "simulator@weekform.invalid",
         attendee_count: 3 + ((weekIndex + dayIndex) % 6),
-        source: "outlook_ics",
+        source: "outlook_calendar",
         imported_at: atWorkOffset(config, activeDates[0], 0),
       });
       calendarWorkItemIds.set(calendarEventId, meetingItem.workItemId);

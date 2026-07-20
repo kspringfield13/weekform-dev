@@ -1,10 +1,8 @@
 import {
   Activity,
   Archive,
-  ArrowLeft,
   ArrowRight,
   BarChart3,
-  CalendarDays,
   Check,
   CheckCircle2,
   ChevronRight,
@@ -47,6 +45,7 @@ import { serializeSimulationJson, serializeWeeklySnapshotsCsv } from "../../../.
 import { GOLDEN_SIMULATION_CONFIG } from "../../../../packages/simulator/src/golden";
 import { buildLocalPlaybackPlan, isAllowedPlaybackSurface } from "../../../../packages/simulator/src/playback";
 import { PERSONA_CATALOG } from "../../../../packages/simulator/src/personas";
+import { applyScenarioPreset } from "../../../../packages/simulator/src/presets";
 import { getPersonaWorkCatalog } from "../../../../packages/simulator/src/workCatalog";
 import type {
   ExecutionMode,
@@ -72,9 +71,8 @@ import { LiveSimulationStage } from "./LiveSimulationStage";
 import "./span-simulator.css";
 
 type AdminView = "new" | "history" | "personas" | "run" | "results";
-type ResultTab = "overview" | "work-world" | "timeline" | "evidence" | "forecast" | "shared" | "quality" | "audit";
+type ResultTab = "decision" | "evidence" | "forecast" | "integrity";
 
-const STEPS = ["Persona & Team", "Span", "Scenario", "Sharing", "Preflight"] as const;
 const LOCAL_SIMULATOR_AVAILABLE = import.meta.env.DEV;
 const PLAYBACK_FEATURE_ENABLED = LOCAL_SIMULATOR_AVAILABLE;
 const SCENARIOS: Array<{ id: ScenarioKind; label: string }> = [
@@ -247,7 +245,6 @@ export function SpanSimulatorRoot() {
 
 function SpanSimulatorApp() {
   const [view, setView] = useState<AdminView>("new");
-  const [step, setStep] = useState(0);
   const [draft, setDraft] = useState<SimulationConfig>(cloneGoldenConfig);
   const [runs, setRuns] = useState<StoredSimulationRun[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -436,7 +433,6 @@ function SpanSimulatorApp() {
 
   const cloneRun = (run: StoredSimulationRun) => {
     setDraft(structuredClone(run.config));
-    setStep(0);
     navigate("new");
     setToast("Run inputs cloned into a new editable draft.");
   };
@@ -461,7 +457,6 @@ function SpanSimulatorApp() {
     .filter((run): run is StoredSimulationRun => Boolean(run?.dataset));
   const openMode = (executionMode: ExecutionMode) => {
     setDraft((current) => ({ ...current, executionMode }));
-    setStep(0);
     navigate("new");
   };
 
@@ -472,42 +467,34 @@ function SpanSimulatorApp() {
           <WeekformMark />
           <strong>Weekform</strong>
           <span>/</span>
-          <a href="/manager-access">Manager Access</a>
-          <span>/</span>
-          <b>Simulation</b>
+          <b>Simulation lab</b>
           <span className="admin-lab-badge">Admin lab</span>
         </div>
         <div className="sim-titlebar-actions">
           <span className="local-gate-chip"><ShieldCheck size={13} aria-hidden /> Local admin session</span>
-          <a href="/manager-access">Back to Manager Access</a>
-          <a href="/">Exit to Weekform</a>
+          <a href="/manager-access">Back</a>
+          <a href="/">Exit</a>
         </div>
       </header>
 
       <aside className="sim-sidebar" aria-label="Simulation navigation">
         <nav>
           <button type="button" className={view === "new" && draft.executionMode === "fast-forward" ? "is-active" : ""} onClick={() => openMode("fast-forward")}>
-            <Database size={17} aria-hidden /><span><strong>Generate span</strong><small>Weeks to years in seconds</small></span>
+            <Database size={17} aria-hidden /><span><strong>New span</strong><small>Model a workload</small></span>
           </button>
           <button type="button" className={view === "new" && draft.executionMode === "local-playback" ? "is-active" : ""} onClick={() => openMode("local-playback")}>
-            <Activity size={17} aria-hidden /><span><strong>Live simulation</strong><small>Watch the real UI respond</small></span>
+            <Activity size={17} aria-hidden /><span><strong>Watch live</strong><small>Replay in Weekform</small></span>
           </button>
           <button type="button" className={view === "history" || view === "results" || view === "run" ? "is-active" : ""} onClick={() => navigate("history")}>
-            <History size={17} aria-hidden /><span><strong>Run history</strong><small>{runs.length} local run{runs.length === 1 ? "" : "s"}</small></span>
+            <History size={17} aria-hidden /><span><strong>Runs</strong><small>{runs.length} saved</small></span>
           </button>
           <button type="button" className={view === "personas" ? "is-active" : ""} onClick={() => navigate("personas")}>
-            <Users size={17} aria-hidden /><span><strong>Persona catalog</strong><small>{PERSONA_CATALOG.length} versioned roles</small></span>
+            <Users size={17} aria-hidden /><span><strong>Roles</strong><small>{PERSONA_CATALOG.length} profiles</small></span>
           </button>
         </nav>
         <section className="sim-isolation-card" aria-label="Synthetic data isolation">
-          <SyntheticBadge compact />
-          <strong>Isolated simulation lab</strong>
-          <p>No personal Weekform state is read on this route. Real team metrics exclude every run.</p>
-          <ul>
-            <li><Check size={12} aria-hidden /> Synthetic identities only</li>
-            <li><Check size={12} aria-hidden /> Separate local store key</li>
-            <li><Check size={12} aria-hidden /> No cloud or external writes</li>
-          </ul>
+          <ShieldCheck size={16} aria-hidden />
+          <span><strong>Isolated by design</strong><small>Local, synthetic, no cloud writes</small></span>
         </section>
       </aside>
 
@@ -520,8 +507,6 @@ function SpanSimulatorApp() {
         {view === "new" && (
           <SimulationWizard
             headingRef={headingRef}
-            step={step}
-            setStep={setStep}
             draft={draft}
             setDraft={setDraft}
             validation={validation}
@@ -551,6 +536,7 @@ function SpanSimulatorApp() {
             headingRef={headingRef}
             run={activeRun}
             otherRuns={completeRuns.filter((run) => run.id !== activeRun.id)}
+            compareId={compareIds.find((id) => id !== activeRun.id) ?? ""}
             onClone={() => cloneRun(activeRun)}
             onArchive={() => archiveRun(activeRun)}
             onDelete={() => setDeleteRun(activeRun)}
@@ -574,10 +560,9 @@ function SpanSimulatorApp() {
         )}
         {view === "personas" && <PersonaCatalog headingRef={headingRef} onUse={(persona) => {
           setDraft((current) => ({ ...current, members: [{ personaId: persona.id, count: 1 }] }));
-          setStep(0);
           navigate("new");
         }} />}
-        {view === "history" && comparedRuns.length === 2 && <ComparePanel runs={comparedRuns} onClose={() => setCompareIds([])} />}
+        {comparedRuns.length === 2 && <ComparePanel runs={comparedRuns} onClose={() => setCompareIds([])} />}
       </main>
 
       <div className="sim-toast-host" role="status" aria-live="polite">
@@ -596,8 +581,6 @@ function SpanSimulatorApp() {
 
 function SimulationWizard({
   headingRef,
-  step,
-  setStep,
   draft,
   setDraft,
   validation,
@@ -605,179 +588,169 @@ function SimulationWizard({
   onStart,
 }: {
   headingRef: React.RefObject<HTMLHeadingElement>;
-  step: number;
-  setStep: (step: number) => void;
   draft: SimulationConfig;
   setDraft: React.Dispatch<React.SetStateAction<SimulationConfig>>;
   validation: ReturnType<typeof validateSimulationConfig>;
   playbackEnabled: boolean;
   onStart: () => void;
 }) {
+  const [personaPickerOpen, setPersonaPickerOpen] = useState(false);
+  const [personaQuery, setPersonaQuery] = useState("");
   const totalWeeks = spanWeeks(draft);
   const totalMembers = memberCount(draft);
+  const memberWeeks = totalMembers * totalWeeks;
+  const visiblePersonas = PERSONA_CATALOG.filter((persona) => (
+    `${persona.displayName} ${persona.role}`.toLowerCase().includes(personaQuery.trim().toLowerCase())
+  ));
+  const selectedPersonas = draft.members.map((member) => ({
+    member,
+    persona: PERSONA_CATALOG.find((persona) => persona.id === member.personaId),
+  }));
   const setScenarioField = <K extends keyof SimulationConfig["scenario"]>(key: K, value: SimulationConfig["scenario"][K]) => {
     setDraft((current) => ({ ...current, scenario: { ...current.scenario, [key]: value } }));
   };
-
-  const stepTitle = [
-    "Who should this synthetic team represent?",
-    draft.executionMode === "local-playback" ? "How much virtual context should the live session build?" : "How much virtual work should Weekform observe?",
-    "What pressure should shape the span?",
-    "What may the isolated manager view receive?",
-    "Review the contract before generation starts.",
-  ][step];
-
-  return (
-    <section className="sim-workflow" aria-labelledby="sim-wizard-title">
-      <header className="sim-page-header">
-        <div>
-          <span className="sim-kicker">Simulation · {draft.executionMode === "fast-forward" ? "Generate span" : "Run live"}</span>
-          <h1 id="sim-wizard-title" ref={headingRef} tabIndex={-1}>{stepTitle}</h1>
-          <p>{draft.executionMode === "fast-forward"
-            ? "Generate concrete duties, communications, and business measures, then let Weekform’s real deterministic inference derive the long-span result."
-            : "Watch the selected persona work across local business sandboxes, return to the real Weekform UI, review evidence, and inspect what fits next."}</p>
-        </div>
-        <SyntheticBadge />
-      </header>
-
-      <div className="sim-mode-lenses" role="radiogroup" aria-label="Simulation function">
-        <label className={draft.executionMode === "fast-forward" ? "is-selected" : ""}>
-          <input type="radio" name="simulation-function" checked={draft.executionMode === "fast-forward"} onChange={() => setDraft((current) => ({ ...current, executionMode: "fast-forward" }))} />
-          <Database size={18} aria-hidden />
-          <span><strong>Generate span</strong><small>Compress weeks, months, or years into realistic, inspectable workload evidence.</small></span>
-          <b>WEEKS → YEARS</b>
-        </label>
-        <i aria-hidden><span /></i>
-        <label className={draft.executionMode === "local-playback" ? "is-selected" : ""}>
-          <input type="radio" name="simulation-function" checked={draft.executionMode === "local-playback"} disabled={!playbackEnabled} onChange={() => setDraft((current) => ({ ...current, executionMode: "local-playback" }))} />
-          <MousePointer2 size={18} aria-hidden />
-          <span><strong>Live simulation</strong><small>Watch role-specific work, cursor movement, review, and Weekform decisions in real time.</small></span>
-          <b>SECONDS → MINUTES</b>
-        </label>
-      </div>
-
-      <ol className="sim-stepper" aria-label="Simulation setup steps">
-        {STEPS.map((label, index) => (
-          <li key={label} className={index === step ? "is-current" : index < step ? "is-complete" : ""}>
-            <button type="button" onClick={() => setStep(index)} aria-current={index === step ? "step" : undefined}>
-              <span>{index < step ? <Check size={13} aria-hidden /> : index + 1}</span>
-              <b>{label}</b>
-            </button>
-          </li>
-        ))}
-      </ol>
-
-      <div className="sim-workflow-grid">
-        <div className="sim-step-content">
-          {step === 0 && <PersonaStep draft={draft} setDraft={setDraft} />}
-          {step === 1 && <SpanStep draft={draft} setDraft={setDraft} />}
-          {step === 2 && <ScenarioStep draft={draft} setDraft={setDraft} setScenarioField={setScenarioField} />}
-          {step === 3 && <SharingStep draft={draft} setDraft={setDraft} />}
-          {step === 4 && <PreflightStep draft={draft} setDraft={setDraft} validation={validation} playbackEnabled={playbackEnabled} />}
-        </div>
-        <aside className="sim-estimate" aria-label="Live simulation estimate">
-          <span className="sim-kicker">Live estimate</span>
-          <dl>
-            <div><dt>Simulated members</dt><dd>{totalMembers}</dd></div>
-            <div><dt>Virtual weeks</dt><dd>{totalWeeks}</dd></div>
-            <div><dt>Estimated evidence</dt><dd>{formatNumber(totalMembers * totalWeeks * 460)}–{formatNumber(totalMembers * totalWeeks * 720)}</dd></div>
-            <div><dt>Weekly snapshots</dt><dd>{formatNumber(totalMembers * totalWeeks)}</dd></div>
-          </dl>
-          <Weekline total={totalWeeks} current={0} status="preview" />
-          <div className="sim-trust-note">
-            <ShieldCheck size={16} aria-hidden />
-            <p><strong>Real state stays untouched.</strong> Every artifact carries the run, persona, generator, and seed provenance.</p>
-          </div>
-        </aside>
-      </div>
-
-      <footer className="sim-workflow-footer">
-        <button className="sim-button secondary" type="button" disabled={step === 0} onClick={() => setStep(Math.max(0, step - 1))}>
-          <ArrowLeft size={15} aria-hidden /> Back
-        </button>
-        <span>{step + 1} of {STEPS.length}</span>
-        {step < STEPS.length - 1 ? (
-          <button className="sim-button primary" type="button" onClick={() => setStep(Math.min(STEPS.length - 1, step + 1))}>
-            Continue <ArrowRight size={15} aria-hidden />
-          </button>
-        ) : (
-          <button className="sim-button primary" type="button" disabled={!validation.valid} onClick={onStart}>
-            <Play size={15} aria-hidden /> {draft.executionMode === "fast-forward" ? "Generate synthetic span" : "Start live simulation"}
-          </button>
-        )}
-      </footer>
-    </section>
-  );
-}
-
-function PersonaStep({ draft, setDraft }: { draft: SimulationConfig; setDraft: React.Dispatch<React.SetStateAction<SimulationConfig>> }) {
-  const [query, setQuery] = useState("");
-  const [inspected, setInspected] = useState<SimulationPersona | null>(null);
-  const selected = new Map(draft.members.map((member) => [member.personaId, member.count]));
-  const visible = PERSONA_CATALOG.filter((persona) => `${persona.displayName} ${persona.role}`.toLowerCase().includes(query.toLowerCase()));
-
   const togglePersona = (persona: SimulationPersona) => {
     setDraft((current) => {
-      const exists = current.members.some((member) => member.personaId === persona.id);
+      const selected = current.members.some((member) => member.personaId === persona.id);
       return {
         ...current,
-        members: exists
+        members: selected
           ? current.members.filter((member) => member.personaId !== persona.id)
           : [...current.members, { personaId: persona.id, count: 1 }],
       };
     });
   };
+  const pressureControls: Array<{
+    key: "meetingDensity" | "reactiveLoad" | "fragmentation";
+    label: string;
+  }> = [
+    { key: "meetingDensity", label: "Meetings" },
+    { key: "reactiveLoad", label: "Reactive" },
+    { key: "fragmentation", label: "Fragmentation" },
+  ];
+  const spanMax = draft.span.unit === "years" ? 10 : draft.span.unit === "months" ? 60 : 260;
+  const normalizedSpan = Math.max(4, Math.min(100, (totalWeeks / 260) * 100));
+
+  useEffect(() => {
+    setPersonaPickerOpen(false);
+    setPersonaQuery("");
+  }, [draft.executionMode]);
 
   return (
-    <fieldset className="sim-fieldset">
-      <legend>Build the synthetic team</legend>
-      <div className="persona-toolbar">
-        <div className="sim-search">
-          <Search size={17} aria-hidden />
-          <input aria-label="Search persona catalog" placeholder="Search by role" value={query} onChange={(event) => setQuery(event.target.value)} />
+    <section className="sim-workflow sim-cockpit" aria-labelledby="sim-wizard-title">
+      <header className="sim-page-header cockpit-header">
+        <div>
+          <span className="sim-kicker">Span simulator</span>
+          <h1 id="sim-wizard-title" ref={headingRef} tabIndex={-1}>See what the workload becomes.</h1>
+          <p>Set the people, pressure, and horizon. Weekform derives the rest.</p>
         </div>
-        <span className="persona-selection-count" aria-live="polite">
-          <Users size={14} aria-hidden />
-          {memberCount(draft)} member{memberCount(draft) === 1 ? "" : "s"} selected
-        </span>
+        <div className="cockpit-header-actions">
+          <button type="button" className="sim-button ghost" onClick={() => { setDraft(cloneGoldenConfig()); setPersonaPickerOpen(false); setPersonaQuery(""); }}><RotateCcw size={14} aria-hidden /> Reset</button>
+          <SyntheticBadge />
+        </div>
+      </header>
+
+      <div className="sim-mode-switch" role="radiogroup" aria-label="Simulation function">
+        <label className={draft.executionMode === "fast-forward" ? "is-selected" : ""}>
+          <input type="radio" name="simulation-function" checked={draft.executionMode === "fast-forward"} onChange={() => setDraft((current) => ({ ...current, executionMode: "fast-forward" }))} />
+          <Database size={18} aria-hidden />
+          <span><strong>Fast forward</strong><small>Weeks to years</small></span>
+        </label>
+        <label className={draft.executionMode === "local-playback" ? "is-selected" : ""}>
+          <input type="radio" name="simulation-function" checked={draft.executionMode === "local-playback"} disabled={!playbackEnabled} onChange={() => setDraft((current) => ({ ...current, executionMode: "local-playback" }))} />
+          <MousePointer2 size={18} aria-hidden />
+          <span><strong>Watch live</strong><small>Local UI playback</small></span>
+        </label>
       </div>
-      <p className="sim-field-help">Choose one or more roles, then set how many synthetic members each role represents.</p>
-      <div className="persona-grid">
-        {visible.map((persona) => {
-          const count = selected.get(persona.id);
-          return (
-            <article className={`persona-card${count ? " is-selected" : ""}`} key={persona.id}>
-              <button
-                className="persona-select"
-                type="button"
-                aria-label={`${count ? "Remove" : "Add"} ${persona.displayName} ${count ? "from" : "to"} the synthetic team`}
-                aria-pressed={Boolean(count)}
-                onClick={() => togglePersona(persona)}
-              >
-                <span className="persona-icon"><UserRoundCog size={17} aria-hidden /></span>
-                <span className="persona-copy"><strong>{persona.displayName}</strong><small>{persona.role} · persona v{persona.version}</small></span>
-                <span className="persona-check" aria-hidden>{count ? <Check size={14} /> : <Plus size={14} />}</span>
-              </button>
-              <div className="persona-meta">
-                <span><strong>{persona.deepWorkCadence.blockMinutes.typical} min</strong> focus block</span>
-                <span><strong>{persona.meetingBehavior.weeklyMinutes.typical} min</strong> meetings / week</span>
+
+      <div className="cockpit-grid">
+        <div className="cockpit-primary">
+          <section className="cockpit-card people-card" aria-labelledby="sim-people-title">
+            <header className="cockpit-card-header">
+              <div><span className="cockpit-index">01</span><div><h2 id="sim-people-title">People</h2><p>{totalMembers} synthetic member{totalMembers === 1 ? "" : "s"}</p></div></div>
+              <button className="sim-button secondary compact" type="button" aria-expanded={personaPickerOpen} onClick={() => setPersonaPickerOpen((current) => !current)}><Plus size={14} aria-hidden /> Add role</button>
+            </header>
+            <div className="selected-personas">
+              {selectedPersonas.map(({ member, persona }) => (
+                <article key={member.personaId}>
+                  <div className="persona-monogram" aria-hidden>{persona?.role.split(" ").map((part) => part[0]).slice(0, 2).join("") ?? "WF"}</div>
+                  <div><strong>{persona?.displayName ?? member.personaId}</strong><span>{persona?.role}</span></div>
+                  <label><span className="sr-only">{persona?.displayName} count</span><button type="button" aria-label={`Remove one ${persona?.displayName}`} disabled={member.count <= 1} onClick={() => setDraft((current) => ({ ...current, members: current.members.map((item) => item.personaId === member.personaId ? { ...item, count: Math.max(1, item.count - 1) } : item) }))}>−</button><output>{member.count}</output><button type="button" aria-label={`Add one ${persona?.displayName}`} onClick={() => setDraft((current) => ({ ...current, members: current.members.map((item) => item.personaId === member.personaId ? { ...item, count: Math.min(20, item.count + 1) } : item) }))}>+</button></label>
+                  <button className="remove-persona" type="button" aria-label={`Remove ${persona?.displayName}`} onClick={() => persona && togglePersona(persona)}><X size={14} aria-hidden /></button>
+                </article>
+              ))}
+              {selectedPersonas.length === 0 && <button type="button" className="empty-persona" onClick={() => setPersonaPickerOpen(true)}><Plus size={17} aria-hidden /> Choose a role</button>}
+            </div>
+            {personaPickerOpen && (
+              <div className="persona-picker" role="region" aria-label="Persona catalog">
+                <label className="sim-search"><Search size={15} aria-hidden /><input autoFocus aria-label="Search persona catalog" placeholder="Find a role" value={personaQuery} onChange={(event) => setPersonaQuery(event.target.value)} /></label>
+                <div>{visiblePersonas.map((persona) => {
+                  const selected = draft.members.some((member) => member.personaId === persona.id);
+                  return <button type="button" key={persona.id} aria-pressed={selected} onClick={() => togglePersona(persona)}><span className="persona-monogram" aria-hidden>{persona.role.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><span><strong>{persona.displayName}</strong><small>{persona.role}</small></span>{selected ? <Check size={15} aria-hidden /> : <Plus size={15} aria-hidden />}</button>;
+                })}</div>
               </div>
-              <div className="persona-card-actions">
-                <button type="button" onClick={() => setInspected(persona)}>View details</button>
-                {count && (
-                  <label className="persona-count"><span>Members</span><input aria-label={`${persona.displayName} simulated member count`} type="number" min={1} max={20} value={count} onChange={(event) => {
-                    const next = Math.max(1, Math.min(20, Number(event.target.value) || 1));
-                    setDraft((current) => ({ ...current, members: current.members.map((member) => member.personaId === persona.id ? { ...member, count: next } : member) }));
-                  }} /></label>
-                )}
-              </div>
-            </article>
-          );
-        })}
+            )}
+          </section>
+
+          <section className="cockpit-card pressure-card" aria-labelledby="sim-pressure-title">
+            <header className="cockpit-card-header"><div><span className="cockpit-index">02</span><div><h2 id="sim-pressure-title">Pressure</h2><p>{scenarioLabel(draft.scenario.kind)}</p></div></div></header>
+            <div className="scenario-presets cockpit-presets" role="group" aria-label="Scenario preset">
+              {SCENARIOS.map((scenario) => <button type="button" key={scenario.id} aria-pressed={draft.scenario.kind === scenario.id} onClick={() => setDraft((current) => applyScenarioPreset(current, scenario.id))}>{scenario.label}</button>)}
+            </div>
+            <div className="pressure-controls">
+              {pressureControls.map((control) => (
+                <label key={control.key}>
+                  <span>{control.label}<output>{draft.scenario[control.key]}%</output></span>
+                  <input aria-label={`${control.label} pressure`} type="range" min={0} max={100} step={1} value={draft.scenario[control.key]} onChange={(event) => setScenarioField(control.key, Number(event.target.value))} />
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <details className="cockpit-advanced">
+            <summary><SlidersHorizontal size={15} aria-hidden /><span><strong>Advanced setup</strong><small>Schedule, sharing, seed, and fine pressure</small></span><ChevronRight size={15} aria-hidden /></summary>
+            <div className="advanced-grid">
+              <label><span>Start date</span><input type="date" value={draft.startDate} onChange={(event) => setDraft((current) => ({ ...current, startDate: event.target.value }))} /></label>
+              <label><span>Timezone</span><select value={draft.timezone} onChange={(event) => setDraft((current) => ({ ...current, timezone: event.target.value }))}>{TIMEZONES.map((timezone) => <option key={timezone}>{timezone}</option>)}</select></label>
+              <label><span>Sharing</span><select value={draft.sharingPolicy.level} onChange={(event) => setDraft((current) => ({ ...current, sharingPolicy: { level: event.target.value as SharingLevel } }))}><option value="summary">Summary only</option><option value="summary+categories">Summary + categories</option><option value="summary+categories+projects">Summary + projects</option></select></label>
+              <label><span>Seed</span><input value={draft.seed} onChange={(event) => setDraft((current) => ({ ...current, seed: event.target.value }))} /></label>
+              <label><span>Workday starts</span><input type="time" value={draft.workingHours.start} onChange={(event) => setDraft((current) => ({ ...current, workingHours: { ...current.workingHours, start: event.target.value } }))} /></label>
+              <label><span>Workday ends</span><input type="time" value={draft.workingHours.end} onChange={(event) => setDraft((current) => ({ ...current, workingHours: { ...current.workingHours, end: event.target.value } }))} /></label>
+            </div>
+            <div className="advanced-pressure-grid">
+              <label><span>Interruptions <output>{draft.scenario.interruptions}%</output></span><input aria-label="Interruption pressure" type="range" min={0} max={100} step={1} value={draft.scenario.interruptions} onChange={(event) => setScenarioField("interruptions", Number(event.target.value))} /></label>
+              <label><span>Overtime <output>{draft.scenario.overtime}%</output></span><input aria-label="Overtime pressure" type="range" min={0} max={100} step={1} value={draft.scenario.overtime} onChange={(event) => setScenarioField("overtime", Number(event.target.value))} /></label>
+              <label><span>Projects <output>{draft.scenario.projectCount}</output></span><input aria-label="Concurrent projects" type="range" min={1} max={12} value={draft.scenario.projectCount} onChange={(event) => setScenarioField("projectCount", Number(event.target.value))} /></label>
+            </div>
+            <label className="advanced-direction"><span>Scenario direction</span><textarea rows={2} value={draft.scenario.direction} onChange={(event) => setScenarioField("direction", event.target.value)} /></label>
+          </details>
+        </div>
+
+        <aside className="span-lens" aria-labelledby="sim-horizon-title">
+          <header><span className="cockpit-index">03</span><span>Time lens</span></header>
+          <div className="span-lens-value"><strong>{draft.span.value}</strong><span>{draft.span.unit}</span></div>
+          <p id="sim-horizon-title">{totalWeeks} virtual weeks</p>
+          <div className="span-lens-track" aria-hidden><span style={{ width: `${normalizedSpan}%` }} /><i /><i /><i /><i /></div>
+          <label className="span-range"><span className="sr-only">Span duration</span><input type="range" min={1} max={spanMax} value={draft.span.value} onChange={(event) => setDraft((current) => ({ ...current, span: { ...current.span, value: Number(event.target.value) } }))} /></label>
+          <div className="span-inputs"><label><span>Length</span><input type="number" min={1} max={spanMax} value={draft.span.value} onChange={(event) => setDraft((current) => ({ ...current, span: { ...current.span, value: Math.max(1, Math.min(spanMax, Number(event.target.value) || 1)) } }))} /></label><label><span>Unit</span><select value={draft.span.unit} onChange={(event) => setDraft((current) => ({ ...current, span: { value: Math.min(event.target.value === "years" ? 10 : event.target.value === "months" ? 60 : 260, current.span.value), unit: event.target.value as SimulationConfig["span"]["unit"] } }))}><option value="weeks">Weeks</option><option value="months">Months</option><option value="years">Years</option></select></label></div>
+          <div className="lens-metrics">
+            <div><span>Member-weeks</span><strong>{formatNumber(memberWeeks)}</strong></div>
+            <div><span>Evidence</span><strong>{formatNumber(memberWeeks * 460)}–{formatNumber(memberWeeks * 720)}</strong></div>
+            <div><span>Snapshots</span><strong>{formatNumber(memberWeeks)}</strong></div>
+          </div>
+          <div className={`lens-readiness ${validation.valid ? "is-ready" : "is-blocked"}`} role="status">
+            {validation.valid ? <ShieldCheck size={16} aria-hidden /> : <CircleAlert size={16} aria-hidden />}
+            <span><strong>{validation.valid ? "Ready" : "Needs attention"}</strong><small>{validation.valid ? "Deterministic and isolated" : validation.errors[0]}</small></span>
+          </div>
+          <button className="sim-button primary lens-launch" type="button" disabled={!validation.valid} onClick={onStart}>
+            {draft.executionMode === "fast-forward" ? <Sparkles size={15} aria-hidden /> : <Play size={15} aria-hidden />}
+            {draft.executionMode === "fast-forward" ? "Generate span" : "Start live"}
+            <ArrowRight size={15} aria-hidden />
+          </button>
+          <p className="lens-trust"><LockKeyhole size={13} aria-hidden /> Synthetic only · local store · audited</p>
+        </aside>
       </div>
-      {visible.length === 0 && <div className="sim-empty"><Users size={20} aria-hidden /><strong>No personas match.</strong><p>Clear the search to return to the complete versioned catalog.</p><button type="button" onClick={() => setQuery("")}>Clear search</button></div>}
-      {inspected && <PersonaDrawer persona={inspected} onClose={() => setInspected(null)} />}
-    </fieldset>
+    </section>
   );
 }
 
@@ -801,148 +774,6 @@ function trapDialogFocus(event: React.KeyboardEvent<HTMLElement>, onClose: () =>
     event.preventDefault();
     first.focus();
   }
-}
-
-function PersonaDrawer({ persona, onClose }: { persona: SimulationPersona; onClose: () => void }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-  const restoreFocusRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
-  useEffect(() => {
-    closeRef.current?.focus();
-    return () => restoreFocusRef.current?.focus();
-  }, []);
-  return (
-    <div className="sim-drawer-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <aside className="sim-drawer" role="dialog" aria-modal="true" aria-labelledby="persona-drawer-title" onKeyDown={(event) => trapDialogFocus(event, onClose)}>
-        <header><div><SyntheticBadge compact /><h2 id="persona-drawer-title">{persona.displayName}</h2><p>{persona.role} · persona v{persona.version}</p></div><button ref={closeRef} type="button" aria-label="Close persona details" onClick={onClose}><X size={17} aria-hidden /></button></header>
-        <section><h3>Responsibility patterns</h3><ul>{persona.responsibilities.map((item) => <li key={item}>{item}</li>)}</ul></section>
-        <section><h3>Typical projects</h3><div className="sim-chip-list">{persona.projects.map((item) => <span key={item}>{item}</span>)}</div></section>
-        <section><h3>Work rhythm</h3><dl className="persona-details"><div><dt>Workday</dt><dd>{persona.typicalWorkday.start}–{persona.typicalWorkday.end}</dd></div><div><dt>Reactive load</dt><dd>{persona.reactiveLoad.typicalPercent}% typical</dd></div><div><dt>Interruptions</dt><dd>{persona.interruptions.perFocusHour}/focus hr</dd></div><div><dt>Stakeholders</dt><dd>{persona.stakeholders.join(", ")}</dd></div></dl></section>
-        <section><h3>Sandbox app families</h3><div className="sim-chip-list">{persona.appContexts.map((item) => <span key={item.family}>{item.family}</span>)}</div></section>
-      </aside>
-    </div>
-  );
-}
-
-function SpanStep({ draft, setDraft }: { draft: SimulationConfig; setDraft: React.Dispatch<React.SetStateAction<SimulationConfig>> }) {
-  return (
-    <fieldset className="sim-fieldset">
-      <legend>Virtual span</legend>
-      <p className="sim-field-help">Generation uses a virtual clock. Multi-year spans advance in week-sized resumable chunks.</p>
-      <div className="sim-form-grid two">
-        <label><span>Start date</span><input type="date" value={draft.startDate} onChange={(event) => setDraft((current) => ({ ...current, startDate: event.target.value }))} /></label>
-        <label><span>Timezone</span><select value={draft.timezone} onChange={(event) => setDraft((current) => ({ ...current, timezone: event.target.value }))}>{TIMEZONES.map((timezone) => <option key={timezone}>{timezone}</option>)}</select></label>
-        <label><span>Duration</span><input type="number" min={1} max={draft.span.unit === "years" ? 5 : 260} value={draft.span.value} onChange={(event) => setDraft((current) => ({ ...current, span: { ...current.span, value: Math.max(1, Number(event.target.value) || 1) } }))} /></label>
-        <label><span>Unit</span><select value={draft.span.unit} onChange={(event) => setDraft((current) => ({ ...current, span: { ...current.span, unit: event.target.value as SimulationConfig["span"]["unit"] } }))}><option value="weeks">Weeks</option><option value="months">Months</option><option value="years">Years</option></select></label>
-        <label><span>Workday starts</span><input type="time" value={draft.workingHours.start} onChange={(event) => setDraft((current) => ({ ...current, workingHours: { ...current.workingHours, start: event.target.value } }))} /></label>
-        <label><span>Workday ends</span><input type="time" value={draft.workingHours.end} onChange={(event) => setDraft((current) => ({ ...current, workingHours: { ...current.workingHours, end: event.target.value } }))} /></label>
-      </div>
-      <div className="sim-subsection">
-        <h3>Working days</h3>
-        <div className="weekday-grid" role="group" aria-label="Working days">
-          {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((label, index) => {
-            const day = (index + 1) as SimulationConfig["workDays"][number];
-            const active = draft.workDays.includes(day);
-            return <button key={label} type="button" aria-pressed={active} onClick={() => setDraft((current) => ({ ...current, workDays: active ? current.workDays.filter((item) => item !== day) : [...current.workDays, day].sort() }))}>{label}</button>;
-          })}
-        </div>
-      </div>
-      <div className="sim-subsection compact-copy"><CalendarDays size={18} aria-hidden /><div><h3>Holiday and PTO behavior</h3><p>{draft.holidays.length} holidays and {draft.pto.length} PTO ranges are currently pinned in the deterministic configuration.</p></div></div>
-    </fieldset>
-  );
-}
-
-function ScenarioStep({
-  draft,
-  setDraft,
-  setScenarioField,
-}: {
-  draft: SimulationConfig;
-  setDraft: React.Dispatch<React.SetStateAction<SimulationConfig>>;
-  setScenarioField: <K extends keyof SimulationConfig["scenario"]>(key: K, value: SimulationConfig["scenario"][K]) => void;
-}) {
-  const controls: Array<{ key: "meetingDensity" | "reactiveLoad" | "fragmentation" | "overtime" | "interruptions"; label: string }> = [
-    { key: "meetingDensity", label: "Meeting density" },
-    { key: "reactiveLoad", label: "Reactive load" },
-    { key: "fragmentation", label: "Fragmentation" },
-    { key: "interruptions", label: "Interruptions" },
-    { key: "overtime", label: "Overtime pressure" },
-  ];
-  return (
-    <fieldset className="sim-fieldset">
-      <legend>Scenario conditions</legend>
-      <p className="sim-field-help">Controls influence correlated behavior. They never write final capacity percentages directly.</p>
-      <div className="scenario-presets" role="group" aria-label="Scenario preset">
-        {SCENARIOS.map((scenario) => <button type="button" key={scenario.id} aria-pressed={draft.scenario.kind === scenario.id} onClick={() => setScenarioField("kind", scenario.id)}>{scenario.label}</button>)}
-      </div>
-      <label className="sim-full-field"><span>Scenario title</span><input value={draft.scenario.title} onChange={(event) => setScenarioField("title", event.target.value)} /></label>
-      <label className="sim-full-field"><span>Scenario direction</span><textarea rows={4} value={draft.scenario.direction} onChange={(event) => setScenarioField("direction", event.target.value)} /><small>Validated as simulator constraints; never inserted as authoritative metrics.</small></label>
-      <div className="scenario-controls">
-        {controls.map((control) => (
-          <label key={control.key}>
-            <span>{control.label}<output>{draft.scenario[control.key]}%</output></span>
-            <input type="range" min={0} max={100} step={5} value={draft.scenario[control.key]} onChange={(event) => setScenarioField(control.key, Number(event.target.value))} />
-          </label>
-        ))}
-        <label><span>Concurrent projects<output>{draft.scenario.projectCount}</output></span><input type="range" min={1} max={12} value={draft.scenario.projectCount} onChange={(event) => setScenarioField("projectCount", Number(event.target.value))} /></label>
-      </div>
-      <div className="sim-form-grid two"><label><span>Deterministic seed</span><input value={draft.seed} onChange={(event) => setDraft((current) => ({ ...current, seed: event.target.value }))} /></label><label><span>Scenario version</span><input value={draft.scenario.version} readOnly /></label></div>
-    </fieldset>
-  );
-}
-
-function SharingStep({ draft, setDraft }: { draft: SimulationConfig; setDraft: React.Dispatch<React.SetStateAction<SimulationConfig>> }) {
-  const choices: Array<{ id: SharingLevel; title: string; body: string }> = [
-    { id: "summary", title: "Summary", body: "Capacity, workload, risk, confidence, and freshness only." },
-    { id: "summary+categories", title: "Summary + categories", body: "Adds aggregate work-category and mode allocation." },
-    { id: "summary+categories+projects", title: "Summary + categories + projects", body: "Uses approved synthetic project labels in the isolated planning view." },
-  ];
-  const previewLabel = draft.members
-    .map((member) => {
-      const persona = PERSONA_CATALOG.find((item) => item.id === member.personaId);
-      return `${persona?.displayName ?? "Synthetic persona"}${member.count > 1 ? ` ×${member.count}` : ""}`;
-    })
-    .join(" · ");
-  return (
-    <fieldset className="sim-fieldset">
-      <legend>Sharing policy</legend>
-      <p className="sim-field-help">This creates a consent-safe representation for an isolated manager simulation view. Real team metrics remain unchanged.</p>
-      <div className="sharing-options">
-        {choices.map((choice) => (
-          <label key={choice.id} className={draft.sharingPolicy.level === choice.id ? "is-selected" : ""}>
-            <input type="radio" name="sharing" value={choice.id} checked={draft.sharingPolicy.level === choice.id} onChange={() => setDraft((current) => ({ ...current, sharingPolicy: { level: choice.id } }))} />
-            <span><strong>{choice.title}</strong><small>{choice.body}</small></span>
-          </label>
-        ))}
-      </div>
-      <section className="shared-preview" aria-label="Isolated manager preview">
-        <header><div><span className="sim-kicker">Isolated manager preview</span><h3>{previewLabel || "Synthetic team"}</h3></div><SyntheticBadge /></header>
-        <div className="shared-preview-grid"><div><span>Reliable capacity</span><strong>Derived at run time</strong></div><div><span>Reactive load</span><strong>Derived at run time</strong></div><div><span>Sharing scope</span><strong>{choices.find((choice) => choice.id === draft.sharingPolicy.level)?.title}</strong></div></div>
-        <p><LockKeyhole size={14} aria-hidden /> Raw evidence, notes, screenshots, real identities, and window titles never enter this snapshot.</p>
-      </section>
-    </fieldset>
-  );
-}
-
-function PreflightStep({ draft, setDraft: _setDraft, validation, playbackEnabled }: { draft: SimulationConfig; setDraft: React.Dispatch<React.SetStateAction<SimulationConfig>>; validation: ReturnType<typeof validateSimulationConfig>; playbackEnabled: boolean }) {
-  const estimate = memberCount(draft) * spanWeeks(draft);
-  return (
-    <fieldset className="sim-fieldset">
-      <legend>Preflight preview</legend>
-      <div className={`preflight-status ${validation.valid ? "is-valid" : "is-invalid"}`} role="status">
-        {validation.valid ? <ShieldCheck size={20} aria-hidden /> : <CircleAlert size={20} aria-hidden />}
-        <div><strong>{validation.valid ? "Ready for deterministic generation" : "Preflight needs attention"}</strong><p>{validation.valid ? "The simulator can generate this span without reading or changing personal Weekform state." : validation.errors.join(" ")}</p></div>
-      </div>
-      <div className="preflight-grid">
-        <section><span className="sim-kicker">Canonical inputs</span><dl><div><dt>Personas / members</dt><dd>{draft.members.length} / {memberCount(draft)}</dd></div><div><dt>Date / span</dt><dd>{formatDate(draft.startDate)} · {draft.span.value} {draft.span.unit}</dd></div><div><dt>Timezone</dt><dd>{draft.timezone}</dd></div><div><dt>Scenario</dt><dd>{scenarioLabel(draft.scenario.kind)}</dd></div><div><dt>Seed</dt><dd><code>{draft.seed}</code></dd></div><div><dt>Generator</dt><dd>v{draft.generatorVersion}</dd></div></dl></section>
-        <section><span className="sim-kicker">Estimated output</span><dl><div><dt>Member-weeks</dt><dd>{formatNumber(estimate)}</dd></div><div><dt>Evidence range</dt><dd>{formatNumber(estimate * 460)}–{formatNumber(estimate * 720)}</dd></div><div><dt>Snapshots</dt><dd>{formatNumber(estimate)}</dd></div><div><dt>Sharing</dt><dd>{draft.sharingPolicy.level}</dd></div></dl></section>
-      </div>
-      <div className="selected-execution-summary">
-        {draft.executionMode === "fast-forward" ? <LoaderCircle size={18} aria-hidden /> : <Activity size={18} aria-hidden />}
-        <div><span className="sim-kicker">Selected function</span><strong>{draft.executionMode === "fast-forward" ? "Generate span" : "Live simulation"}</strong><p>{draft.executionMode === "fast-forward" ? "Chunked historical generation through the real Weekform evidence pipeline." : playbackEnabled ? "Embedded same-origin business sandboxes plus the real Weekform demo UI; no personal state or external mutations." : "Live simulation is unavailable outside local development."}</p></div>
-      </div>
-      <p className="sim-contract-note"><ClipboardCheck size={16} aria-hidden /> Starting records run creation in the synthetic audit trail. Playback requires one additional explicit confirmation.</p>
-    </fieldset>
-  );
 }
 
 function RunScreen({ headingRef, run, livePaused, liveSpeed, onLivePausedChange, onLiveSpeedChange, onLiveComplete, onLiveFailure, onLiveRestart, onCancel, onResume, onResults }: { headingRef: React.RefObject<HTMLHeadingElement>; run: StoredSimulationRun; livePaused: boolean; liveSpeed: number; onLivePausedChange: (paused: boolean) => void; onLiveSpeedChange: (speed: number) => void; onLiveComplete: () => void; onLiveFailure: (message: string) => void; onLiveRestart: () => void; onCancel: () => void; onResume: () => void; onResults: () => void }) {
@@ -985,26 +816,38 @@ function RunScreen({ headingRef, run, livePaused, liveSpeed, onLivePausedChange,
   );
 }
 
-function ResultsScreen({ headingRef, run, otherRuns, onClone, onArchive, onDelete, onCompare }: { headingRef: React.RefObject<HTMLHeadingElement>; run: StoredSimulationRun; otherRuns: StoredSimulationRun[]; onClone: () => void; onArchive: () => void; onDelete: () => void; onCompare: (id: string) => void }) {
-  const [tab, setTab] = useState<ResultTab>("overview");
+function ResultsScreen({ headingRef, run, otherRuns, compareId, onClone, onArchive, onDelete, onCompare }: { headingRef: React.RefObject<HTMLHeadingElement>; run: StoredSimulationRun; otherRuns: StoredSimulationRun[]; compareId: string; onClone: () => void; onArchive: () => void; onDelete: () => void; onCompare: (id: string) => void }) {
+  const [tab, setTab] = useState<ResultTab>("decision");
   const dataset = run.dataset!;
+  const latest = dataset.weeklySnapshots[dataset.weeklySnapshots.length - 1]?.payload;
   const resultTabs: Array<{ id: ResultTab; label: string }> = [
-    { id: "overview", label: "Overview" }, { id: "work-world", label: "Work & business data" }, { id: "timeline", label: "Timeline" }, { id: "evidence", label: "Evidence & reviews" }, { id: "forecast", label: "Forecasts & acceleration" }, { id: "shared", label: "Shared view" }, { id: "quality", label: "Quality" }, { id: "audit", label: "Audit" },
+    { id: "decision", label: "Decision" },
+    { id: "evidence", label: "Evidence" },
+    { id: "forecast", label: "Forecast" },
+    { id: "integrity", label: "Integrity" },
   ];
+  const moveTab = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex = index;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % resultTabs.length;
+    else if (event.key === "ArrowLeft") nextIndex = (index - 1 + resultTabs.length) % resultTabs.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = resultTabs.length - 1;
+    else return;
+    event.preventDefault();
+    const tablist = event.currentTarget.parentElement;
+    setTab(resultTabs[nextIndex].id);
+    window.requestAnimationFrame(() => tablist?.querySelectorAll<HTMLButtonElement>("[role='tab']")[nextIndex]?.focus());
+  };
   return (
     <section className="sim-results" aria-labelledby="sim-results-title">
-      <header className="sim-page-header"><div><span className="sim-kicker">Completed synthetic span</span><h1 ref={headingRef} tabIndex={-1} id="sim-results-title">{run.name}</h1><p><SyntheticBadge compact /> {dataset.members.length} member{dataset.members.length === 1 ? "" : "s"} · {dataset.weeklySnapshots.length} member-weeks · fingerprint <code>{compactId(dataset.canonicalFingerprint)}</code></p></div><div className="sim-header-actions"><button className="sim-button secondary" type="button" onClick={onClone}><Copy size={14} aria-hidden /> Clone</button><button className="sim-button secondary" type="button" onClick={() => downloadText(`${run.id}.json`, serializeSimulationJson(dataset), "application/json")}><FileJson size={14} aria-hidden /> JSON</button><button className="sim-button secondary" type="button" onClick={() => downloadText(`${run.id}-weeks.csv`, serializeWeeklySnapshotsCsv(dataset), "text/csv")}><Download size={14} aria-hidden /> CSV</button><button className="sim-icon-button" type="button" aria-label={run.archived ? "Restore run" : "Archive run"} onClick={onArchive}><Archive size={16} aria-hidden /></button><button className="sim-icon-button danger" type="button" aria-label="Permanently delete run" onClick={onDelete}><Trash2 size={16} aria-hidden /></button></div></header>
-      {otherRuns.length > 0 && <label className="compare-select"><span>Compare with</span><select defaultValue="" onChange={(event) => { if (event.target.value) onCompare(event.target.value); }}><option value="">Choose another completed run</option>{otherRuns.map((other) => <option key={other.id} value={other.id}>{other.name} · {other.config.seed}</option>)}</select></label>}
-      <div className="sim-tabs" role="tablist" aria-label="Simulation result views">{resultTabs.map((item) => <button type="button" role="tab" aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} key={item.id} className={tab === item.id ? "is-active" : ""} onClick={() => setTab(item.id)}>{item.label}</button>)}</div>
-      <div className="sim-tab-panel" role="tabpanel">
-        {tab === "overview" && <OverviewResult dataset={dataset} />}
-        {tab === "work-world" && <WorkWorldResult dataset={dataset} />}
-        {tab === "timeline" && <TimelineResult dataset={dataset} />}
-        {tab === "evidence" && <EvidenceResult dataset={dataset} />}
-        {tab === "forecast" && <ForecastResult dataset={dataset} />}
-        {tab === "shared" && <SharedResult dataset={dataset} />}
-        {tab === "quality" && <QualityResult dataset={dataset} />}
-        {tab === "audit" && <AuditResult dataset={dataset} />}
+      <header className="sim-page-header results-header"><div><span className="sim-kicker">Span complete · {scenarioLabel(run.config.scenario.kind)}</span><h1 ref={headingRef} tabIndex={-1} id="sim-results-title"><strong>{Math.round(latest?.reliable_new_work_capacity_pct ?? 0)}%</strong> reliable capacity</h1><p><SyntheticBadge compact /> {dataset.members.length} member{dataset.members.length === 1 ? "" : "s"} · {dataset.weeklySnapshots.length} member-weeks · <code>{compactId(dataset.canonicalFingerprint)}</code></p></div><div className="sim-header-actions"><button className="sim-button secondary" type="button" onClick={onClone}><Copy size={14} aria-hidden /> Clone</button><details className="result-export-menu"><summary className="sim-button secondary"><Download size={14} aria-hidden /> Export <ChevronRight size={13} aria-hidden /></summary><div><button type="button" onClick={() => downloadText(`${run.id}.json`, serializeSimulationJson(dataset), "application/json")}><FileJson size={14} aria-hidden /><span><strong>JSON dataset</strong><small>Canonical artifacts</small></span></button><button type="button" onClick={() => downloadText(`${run.id}-weeks.csv`, serializeWeeklySnapshotsCsv(dataset), "text/csv")}><Download size={14} aria-hidden /><span><strong>Weekly CSV</strong><small>Derived snapshots</small></span></button></div></details><button className="sim-icon-button" type="button" aria-label={run.archived ? "Restore run" : "Archive run"} onClick={onArchive}><Archive size={16} aria-hidden /></button><button className="sim-icon-button danger" type="button" aria-label="Permanently delete run" onClick={onDelete}><Trash2 size={16} aria-hidden /></button></div></header>
+      {otherRuns.length > 0 && <label className="compare-select"><span>Compare with</span><select value={compareId} onChange={(event) => { if (event.target.value) onCompare(event.target.value); }}><option value="">Choose another completed run</option>{otherRuns.map((other) => <option key={other.id} value={other.id}>{other.name} · {other.config.seed}</option>)}</select></label>}
+      <div className="sim-tabs result-tabs" role="tablist" aria-label="Simulation result views">{resultTabs.map((item, index) => <button type="button" role="tab" aria-controls={`result-panel-${item.id}`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} key={item.id} className={tab === item.id ? "is-active" : ""} onClick={() => setTab(item.id)} onKeyDown={(event) => moveTab(event, index)}>{item.label}</button>)}</div>
+      <div className="sim-tab-panel" role="tabpanel" id={`result-panel-${tab}`}>
+        {tab === "decision" && <OverviewResult dataset={dataset} />}
+        {tab === "evidence" && <div className="result-stack"><EvidenceResult dataset={dataset} /><WorkWorldResult dataset={dataset} /><TimelineResult dataset={dataset} /></div>}
+        {tab === "forecast" && <div className="result-stack"><ForecastResult dataset={dataset} /><SharedResult dataset={dataset} /></div>}
+        {tab === "integrity" && <div className="result-stack"><QualityResult dataset={dataset} /><AuditResult dataset={dataset} /></div>}
       </div>
     </section>
   );
@@ -1012,7 +855,7 @@ function ResultsScreen({ headingRef, run, otherRuns, onClone, onArchive, onDelet
 
 function OverviewResult({ dataset }: { dataset: SimulationDataset }) {
   const latest = dataset.weeklySnapshots[dataset.weeklySnapshots.length - 1]?.payload;
-  return <div className="result-stack"><div className="result-metrics"><Metric label="Artifacts" value={formatNumber(artifactCount(dataset))} helper="Canonical synthetic records" /><Metric label="Reliable capacity" value={`${Math.round(latest?.reliable_new_work_capacity_pct ?? 0)}%`} helper="Latest derived week" /><Metric label="Reactive load" value={`${Math.round(latest?.reactive_pct ?? 0)}%`} helper="Latest derived week" /><Metric label="Dataset quality" value={`${Math.round(dataset.realismReport.score)}%`} helper={`${dataset.realismReport.checksRun} constraints checked`} /></div><TrendChart weeks={dataset.weeklySnapshots} /><section className="result-section"><header><div><span className="sim-kicker">Provenance</span><h2>Real Weekform pipeline</h2></div><ShieldCheck size={18} aria-hidden /></header><div className="provenance-flow">{dataset.provenance.map((item, index) => <span key={item}>{item}{index < dataset.provenance.length - 1 && <ChevronRight size={13} aria-hidden />}</span>)}</div></section></div>;
+  return <div className="result-stack"><div className="result-metrics"><Metric label="Artifacts" value={formatNumber(artifactCount(dataset))} helper="Canonical records" /><Metric label="Reactive load" value={`${Math.round(latest?.reactive_pct ?? 0)}%`} helper="Latest week" /><Metric label="Carryover risk" value={`${Math.round(latest?.carryover_risk_pct ?? 0)}%`} helper="Latest week" /><Metric label="Quality" value={`${Math.round(dataset.realismReport.score)}%`} helper={`${dataset.realismReport.checksRun} checks`} /></div><TrendChart weeks={dataset.weeklySnapshots} /><section className="result-section"><header><div><span className="sim-kicker">Provenance</span><h2>Weekform pipeline</h2></div><ShieldCheck size={18} aria-hidden /></header><div className="provenance-flow">{dataset.provenance.map((item, index) => <span key={item}>{item}{index < dataset.provenance.length - 1 && <ChevronRight size={13} aria-hidden />}</span>)}</div></section></div>;
 }
 
 function WorkWorldResult({ dataset }: { dataset: SimulationDataset }) {
@@ -1056,7 +899,7 @@ function TrendChart({ weeks }: { weeks: SimulationWeekSnapshot[] }) {
     { key: "meeting_pct", label: "Meetings", className: "meetings" },
   ] as const;
   const coords = (key: typeof series[number]["key"]) => points.map((week, index) => `${24 + (index / maxX) * 672},${18 + (1 - Math.max(0, Math.min(100, week.payload[key])) / 100) * 180}`).join(" ");
-  return <section className="result-section trend-section"><header><div><span className="sim-kicker">Longitudinal history</span><h2>Workload shape across the span</h2></div><div className="trend-legend">{series.map((item) => <span className={item.className} key={item.key}><i />{item.label}</span>)}</div></header><svg viewBox="0 0 720 220" role="img" aria-label={`Line chart of capacity, reactive load, and meetings across ${points.length} synthetic member-weeks`}>{[0,25,50,75,100].map((tick) => <g key={tick}><line x1="24" x2="696" y1={18 + (1 - tick / 100) * 180} y2={18 + (1 - tick / 100) * 180} /><text x="20" y={22 + (1 - tick / 100) * 180} textAnchor="end">{tick}</text></g>)}{series.map((item) => <polyline key={item.key} className={item.className} points={coords(item.key)} />)}</svg><div className="sr-only"><table><caption>Weekly simulation trend values</caption><thead><tr><th>Week</th>{series.map((item) => <th key={item.key}>{item.label}</th>)}</tr></thead><tbody>{points.map((week) => <tr key={week.stamp.canonicalArtifactId}><th>{week.weekId}</th>{series.map((item) => <td key={item.key}>{Math.round(week.payload[item.key])}%</td>)}</tr>)}</tbody></table></div></section>;
+  return <section className="result-section trend-section"><header><div><span className="sim-kicker">{points.length} member-weeks</span><h2>Workload shape</h2></div><div className="trend-legend">{series.map((item) => <span className={item.className} key={item.key}><i />{item.label}</span>)}</div></header><svg viewBox="0 0 720 220" role="img" aria-label={`Line chart of capacity, reactive load, and meetings across ${points.length} synthetic member-weeks`}>{[0,25,50,75,100].map((tick) => <g key={tick}><line x1="24" x2="696" y1={18 + (1 - tick / 100) * 180} y2={18 + (1 - tick / 100) * 180} /><text x="20" y={22 + (1 - tick / 100) * 180} textAnchor="end">{tick}</text></g>)}{series.map((item) => <polyline key={item.key} className={item.className} points={coords(item.key)} />)}</svg><div className="sr-only"><table><caption>Weekly simulation trend values</caption><thead><tr><th>Week</th>{series.map((item) => <th key={item.key}>{item.label}</th>)}</tr></thead><tbody>{points.map((week) => <tr key={week.stamp.canonicalArtifactId}><th>{week.weekId}</th>{series.map((item) => <td key={item.key}>{Math.round(week.payload[item.key])}%</td>)}</tr>)}</tbody></table></div></section>;
 }
 
 function TimelineResult({ dataset }: { dataset: SimulationDataset }) {
@@ -1098,13 +941,19 @@ function HistoryScreen({ headingRef, runs, compareIds, setCompareIds, onOpen, on
 }
 
 function ComparePanel({ runs, onClose }: { runs: StoredSimulationRun[]; onClose: () => void }) {
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const restoreFocusRef = useRef<HTMLElement | null>(document.activeElement instanceof HTMLElement ? document.activeElement : null);
   const [left, right] = runs;
   const leftWeeks = left.dataset!.weeklySnapshots;
   const rightWeeks = right.dataset!.weeklySnapshots;
   const leftLatest = leftWeeks[leftWeeks.length - 1].payload;
   const rightLatest = rightWeeks[rightWeeks.length - 1].payload;
   const rows = [{ label: "Reliable capacity", left: leftLatest.reliable_new_work_capacity_pct, right: rightLatest.reliable_new_work_capacity_pct }, { label: "Reactive load", left: leftLatest.reactive_pct, right: rightLatest.reactive_pct }, { label: "Meeting load", left: leftLatest.meeting_pct, right: rightLatest.meeting_pct }, { label: "Fragmentation", left: leftLatest.fragmented_work_pct, right: rightLatest.fragmented_work_pct }];
-  return <div className="compare-overlay" role="dialog" aria-modal="true" aria-labelledby="compare-title"><div className="compare-panel"><header><div><span className="sim-kicker">Side-by-side run comparison</span><h2 id="compare-title">Different conditions, inspectable outcomes</h2><p>Deltas describe workload shape; they never rank people or imply performance.</p></div><button type="button" aria-label="Close comparison" onClick={onClose}><X size={17} aria-hidden /></button></header><div className="compare-head"><div><SyntheticBadge compact /><strong>{left.name}</strong><span>Seed {left.config.seed} · {left.config.span.value} {left.config.span.unit}</span></div><div><SyntheticBadge compact /><strong>{right.name}</strong><span>Seed {right.config.seed} · {right.config.span.value} {right.config.span.unit}</span></div></div><div className="compare-table">{rows.map((row) => <div key={row.label}><span>{row.label}</span><strong>{Math.round(row.left)}%</strong><b>{Math.round(row.right - row.left) > 0 ? "+" : ""}{Math.round(row.right - row.left)} pts</b><strong>{Math.round(row.right)}%</strong></div>)}</div><div className="compare-quality"><span>{Math.round(left.dataset!.realismReport.score)}/100 constraints</span><span>{Math.round(right.dataset!.realismReport.score)}/100 constraints</span></div></div></div>;
+  useEffect(() => {
+    closeRef.current?.focus();
+    return () => restoreFocusRef.current?.focus();
+  }, []);
+  return <div className="compare-overlay" role="presentation"><div className="compare-panel" role="dialog" aria-modal="true" aria-labelledby="compare-title" onKeyDown={(event) => trapDialogFocus(event, onClose)}><header><div><span className="sim-kicker">Side-by-side run comparison</span><h2 id="compare-title">Different conditions, inspectable outcomes</h2><p>Deltas describe workload shape; they never rank people or imply performance.</p></div><button ref={closeRef} type="button" aria-label="Close comparison" onClick={onClose}><X size={17} aria-hidden /></button></header><div className="compare-head"><div><SyntheticBadge compact /><strong>{left.name}</strong><span>Seed {left.config.seed} · {left.config.span.value} {left.config.span.unit}</span></div><div><SyntheticBadge compact /><strong>{right.name}</strong><span>Seed {right.config.seed} · {right.config.span.value} {right.config.span.unit}</span></div></div><div className="compare-table">{rows.map((row) => <div key={row.label}><span>{row.label}</span><strong>{Math.round(row.left)}%</strong><b>{Math.round(row.right - row.left) > 0 ? "+" : ""}{Math.round(row.right - row.left)} pts</b><strong>{Math.round(row.right)}%</strong></div>)}</div><div className="compare-quality"><span>{Math.round(left.dataset!.realismReport.score)}/100 constraints</span><span>{Math.round(right.dataset!.realismReport.score)}/100 constraints</span></div></div></div>;
 }
 
 function PersonaCatalog({ headingRef, onUse }: { headingRef: React.RefObject<HTMLHeadingElement>; onUse: (persona: SimulationPersona) => void }) {
