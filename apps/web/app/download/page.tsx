@@ -6,8 +6,10 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 import {
   RELEASE_INFO,
+  getBetaReleasePresentation,
   getReleasePresentation,
   parseArtifactConfig,
+  parseBetaArtifactConfig,
 } from "@/lib/download";
 import { createClient } from "@/lib/supabase/server";
 
@@ -122,7 +124,14 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
   }
 
   const artifactConfig = parseArtifactConfig(process.env);
-  const releasePresentation = getReleasePresentation(artifactConfig);
+  const betaArtifactConfig = parseBetaArtifactConfig(process.env);
+  const officialReleasePresentation = getReleasePresentation(artifactConfig);
+  const betaReleasePresentation = betaArtifactConfig
+    ? getBetaReleasePresentation(betaArtifactConfig)
+    : null;
+  const releasePresentation = officialReleasePresentation.kind === "available"
+    ? officialReleasePresentation
+    : (betaReleasePresentation ?? officialReleasePresentation);
 
   return (
     <>
@@ -138,6 +147,16 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
           </div>
         ) : null}
 
+        {params.error === "beta" ? (
+          <div className="error-panel download-error" role="alert">
+            <h2>The secure beta link could not be created</h2>
+            <p>
+              The private beta host did not return a link. Try again shortly;
+              no download or account data changed.
+            </p>
+          </div>
+        ) : null}
+
         <section className="download-hero" aria-labelledby="download-title">
           <div className="download-hero-copy">
             <p className="download-eyebrow">Weekform for macOS</p>
@@ -149,12 +168,16 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
             </p>
 
             <div className="download-release-meta" aria-label="Release details">
-              <span>{RELEASE_INFO.releaseChannel}</span>
+              <span>
+                {releasePresentation.kind === "beta"
+                  ? releasePresentation.title
+                  : RELEASE_INFO.releaseChannel}
+              </span>
               <span>Version {RELEASE_INFO.version}</span>
               <span>{RELEASE_INFO.architecture}</span>
             </div>
 
-            {releasePresentation.kind === "available" ? (
+            {releasePresentation.kind !== "pending" ? (
               <>
                 <div className="download-action-row">
                   <a
@@ -170,7 +193,9 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
                   </span>
                 </div>
                 <p id="download-action-note" className="download-action-note">
-                  {releasePresentation.note}
+                  {releasePresentation.kind === "beta"
+                    ? releasePresentation.disclosure
+                    : releasePresentation.note}
                 </p>
               </>
             ) : (

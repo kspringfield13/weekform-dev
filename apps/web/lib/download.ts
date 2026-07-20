@@ -43,6 +43,11 @@ export const RELEASE_INFO = {
   ],
 } as const;
 
+/** Temporary, explicitly non-notarized channel used only while Apple processes the release. */
+export const BETA_RELEASE_INFO = {
+  artifactFilename: "Weekform_0.1.0_universal_Beta.dmg",
+} as const;
+
 export interface ReleaseProof {
   /** Explicit release attestation: signed with an Apple Developer ID identity. */
   developerIdSigned: true;
@@ -71,6 +76,24 @@ export interface ArtifactConfig {
   releaseProof: ReleaseProof;
 }
 
+export interface BetaReleaseProof {
+  /** The beta is signed with the same Developer ID identity as the release candidate. */
+  developerIdSigned: true;
+  /** SHA-256 of the exact beta DMG uploaded to private release storage. */
+  sha256: string;
+  /** ISO timestamp for the beta artifact verification run. */
+  verifiedAt: string;
+}
+
+export interface BetaArtifactConfig {
+  bucket: string;
+  path: string;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  signedUrlTtlSeconds: number;
+  releaseProof: BetaReleaseProof;
+}
+
 export type ReleasePresentation =
   | {
       kind: "available";
@@ -85,6 +108,14 @@ export type ReleasePresentation =
       action: { label: "Open Weekform Web"; href: "/app" };
       detail: string;
     };
+
+export type BetaReleasePresentation = {
+  kind: "beta";
+  title: "Beta Version";
+  action: { label: "Download Beta"; href: "/download/beta" };
+  filename: typeof BETA_RELEASE_INFO.artifactFilename;
+  disclosure: string;
+};
 
 const DEFAULT_SIGNED_URL_TTL_SECONDS = 300; // 5 minutes
 const MIN_SIGNED_URL_TTL_SECONDS = 30;
@@ -153,6 +184,57 @@ export function parseArtifactConfig(
   };
 }
 
+/**
+ * Parse the temporary beta channel independently from the trusted release.
+ *
+ * The beta deliberately has no notarized or stapled fields. Keeping the env
+ * namespace and proof shape separate makes it impossible for this fallback
+ * to satisfy the official release gate accidentally.
+ */
+export function parseBetaArtifactConfig(
+  env: Record<string, string | undefined>,
+): BetaArtifactConfig | null {
+  const bucket = env.WEEKFORM_BETA_ARTIFACT_BUCKET?.trim();
+  const path = env.WEEKFORM_BETA_ARTIFACT_PATH?.trim();
+  const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const developerIdSigned = parseRequiredAttestation(
+    env.WEEKFORM_BETA_ARTIFACT_DEVELOPER_ID_SIGNED,
+  );
+  const sha256 = env.WEEKFORM_BETA_ARTIFACT_SHA256?.trim().toLowerCase();
+  const verifiedAt = env.WEEKFORM_BETA_ARTIFACT_VERIFIED_AT?.trim();
+
+  if (
+    !bucket
+    || !path
+    || path.split("/").at(-1) !== BETA_RELEASE_INFO.artifactFilename
+    || !supabaseUrl
+    || !serviceRoleKey
+    || !developerIdSigned
+    || !sha256
+    || !/^[a-f0-9]{64}$/.test(sha256)
+    || !verifiedAt
+    || !isCanonicalUtcTimestamp(verifiedAt)
+  ) {
+    return null;
+  }
+
+  return {
+    bucket,
+    path,
+    supabaseUrl,
+    serviceRoleKey,
+    signedUrlTtlSeconds: parseTtlSeconds(
+      env.WEEKFORM_BETA_ARTIFACT_SIGNED_URL_TTL_SECONDS,
+    ),
+    releaseProof: {
+      developerIdSigned,
+      sha256,
+      verifiedAt,
+    },
+  };
+}
+
 /** True when the private-bucket signed-URL path is fully configured. */
 export function isArtifactConfigured(
   env: Record<string, string | undefined>,
@@ -188,6 +270,20 @@ export function getReleasePresentation(
     action: { label: "Download now", href: "/download/artifact" },
     filename: RELEASE_INFO.artifactFilename,
     note: `Developer ID signed, Apple-notarized, and stapled; verified ${verifiedDate}. Your private link lasts ${formatTtl(config.signedUrlTtlSeconds)}. Open the DMG, move Weekform to Applications, and launch it.`,
+  };
+}
+
+/** Honest presentation for the signed beta while Apple notarization is pending. */
+export function getBetaReleasePresentation(
+  config: BetaArtifactConfig,
+): BetaReleasePresentation {
+  const verifiedDate = formatVerifiedDate(config.releaseProof.verifiedAt);
+  return {
+    kind: "beta",
+    title: "Beta Version",
+    action: { label: "Download Beta", href: "/download/beta" },
+    filename: BETA_RELEASE_INFO.artifactFilename,
+    disclosure: `Developer ID signed and checksum-verified ${verifiedDate}. Apple notarization is pending, so macOS may prevent this beta from launching. Use it only for evaluation; the final release will replace it here. Your private link lasts ${formatTtl(config.signedUrlTtlSeconds)}.`,
   };
 }
 
@@ -249,6 +345,14 @@ export type ArtifactPlan =
     }
   | { kind: "redirect"; status: 303 | 307; url: string };
 
+type PrivateArtifactPlanDeps<Config> = {
+  supabaseConfigured: boolean;
+  getUser: () => Promise<{ userId: string | null }>;
+  config: Config | null;
+  createSignedUrl: (config: Config) => Promise<string | null>;
+  requestUrl: string;
+};
+
 export async function planArtifactResponse(deps: {
   /** Whether the publishable Supabase client could be constructed at all. */
   supabaseConfigured: boolean;
@@ -261,6 +365,28 @@ export async function planArtifactResponse(deps: {
   /** The incoming request URL, base for the styled-page error redirect. */
   requestUrl: string;
 }): Promise<ArtifactPlan> {
+  return planPrivateArtifactResponse(deps, {
+    unavailableMessage:
+      "The verified Weekform DMG release is not fully configured. Return to /download for current release status.",
+    errorQuery: "artifact",
+  });
+}
+
+/** The beta route keeps its proof and failure copy separate from the release. */
+export async function planBetaArtifactResponse(
+  deps: PrivateArtifactPlanDeps<BetaArtifactConfig>,
+): Promise<ArtifactPlan> {
+  return planPrivateArtifactResponse(deps, {
+    unavailableMessage:
+      "The Weekform Beta Version is not fully configured. Return to /download for current availability.",
+    errorQuery: "beta",
+  });
+}
+
+async function planPrivateArtifactResponse<Config>(
+  deps: PrivateArtifactPlanDeps<Config>,
+  copy: { unavailableMessage: string; errorQuery: "artifact" | "beta" },
+): Promise<ArtifactPlan> {
   if (!deps.supabaseConfigured) {
     return {
       kind: "json",
@@ -292,8 +418,7 @@ export async function planArtifactResponse(deps: {
       status: 503,
       body: {
         error: "artifact_not_configured",
-        message:
-          "The verified Weekform DMG release is not fully configured. Return to /download for current release status.",
+        message: copy.unavailableMessage,
       },
     };
   }
@@ -306,7 +431,7 @@ export async function planArtifactResponse(deps: {
     return {
       kind: "redirect",
       status: 303,
-      url: new URL("/download?error=artifact", deps.requestUrl).toString(),
+      url: new URL(`/download?error=${copy.errorQuery}`, deps.requestUrl).toString(),
     };
   }
 
