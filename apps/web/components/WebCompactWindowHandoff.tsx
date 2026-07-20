@@ -1,7 +1,7 @@
 "use client";
 
 import { WeekformMark } from "@/components/WeekformMark";
-import { WebEditionBadge } from "@/components/WebEditionBadge";
+import { WebEditionLabel } from "@/components/WebEditionLabel";
 
 export function WebCompactWindowHandoff({ onRestore }: { onRestore: () => void }) {
   return (
@@ -10,7 +10,7 @@ export function WebCompactWindowHandoff({ onRestore }: { onRestore: () => void }
         <div className="web-compact-handoff-brand" aria-label="Weekform Web">
           <WeekformMark className="web-compact-handoff-mark" />
           <strong>Weekform</strong>
-          <WebEditionBadge />
+          <WebEditionLabel />
         </div>
         <span className="mono">Compact window active</span>
         <h1 id="compact-handoff-title">Weekform is running beside your work.</h1>

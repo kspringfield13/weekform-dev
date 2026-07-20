@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { WeekformMark } from "@/components/WeekformMark";
-import { WebEditionBadge } from "@/components/WebEditionBadge";
+import { WebEditionLabel } from "@/components/WebEditionLabel";
 import { productEntry } from "@/lib/productEntry";
 
 const WEB_ENTRY = productEntry("web");
@@ -14,7 +14,7 @@ export function SiteFooter() {
           <Link href="/" className="footer-wordmark" aria-label="Weekform Web home">
             <WeekformMark />
             <span>Weekform</span>
-            <WebEditionBadge />
+            <WebEditionLabel />
           </Link>
           <p>See what shaped your week. Decide what fits next.</p>
         </div>

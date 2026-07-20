@@ -35,16 +35,19 @@ test("the authenticated Individual shell keeps the Desktop geometry while allowi
   );
 });
 
-test("the authenticated sidebar matches the current Desktop hierarchy and geometry", () => {
+test("the authenticated sidebar uses a compact standard product lockup", () => {
   const sidebar = rule(".web-individual-app > .sidebar");
   const brand = rule(".web-individual-app .brand");
+  const brandMark = rule(".web-individual-app .brand-mark");
   const navItem = rule(".web-individual-app .nav-item");
 
   assert.match(sidebar, /gap:\s*16px\s*;/);
   assert.match(sidebar, /padding:\s*20px\s+12px\s+12px\s*;/);
   assert.match(sidebar, /background:\s*var\(--background-subtle\)\s*;/);
-  assert.match(brand, /flex-direction:\s*column\s*;/);
-  assert.match(brand, /min-height:\s*82px\s*;/);
+  assert.match(brand, /flex-direction:\s*row\s*;/);
+  assert.match(brand, /justify-content:\s*flex-start\s*;/);
+  assert.match(brand, /min-height:\s*56px\s*;/);
+  assert.match(brandMark, /width:\s*28px\s*;/);
   assert.match(navItem, /min-height:\s*48px\s*;/);
   assert.match(navItem, /border-radius:\s*var\(--radius\)\s*;/);
 });
@@ -58,12 +61,12 @@ test("collapsing the sidebar also collapses the toolbar sidebar column", () => {
   );
 });
 
-test("the Web toolbar leads with the review purpose and ends with the product lockup", () => {
+test("the Web toolbar leads with the review purpose and ends with the standard product lockup", () => {
   assert.match(shellSource, /Your week, ready to review/);
   assert.match(shellSource, /Private evidence stays on your Mac/);
   assert.match(
     shellSource,
-    /className="web-toolbar-actions"[\s\S]*className="web-toolbar-product"[\s\S]*<strong>Weekform<\/strong>[\s\S]*<WebEditionBadge/,
+    /className="web-toolbar-actions"[\s\S]*className="web-toolbar-product"[\s\S]*<strong>Weekform<\/strong>[\s\S]*<WebEditionLabel/,
   );
 
   const product = rule(".web-toolbar-product");

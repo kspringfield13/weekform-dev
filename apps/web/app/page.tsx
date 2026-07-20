@@ -272,7 +272,7 @@ export default function LandingPage() {
             </p>
             <div className="hero-actions">
               <Link href={WEB_ENTRY.href} className="button button-primary button-large">
-                {WEB_ENTRY.action} <span aria-hidden="true">→</span>
+                Open Web App
               </Link>
               <Link href={MAC_ENTRY.href} className="button button-secondary button-large">
                 {MAC_ENTRY.action}

@@ -8,7 +8,7 @@ import { WeekformMark } from "@/components/WeekformMark";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { WebCompactWindowHandoff } from "@/components/WebCompactWindowHandoff";
 import { WebCompactWorkspace } from "@/components/WebCompactWorkspace";
-import { WebEditionBadge } from "@/components/WebEditionBadge";
+import { WebEditionLabel } from "@/components/WebEditionLabel";
 import {
   resolveIndividualWorkspaceRoute,
   screenForIndividualWorkspaceRoute,
@@ -389,7 +389,7 @@ export function IndividualWorkspaceShell({
         </div>
         <div className="web-toolbar-product" aria-label="Weekform Web">
           <strong>Weekform</strong>
-          <WebEditionBadge />
+          <WebEditionLabel />
         </div>
       </header>
 
@@ -416,7 +416,7 @@ export function IndividualWorkspaceShell({
           <WeekformMark className="brand-mark" />
           <span className="brand-lockup">
             <strong className="brand-name">Weekform</strong>
-            <WebEditionBadge />
+            <WebEditionLabel />
           </span>
         </Link>
         <nav className="nav-list" aria-label="Primary navigation">

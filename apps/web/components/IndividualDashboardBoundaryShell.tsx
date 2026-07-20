@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 import { WeekformMark } from "@/components/WeekformMark";
-import { WebEditionBadge } from "@/components/WebEditionBadge";
+import { WebEditionLabel } from "@/components/WebEditionLabel";
 
 const DESTINATIONS = [
   { label: "Today", description: "Review and correct" },
@@ -29,7 +29,7 @@ export function IndividualDashboardBoundaryShell({ children }: { children: React
           <span className="dashboard-boundary-control-skeleton" />
           <span className="dashboard-boundary-control-skeleton dashboard-boundary-control-wide" />
         </div>
-        <div className="web-toolbar-product"><strong>Weekform</strong><WebEditionBadge /></div>
+        <div className="web-toolbar-product"><strong>Weekform</strong><WebEditionLabel /></div>
       </header>
 
       <aside className="sidebar dashboard-boundary-sidebar" aria-hidden="true" inert>
@@ -37,7 +37,7 @@ export function IndividualDashboardBoundaryShell({ children }: { children: React
           <WeekformMark className="brand-mark" />
           <span className="brand-lockup">
             <strong className="brand-name">Weekform</strong>
-            <WebEditionBadge />
+            <WebEditionLabel />
           </span>
         </div>
         <div className="nav-list">

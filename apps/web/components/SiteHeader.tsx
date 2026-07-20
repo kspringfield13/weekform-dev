@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/auth/actions";
 import { WeekformMark } from "@/components/WeekformMark";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { WebEditionBadge } from "@/components/WebEditionBadge";
+import { WebEditionLabel } from "@/components/WebEditionLabel";
 import { managerAccessMemberships } from "@/lib/managerAccess";
 import { listUserTeams } from "@/lib/teams";
 import { productEntry } from "@/lib/productEntry";
@@ -47,7 +47,7 @@ export async function SiteHeader({
         <Link href="/" className="wordmark" aria-label="Weekform Web home">
           <WeekformMark className="wordmark-mark" />
           <span className="wordmark-text">Weekform</span>
-          <WebEditionBadge />
+          <WebEditionLabel />
         </Link>
         <nav className="nav-links" aria-label="Primary">
           {signedIn ? (
@@ -91,7 +91,7 @@ export async function SiteHeader({
             </form>
           ) : (
             <Link href={WEB_ENTRY.href} className="button button-primary header-cta">
-              Open Web app
+              Try Web App
             </Link>
           )}
           <ThemeToggle className="site-theme-toggle" />
