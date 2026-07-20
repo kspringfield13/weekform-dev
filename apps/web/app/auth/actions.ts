@@ -10,6 +10,10 @@ import {
   buildEmailCallbackUrl,
   normalizeMagicLinkEmail,
 } from "@/lib/emailAuth";
+import {
+  buildOAuthCallbackUrl,
+  parseOAuthProvider,
+} from "@/lib/oauthAuth";
 
 const NOT_CONFIGURED =
   "This deployment has no Supabase project configured yet, so accounts are unavailable. See apps/web/README.md.";
@@ -95,6 +99,53 @@ export async function loginWithMagicLink(formData: FormData): Promise<void> {
   redirect(
     `/login?notice=${encodeMessage("Check your email for a secure sign-in link.")}&next=${encodeURIComponent(next)}`,
   );
+}
+
+export async function loginWithOAuth(formData: FormData): Promise<void> {
+  const supabase = await createClient();
+  const next = safeNextPath(formData.get("next"));
+
+  if (!supabase) {
+    redirect(
+      `/login?error=${encodeMessage(NOT_CONFIGURED)}&next=${encodeURIComponent(next)}`,
+    );
+  }
+
+  const provider = parseOAuthProvider(formData.get("provider"));
+  if (!provider) {
+    redirect(
+      `/login?error=${encodeMessage("Choose Google or GitHub to continue.")}&next=${encodeURIComponent(next)}`,
+    );
+  }
+
+  const requestOrigin = (await headers()).get("origin");
+  if (!requestOrigin) {
+    redirect(
+      `/login?error=${encodeMessage("We could not start secure sign-in. Please try again.")}&next=${encodeURIComponent(next)}`,
+    );
+  }
+
+  let redirectTo: string;
+  try {
+    redirectTo = buildOAuthCallbackUrl(requestOrigin, next);
+  } catch {
+    redirect(
+      `/login?error=${encodeMessage("We could not start secure sign-in. Please try again.")}&next=${encodeURIComponent(next)}`,
+    );
+  }
+
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: { redirectTo },
+  });
+
+  if (error || !data.url) {
+    redirect(
+      `/login?error=${encodeMessage(error?.message ?? "The sign-in provider did not return a redirect URL.")}&next=${encodeURIComponent(next)}`,
+    );
+  }
+
+  redirect(data.url);
 }
 
 export async function signup(formData: FormData): Promise<void> {
