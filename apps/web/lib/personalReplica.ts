@@ -3,6 +3,7 @@ import type {
   PersonalWorkloadReplicaV1,
   ReviewCommandAction,
   ReviewCommandPatchV1,
+  ReviewCommandStatus,
 } from "../../../packages/domain/src/personalCloud";
 
 const CATEGORIES = new Set([
@@ -48,6 +49,13 @@ const REVISION_PATTERN = /^[0-9a-f]{16}$/;
 const INVALID_REPLICA_ERROR = "Weekform Web received invalid review-safe replica data. Resync from Weekform for Mac.";
 const LOAD_REPLICA_ERROR = "Weekform Web could not load review-safe replica data. Reload this page or check your connection.";
 const MAX_BLOCK_ID_LENGTH = 160;
+const REVIEW_COMMAND_KEYS = new Set([
+  "command_id", "block_id", "week_id", "expected_revision", "action", "status", "created_at", "decided_at",
+]);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const REVIEW_COMMAND_LOAD_ERROR = "Weekform Web could not load review-request status. Reload this page or check your connection.";
+const REVIEW_COMMAND_INTEGRITY_ERROR = "Weekform Web received invalid review-request status data. Reload after your Mac syncs again.";
+const REVIEW_COMMAND_OVERFLOW_ERROR = "Weekform Web received too many review-request statuses to validate safely. Resolve pending requests on your Mac, then reload.";
 
 function record(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -129,7 +137,7 @@ export function parsePersonalReplicaRow(value: unknown): PersonalReplicaView | n
     || !validWeekId(row.week_id) || row.week_id !== payload.weekId
     || row.replica_id !== `personal-${row.week_id}`
     || typeof row.revision !== "string" || !REVISION_PATTERN.test(row.revision)
-    || !canonicalTimestamp(row.synced_at) || !canonicalTimestamp(payload.generatedAt)
+    || !databaseTimestamp(row.synced_at) || !canonicalTimestamp(payload.generatedAt)
     || !canonicalTimestamp(payload.sourceUpdatedAt)
   ) return null;
   const blocks = payload.blocks.map((block) => parseBlock(block, row.week_id as string));
@@ -151,6 +159,67 @@ export interface ReviewCommandInput {
   expectedRevision: string;
   action: ReviewCommandAction;
   patch: ReviewCommandPatchV1 | null;
+}
+
+export interface ConfirmReviewCommandInput {
+  blockId: string;
+  weekId: string;
+  expectedRevision: string;
+}
+
+const MAX_CONFIRM_REVIEW_COMMANDS = 50;
+
+export interface ReviewCommandView {
+  commandId: string;
+  blockId: string;
+  weekId: string;
+  expectedRevision: string;
+  action: ReviewCommandAction;
+  status: ReviewCommandStatus;
+  createdAt: string;
+  decidedAt: string | null;
+}
+
+export function parseReviewCommandRow(value: unknown): ReviewCommandView | null {
+  const row = record(value);
+  if (!row || Object.keys(row).length !== REVIEW_COMMAND_KEYS.size
+    || Object.keys(row).some((key) => !REVIEW_COMMAND_KEYS.has(key))) return null;
+  if (typeof row.command_id !== "string" || !UUID_PATTERN.test(row.command_id)
+    || typeof row.block_id !== "string" || row.block_id.trim() !== row.block_id
+    || row.block_id.length === 0 || row.block_id.length > MAX_BLOCK_ID_LENGTH
+    || !validWeekId(row.week_id) || typeof row.expected_revision !== "string"
+    || !REVISION_PATTERN.test(row.expected_revision)
+    || (row.action !== "confirm" && row.action !== "exclude" && row.action !== "relabel")
+    || (row.status !== "pending" && row.status !== "applied" && row.status !== "rejected" && row.status !== "conflict")
+    || !databaseTimestamp(row.created_at)
+    || (row.decided_at !== null && !databaseTimestamp(row.decided_at))) return null;
+  if ((row.status === "pending") !== (row.decided_at === null)) return null;
+  if (row.decided_at !== null
+    && new Date(row.decided_at).getTime() < new Date(row.created_at).getTime()) return null;
+  return {
+    commandId: row.command_id,
+    blockId: row.block_id,
+    weekId: row.week_id,
+    expectedRevision: row.expected_revision,
+    action: row.action,
+    status: row.status,
+    createdAt: row.created_at,
+    decidedAt: row.decided_at,
+  };
+}
+
+function databaseTimestamp(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const calendarDate = new Date(Date.UTC(year, month - 1, day));
+  if (calendarDate.getUTCFullYear() !== year
+    || calendarDate.getUTCMonth() !== month - 1
+    || calendarDate.getUTCDate() !== day) return false;
+  return Number.isFinite(new Date(value).getTime());
 }
 
 export function reviewCommandInput(value: unknown): ReviewCommandInput | null {
@@ -181,6 +250,87 @@ export function reviewCommandInput(value: unknown): ReviewCommandInput | null {
   };
 }
 
+/**
+ * Positive-allowlist parser for Today’s Confirm all boundary. The client may
+ * identify block revisions, but action, patch, ownership, status, and all
+ * chronology are deliberately absent and are derived by the database RPC.
+ */
+export function reviewConfirmBatchInput(
+  value: unknown,
+): ConfirmReviewCommandInput[] | null {
+  if (!Array.isArray(value) || value.length === 0
+    || value.length > MAX_CONFIRM_REVIEW_COMMANDS) return null;
+  const commands: ConfirmReviewCommandInput[] = [];
+  const targets = new Set<string>();
+  for (const candidate of value) {
+    const input = record(candidate);
+    if (!input || Object.keys(input).length !== 3
+      || Object.keys(input).some((key) => !["blockId", "weekId", "expectedRevision"].includes(key))) {
+      return null;
+    }
+    const parsed = reviewCommandInput({
+      blockId: input.blockId,
+      weekId: input.weekId,
+      expectedRevision: input.expectedRevision,
+      action: "confirm",
+    });
+    if (!parsed) return null;
+    const target = `${parsed.blockId}\u0000${parsed.weekId}\u0000${parsed.expectedRevision}`;
+    if (targets.has(target)) return null;
+    targets.add(target);
+    commands.push({
+      blockId: parsed.blockId,
+      weekId: parsed.weekId,
+      expectedRevision: parsed.expectedRevision,
+    });
+  }
+  return commands;
+}
+
+function reviewConfirmCandidates(
+  blocks: Array<Pick<PersonalReplicaBlockV1, "blockId" | "weekId" | "revision" | "userVerified">>,
+  commands: ReviewCommandView[],
+): ConfirmReviewCommandInput[] {
+  const lockedTargets = new Set(commands
+    .filter((command) => command.status !== "rejected")
+    .map((command) => (
+      `${command.blockId}\u0000${command.weekId}\u0000${command.expectedRevision}`
+    )));
+  const eligible = blocks
+    .filter((block) => !block.userVerified && !lockedTargets.has(
+      `${block.blockId}\u0000${block.weekId}\u0000${block.revision}`,
+    ))
+    .map((block) => ({
+      blockId: block.blockId,
+      weekId: block.weekId,
+      expectedRevision: block.revision,
+    }));
+  return eligible;
+}
+
+export interface ReviewConfirmEligibility {
+  targets: ConfirmReviewCommandInput[];
+  totalCount: number;
+}
+
+export function reviewConfirmEligibility(
+  blocks: Array<Pick<PersonalReplicaBlockV1, "blockId" | "weekId" | "revision" | "userVerified">>,
+  commands: ReviewCommandView[],
+): ReviewConfirmEligibility {
+  const candidates = reviewConfirmCandidates(blocks, commands);
+  return {
+    targets: candidates.slice(0, MAX_CONFIRM_REVIEW_COMMANDS),
+    totalCount: candidates.length,
+  };
+}
+
+export function eligibleReviewConfirmTargets(
+  blocks: Array<Pick<PersonalReplicaBlockV1, "blockId" | "weekId" | "revision" | "userVerified">>,
+  commands: ReviewCommandView[],
+): ConfirmReviewCommandInput[] {
+  return reviewConfirmEligibility(blocks, commands).targets;
+}
+
 interface SupabaseLike {
   from(table: string): {
     select(columns: string): {
@@ -189,6 +339,50 @@ interface SupabaseLike {
       };
     };
   };
+}
+
+export interface ReviewCommandsClient {
+  from(table: string): {
+    select(columns: string): {
+      eq(column: string, value: string): {
+        order(column: string, options: { ascending: boolean }): {
+          limit(count: number): PromiseLike<{ data: unknown; error: { message?: string } | null }>;
+        };
+      };
+    };
+  };
+}
+
+export async function listOwnReviewCommands(client: ReviewCommandsClient, weekId: string | null): Promise<{
+  commands: ReviewCommandView[];
+  error: string | null;
+}> {
+  if (weekId === null) return { commands: [], error: null };
+  const { data, error } = await client
+    .from("review_commands")
+    .select("command_id,block_id,week_id,expected_revision,action,status,created_at,decided_at")
+    .eq("week_id", weekId)
+    .order("created_at", { ascending: false })
+    .limit(101);
+  if (error) return { commands: [], error: REVIEW_COMMAND_LOAD_ERROR };
+  if (!Array.isArray(data)) return { commands: [], error: REVIEW_COMMAND_INTEGRITY_ERROR };
+  if (data.length > 100) return { commands: [], error: REVIEW_COMMAND_OVERFLOW_ERROR };
+  const commands = data.map(parseReviewCommandRow);
+  if (commands.some((command) => command === null)) {
+    return { commands: [], error: REVIEW_COMMAND_INTEGRITY_ERROR };
+  }
+  const parsedCommands = commands as ReviewCommandView[];
+  if (parsedCommands.some((command) => command.weekId !== weekId)
+    || new Set(parsedCommands.map((command) => command.commandId)).size !== parsedCommands.length) {
+    return { commands: [], error: REVIEW_COMMAND_INTEGRITY_ERROR };
+  }
+  const pendingTargets = parsedCommands
+    .filter((command) => command.status === "pending")
+    .map((command) => `${command.blockId}\u0000${command.weekId}\u0000${command.expectedRevision}`);
+  if (new Set(pendingTargets).size !== pendingTargets.length) {
+    return { commands: [], error: REVIEW_COMMAND_INTEGRITY_ERROR };
+  }
+  return { commands: parsedCommands, error: null };
 }
 
 export async function listOwnPersonalReplicas(client: SupabaseLike): Promise<{

@@ -6,9 +6,13 @@ import type {
   WeeklyCapacitySnapshot,
   WorkBlock
 } from "../../../../packages/domain/src/models";
+import {
+  externalSafeCorrections,
+  externalSafeWorkBlock,
+} from "../../../../packages/inference/src/externalWorkBlock";
 import { summarizeSessionForPrompt, summarizeVisualInsightForPrompt } from "./promptSummaries";
 
-export const NARRATIVE_PROMPT_VERSION = "weekform-weekly-narrative-v6";
+export const NARRATIVE_PROMPT_VERSION = "weekform-weekly-narrative-v7";
 
 /**
  * Compact AI-usage digest for the narrative prompt. Supplied ONLY when the
@@ -92,7 +96,8 @@ export function buildWeeklyNarrativePrompt({
 }) {
   const verifiedCount = blocks.filter((block) => block.user_verified).length;
   const unverifiedCount = blocks.length - verifiedCount;
-  const recentCorrections = [...corrections]
+  const safeCorrections = externalSafeCorrections(corrections, blocks);
+  const recentCorrections = [...safeCorrections]
     .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
     .slice(0, 30);
   const context = {
@@ -155,11 +160,11 @@ export function buildWeeklyNarrativePrompt({
       total_blocks: blocks.length,
       verified_blocks: verifiedCount,
       unverified_blocks: unverifiedCount,
-      correction_count: corrections.length,
+      correction_count: safeCorrections.length,
       recent_corrections: recentCorrections.map(summarizeCorrection)
     },
     ledger_context: {
-      work_blocks: sortByStartTime(blocks).map(summarizeBlock),
+      work_blocks: sortByStartTime(blocks).map(externalSafeWorkBlock).map(summarizeBlock),
       active_window_sessions: sortByStartTime(activeWindowSessions).map(summarizeSessionForPrompt),
       outlook_calendar_events: sortByStartTime(calendarEvents).map(summarizeCalendarEvent),
       // Flagged captures (sensitive_content_detected) await user review/purge in the

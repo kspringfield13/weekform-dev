@@ -1783,6 +1783,13 @@ h3 {
   font-size: 11px;
 }
 
+.chat-import-feedback {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .calendar-provider-list {
   display: grid;
   gap: 1px;
@@ -7864,6 +7871,12 @@ h3 {
 .source-status.is-paused {
   color: var(--danger);
   background: var(--red-soft);
+}
+
+.source-status.is-unavailable {
+  border: 1px solid var(--border);
+  color: var(--text-subtle);
+  background: var(--background-subtle);
 }
 
 .ai-assistance {

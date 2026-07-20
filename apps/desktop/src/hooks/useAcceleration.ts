@@ -2,6 +2,7 @@ import type {
   AccelerationSignal,
   AIConfig,
   AuditEvent,
+  WorkBlock,
 } from "../../../../packages/domain/src/models";
 import { useAsyncStatus } from "./useAsyncStatus";
 import { aiCompleteJson, jsonSchemaFormat } from "../services/aiComplete";
@@ -20,6 +21,7 @@ import type { PersistedAccelerationRecord } from "../services/localStore";
 interface UseAccelerationParams {
   isDemoMode: boolean;
   signals: AccelerationSignal[];
+  blocks: WorkBlock[];
   currentWeekId: string;
   currentWeekRangeLabel: string;
   aiConfig: AIConfig | null;
@@ -41,6 +43,7 @@ interface UseAccelerationParams {
 export function useAcceleration({
   isDemoMode,
   signals,
+  blocks,
   currentWeekId,
   currentWeekRangeLabel,
   aiConfig,
@@ -70,7 +73,7 @@ export function useAcceleration({
     }
     const auditSource = aiAuditSource(provider, "responses", aiConfig?.connectionMode);
     const startedAt = new Date().toISOString();
-    const prompt = buildAccelerationPrompt({ weekRangeLabel: currentWeekRangeLabel, signals });
+    const prompt = buildAccelerationPrompt({ weekRangeLabel: currentWeekRangeLabel, signals, blocks });
 
     accelerationAsync.start("generating");
 

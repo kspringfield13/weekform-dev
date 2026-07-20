@@ -6,7 +6,15 @@ export const metadata: Metadata = { title: "Weekform Web" };
 export const dynamic = "force-dynamic";
 
 interface WeekformWebEntryPageProps {
-  searchParams: Promise<{ team_error?: string; notice?: string; screen?: string }>;
+  searchParams: Promise<{
+    team_error?: string;
+    notice?: string;
+    screen?: string;
+    settings_tab?: string | string[];
+    mode?: string;
+    popup?: string;
+    window?: string;
+  }>;
 }
 
 /** Stable public entry for the authenticated Weekform browser workspace. */

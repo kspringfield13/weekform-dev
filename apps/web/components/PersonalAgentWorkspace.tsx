@@ -214,7 +214,7 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
               </p>
             </div>
             <div className="personal-agent-actions">
-              <Link className="button button-primary" href="/download">Open Weekform for Mac</Link>
+              <Link className="button button-primary" href="/download">Get Weekform for Mac</Link>
             </div>
           </div> : null}
           {hasSignal && turns.length === 0 ? (
@@ -222,7 +222,7 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
               <span className="personal-agent-boundary-mark"><AgentSignalMark size={18} /></span>
               <div>
                 <h2>Ask this published week.</h2>
-                <p>Questions go to Weekform&apos;s authenticated server and, when configured, its AI provider. Only the review-safe summary is supplied; conversation is temporary in this page.</p>
+                <p>Questions go to Weekform&apos;s authenticated server and, when configured, its AI provider. Each request includes your typed question and a minimized review-safe evidence catalog. The conversation is temporary on this page, requests use no-store processing, and you should not enter sensitive, confidential, or regulated information.</p>
               </div>
             </div>
           ) : null}
@@ -244,7 +244,7 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
                       </details>
                     ) : null}
                     {turn.limitations.map((limitation) => <p className={styles.limitation} key={limitation}>{limitation}</p>)}
-                    {turn.mode === "mac_handoff" ? <Link className={styles.macLink} href="/download">Open Weekform for Mac →</Link> : null}
+                    {turn.mode === "mac_handoff" ? <Link className={styles.macLink} href="/download">Get Weekform for Mac</Link> : null}
                   </div>
                 </article>
               </div>

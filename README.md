@@ -45,7 +45,7 @@ Raw activity data starts local and stays under the user's control. Network-backe
 **On the desktop:**
 
 - Active-window capture records the application name, front-window title, and timestamp — not keystrokes.
-- Outlook `.ics`, chat, and git exports are parsed locally. Workplace chat uses timestamps and counts, never message text.
+- Outlook `.ics` and normalized Chat/git exports are parsed locally. The three live Chat options are Slack, Google Chat, and Webex; their native transfers discard ambient inbound traffic and message content before React app state. Legacy Teams files remain import-only compatibility, not a fourth connector.
 - Work blocks, corrections, audit events, and settings are persisted locally with Tauri Store; the web and demo builds use browser storage as a fallback.
 - Tracking can be paused immediately from the app or menu bar.
 - Visual Context is disabled by default and rate-limited. When enabled, a screenshot can be sent to the selected AI provider; after a successful read, the app attempts to remove the temporary local image before the provider request. OpenAI requests use `store: false`.
@@ -61,6 +61,38 @@ Raw activity data starts local and stays under the user's control. Network-backe
 - Server-side access is governed by Postgres Row Level Security policies in the Supabase schema (see [Limitations](#limitations) for their current verification status).
 
 Read [Privacy and Data Flow](docs/PRIVACY.md) before enabling activity capture, AI features, or team sharing.
+
+### Chat evidence, not chat surveillance
+
+Chat access is connected and controlled only in Weekform for Mac Settings. The
+Web Settings row directly below Email explains this handoff but has no source
+OAuth controls. The local pipeline turns limited attention evidence into
+reviewable workload without treating availability or message volume as work:
+
+- Ambient inbound traffic is discarded. A directed request with no safely
+  correlated self action becomes a local 0%-capacity review card.
+- A self-sent burst correlated to that directed context becomes reactive
+  response work; an uncorrelated self-sent burst becomes proactive
+  coordination. The user can correct, confirm, annotate, or exclude either.
+- The live adapters currently derive only directed inbound and self-sent
+  message evidence. Reaction and call participation are compatibility-contract
+  shapes, and explicit call/huddle records can come from normalized local JSON;
+  they are not claims of live collection.
+- Slack sync is intentionally limited to top-level history in currently listed,
+  non-archived conversations. It excludes thread replies and applies
+  additively, with no deletion authority. Completed, intact Google Chat and
+  Webex runs can reconcile their bounded provider range authoritatively.
+- AI and the optional private Web replica receive generic labels and opaque Chat
+  block ids, not provider or canonical source identity. Manager Access is a
+  separate consent edge and receives only member-approved aggregate snapshot
+  fields—never Chat source detail.
+
+Credentials, provider self identifiers, resumable cursors, and the local hash
+salt stay in macOS Keychain. Disconnect removes the selected local token and
+cursor but retains existing review evidence; Raw evidence retention expires the
+canonical evidence while keeping derived work blocks; Reset Local Data attempts
+to clear the full Chat connection and evidence state. See the privacy document
+for the exact provider, retention, AI, Web, and Manager boundaries.
 
 ## Manager and member workflow
 
@@ -176,7 +208,7 @@ Weekform follows a reviewable pipeline from raw signals to a capacity estimate:
 capture → sessionize → classify → review → model → summarize
 ```
 
-1. **Capture limited signals locally.** Foreground-app metadata, Outlook `.ics` exports, metadata-only workplace-chat exports, and git-log exports can contribute evidence.
+1. **Capture limited signals locally.** Foreground-app metadata, bounded calendar sources, content-free attention evidence from Slack, Google Chat, or Webex, normalized local imports, and git-log exports can contribute evidence.
 2. **Build candidate work blocks.** Contiguous activity becomes sessions with category, work mode, planned status, project, confidence, and source evidence.
 3. **Keep the user in control.** Confirm, relabel, annotate, or exclude any inferred block before treating it as reviewed work.
 4. **Model the week.** See allocation, reactive load, meeting density, fragmentation, carryover risk, and reliable headroom for new work.
@@ -198,7 +230,7 @@ capture → sessionize → classify → review → model → summarize
 - Native macOS menu-bar app built with Tauri 2, React, TypeScript, and Rust
 - Reviewable work blocks with confidence, evidence, project, category, mode, and status
 - Explainable weekly capacity, forecast history, trends, and delivery-risk modifiers
-- Outlook `.ics`, workplace-chat metadata, and git-log import paths
+- Outlook/Google/Apple calendar sources; Slack/Google Chat/Webex native connections; normalized local Chat JSON (including legacy Teams import-only compatibility) and git-log imports
 - Searchable activity and audit history, including every user correction
 - Conversational workload Agent and a deterministic Acceleration engine for time-saving plays
 - Optional AI-assisted classification, review suggestions, forecasts, narratives, and visual context
@@ -284,11 +316,11 @@ cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml
 | Path | Responsibility |
 | --- | --- |
 | `apps/desktop/src/` | React interface, stateful hooks, local services, prompts, and schemas |
-| `apps/desktop/src-tauri/` | Rust shell, native macOS capture, AI pass-through, and window management |
+| `apps/desktop/src-tauri/` | Rust shell, native macOS capture, calendar/Chat OAuth and projection, AI pass-through, and window management |
 | `apps/web/` | Next.js web app: auth, teams, invites, dashboards, briefing, and download (self-contained workspace) |
 | `packages/domain/src/` | Shared workload, privacy, correction, and audit models |
 | `packages/inference/src/` | Sessionization, capacity modeling, forecasts, acceleration signals, and the shared-snapshot allowlist |
-| `packages/integrations/src/` | Outlook `.ics`, chat metadata, git-log, and generic event importers |
+| `packages/integrations/src/` | Calendar normalization, content-free Chat transformation, git-log, and generic event importers |
 | `supabase/` | Team-cloud SQL migrations, synthetic seed, and RLS test script |
 
 `App.tsx` is the frontend source of truth for the desktop interface. Shared TypeScript packages are imported directly through relative paths and compiled in place by TypeScript and Vite.
@@ -306,6 +338,27 @@ Desktop prototype:
 - Capacity weights and thresholds are prototype heuristics, not validated organizational benchmarks.
 - Distribution is source-build only — the app is not signed or notarized.
 - The largest React and Rust modules still need further decomposition.
+
+Chat connections:
+
+- Slack, Google Chat, and Webex connector contracts, projection tests, builds,
+  and local UI are implemented, but no live provider account authorization or
+  message transfer was exercised in this development environment.
+- Slack reads only top-level history in the user's currently listed,
+  non-archived conversations. Thread replies and inaccessible or provider-aged
+  history are outside its scope, and current Slack API rate limits can require
+  resumable transfers. Slack results therefore apply additively and never prove
+  deletion.
+- Production Google Chat access can require OAuth verification for its
+  restricted read scope. Production Webex access requires a deployed HTTPS
+  token broker with the integration secret, credential-safe monitoring, and
+  deployment-level rate limiting. The broker returns 503 unless operators set
+  `WEBEX_CHAT_BROKER_SECURITY_VERIFIED=true` after verifying both controls.
+  All three still require registered provider applications and account-level
+  acceptance tests.
+- The browser demo and weekform.com Settings handoff do not prove native OAuth,
+  Keychain storage, provider pagination, disconnect cleanup, or live transfer
+  behavior.
 
 Team cloud layer:
 

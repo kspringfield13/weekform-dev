@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import type { KeyboardEvent, ReactNode } from "react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   buildReviewSafeActivity,
@@ -11,27 +11,37 @@ import {
   filterSyncAuditEntries,
 } from "@/lib/individualHistoryPresentation";
 import type { PersonalReplicaView } from "@/lib/personalReplica";
+import {
+  buildIndividualSettingsUrl,
+  INDIVIDUAL_SETTINGS_TABS,
+  resolveIndividualSettingsTab,
+  shouldPushIndividualSettingsTab,
+  type IndividualSettingsTab,
+} from "@/lib/individualSettingsRoute";
 
 import { PersonalDataSourcesSettings } from "./PersonalDataSourcesSettings";
+import { PersonalAIAssistanceSettings } from "./PersonalAIAssistanceSettings";
+import { PersonalAIUsageSettings } from "./PersonalAIUsageSettings";
+import { PersonalNotificationsSettings } from "./PersonalNotificationsSettings";
 import styles from "./PersonalHistoryScreen.module.css";
 
 export type HistoryTab = "activity" | "audit";
-type SettingsTab =
-  | "data-sources"
-  | "data-control"
-  | "ai-assistance"
-  | "ai-usage"
-  | "notifications"
-  | "account";
+const SETTINGS_LABELS: Record<IndividualSettingsTab, string> = {
+  "data-sources": "Data Sources",
+  "data-control": "Data Control",
+  "ai-assistance": "AI Assistance",
+  "ai-usage": "AI Usage",
+  notifications: "Notifications",
+  account: "Account & Sharing",
+};
 
-const SETTINGS_TABS: Array<{ id: SettingsTab; label: string }> = [
-  { id: "data-sources", label: "Data Sources" },
-  { id: "data-control", label: "Data Control" },
-  { id: "ai-assistance", label: "AI Assistance" },
-  { id: "ai-usage", label: "AI Usage" },
-  { id: "notifications", label: "Notifications" },
-  { id: "account", label: "Account & Sharing" },
-];
+const SETTINGS_TABS = INDIVIDUAL_SETTINGS_TABS.map((id) => ({ id, label: SETTINGS_LABELS[id] }));
+
+function pushSettingsTab(tab: IndividualSettingsTab) {
+  if (!shouldPushIndividualSettingsTab(window.location.href, tab)) return;
+  const url = buildIndividualSettingsUrl(window.location.href, tab);
+  window.history.pushState(null, "", url);
+}
 
 function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -45,7 +55,7 @@ function MacBoundary({ children }: { children: ReactNode }) {
     <div className={`panel web-screen-empty ${styles.macBoundary}`}>
       {children}
       <p>Raw activity stays on your Mac. This browser never receives window titles, screenshots, notes, or AI credentials.</p>
-      <Link href="/download" className="button button-primary">Open Weekform for Mac</Link>
+      <Link href="/download" className="button button-primary">Get Weekform for Mac</Link>
     </div>
   );
 }
@@ -205,7 +215,7 @@ export function IndividualHistoryView({
           <aside className={styles.flaggedBoundary} aria-label="Flagged captures privacy boundary">
             <div><span className={styles.eyebrow}>Flagged captures</span><strong>Raw visual captures stay on your Mac.</strong></div>
             <p>This view appears in Desktop only when Visual Context finds potentially sensitive material. Web never receives the capture, screenshot, or sensitive summary.</p>
-            <Link href="/download">Review on Mac <span aria-hidden>→</span></Link>
+            <Link href="/download">Get Weekform for Mac</Link>
           </aside>
         </>
       )}
@@ -216,17 +226,43 @@ export function IndividualHistoryView({
 export function IndividualSettingsView({
   accountEmail,
   accountAndSharing,
+  dataControl,
+  initialTab = "data-sources",
 }: {
   accountEmail: string;
   accountAndSharing?: ReactNode;
+  dataControl?: ReactNode;
+  initialTab?: IndividualSettingsTab;
 }) {
-  const [tab, setTab] = useState<SettingsTab>("data-sources");
+  const [tab, setTab] = useState<IndividualSettingsTab>(initialTab);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const selectedLabel = SETTINGS_TABS.find((item) => item.id === tab)?.label ?? "Settings";
+
+  const focusSettingsTab = (value: unknown) => {
+    const nextTab = resolveIndividualSettingsTab(value);
+    setTab(nextTab);
+    const nextIndex = SETTINGS_TABS.findIndex((item) => item.id === nextTab);
+    window.requestAnimationFrame(() => tabRefs.current[nextIndex]?.focus());
+  };
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const routeTab = new URL(window.location.href).searchParams.get("settings_tab");
+      focusSettingsTab(routeTab);
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
   const selectTab = (index: number) => {
     const item = SETTINGS_TABS[index];
     if (!item) return;
     setTab(item.id);
+    pushSettingsTab(item.id);
     tabRefs.current[index]?.focus();
   };
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -257,7 +293,7 @@ export function IndividualSettingsView({
             tabIndex={tab === item.id ? 0 : -1}
             className={tab === item.id ? "is-active" : ""}
             ref={(element) => { tabRefs.current[index] = element; }}
-            onClick={() => setTab(item.id)}
+            onClick={() => selectTab(index)}
             onKeyDown={(event) => handleTabKeyDown(event, index)}
           >{item.label}</button>
         ))}
@@ -274,10 +310,10 @@ export function IndividualSettingsView({
           hidden={tab !== item.id}
         >
           {item.id === "data-sources" ? <PersonalDataSourcesSettings /> : null}
-          {item.id === "data-control" ? <MacBoundary><h2>Data control follows the local source of truth</h2><p>Pause capture, change retention, export a full backup, or reset local data from the desktop app. Web account and team records follow their existing server controls.</p></MacBoundary> : null}
-          {item.id === "ai-assistance" ? <MacBoundary><h2>AI assistance stays beside your evidence</h2><p>Provider choice, API credentials, model settings, and Visual Context remain on the Mac.</p></MacBoundary> : null}
-          {item.id === "ai-usage" ? <MacBoundary><h2>AI usage remains local</h2><p>Token imports, pricing overlays, and usage budgets are not copied into this browser workspace.</p></MacBoundary> : null}
-          {item.id === "notifications" ? <MacBoundary><h2>Notifications run on your Mac</h2><p>Capacity guardrails, review nudges, and weekly readiness alerts use the local workload model.</p></MacBoundary> : null}
+          {item.id === "data-control" ? dataControl ?? <MacBoundary><h2>Data control follows the local source of truth</h2><p>Pause capture, change retention, export a full backup, or reset local data from the desktop app. Web account and team records follow their existing server controls.</p></MacBoundary> : null}
+          {item.id === "ai-assistance" ? <PersonalAIAssistanceSettings /> : null}
+          {item.id === "ai-usage" ? <PersonalAIUsageSettings /> : null}
+          {item.id === "notifications" ? <PersonalNotificationsSettings /> : null}
           {item.id === "account" ? (
             <div className="settings-section">
               <div className="settings-section-heading"><div><h2>Account &amp; Sharing</h2><span>Signed in as {accountEmail}. Team coordination uses only fields approved by your existing sharing settings.</span></div></div>

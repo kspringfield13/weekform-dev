@@ -20,8 +20,12 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
 import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
 import { PersonalReplicaRealtime } from "@/components/PersonalReplicaRealtime";
-import { listOwnPersonalReplicas, type PersonalReplicaView } from "@/lib/personalReplica";
-import { deletePersonalReplicaHistory } from "./personalActions";
+import {
+  listOwnPersonalReplicas,
+  listOwnReviewCommands,
+  type PersonalReplicaView,
+  type ReviewCommandsClient,
+} from "@/lib/personalReplica";
 import {
   getSingleManagerTeamPath,
   managerAccessMemberships,
@@ -37,17 +41,28 @@ import { PersonalAIUsageScreen } from "@/components/PersonalAIUsageScreen";
 import { PersonalSummaryScreen } from "@/components/PersonalSummaryScreen";
 import { PersonalAccelerationScreen } from "@/components/PersonalAccelerationScreen";
 import { PersonalSkillsLibraryScreen } from "@/components/PersonalSkillsLibraryScreen";
+import { PersonalWebDataControl } from "@/components/PersonalWebDataControl";
 import {
   IndividualHistoryView,
   IndividualSettingsView,
 } from "@/components/IndividualHistorySettings";
 import { signOut } from "@/app/auth/actions";
+import { resolveIndividualSettingsTab } from "@/lib/individualSettingsRoute";
+import { resolveWebWindowSurface } from "@/lib/webCompactWindow";
 
 export const metadata: Metadata = { title: "Weekform Web" };
 export const dynamic = "force-dynamic";
 
 interface DashboardPageProps {
-  searchParams: Promise<{ team_error?: string; notice?: string; screen?: string }>;
+  searchParams: Promise<{
+    team_error?: string;
+    notice?: string;
+    screen?: string;
+    settings_tab?: string | string[];
+    mode?: string;
+    popup?: string;
+    window?: string;
+  }>;
 }
 
 function formatDate(iso: string): string {
@@ -108,6 +123,10 @@ export default async function DashboardPage({
   }
 
   const params = await searchParams;
+  const windowSearch = new URLSearchParams();
+  if (params.mode) windowSearch.set("mode", params.mode);
+  if (params.popup) windowSearch.set("popup", params.popup);
+  if (params.window) windowSearch.set("window", params.window);
   const profile = await getOrCreateProfile(supabase, user);
   const greetingName = profile?.display_name?.trim() || user.email || "there";
   const { teams, error: teamsError } = await listUserTeams(supabase, user.id);
@@ -119,6 +138,13 @@ export default async function DashboardPage({
     errorKind: personalReplicaErrorKind,
   } =
     await listOwnPersonalReplicas(supabase);
+  const {
+    commands: reviewCommands,
+    error: reviewCommandsError,
+  } = await listOwnReviewCommands(
+    supabase as unknown as ReviewCommandsClient,
+    personalReplicas[0]?.weekId ?? null,
+  );
   const managedTeams = managerAccessMemberships(teams);
   const managerHref = getSingleManagerTeamPath(managedTeams) ?? "/manager-access";
   const currentReplica = personalReplicas[0] ?? null;
@@ -139,6 +165,7 @@ export default async function DashboardPage({
         </>
       )}
       initialScreen={params.screen}
+      initialWindowSurface={resolveWebWindowSurface(windowSearch.toString())}
     >
       <div className="container workspace-shell">
         {personalReplicaError ? (
@@ -162,17 +189,29 @@ export default async function DashboardPage({
           </div>
         ) : null}
         <div data-web-view="today">
-          <PersonalTodayScreen replicas={personalReplicas} error={personalReplicaError} />
+          <PersonalTodayScreen
+            replicas={personalReplicas}
+            error={personalReplicaError}
+            reviewCommands={reviewCommands}
+            reviewCommandsError={reviewCommandsError}
+          />
         </div>
         <div data-web-view="week">
         <div data-web-subview="capacity">
         <RequestFreshnessRefresh />
         <PersonalReplicaRealtime userId={user.id} />
 
-        <PersonalCapacityScreen replicas={personalReplicas} error={personalReplicaError} />
+        <PersonalCapacityScreen
+          replicas={personalReplicas}
+          error={personalReplicaError}
+          errorKind={personalReplicaErrorKind}
+        />
         </div>
         <div data-web-subview="forecast">
-          <PersonalForecastScreen replicas={personalReplicas.map((replica) => replica.payload)} />
+          <PersonalForecastScreen
+            replicas={personalReplicas.map((replica) => replica.payload)}
+            error={personalReplicaError}
+          />
         </div>
         <div data-web-subview="review">
           <PersonalWeeklyReviewScreen replicas={personalReplicas} error={personalReplicaError} />
@@ -186,7 +225,21 @@ export default async function DashboardPage({
         </div>
 
         <div data-web-view="settings">
-        <IndividualSettingsView accountEmail={user.email ?? "your account"} accountAndSharing={(
+        <IndividualSettingsView
+          key={resolveIndividualSettingsTab(params.settings_tab)}
+          accountEmail={user.email ?? "your account"}
+          initialTab={resolveIndividualSettingsTab(params.settings_tab)}
+          dataControl={(
+            <PersonalWebDataControl
+              replicaCount={personalReplicas.length}
+              pendingReviewCount={reviewCommandsError
+                ? null
+                : reviewCommands.filter((command) => command.status === "pending").length}
+              latestWeekId={currentReplica?.weekId ?? null}
+              latestSyncedAt={currentReplica?.syncedAt ?? null}
+            />
+          )}
+          accountAndSharing={(
         <>
         <section id="teams" className="workspace-section" aria-labelledby="teams-title">
           <div className="workspace-section-heading">
@@ -327,19 +380,6 @@ export default async function DashboardPage({
           snapshots={ownSnapshots}
           snapshotsError={snapshotsError}
         />
-        <details className="disclosure web-private-history-control">
-          <summary>Delete private Web history</summary>
-          <p>Turn Private Web workspace off on your Mac first, or a later desktop sync can publish the current week again. This removes your replicas and pending review requests; local Mac data stays untouched.</p>
-          <form action={deletePersonalReplicaHistory}>
-            <FormSubmitButton
-              className="button button-danger"
-              pendingLabel="Deleting Web history…"
-              confirmMessage="Permanently delete your private Web replicas and pending review requests? Your local Mac data will stay untouched."
-            >
-              Delete replicas and pending requests
-            </FormSubmitButton>
-          </form>
-        </details>
         </>
         )} />
         </div>
@@ -375,17 +415,31 @@ export default async function DashboardPage({
 function PersonalCapacityScreen({
   replicas,
   error,
+  errorKind,
 }: {
   replicas: PersonalReplicaView[];
   error: string | null;
+  errorKind: "integrity" | "load" | null;
 }) {
   const current = replicas[0] ?? null;
   return (
     <section className="web-desktop-screen capacity-screen" aria-label="Weekly capacity">
       {error ? (
-        <div className="form-alert web-screen-empty" role="alert">Your private Web workspace could not be loaded. Reload the page to try again.</div>
+        <div className="form-alert web-screen-empty" role="alert">
+          {errorKind === "integrity" ? (
+            <>
+              <strong>Your private Web data could not be validated.</strong>
+              <p>No capacity estimate is being shown. Resync from Weekform for Mac, then reload this page.</p>
+            </>
+          ) : (
+            <>
+              <strong>Your private Web data could not be loaded.</strong>
+              <p>No capacity estimate is being shown. Reload this page or check your connection.</p>
+            </>
+          )}
+        </div>
       ) : !current ? (
-        <div className="panel web-screen-empty"><h2>No review-safe week is connected</h2><p>Enable Private Web workspace in Weekform for Mac to publish the derived capacity fields this screen can display.</p><Link href="/download" className="button button-primary">Open Weekform for Mac</Link></div>
+        <div className="panel web-screen-empty"><h2>No review-safe week is connected</h2><p>Enable Private Web workspace in Weekform for Mac to publish the derived capacity fields this screen can display.</p><Link href="/download" className="button button-primary">Get Weekform for Mac</Link></div>
       ) : (
         <div className="web-capacity-panel">
           <PersonalWeekOverview replica={current.payload} />

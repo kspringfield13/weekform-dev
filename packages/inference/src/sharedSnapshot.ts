@@ -404,6 +404,14 @@ export function buildSharedWorkloadSnapshot(
   const weekBlocks = (Array.isArray(workBlocks) ? workBlocks : []).filter(
     (block) => normalizeWeekId(block.week_id) === weekId
   );
+  // Review-only evidence (currently directed Chat signals) deliberately carries
+  // zero modeled capacity. Keep those cards in the individual's local review
+  // queue, but do not let their count become a manager-visible proxy for source
+  // activity or enter shared project/source freshness calculations.
+  const eligibleWeekBlocks = weekBlocks.filter(
+    (block) =>
+      Number.isFinite(block.estimated_capacity_pct) && block.estimated_capacity_pct > 0
+  );
 
   // Metrics: explicit allowlist walk. A disabled flag or a non-finite source value both mean the
   // key is ABSENT from the payload — never zero, never null.
@@ -418,13 +426,15 @@ export function buildSharedWorkloadSnapshot(
   const includeCategories = policy.shareLevel === "categories" || policy.shareLevel === "projects";
   const includeProjects = policy.shareLevel === "projects";
 
-  const reviewedBlocks = safeCount(weekBlocks.filter((block) => block.user_verified === true).length);
-  const eligibleBlocks = safeCount(weekBlocks.length);
+  const reviewedBlocks = safeCount(
+    eligibleWeekBlocks.filter((block) => block.user_verified === true).length
+  );
+  const eligibleBlocks = safeCount(eligibleWeekBlocks.length);
 
   // Most recent underlying reviewed-data change; falls back to `now` when no blocks exist. ISO
   // strings compare correctly lexicographically.
   let sourceUpdatedAt = "";
-  for (const block of weekBlocks) {
+  for (const block of eligibleWeekBlocks) {
     if (typeof block.end_time === "string" && block.end_time > sourceUpdatedAt) {
       sourceUpdatedAt = block.end_time;
     }
@@ -449,7 +459,10 @@ export function buildSharedWorkloadSnapshot(
     shared.workModeAllocation = sanitizeAllocation(snapshot.work_mode_allocation, MODE_LABELS);
   }
   if (includeProjects) {
-    shared.projectAllocation = buildProjectAllocation(weekBlocks, policy.allowedProjectNames);
+    shared.projectAllocation = buildProjectAllocation(
+      eligibleWeekBlocks,
+      policy.allowedProjectNames
+    );
   }
 
   const fingerprint = computeSharedSnapshotFingerprint(shared);

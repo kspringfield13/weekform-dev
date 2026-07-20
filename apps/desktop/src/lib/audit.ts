@@ -1,5 +1,6 @@
 import type { AccelerationSignal, AuditEvent } from "../../../../packages/domain/src/models";
 import type { CalendarProviderId, CalendarTransferMode } from "../../../../packages/integrations/src/calendar/calendarSync";
+import { providerDescriptor as chatProviderDescriptor, type ChatProviderId } from "../../../../packages/integrations/src/chat/chatSync";
 import { formatDurationMinutes } from "./format";
 
 export function createAuditEvent(
@@ -41,9 +42,10 @@ export function createWeeklyReviewAuditEvent(input: {
 
 /**
  * Build the audit event for a workplace-chat import (mirrors the inline
- * `calendar_import` event). Chat imports are METADATA ONLY — the parser whitelists
- * timestamps, channel/participant labels, and counts and has no message-text
- * field — so the recorded details affirm that invariant (`message_text: false`)
+ * `calendar_import` event). Legacy chat imports are content-free — the parser
+ * keeps timestamps and coarse attention counts while discarding conversation
+ * names, provider identities, and content — so the recorded details affirm that
+ * boundary (`message_content_stored: false`)
  * and never carry message content. A local file import is not a network call, so
  * `privacy_level` is `local_only`.
  */
@@ -65,7 +67,89 @@ export function createChatImportAuditEvent(input: {
       skipped_record_count: skippedRecordCount,
       stored_locally: true,
       sent_to_cloud: false,
-      message_text: false
+      message_content_stored: false,
+      conversation_names_stored: false,
+      raw_provider_ids_stored: false
+    }
+  });
+}
+
+/** Local audit record for a chat OAuth boundary or bounded provider sync. */
+export function createChatSyncAuditEvent(input: {
+  provider: ChatProviderId;
+  action: "connect" | "sync" | "disconnect";
+  success: boolean;
+  range?: { start_date: string; end_date: string };
+  coverage?: "complete" | "scope_limited" | "partial" | "rate_limited" | "permission_limited";
+  fetchedCount?: number;
+  normalizedCount?: number;
+  droppedCount?: number;
+  observedEpisodeCount?: number;
+  directedReviewCount?: number;
+  workloadApplied?: boolean;
+  authoritative?: boolean;
+  hasMore?: boolean;
+}): AuditEvent {
+  const descriptor = chatProviderDescriptor(input.provider);
+  const pastTense = input.action === "connect"
+    ? "connection"
+    : input.action === "disconnect"
+      ? "disconnection"
+      : "sync";
+  const title = input.action === "sync" && input.success && input.hasMore
+    ? `${descriptor.label} sync page retained`
+    : input.action === "sync" && !input.success
+      ? `${descriptor.label} sync incomplete`
+      : `${descriptor.label} ${pastTense} ${input.success ? "completed" : "failed"}`;
+  return createAuditEvent({
+    type: "chat_import",
+    source: `${input.provider}_chat_source`,
+    title,
+    summary: input.action === "sync" && input.success
+      ? input.workloadApplied
+        ? `${input.observedEpisodeCount ?? 0} observed Chat episode${input.observedEpisodeCount === 1 ? "" : "s"}; ${input.directedReviewCount ?? 0} directed signal${input.directedReviewCount === 1 ? "" : "s"} held outside capacity`
+          + (input.authoritative ? " with whole-range replacement authority" : "; applied additively without whole-range replacement authority")
+        : input.hasMore
+          ? "A bounded content-free page was retained locally; workload transformation is waiting for the remaining provider pages."
+          : "Content-free evidence was retained locally, but this run lacked complete replacement authority and did not change workload."
+      : input.success
+        ? `${descriptor.label} ${pastTense} completed without exposing message content to the workload model.`
+        : `${descriptor.label} ${pastTense} did not complete; workload evidence was unchanged.`,
+    privacy_level: "local_only",
+    details: {
+      provider: input.provider,
+      action: input.action,
+      success: input.success,
+      range_start: input.range?.start_date ?? null,
+      range_end: input.range?.end_date ?? null,
+      coverage: input.coverage ?? null,
+      fetched_count: input.fetchedCount ?? null,
+      normalized_count: input.normalizedCount ?? null,
+      dropped_count: input.droppedCount ?? null,
+      observed_episode_count: input.observedEpisodeCount ?? null,
+      directed_review_count: input.directedReviewCount ?? null,
+      workload_model_applied: input.workloadApplied ?? false,
+      destructive_replacement_authority: input.authoritative ?? false,
+      more_provider_pages: input.hasMore ?? false,
+      credentials_saved_to_keychain:
+        input.action === "connect" ? (input.success ? true : null) : null,
+      credentials_removed:
+        input.action === "disconnect" ? (input.success ? true : null) : null,
+      content_discarded_at_native_boundary: true,
+      message_content_stored: false,
+      conversation_names_stored: false,
+      raw_provider_ids_in_workload_state: false,
+      provider_keychain_state_may_have_changed:
+        input.success ? input.action !== "disconnect" : true,
+      canonical_chat_evidence_sent_to_ai: false,
+      derived_chat_blocks_follow_existing_ai_controls: true,
+      chat_source_detail_sent_to_manager: false,
+      derived_aggregate_share_policy_unchanged: true,
+      canonical_chat_evidence_sent_to_weekform_cloud: false,
+      derived_chat_blocks_follow_existing_replica_controls: true,
+      oauth_credentials_may_transit_token_broker:
+        input.provider === "webex" && input.action !== "disconnect",
+      oauth_broker_handles_chat_data: false
     }
   });
 }

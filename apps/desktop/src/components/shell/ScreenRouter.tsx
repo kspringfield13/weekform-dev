@@ -40,6 +40,7 @@ import type { ProactiveAlert, ProactiveAlertSettings } from "../../lib/proactive
 import type { PushToast } from "../../hooks/useToasts";
 import type { CloudController } from "../../hooks/useCloudSync";
 import type { CalendarSourcesController } from "../../hooks/useCalendarSources";
+import type { ChatSourcesController } from "../../hooks/useChatSources";
 import type { CalendarProviderId, CalendarRangeInput } from "../../../../../packages/integrations/src/calendar/calendarSync";
 import type { WeeklyReviewState } from "../../services/weeklyReview";
 
@@ -104,6 +105,7 @@ interface ScreenRouterProps {
   importError: string | null;
   lastCalendarImportSummary: string | null;
   calendarSources: CalendarSourcesController;
+  chatSources: ChatSourcesController;
   onImportCalendar: (provider: CalendarProviderId, file: File, range: CalendarRangeInput) => void;
   chatImportError: string | null;
   onImportChatExport: (file: File) => void;
@@ -235,6 +237,7 @@ export function ScreenRouter({
   importError,
   lastCalendarImportSummary,
   calendarSources,
+  chatSources,
   onImportCalendar,
   chatImportError,
   onImportChatExport,
@@ -344,6 +347,7 @@ export function ScreenRouter({
           importError={importError}
           lastCalendarImportSummary={lastCalendarImportSummary}
           calendarSources={calendarSources}
+          chatSources={chatSources}
           onImportCalendar={onImportCalendar}
           chatImportError={chatImportError}
           onImportChatExport={onImportChatExport}

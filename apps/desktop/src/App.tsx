@@ -13,6 +13,16 @@ import {
 } from "../../../packages/integrations/src/calendar/calendarSync";
 import { importChatExport } from "../../../packages/integrations/src/chat/chatExport";
 import { dedupeChatCallsAgainstCalendar } from "../../../packages/integrations/src/chat/callDedup";
+import {
+  chatReviewSignalsToWorkBlocks,
+  mergeChatWorkBlocks,
+  providerDescriptor as chatProviderDescriptor,
+  reconcileChatEvidence,
+  reconcileChatEvents,
+  transformChatEvidence,
+  type ChatEvidenceEventV1,
+  type ChatProviderId,
+} from "../../../packages/integrations/src/chat/chatSync";
 import { parseUsageCsv } from "../../../packages/integrations/src/usage/usageCsv";
 import { mergeTokenUsageDays } from "../../../packages/inference/src/aiUsage";
 import type {
@@ -57,7 +67,7 @@ import {
 import { unionSpanMs } from "./lib/meetingLoad";
 import { fieldLabel, formatDurationMinutes, formatIsoWeekLabel, humanizeCorrectionValue } from "./lib/format";
 import { downloadTextFile, exportFilename, exportMimeType, serializeFullBackup, type FullBackup } from "./lib/dataExport";
-import { createAccelerationPlayAuditEvent, createAuditEvent, createCalendarImportAuditEvent, createChatImportAuditEvent, createUsageImportAuditEvent, createUsageSettingsAuditEvent, createWeeklyReviewAuditEvent } from "./lib/audit";
+import { createAccelerationPlayAuditEvent, createAuditEvent, createCalendarImportAuditEvent, createChatImportAuditEvent, createChatSyncAuditEvent, createUsageImportAuditEvent, createUsageSettingsAuditEvent, createWeeklyReviewAuditEvent } from "./lib/audit";
 import { removeSeededCorrections, removeSeededWorkBlocks } from "./lib/blocks";
 import { useDateContext } from "./hooks/useDateContext";
 import { useDerived } from "./hooks/useDerived";
@@ -83,6 +93,12 @@ import { useToasts } from "./hooks/useToasts";
 import { useCloudAccount } from "./hooks/useCloudAccount";
 import { useCloudSync, type CloudController } from "./hooks/useCloudSync";
 import { useCalendarSources } from "./hooks/useCalendarSources";
+import {
+  chatSyncApplicationMode,
+  chatSyncOperationalState,
+  useChatSources,
+  type ChatSourceSyncResult,
+} from "./hooks/useChatSources";
 import { usePersonalCloudSync } from "./hooks/usePersonalCloudSync";
 import { screenLabels } from "./lib/ui";
 import {
@@ -198,6 +214,7 @@ export function App() {
         setSnapshotHistory(data.snapshotHistory ?? []);
         setAccelerationHistory(data.accelerationHistory ?? []);
         setChatEvents(data.chatEvents ?? []);
+        setChatEvidence(data.chatEvidence ?? []);
         setVisualContextEnabled(data.visualContextEnabled ?? false);
         setVisualContextInsights(data.visualContextInsights ?? []);
         setDismissedPlayIds(data.dismissedPlayIds ?? []);
@@ -299,6 +316,9 @@ export function App() {
   // Imported workplace-chat events (metadata only) retained for the interruption-load signal.
   const [chatEvents, setChatEvents] = useState<RawEvent[]>(
     () => persistedSnapshot?.chatEvents ?? []
+  );
+  const [chatEvidence, setChatEvidence] = useState<ChatEvidenceEventV1[]>(
+    () => persistedSnapshot?.chatEvidence ?? []
   );
   const [visualContextEnabled, setVisualContextEnabled] = useState<boolean>(
     () => persistedSnapshot?.visualContextEnabled ?? false
@@ -426,6 +446,10 @@ export function App() {
   const { blocks, setBlocks, calendarEvents, setCalendarEvents, corrections, setCorrections, reviewSuggestions, setReviewSuggestions, updateBlock, confirmBlock, excludeBlock, addCorrection } = ledger;
   const calendarEventsRef = useRef(calendarEvents);
   calendarEventsRef.current = calendarEvents;
+  const chatEventsRef = useRef(chatEvents);
+  chatEventsRef.current = chatEvents;
+  const chatEvidenceRef = useRef(chatEvidence);
+  chatEvidenceRef.current = chatEvidence;
 
   const applyCalendarSourceEvents = useCallback((
     provider: CalendarProviderId,
@@ -508,6 +532,141 @@ export function App() {
     },
   });
 
+  const applyChatSourceResult = useCallback((result: ChatSourceSyncResult) => {
+    const applicationMode = chatSyncApplicationMode(result.receipt);
+    const operationalState = chatSyncOperationalState(result.receipt);
+    const evidenceMode = result.receipt.authoritative ? "live_sync" : "file_import";
+    const reconciledEvidence = reconcileChatEvidence(
+      chatEvidenceRef.current,
+      result.events,
+      {
+        provider: result.provider,
+        range: result.range,
+        mode: evidenceMode,
+      },
+    );
+    chatEvidenceRef.current = reconciledEvidence;
+    setChatEvidence(reconciledEvidence);
+
+    // Cursor pages are persisted as canonical content-free evidence, but they
+    // do not enter the workload model independently. Only an intact run that
+    // began at page one is transformed, preventing page boundaries from
+    // splitting one response episode or inventing an unanswered review card.
+    // Scope-limited Slack runs apply additively; only authoritative providers
+    // can replace missing evidence inside the selected range.
+    if (!applicationMode) {
+      const transferSucceeded = operationalState === "in_progress";
+      setAuditEvents((current) => [
+        ...current,
+        createChatSyncAuditEvent({
+          provider: result.provider,
+          action: "sync",
+          success: transferSucceeded,
+          range: result.range,
+          coverage: result.receipt.coverage,
+          fetchedCount: result.receipt.fetched_count ?? undefined,
+          normalizedCount: result.receipt.normalized_count,
+          droppedCount: result.receipt.dropped_count ?? undefined,
+          observedEpisodeCount: 0,
+          directedReviewCount: 0,
+          workloadApplied: false,
+          authoritative: false,
+          hasMore: result.receipt.has_more,
+        }),
+      ].slice(-1000));
+      pushToast({
+        tone: transferSucceeded ? "info" : "error",
+        message: transferSucceeded
+          ? `${chatProviderDescriptor(result.provider).label}: ${result.receipt.normalized_count} content-free signal${result.receipt.normalized_count === 1 ? "" : "s"} retained · continue sync to finish coverage`
+          : `${chatProviderDescriptor(result.provider).label}: transfer incomplete · ${result.receipt.detail}`,
+      });
+      return { observedEpisodeCount: 0, directedReviewCount: 0, workloadApplied: false };
+    }
+
+    const rangeStart = new Date(result.range.start).getTime();
+    const rangeEnd = new Date(result.range.end_exclusive).getTime();
+    const completeRangeEvidence = reconciledEvidence.filter((event) => {
+      const timestamp = new Date(event.timestamp).getTime();
+      return event.provider === result.provider && timestamp >= rangeStart && timestamp < rangeEnd;
+    });
+    const transformed = transformChatEvidence(completeRangeEvidence);
+    const reviewBlocks = chatReviewSignalsToWorkBlocks(transformed.review_signals);
+    const incomingBlocks = [...transformed.work_blocks, ...reviewBlocks];
+    const excludedBlockIds = new Set(
+      corrections
+        .filter((correction) => correction.field === "exclude")
+        .map((correction) => correction.work_block_id),
+    );
+
+    const reconciled = reconcileChatEvents(chatEventsRef.current, transformed.events, {
+      provider: result.provider,
+      range: result.range,
+      mode: applicationMode,
+    });
+    chatEventsRef.current = reconciled.events;
+    setChatEvents(reconciled.events);
+
+    setBlocks((current) => {
+      const merged = mergeChatWorkBlocks(current, incomingBlocks, {
+        provider: result.provider,
+        range: result.range,
+        mode: applicationMode,
+        excludedBlockIds,
+      });
+      const calendarBlocks = merged.filter((block) => block.work_block_id.startsWith("calendar-"));
+      const chatCalls = merged.filter(
+        (block) =>
+          block.category === "Meetings / stakeholder syncs" &&
+          block.derived_from.some((sourceId) => sourceId.startsWith("chat-")),
+      );
+      const chatCallIds = new Set(chatCalls.map((block) => block.work_block_id));
+      const withoutChatCalls = merged.filter((block) => !chatCallIds.has(block.work_block_id));
+      const { kept } = dedupeChatCallsAgainstCalendar(chatCalls, calendarBlocks);
+      return [...withoutChatCalls, ...kept].sort(
+        (left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime(),
+      );
+    });
+
+    const observedEpisodeCount = transformed.work_blocks.length;
+    const directedReviewCount = transformed.review_signals.length;
+    setAuditEvents((current) => [
+      ...current,
+      createChatSyncAuditEvent({
+        provider: result.provider,
+        action: "sync",
+        success: true,
+        range: result.range,
+        coverage: result.receipt.coverage,
+        fetchedCount: result.receipt.fetched_count ?? undefined,
+        normalizedCount: result.receipt.normalized_count,
+        droppedCount: result.receipt.dropped_count ?? undefined,
+        observedEpisodeCount,
+        directedReviewCount,
+        workloadApplied: true,
+        authoritative: result.receipt.authoritative,
+        hasMore: false,
+      }),
+    ].slice(-1000));
+    pushToast({
+      tone: "success",
+      message: `${chatProviderDescriptor(result.provider).label}: ${observedEpisodeCount} observed episode${observedEpisodeCount === 1 ? "" : "s"} · ${directedReviewCount} directed signal${directedReviewCount === 1 ? "" : "s"} held at 0% for review${result.receipt.authoritative ? "" : " · applied additively"}`,
+    });
+    return { observedEpisodeCount, directedReviewCount, workloadApplied: true };
+  }, [corrections, pushToast, setBlocks]);
+
+  const chatSources = useChatSources({
+    enabled: isTauriRuntime && !isDemoMode,
+    onSyncResult: applyChatSourceResult,
+    onConnectionEvent: (provider, action, success) => {
+      // Every sync outcome carries its richer receipt in applyChatSourceResult.
+      if (action === "sync") return;
+      setAuditEvents((current) => [
+        ...current,
+        createChatSyncAuditEvent({ provider, action, success }),
+      ].slice(-1000));
+    },
+  });
+
   // Late hydrate for ledger-owned state if async load completes after mount.
   // Guard every setter the same way as blocks below: only overwrite when the
   // loaded snapshot actually carries data OR the in-memory list is still empty,
@@ -537,6 +696,7 @@ export function App() {
     blocks,
     calendarEvents,
     chatEvents,
+    chatEvidence,
     activeWindowSamples,
     auditEvents,
     corrections,
@@ -810,7 +970,11 @@ export function App() {
       const kept = current.filter((event) => new Date(event.timestamp_end).getTime() >= cutoff);
       return kept.length === current.length ? current : kept;
     });
-  }, [isDemoMode, isTauriRuntime, retentionDays, activeWindowSamples, chatEvents]);
+    setChatEvidence((current) => {
+      const kept = current.filter((event) => new Date(event.timestamp).getTime() >= cutoff);
+      return kept.length === current.length ? current : kept;
+    });
+  }, [isDemoMode, isTauriRuntime, retentionDays, activeWindowSamples, chatEvents, chatEvidence]);
 
   const { classificationStatus, classificationError, classifyActiveWindowSessions, resetClassification } =
     useClassification({
@@ -863,6 +1027,7 @@ export function App() {
     useAcceleration({
       isDemoMode,
       signals: accelerationSignals,
+      blocks,
       currentWeekId,
       currentWeekRangeLabel,
       aiConfig,
@@ -1547,7 +1712,7 @@ export function App() {
   }, [gettingStartedStatus, paused]);
 
   // User-initiated retention-window change. Logged once as a discrete privacy
-  // action (the background per-sample expiry deliberately stays unlogged).
+  // action (background expiry of raw activity and Chat evidence stays unlogged).
   function changeRetentionDays(value: number | null) {
     setRetentionDays(value);
     if (isDemoMode) return;
@@ -1556,13 +1721,17 @@ export function App() {
       createAuditEvent({
         type: "retention_policy",
         source: "privacy_control",
-        title: "Activity retention updated",
+        title: "Raw evidence retention updated",
         summary: value === null
-          ? "Automatic sample expiry disabled — samples are kept until reset"
-          : `Active-window samples now auto-expire after ${value} days`,
+          ? "Automatic raw-evidence expiry disabled — active-window and Chat evidence are kept until reset"
+          : `Active-window samples and canonical/derived Chat event evidence now auto-expire after ${value} days`,
         privacy_level: "local_only",
         details: {
           retention_days: value,
+          active_window_samples_follow_policy: true,
+          canonical_chat_evidence_follows_policy: true,
+          derived_chat_events_follow_policy: true,
+          derived_work_blocks_are_retained: true,
           stored_locally: true,
           sent_to_cloud: false
         }
@@ -1815,6 +1984,7 @@ export function App() {
       blocks,
       calendarEvents,
       chatEvents,
+      chatEvidence,
       activeWindowSamples,
       auditEvents,
       corrections,
@@ -1870,6 +2040,7 @@ export function App() {
           activity_samples: backup.activeWindowSamples.length,
           calendar_events: backup.calendarEvents.length,
           chat_events: backup.chatEvents.length,
+          chat_evidence_events: backup.chatEvidence?.length ?? 0,
           corrections: backup.corrections.length,
           audit_events: backup.auditEvents.length,
           consent_receipts: backup.consentReceipts.length,
@@ -1901,6 +2072,9 @@ export function App() {
       !isTauriRuntime ||
       !isCodexConnection(aiConfig) ||
       await invoke("disconnect_codex").then(() => true).catch(() => false);
+    const chatCredentialsCleared = !isTauriRuntime || await invoke("clear_chat_source_storage")
+      .then(() => true)
+      .catch(() => false);
     setBlocks([]);
     setCalendarEvents([]);
     setActiveWindowSamples([]);
@@ -1911,9 +2085,9 @@ export function App() {
         type: "data_reset",
         source: "privacy_control",
         title: "Prototype data reset",
-        summary: cloudCredentialsCleared && captureJournalCleared && calendarCredentialsCleared && codexCredentialsCleared
-          ? "All local activity, the encrypted capture journal, imports, calendar connections, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and Weekform Web session, replica queue, and sharing policies. Screenshot capture was turned off and tracking paused."
-          : "Local app state was reset, but durable removal of a Keychain session, calendar connection, or encrypted capture journal could not be confirmed. Retry Reset Local Data before closing the app.",
+        summary: cloudCredentialsCleared && captureJournalCleared && calendarCredentialsCleared && codexCredentialsCleared && chatCredentialsCleared
+          ? "All local activity, the encrypted capture journal, imports, calendar and chat connections, AI outputs, and saved skills were cleared, along with your saved AI provider credentials and Weekform Web session, replica queue, and sharing policies. Screenshot capture was turned off and tracking paused."
+          : "Local app state was reset, but durable removal of a Keychain session, calendar or chat connection, or encrypted capture journal could not be confirmed. Retry Reset Local Data before closing the app.",
         privacy_level: "local_only",
         details: {
           visual_context_enabled: false,
@@ -1929,6 +2103,8 @@ export function App() {
           capture_journal_clear_requires_retry: !captureJournalCleared,
           calendar_credentials_cleared: calendarCredentialsCleared,
           calendar_clear_requires_retry: !calendarCredentialsCleared,
+          chat_credentials_cursors_and_hash_salt_cleared: chatCredentialsCleared,
+          chat_clear_requires_retry: !chatCredentialsCleared,
           stored_locally: true,
           sent_to_cloud: false
         }
@@ -1941,6 +2117,7 @@ export function App() {
     setSnapshotHistory([]);
     setAccelerationHistory([]);
     setChatEvents([]);
+    setChatEvidence([]);
     setVisualContextEnabled(false);
     setVisualContextInsights([]);
     setVisualContextAttemptedSessionIds([]);
@@ -2051,9 +2228,10 @@ export function App() {
     reader.onload = () => {
       try {
         const content = String(reader.result ?? "");
-        // Metadata-only: importChatExport whitelists timestamps/channels/counts and
-        // has no message-text field, so message bodies can never enter the ledger.
-        const result = importChatExport(content, { weekId: currentWeekId });
+        // The legacy normalized-file path is content-free and derives each
+        // episode's ISO week from its own timestamp. Pinning to the currently
+        // viewed week would silently misfile historical transfers.
+        const result = importChatExport(content);
 
         // A malformed export no longer throws — it returns a structured result
         // carrying the parse reason, which we surface verbatim.
@@ -2073,11 +2251,33 @@ export function App() {
         const { kept, deduped } = dedupeChatCallsAgainstCalendar(result.work_blocks, blocks);
 
         if (kept.length > 0) {
+          const excludedBlockIds = new Set(
+            corrections
+              .filter((correction) => correction.field === "exclude")
+              .map((correction) => correction.work_block_id)
+          );
           setBlocks((current) => {
-            // Imported blocks carry stable ids (`imported-<hash>`), so re-importing
-            // the same export upserts rather than duplicating.
+            // Imported blocks carry stable ids (`imported-<hash>`). Preserve
+            // reviewed truth on refresh and never resurrect an explicit exclude.
             const merged = new Map(current.map((block) => [block.work_block_id, block]));
-            kept.forEach((block) => merged.set(block.work_block_id, block));
+            kept.forEach((block) => {
+              if (excludedBlockIds.has(block.work_block_id)) return;
+              const prior = merged.get(block.work_block_id);
+              merged.set(block.work_block_id, prior?.user_verified
+                ? {
+                    ...block,
+                    category: prior.category,
+                    mode: prior.mode,
+                    planned_status: prior.planned_status,
+                    project_name: prior.project_name,
+                    stakeholder_group: prior.stakeholder_group,
+                    confidence: prior.confidence,
+                    user_verified: true,
+                    blocker_flag: prior.blocker_flag,
+                    notes: prior.notes,
+                  }
+                : block);
+            });
             return [...merged.values()].sort(
               (left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime()
             );
@@ -2377,6 +2577,7 @@ export function App() {
         importError={importError}
         lastCalendarImportSummary={lastCalendarImportSummary}
         calendarSources={calendarSources}
+        chatSources={chatSources}
         onImportCalendar={importCalendarFile}
         chatImportError={chatImportError}
         onImportChatExport={importWorkplaceChat}

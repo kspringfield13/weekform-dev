@@ -14,6 +14,6 @@ test("Web Forecast preserves the desktop scenario and evidence hierarchy", () =>
 
 test("Web Forecast does not claim browser AI generation or add a write boundary", () => {
   assert.match(source, /Derived planning baseline/);
-  assert.match(source, /Generate an AI forecast on Mac/);
+  assert.match(source, /Get Weekform for Mac/);
   assert.doesNotMatch(source, /fetch\(|localStorage|sessionStorage|supabase/i);
 });

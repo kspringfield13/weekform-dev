@@ -6,9 +6,12 @@ import {
   applyApprovedReviewCommand,
   currentBlockRevision,
   enqueueReplicaBatch,
+  findLocalBlockForReviewCommand,
   markReplicaBatchAttempt,
+  parsePersonalSyncState,
   shouldFlushPersonalQueue,
 } from "./personalSync";
+import { personalReplicaBlock } from "../../../../packages/inference/src/personalReplica";
 import type { WorkBlock } from "../../../../packages/domain/src/models";
 
 const block: WorkBlock = {
@@ -100,4 +103,70 @@ test("approved confirm changes only the allowlisted review field", () => {
     assert.equal(result.block.project_name, "Local only");
     assert.deepEqual(result.block.evidence, ["sensitive"]);
   }
+});
+
+test("provider-free Chat review commands resolve to the local block and preserve local ids", () => {
+  const chatBlock: WorkBlock = {
+    ...block,
+    work_block_id: "chat-review-slack-canonical-chat-hash",
+    derived_from: ["chat-slack-review-canonical-chat-hash"],
+  };
+  const externalBlock = personalReplicaBlock(chatBlock);
+  assert.match(externalBlock.blockId, /^wfb-[a-f0-9]{64}$/);
+  assert.equal(externalBlock.blockId.includes("slack"), false);
+
+  const command: ReviewCommandV1 = {
+    schemaVersion: 1,
+    commandId: "command-chat",
+    blockId: externalBlock.blockId,
+    weekId: chatBlock.week_id,
+    expectedRevision: externalBlock.revision,
+    action: "confirm",
+    patch: null,
+    status: "pending",
+    createdAt: "2026-07-19T20:00:00.000Z",
+    decidedAt: null,
+    decisionReason: null,
+  };
+
+  assert.equal(findLocalBlockForReviewCommand([block, chatBlock], command), chatBlock);
+  const result = applyApprovedReviewCommand(chatBlock, command);
+  assert.equal(result.ok, true);
+  if (result.ok && result.block) {
+    assert.equal(result.block.work_block_id, chatBlock.work_block_id);
+    assert.equal(result.block.user_verified, true);
+  }
+});
+
+test("upgrade drops unsent legacy replica batches with provider-bearing Chat ids", () => {
+  const state = parsePersonalSyncState({
+    deviceId: "device-1",
+    deviceName: "Weekform for Mac",
+    cursor: 0,
+    queue: [{
+      batchId: "batch-legacy-chat",
+      fingerprint: "legacy-fingerprint",
+      queuedAt: "2026-07-19T20:00:00.000Z",
+      attempts: 0,
+      lastError: null,
+      payload: {
+        schemaVersion: 1,
+        weekId: "2026-W29",
+        blocks: [{ blockId: "chat-review-slack-canonical-chat-hash" }],
+      },
+    }, {
+      batchId: "batch-legacy-imported-chat",
+      fingerprint: "legacy-imported-fingerprint",
+      queuedAt: "2026-07-19T21:00:00.000Z",
+      attempts: 0,
+      lastError: null,
+      payload: {
+        schemaVersion: 1,
+        weekId: "2026-W30",
+        blocks: [{ blockId: "imported-chat-google-chat-provider-source-id" }],
+      },
+    }],
+  }, () => "fallback-device");
+
+  assert.deepEqual(state.queue, []);
 });

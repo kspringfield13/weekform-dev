@@ -1,10 +1,13 @@
 -- pgTAP-style policy contract for Weekform Span Simulator.
 -- Intended for `supabase test db` after applying 202607180001_span_simulator.sql.
--- Not executed in this repository: Supabase CLI/local services are not installed here.
+-- Live-verified against the local stack and the linked Weekform Supabase project
+-- on July 20, 2026.
 
 begin;
+set local role postgres;
+set local search_path = public, extensions;
 create extension if not exists pgtap;
-select plan(27);
+select plan(28);
 
 select has_table('public', 'simulation_personas', 'simulation_personas exists');
 select has_table('public', 'simulation_runs', 'simulation_runs exists');
@@ -139,10 +142,29 @@ select throws_ok(
       repeat('a', 64), 1, 'test-generator@1', 20260718, false
     )
   $$,
+  '42501',
+  'new row violates row-level security policy for table "simulation_artifacts"',
+  'RLS rejects an authenticated admin artifact that drops the synthetic marker'
+);
+
+set local role postgres;
+select throws_ok(
+  $$
+    insert into public.simulation_artifacts (
+      simulation_run_id, simulation_member_id, artifact_kind, week_id, payload,
+      content_hash, persona_version, generator_version, seed, is_synthetic
+    ) values (
+      '20000000-0000-0000-0000-000000000001',
+      '40000000-0000-0000-0000-000000000001', 'raw_event', '2026-W01', '{}',
+      repeat('a', 64), 1, 'test-generator@1', 20260718, false
+    )
+  $$,
   '23514',
   null,
-  'database rejects an artifact that drops the synthetic marker'
+  'table constraint rejects a privileged artifact that drops the synthetic marker'
 );
+set local role authenticated;
+set local "request.jwt.claim.sub" = '10000000-0000-0000-0000-000000000001';
 
 select throws_ok(
   $$

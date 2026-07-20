@@ -111,3 +111,17 @@ test("zero-block and missing-replica states never turn absent review truth into 
   assert.equal(empty.pendingCount, 4);
   assert.ok(empty.items.every((item) => item.status === "mac_only"));
 });
+
+test("every Weekly Review Mac target truthfully describes the download acquisition", () => {
+  for (const presentation of [
+    buildPersonalWeeklyReviewPresentation([]),
+    buildPersonalWeeklyReviewPresentation([replica([block("pending", false)])]),
+  ]) {
+    const macTargets = presentation.items.filter((item) => item.target === "mac");
+    assert.ok(macTargets.length > 0);
+    assert.ok(
+      macTargets.every((item) => item.actionLabel === "Get Weekform for Mac"),
+      "ReviewAction routes Mac targets to /download, so their labels must describe acquisition rather than execution",
+    );
+  }
+});

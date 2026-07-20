@@ -1,11 +1,18 @@
 import Link from "next/link";
 
 import type { PersonalReplicaBlockV1 } from "../../../packages/domain/src/personalCloud";
-import type { PersonalReplicaView } from "@/lib/personalReplica";
+import type { PersonalReplicaView, ReviewCommandView } from "@/lib/personalReplica";
 import { formatDateTime } from "@/components/WorkloadSnapshot";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
-import { queuePersonalReviewCommand } from "@/app/dashboard/personalActions";
+import {
+  queuePersonalReviewConfirmBatch,
+  queuePersonalReviewCommand,
+} from "@/app/dashboard/personalActions";
 import { presentPersonalToday } from "@/lib/personalTodayPresentation";
+import {
+  eligibleReviewConfirmTargets,
+  reviewConfirmEligibility,
+} from "@/lib/personalReplica";
 
 const REVIEW_CATEGORIES = [
   "Planned analysis / project work",
@@ -67,8 +74,29 @@ function ReviewCommandFields({
   );
 }
 
-function PersonalReviewBlock({ block }: { block: PersonalReplicaBlockV1 }) {
+const COMMAND_STATUS = {
+  pending: { label: "Pending Mac approval", detail: "This request is waiting for review on your Mac." },
+  applied: { label: "Applied on Mac", detail: "Your Mac applied this request. The next replica will refresh this block." },
+  rejected: { label: "Rejected on Mac", detail: "No local truth changed. Review the block and request again if needed." },
+  conflict: { label: "Replica changed", detail: "This request no longer matched the local block. Wait for the latest replica before requesting another change." },
+} as const;
+
+const COMMAND_ACTION = {
+  confirm: "Confirmation",
+  exclude: "Exclusion",
+  relabel: "Relabel",
+} as const;
+
+function PersonalReviewBlock({
+  block,
+  command,
+}: {
+  block: PersonalReplicaBlockV1;
+  command: ReviewCommandView | null;
+}) {
   const confidence = confidencePresentation(block.confidence);
+  const status = command?.status ?? null;
+  const requestLocked = status !== null && status !== "rejected";
 
   return (
     <article className="block-card web-review-block">
@@ -93,6 +121,13 @@ function PersonalReviewBlock({ block }: { block: PersonalReplicaBlockV1 }) {
         </div>
       </div>
 
+      {command ? (
+        <div className={`web-review-command-status is-${status}`} role={status === "rejected" || status === "conflict" ? "alert" : "status"}>
+          <strong>{COMMAND_ACTION[command.action]} · {COMMAND_STATUS[command.status].label}</strong>
+          <span>{COMMAND_STATUS[command.status].detail}</span>
+        </div>
+      ) : null}
+
       <form action={queuePersonalReviewCommand} className="tag-grid web-review-relabel-form">
         <ReviewCommandFields block={block} action="relabel" />
         <label className="tag-field">
@@ -107,8 +142,8 @@ function PersonalReviewBlock({ block }: { block: PersonalReplicaBlockV1 }) {
             ))}
           </select>
         </label>
-        <FormSubmitButton className="button button-secondary" pendingLabel="Sending request…">
-          Request relabel
+        <FormSubmitButton className="button button-secondary" pendingLabel="Sending request…" disabled={requestLocked}>
+          {status === "rejected" ? "Request relabel again" : "Request relabel"}
         </FormSubmitButton>
       </form>
 
@@ -119,14 +154,14 @@ function PersonalReviewBlock({ block }: { block: PersonalReplicaBlockV1 }) {
       <div className="block-actions">
         <form action={queuePersonalReviewCommand}>
           <ReviewCommandFields block={block} action="confirm" />
-          <FormSubmitButton className="button button-primary" pendingLabel="Sending request…">
-            Request confirmation
+          <FormSubmitButton className="button button-primary" pendingLabel="Sending request…" disabled={requestLocked}>
+            {status === "rejected" ? "Request confirmation again" : "Request confirmation"}
           </FormSubmitButton>
         </form>
         <form action={queuePersonalReviewCommand}>
           <ReviewCommandFields block={block} action="exclude" />
-          <FormSubmitButton className="button button-secondary web-review-exclude" pendingLabel="Sending request…">
-            Request exclusion
+          <FormSubmitButton className="button button-secondary web-review-exclude" pendingLabel="Sending request…" disabled={requestLocked}>
+            {status === "rejected" ? "Request exclusion again" : "Request exclusion"}
           </FormSubmitButton>
         </form>
       </div>
@@ -137,9 +172,13 @@ function PersonalReviewBlock({ block }: { block: PersonalReplicaBlockV1 }) {
 export function PersonalTodayScreen({
   replicas,
   error,
+  reviewCommands,
+  reviewCommandsError,
 }: {
   replicas: PersonalReplicaView[];
   error: string | null;
+  reviewCommands: ReviewCommandView[];
+  reviewCommandsError: string | null;
 }) {
   const current = replicas[0] ?? null;
   const blocks = current?.payload.blocks ?? [];
@@ -151,6 +190,12 @@ export function PersonalTodayScreen({
     heading,
   } = presentPersonalToday(blocks);
   const allDone = totalCount > 0 && reviewQueue.length === 0;
+  const eligibleConfirmTargets = eligibleReviewConfirmTargets(reviewQueue, reviewCommands);
+  const { totalCount: totalEligibleConfirmCount } = reviewConfirmEligibility(
+    reviewQueue,
+    reviewCommands,
+  );
+  const remainingConfirmCount = totalEligibleConfirmCount - eligibleConfirmTargets.length;
 
   return (
     <section className="web-desktop-screen web-today-screen review-screen" aria-labelledby="web-today-title">
@@ -165,7 +210,34 @@ export function PersonalTodayScreen({
           </p>
         </div>
         {current && reviewQueue.length > 0 ? (
-          <span className="web-today-approval-chip">Approval required on Mac</span>
+          <div className="review-header-actions">
+            <span className="web-today-approval-chip">Approval required on Mac</span>
+            {eligibleConfirmTargets.length > 0 && !reviewCommandsError ? (
+              <form action={queuePersonalReviewConfirmBatch}>
+                <input
+                  name="targets"
+                  type="hidden"
+                  value={JSON.stringify(eligibleConfirmTargets)}
+                />
+                <FormSubmitButton
+                  className="button button-primary primary-action web-confirm-all-action"
+                  pendingLabel="Sending requests…"
+                >
+                  <span aria-hidden="true">✓</span>
+                  <span>
+                    {remainingConfirmCount > 0
+                      ? "Confirm next 50"
+                      : <>Confirm all {eligibleConfirmTargets.length}</>}
+                  </span>
+                </FormSubmitButton>
+                {remainingConfirmCount > 0 ? (
+                  <span className="web-confirm-batch-limit" role="status">
+                    <strong>50 of {totalEligibleConfirmCount}</strong> eligible blocks will be requested now; {remainingConfirmCount} will remain.
+                  </span>
+                ) : null}
+              </form>
+            ) : null}
+          </div>
         ) : null}
       </header>
 
@@ -174,11 +246,16 @@ export function PersonalTodayScreen({
           <h2>Your review queue could not be loaded.</h2>
           <p>Reload the page to try again. No review request was sent.</p>
         </div>
+      ) : reviewCommandsError ? (
+        <div className="form-alert web-today-state" role="alert">
+          <h2>Review request status could not be validated.</h2>
+          <p>{reviewCommandsError} Actions are unavailable until status can be loaded safely.</p>
+        </div>
       ) : !current ? (
         <div className="panel web-screen-empty web-today-state" role="status">
           <h2>Your review queue is not connected.</h2>
           <p>Turn on Private Web workspace in Weekform for Mac to publish review-safe derived blocks.</p>
-          <Link href="/download" className="button button-primary">Open Weekform for Mac</Link>
+          <Link href="/download" className="button button-primary">Get Weekform for Mac</Link>
         </div>
       ) : (
         <>
@@ -220,7 +297,15 @@ export function PersonalTodayScreen({
             <div className="ledger-list web-review-ledger">
               <h2 className="visually-hidden">Blocks to review</h2>
               {reviewQueue.map((block) => (
-                <PersonalReviewBlock block={block} key={block.blockId} />
+                <PersonalReviewBlock
+                  block={block}
+                  command={reviewCommands.find((command) => (
+                    command.blockId === block.blockId
+                    && command.weekId === block.weekId
+                    && command.expectedRevision === block.revision
+                  )) ?? null}
+                  key={block.blockId}
+                />
               ))}
             </div>
           )}

@@ -53,7 +53,7 @@ export function buildPersonalWeeklyReviewPresentation(
           ? "ready"
           : "needs_attention",
       count: pendingBlocks,
-      actionLabel: current === null ? "Connect on Mac" : "Open Today",
+      actionLabel: current === null ? "Get Weekform for Mac" : "Open Today",
       target: current === null ? "mac" : "today",
     },
     {
@@ -80,7 +80,7 @@ export function buildPersonalWeeklyReviewPresentation(
       description: "Finishing the ritual writes a local audit event, so completion is recorded only in Weekform for Mac.",
       status: "mac_only",
       count: null,
-      actionLabel: "Finish on Mac",
+      actionLabel: "Get Weekform for Mac",
       target: "mac",
     },
   ];

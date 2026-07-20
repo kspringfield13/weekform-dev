@@ -7,6 +7,10 @@ import type {
   ReviewCommandV1,
 } from "../../../../packages/domain/src/personalCloud";
 import { personalReplicaBlock } from "../../../../packages/inference/src/personalReplica";
+import {
+  externalWorkBlockId,
+  findWorkBlockByExternalId,
+} from "../../../../packages/inference/src/externalWorkBlock";
 
 export function createDefaultPersonalReplicaPolicy(): PersonalReplicaPolicyV1 {
   return { version: 1, enabled: false, consentedAt: null };
@@ -38,6 +42,22 @@ export function createDefaultPersonalSyncState(
   };
 }
 
+function queuedReplicaContainsLocalChatId(payload: unknown): boolean {
+  if (typeof payload !== "object" || payload === null) return false;
+  const blocks = (payload as Record<string, unknown>).blocks;
+  if (!Array.isArray(blocks)) return false;
+  return blocks.some((block) => {
+    if (typeof block !== "object" || block === null) return false;
+    const blockId = (block as Record<string, unknown>).blockId;
+    return typeof blockId === "string"
+      && (
+        blockId.startsWith("chat-")
+        || blockId.startsWith("chat_review-")
+        || blockId.startsWith("imported-chat-")
+      );
+  });
+}
+
 export function parsePersonalSyncState(
   value: unknown,
   makeId: () => string = () => crypto.randomUUID(),
@@ -53,7 +73,11 @@ export function parsePersonalSyncState(
           && typeof entry.fingerprint === "string"
           && typeof entry.queuedAt === "string"
           && typeof entry.payload === "object"
-          && entry.payload !== null;
+          && entry.payload !== null
+          // Pre-boundary batches can contain a local provider-bearing Chat id.
+          // Drop the unsent batch fail-closed; enabled sync immediately rebuilds
+          // the current week from local truth using the opaque external mapping.
+          && !queuedReplicaContainsLocalChatId(entry.payload);
       }).slice(-20)
     : [];
   return {
@@ -122,12 +146,20 @@ export type ApplyReviewCommandResult =
   | { ok: true; block: WorkBlock | null; changedFields: string[] }
   | { ok: false; reason: "wrong_target" | "revision_conflict" | "invalid_patch" };
 
+export function findLocalBlockForReviewCommand(
+  blocks: readonly WorkBlock[],
+  command: Pick<ReviewCommandV1, "blockId" | "weekId">,
+): WorkBlock | null {
+  const block = findWorkBlockByExternalId(blocks, command.blockId);
+  return block?.week_id === command.weekId ? block : null;
+}
+
 /** Pure approval application. Calling this function represents the Mac-side approval edge. */
 export function applyApprovedReviewCommand(
   block: WorkBlock,
   command: ReviewCommandV1,
 ): ApplyReviewCommandResult {
-  if (command.blockId !== block.work_block_id || command.weekId !== block.week_id) {
+  if (command.blockId !== externalWorkBlockId(block) || command.weekId !== block.week_id) {
     return { ok: false, reason: "wrong_target" };
   }
   if (currentBlockRevision(block) !== command.expectedRevision) {

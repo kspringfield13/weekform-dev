@@ -6,9 +6,13 @@ import type {
   WorkBlock
 } from "../../../../packages/domain/src/models";
 import { plannedStatuses, workCategories, workModes } from "../../../../packages/domain/src/taxonomy";
+import {
+  externalSafeCorrections,
+  externalSafeWorkBlock,
+} from "../../../../packages/inference/src/externalWorkBlock";
 import { summarizeSessionForPrompt } from "./promptSummaries";
 
-export const REVIEW_COPILOT_PROMPT_VERSION = "weekform-review-copilot-v2";
+export const REVIEW_COPILOT_PROMPT_VERSION = "weekform-review-copilot-v3";
 
 function sortByStartTime<T extends { start_time: string }>(items: T[]) {
   return [...items].sort((left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime());
@@ -75,7 +79,7 @@ export function buildReviewCopilotPrompt({
   calendarEvents: OutlookCalendarEvent[];
   corrections: UserCorrection[];
 }) {
-  const recentCorrections = [...corrections]
+  const recentCorrections = externalSafeCorrections(corrections, allBlocks)
     .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
     .slice(0, 50);
   const context = {
@@ -103,8 +107,8 @@ export function buildReviewCopilotPrompt({
       display_range: weekRangeLabel
     },
     weekly_capacity_snapshot: snapshot,
-    review_queue: sortByStartTime(reviewQueue).map(summarizeBlock),
-    all_work_blocks: sortByStartTime(allBlocks).map(summarizeBlock),
+    review_queue: sortByStartTime(reviewQueue).map(externalSafeWorkBlock).map(summarizeBlock),
+    all_work_blocks: sortByStartTime(allBlocks).map(externalSafeWorkBlock).map(summarizeBlock),
     active_window_sessions: sortByStartTime(activeWindowSessions).map(summarizeSessionForPrompt),
     outlook_calendar_events: sortByStartTime(calendarEvents).map(summarizeCalendarEvent),
     recent_user_corrections: recentCorrections.map(summarizeCorrection),

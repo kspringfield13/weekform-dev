@@ -252,7 +252,13 @@ export function detectTimeSinks(
   const tallies = new Map<WorkCategory, CategoryTally>();
 
   for (const block of blocks) {
-    if (!TOOLABLE_CATEGORIES.has(block.category)) {
+    // Zero-capacity blocks are review surfaces, not observed occurrences. In
+    // particular, directed-only Chat cards must not satisfy the recurrence
+    // threshold or inflate confidence before the user assigns measured time.
+    if (
+      !TOOLABLE_CATEGORIES.has(block.category) ||
+      finiteMinutes(block.estimated_capacity_pct) <= 0
+    ) {
       continue;
     }
 
@@ -453,37 +459,19 @@ export function detectContextSwitchHotspots(sessions: ActivitySession[]): Accele
 }
 
 /**
- * Reactive comms are realistically serviceable in a couple of set windows a day; every reactive
- * burst BEYOND that is a discrete interruption whose refocus tax batching could reclaim. Anchoring
- * the estimate to interruption COUNT (not raw chat duration) is deliberate: a single long, low-volume
- * chat window is already "batched" and shouldn't score, while overlapping bursts can't inflate a
- * count the way summed wall-durations can. Hand-set to a small number of focused windows.
+ * Scenario assumption for a communication-batching trial. It does not assert
+ * that each observed response episode caused an interruption.
  */
 const REACTIVE_BATCH_WINDOWS = 2;
 
-/** Reactive load needs at least this many messages in the window to be worth a Play (vs. noise). */
-const MIN_REACTIVE_MESSAGES = MIN_RECURRENCES;
+/** Require repeated observed episodes before proposing a trial. */
+const MIN_RESPONSE_EPISODES = MIN_RECURRENCES;
 
 /**
- * Detect a chat-driven reactive load worth batching and emit one `technique` Play — "batch reactive
- * comms into set windows", with a focus-guard angle when the load has a clear time-of-day peak. Reads
- * the pre-computed `InterruptionLoadAnalysis` (from `analyzeInterruptionLoad` in `capacity.ts`), so it
- * adds near-zero new inference and stays in lockstep with the Weekly interruption panel the user
- * already sees.
- *
- * The reclaimable estimate is the refocus tax of the reactive bursts beyond a couple of set windows:
- * `REFOCUS_MINUTES_PER_SWITCH × max(0, burst_count − REACTIVE_BATCH_WINDOWS)`, reusing the SAME
- * Mark-et-al.-grounded per-interruption constant `detectContextSwitchHotspots` prices app switches at,
- * so both `technique` detectors share one refocus model. Keying it to burst COUNT (not `active_hours`)
- * means a single long low-message window — already effectively batched — doesn't over-claim, and
- * overlapping bursts can't double-count wall time. As a `technique` its estimate IS the reclaimable
- * minutes, so it scores against the E3 realized-savings machinery with a capture fraction of 1.
- *
- * Privacy: the analysis carries metadata-only figures (message/burst/mention counts, active hours,
- * and time-of-day/percentage stats) — never message text — so the evidence stays derived-only. Pure;
- * dedup/ranking across detectors is the aggregator's job. Returns [] when there is no chat signal, the
- * message volume is below the noise floor, or there aren't enough bursts beyond the batch windows to
- * reclaim anything.
+ * Detect repeated observed response episodes and propose an explicitly
+ * experimental batching technique. The estimate is a scenario, not an
+ * observation: it is emitted only when chat activity co-occurred with focus
+ * blocks, and the user still approves/acts on the play.
  */
 export function detectReactiveLoad(
   analysis: InterruptionLoadAnalysis | null | undefined
@@ -492,22 +480,21 @@ export function detectReactiveLoad(
     return [];
   }
 
-  const messageCount = analysis.message_count;
-  // Each reactive burst is a discrete interruption; batching leaves ~REACTIVE_BATCH_WINDOWS check-ins
-  // and consolidates the rest. The reclaimable refocus tax therefore scales with the interruptions
-  // BEYOND those windows — not raw chat duration or message volume.
-  const avoidedInterruptions = Math.max(0, analysis.burst_count - REACTIVE_BATCH_WINDOWS);
-  const estimatedSaved = REFOCUS_MINUTES_PER_SWITCH * avoidedInterruptions;
-  if (messageCount < MIN_REACTIVE_MESSAGES || estimatedSaved <= 0) {
+  const episodeCount = analysis.observed_response_episode_count;
+  const consolidatableEpisodes = Math.max(0, episodeCount - REACTIVE_BATCH_WINDOWS);
+  const estimatedSaved = REFOCUS_MINUTES_PER_SWITCH * consolidatableEpisodes;
+  if (
+    episodeCount < MIN_RESPONSE_EPISODES ||
+    analysis.focus_overlap_block_count === 0 ||
+    estimatedSaved <= 0
+  ) {
     return [];
   }
 
-  // Confidence rises with reactive volume, then with the sharper interruption cues: direct
-  // @-mentions and after-hours bleed are aimed at the user / bleed into personal time, so they're
-  // harder to batch away and make a load a more certain candidate for windowing.
-  const volumeBoost = Math.min(0.2, (messageCount - MIN_REACTIVE_MESSAGES) * 0.01);
-  const sharpnessBoost = (analysis.mention_pct / 100) * 0.1 + (analysis.after_hours_pct / 100) * 0.1;
-  const confidence = Math.min(0.85, 0.5 + volumeBoost + sharpnessBoost);
+  const recurrenceBoost = Math.min(0.15, (episodeCount - MIN_RESPONSE_EPISODES) * 0.02);
+  const evidenceBoost = (analysis.directed_response_pct / 100) * 0.08
+    + (analysis.focus_overlap_pct / 100) * 0.08;
+  const confidence = Math.min(0.78, 0.48 + recurrenceBoost + evidenceBoost);
 
   // `peak_hour` is non-null exactly when `peak_day` is (see analyzeInterruptionLoad). The peak window
   // is cited in evidence whatever the hour, but the "guard it for focused work" suggestion is offered
@@ -524,17 +511,18 @@ export function detectReactiveLoad(
   const hoursLabel = analysis.active_hours.toFixed(1);
 
   const evidence: string[] = [
-    `${analysis.burst_count} separate reactive chat bursts (${messageCount} messages across ${hoursLabel}h)`
+    `${episodeCount} observed response episodes across ${hoursLabel}h of modeled unioned response span`,
+    `${analysis.focus_overlap_block_count} focus block${analysis.focus_overlap_block_count === 1 ? "" : "s"} had chat co-occurrence; causation is not inferred`,
   ];
   if (peakWindow) {
     evidence.push(
       analysis.peak_day
-        ? `Reactive volume peaked around ${peakWindow} on ${analysis.peak_day}`
-        : `Reactive volume peaked around ${peakWindow}`
+        ? `Observed response activity peaked around ${peakWindow} on ${analysis.peak_day}`
+        : `Observed response activity peaked around ${peakWindow}`
     );
   }
-  if (analysis.mention_pct > 0) {
-    evidence.push(`${analysis.mention_pct}% were direct @-mentions aimed at you by name`);
+  if (analysis.directed_response_pct > 0) {
+    evidence.push(`${analysis.directed_response_pct}% followed a directed signal`);
   }
   if (analysis.after_hours_pct > 0) {
     // Boundary derived from the same CORE_HOURS_START/END the after-hours share is computed against
@@ -542,11 +530,11 @@ export function detectReactiveLoad(
     // the anti-hardcoded-literal rule capacity.ts:529 documents for the Weekly note. hourLabel(8) →
     // "8am", hourLabel(18) → "6pm", so this stays byte-identical today.
     evidence.push(
-      `${analysis.after_hours_pct}% landed after hours (before ${hourLabel(CORE_HOURS_START)} / at or after ${hourLabel(CORE_HOURS_END)})`
+      `${analysis.after_hours_pct}% of observed episodes occurred outside the prototype core-hours window (before ${hourLabel(CORE_HOURS_START)} / at or after ${hourLabel(CORE_HOURS_END)})`
     );
   }
   evidence.push(
-    `Batching into ${REACTIVE_BATCH_WINDOWS} set windows consolidates ~${avoidedInterruptions} of those interruptions, each ~${REFOCUS_MINUTES_PER_SWITCH} min of refocus`
+    `Scenario: batching into ${REACTIVE_BATCH_WINDOWS} set windows could consolidate up to ${consolidatableEpisodes} response transitions at ~${REFOCUS_MINUTES_PER_SWITCH} min each`
   );
 
   return [
@@ -555,7 +543,7 @@ export function detectReactiveLoad(
       signal_id: `technique-${stableHash("reactive-load")}`,
       type: "technique",
       title: "Batch reactive comms into set windows",
-      detail: `You were pulled into ${analysis.burst_count} separate reactive chat bursts (${messageCount} messages). Batching replies into ${REACTIVE_BATCH_WINDOWS} set windows${guardSuggestion} could reclaim about ${estimatedSaved} min/week of refocus time.`,
+      detail: `Weekform observed ${episodeCount} response episodes, with chat activity co-occurring with ${analysis.focus_overlap_block_count} focus block${analysis.focus_overlap_block_count === 1 ? "" : "s"}. A ${REACTIVE_BATCH_WINDOWS}-window batching trial${guardSuggestion} could reclaim up to about ${estimatedSaved} min/week if it removes those transitions.`,
       evidence,
       estimated_minutes_saved_per_week: estimatedSaved,
       confidence: Number(confidence.toFixed(2)),

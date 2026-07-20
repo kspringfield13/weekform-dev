@@ -335,7 +335,7 @@ The hackathon-readiness and provenance task is supplemental evidence:
 
 - **User-visible outcome:** Weekform for Mac can explicitly enable a private, review-safe Web replica. The authenticated Web dashboard shows derived capacity and reviewable blocks, sends confirm/exclude/relabel requests, and states that the Mac must approve every request. Private Supabase Broadcast invalidations refresh the server-rendered view; the 15-second request-fresh loop remains the fallback.
 - **Implementation evidence:** `PersonalWorkloadReplicaV1` is built field-by-field with no raw evidence fields; desktop sync uses registered devices, durable offline batches, idempotent batch ids, server cursors, and block revisions. The additive Supabase migration defines RLS-scoped replicas, commands, hardened RPCs, and private Broadcast authorization. Native capture writes AES-256-GCM journal entries before emitting a sample, keeps the journal/session keys in macOS Keychain, migrates legacy raw samples out of the general Tauri Store, and connects retention/reset to the journal.
-- **Boundary:** The migration is a reviewed repository artifact until it is applied to a configured Supabase project and exercised with live RLS actors. Browser/demo proof does not prove native capture or Keychain behavior; native Rust tests and a packaged-app smoke test are separate evidence surfaces.
+- **Boundary:** The replica migration and its duplicate-safety upgrade are applied to the linked Weekform Supabase project and exercised with live RLS actors as part of the July 20 hosted verification below. Browser/demo proof still does not prove native capture or Keychain behavior; native Rust tests and a packaged-app smoke test are separate evidence surfaces.
 
 ### Desktop-parity Individual Web workspace
 
@@ -533,6 +533,39 @@ The hackathon-readiness and provenance task is supplemental evidence:
   pass. Package audit remains environment-blocked by registry DNS (`ENOTFOUND`),
   and authenticated rendered browser proof remains a separate pending surface.
 
+- **July 20 Web-to-Mac review lifecycle follow-through:** Individual Web Today
+  now reloads the signed-in user's review-request lifecycle through the same
+  RLS-scoped API boundary and shows action-specific pending, applied, rejected,
+  and conflict states in the Desktop-shaped review cards. Invalid chronology,
+  wrong-week rows, duplicate command ids, duplicate pending targets, malformed
+  server fields, and oversized result sets fail closed before actions render.
+  A partial unique index and hardened security-definer RPC permit one pending
+  request per user/block revision: identical retries return the existing id,
+  contradictory retries fail loudly, and terminal history remains intact. The
+  browser still cannot apply local truth. Focused lifecycle/parity contracts
+  pass 25/25; `verify:wave3` passes with 157/157 desktop-cloud tests, 342/342 Web
+  tests, and the optimized Next.js build; Web typecheck, the authoritative root
+  build, and diff check pass. The dedicated 25-assertion pgTAP contract passes
+  against both local and linked hosted Supabase. Authenticated rendered checks
+  remain separate because the sandbox denies local server binding. Package audit
+  is separately blocked by registry DNS (`ENOTFOUND`).
+
+- **July 20 atomic Today Confirm-all follow-through:** Individual Web Today now
+  exposes the Desktop-primary `Confirm all N` action for review-safe blocks that
+  do not already have a current pending, applied, or conflict request. Web sends
+  only a bounded set of block id, week id, and expected-revision triples. The
+  authenticated security-definer RPC derives confirmation semantics, ownership,
+  status, and chronology; validates all targets against the caller’s current
+  unverified replica before writing; returns existing ids for identical retries;
+  and rolls back the whole batch on a stale, malformed, duplicate, unauthorized,
+  or contradictory target. Rejected and stale-revision requests remain retryable,
+  and no browser persistence or local-truth mutation was added. Red-first focused
+  contracts began at 0/11 and finish at 13/13 after the capped-batch UX edge was
+  added; the full Web suite passes 355/355 and Web
+  typecheck and diff check pass. The dedicated 23-assertion pgTAP contract passes
+  against both local and linked hosted Supabase, including atomic rollback,
+  ownership, idempotency, validation, and server-owned lifecycle checks.
+
 - **July 20 Span Simulator decision-cockpit refresh:** The admin-only local
   simulator now replaces its five-step explanatory wizard with one compact
   People → Pressure → Time Lens cockpit. The primary canvas keeps role counts,
@@ -553,9 +586,23 @@ The hackathon-readiness and provenance task is supplemental evidence:
   keyboard tab navigation, and a two-run comparison with no browser errors.
   `test:simulator` passes 22/22, `test:desktop-cloud` passes 157/157, the
   authoritative root build passes, `npm audit --audit-level=moderate` reports
-  zero vulnerabilities, and `git diff --check` passes. The committed Supabase
-  migration and policy contract remain authored but are still not claimed as
-  live infrastructure proof.
+  zero vulnerabilities, and `git diff --check` passes. Live local Supabase
+  proof now closes the former infrastructure gap: Docker Desktop reports a
+  running `29.6.1` server, migration history confirms `202607180001` and the
+  `202607190006` current-user admin-access seam are applied, and the simulator
+  RLS plus Admin Portal authorization contracts pass 38/38 pgTAP assertions.
+  The live contract separately proves both authenticated-admin RLS rejection
+  and privileged-path check-constraint rejection when synthetic provenance is
+  dropped. The complete authorization suite now passes 198/198 assertions
+  locally and 198/198 against hosted project `fytospjjbcksmppmvupy`: personal
+  replica isolation, duplicate-safe and atomic batch review commands, simulator
+  admin access, Span Simulator RLS, and Team Cloud RLS all pass. The hosted
+  migration ledger was initialized and reconciled after the project was found
+  to contain the schema without `supabase_migrations.schema_migrations`; local
+  and hosted histories now match from `202607180001` through `202607200003`, and
+  a linked dry run reports the remote database is up to date. Authenticated users
+  have no direct `UPDATE` privilege on append-only simulator personas. No seed
+  data was pushed.
 
 - **July 20 calendar-source parity:** Data Sources now gives Outlook, Google,
   and Apple Calendar one bounded, provider-neutral path: each can import a local
@@ -603,6 +650,59 @@ The hackathon-readiness and provenance task is supplemental evidence:
   app/DMG build pass, and `npm audit --audit-level=moderate` reports zero
   vulnerabilities. A fresh Weekform-specific browser sign-in remains a user-
   performed authentication step and is not claimed as completed by automation.
+
+- **July 20 Web Forecast parity:** The authenticated individual Web workspace
+  now mirrors the Desktop Forecast history context with a bounded six-week,
+  five-signal capacity trajectory (allocated, reactive, deep work, reliable
+  capacity, and meeting density), an accessible chart-equivalent data table,
+  and deterministic newest-replica selection when a week is duplicated. Replica
+  load or integrity failures render as errors rather than plausible empty
+  forecasts, and the scenario range geometry is clamped and labeled. The Web
+  copy explicitly identifies these as observed review-safe baselines, not saved
+  predictions or forecast-accuracy evidence; AI forecast generation remains a
+  Mac handoff. Focused Forecast tests pass 11/11, Web typecheck passes, and
+  `verify:wave3` passes 157/157 desktop-cloud tests, 359/359 Web tests, and the
+  optimized 12-page Web build. The root build passes. At that validation point,
+  package audit refresh was blocked by registry DNS, and rendered authenticated
+  proof was not claimed because the managed runner rejected local port binding.
+
+- **July 20 Chat-source intelligence:** Native Data Sources now follows Calendar
+  with a truthful unavailable Email row and then one bounded, manual Chat
+  connection path for exactly Slack, Google Chat, and Webex.
+  Native OAuth, Keychain-held credentials and cursors, provider pagination, and
+  coverage receipts project provider responses into a canonical content-free
+  evidence contract before React or persisted app state. Ambient traffic is
+  ignored; directed requests remain 0%-capacity review cards until measured;
+  safely correlated self actions become bounded, correctable response episodes,
+  while uncorrelated self-sent bursts become proactive coordination. Partial
+  pages are accumulated without entering the workload model. Completed intact
+  Google Chat and Webex runs can authoritatively reconcile their provider/range;
+  Slack reads top-level history from currently listed non-archived conversations,
+  excludes thread replies, applies additively, and never claims deletion
+  authority. Google Chat's documented empty message-list object is accepted as
+  valid empty coverage. Resumable pages remain visibly in progress; terminal
+  blocked receipts do not update the last-successful time or claim a completed
+  audit. Zero-capacity Chat cards cannot change capacity, confidence, focus
+  overlap, acceleration recurrence, or manager review counts. Managers receive
+  only the member-approved aggregate workload contract already governed by
+  Account & Sharing. AI and the private Web replica receive provider-free Chat
+  projections with opaque block ids, and returned review actions resolve
+  fail-closed on the Mac. The authenticated Web Settings surface places the
+  same three-option Chat section directly below Email and hands connection
+  control to the authoritative Mac. The Webex route and native connector both
+  fail closed unless operators set
+  `WEBEX_CHAT_BROKER_SECURITY_VERIFIED=true` after verifying deployed rate
+  limiting and credential-safe logging. Focused Chat contracts pass 74/74;
+  native Chat boundary tests pass 30/30; desktop service tests pass 173/173;
+  Web tests pass 413/413. Root and optimized Web production builds, Web
+  typecheck, Cargo check, the new Chat module's `rustfmt --check`, diff check,
+  and root/Web package audits pass; both audits report zero vulnerabilities.
+  Browser verification covered the native-shaped Data Sources view at the
+  1024×720 minimum in light and dark themes with no console errors. Provider app
+  registration, Google restricted-scope verification, a deployed/rate-limited
+  Webex token broker, and live-account transfer remain unclaimed. Codex task
+  `019f7f6c-b19e-7d71-a333-58c951ef34c5` contains the implementation and review
+  evidence; raw task artifacts are not public submission material.
 
 - **Codex Session ID:** `019f75f1-73fc-7850-98a4-c23ec0aae893`
 - **Task title:** `Prepare Weekform for Build Week`

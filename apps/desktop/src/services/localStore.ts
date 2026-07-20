@@ -29,6 +29,7 @@ import {
 import type { WindowMode } from "../lib/types";
 import type { AuthoredAccelerationPlay } from "./accelerationSchema";
 import { parseConsentReceipts, type ConsentReceiptV1 } from "./consentReceipt";
+import type { ChatEvidenceEventV1 } from "../../../../packages/integrations/src/chat/chatSync";
 
 const STORE_FILE = "clear-capacity.store";
 const STATE_KEY = "appState";
@@ -140,6 +141,8 @@ export interface PersistedAppState {
   calendarEvents: OutlookCalendarEvent[];
   /** Imported workplace-chat events (metadata only), kept for the interruption-load signal. */
   chatEvents: RawEvent[];
+  /** Canonical content-free Chat evidence retained so cursor pages transform as one run. */
+  chatEvidence?: ChatEvidenceEventV1[];
   activeWindowSamples: ActiveWindowSample[];
   auditEvents: AuditEvent[];
   corrections: UserCorrection[];
@@ -675,18 +678,177 @@ function parseSavedSkills(value: unknown): SavedSkill[] {
     }));
 }
 
-function parseChatEvents(value: unknown): RawEvent[] {
+const SAFE_PERSISTED_CHAT_METADATA = new Set([
+  "provider",
+  "kind",
+  "attention_grade",
+  "attention_signal",
+  "coverage",
+  "participant_bucket",
+  "directed_trigger",
+]);
+const SAFE_PERSISTED_CHAT_METADATA_VALUES: Record<string, ReadonlySet<string>> = {
+  provider: new Set(["slack", "google_chat", "webex", "teams"]),
+  kind: new Set(["message", "call", "response_episode", "coordination_episode"]),
+  attention_grade: new Set(["ambient", "directed", "observed"]),
+  attention_signal: new Set([
+    "ambient",
+    "direct_mention",
+    "direct_message",
+    "reply_to_self",
+    "self_sent",
+    "self_reaction",
+    "call_joined",
+  ]),
+  coverage: new Set(["observed", "synthetic_complete"]),
+  participant_bucket: new Set(["1", "2-5", "6-20", "21+", "unknown"]),
+  directed_trigger: new Set(["true"]),
+};
+/** Remove fields admitted by the older label/count-based Chat importer on rehydrate. */
+export function sanitizePersistedChatEvents(value: unknown): RawEvent[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(
-    (entry): entry is RawEvent =>
-      isRecord(entry) &&
-      entry.source_type === "chat" &&
-      typeof entry.timestamp_start === "string" &&
-      typeof entry.timestamp_end === "string" &&
-      // metadata must be a real object — `analyzeInterruptionLoad` reads counts off it
-      // without guarding, so a corrupted null/missing bag would crash the render.
-      isRecord(entry.metadata)
+  return value.flatMap((entry) => {
+    if (
+      !isRecord(entry) ||
+      entry.source_type !== "chat" ||
+      typeof entry.timestamp_start !== "string" ||
+      typeof entry.timestamp_end !== "string" ||
+      !isRecord(entry.metadata)
+    ) return [];
+    const start = new Date(entry.timestamp_start);
+    const end = new Date(entry.timestamp_end);
+    if (
+      !Number.isFinite(start.getTime()) ||
+      !Number.isFinite(end.getTime()) ||
+      end.getTime() <= start.getTime() ||
+      typeof entry.event_id !== "string" ||
+      !entry.event_id.trim() ||
+      entry.event_id.length > 512 ||
+      typeof entry.user_id !== "string" ||
+      entry.user_id.length > 512
+    ) return [];
+    const metadata: Record<string, string> = {};
+    for (const [key, candidate] of Object.entries(entry.metadata)) {
+      if (
+        SAFE_PERSISTED_CHAT_METADATA.has(key) &&
+        typeof candidate === "string" &&
+        SAFE_PERSISTED_CHAT_METADATA_VALUES[key]?.has(candidate)
+      ) {
+        metadata[key] = candidate;
+      }
+    }
+    const provider = metadata.provider;
+    if (
+      !provider ||
+      !(
+        entry.event_id.startsWith(`chat-${provider}-`) ||
+        entry.event_id.startsWith(`chat-call-${provider}-`)
+      )
+    ) return [];
+    return [{
+      event_id: entry.event_id,
+      user_id: entry.user_id,
+      timestamp_start: start.toISOString(),
+      timestamp_end: end.toISOString(),
+      source_type: "chat",
+      app_name: "Workplace chat",
+      window_title: null,
+      domain: null,
+      file_path: null,
+      project_hint: null,
+      metadata,
+      privacy_level: "derived_only",
+    }];
+  });
+}
+
+const CHAT_ATTENTION_SIGNALS = new Set([
+  "ambient",
+  "direct_mention",
+  "direct_message",
+  "reply_to_self",
+  "self_sent",
+  "self_reaction",
+  "call_joined",
+]);
+const CHAT_ATTENTION_GRADES = new Set(["ambient", "directed", "observed"]);
+const CHAT_PROVIDERS = new Set(["slack", "google_chat", "webex"]);
+
+/** Fail closed and re-project the persisted canonical Chat contract on every read. */
+export function sanitizePersistedChatEvidence(value: unknown): ChatEvidenceEventV1[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (
+      !isRecord(entry) ||
+      entry.schema_version !== 1 ||
+      typeof entry.event_id !== "string" ||
+      !CHAT_PROVIDERS.has(entry.provider as string) ||
+      typeof entry.timestamp !== "string" ||
+      !Number.isFinite(new Date(entry.timestamp).getTime()) ||
+      !CHAT_ATTENTION_SIGNALS.has(entry.attention_signal as string) ||
+      !CHAT_ATTENTION_GRADES.has(entry.attention_grade as string) ||
+      typeof entry.correlation_key !== "string"
+    ) return [];
+    const candidate = entry as unknown as ChatEvidenceEventV1;
+    return [{
+      schema_version: 1,
+      event_id: candidate.event_id,
+      provider: candidate.provider,
+      timestamp: new Date(candidate.timestamp).toISOString(),
+      attention_signal: candidate.attention_signal,
+      attention_grade: candidate.attention_grade,
+      correlation_key: candidate.correlation_key,
+      ...(typeof candidate.conversation_key === "string"
+        ? { conversation_key: candidate.conversation_key }
+        : {}),
+      ...(typeof candidate.thread_key === "string" ? { thread_key: candidate.thread_key } : {}),
+      ...(["channel", "space", "dm", "group_dm", "thread", "call"].includes(candidate.surface ?? "")
+        ? { surface: candidate.surface }
+        : {}),
+      ...(["inbound", "outbound"].includes(candidate.direction ?? "")
+        ? { direction: candidate.direction }
+        : {}),
+      ...(["1", "2-5", "6-20", "21+", "unknown"].includes(candidate.participant_count_bucket ?? "")
+        ? { participant_count_bucket: candidate.participant_count_bucket }
+        : {}),
+      ...(typeof candidate.silent === "boolean" ? { silent: candidate.silent } : {}),
+      ...(typeof candidate.tombstone === "boolean" ? { tombstone: candidate.tombstone } : {}),
+      ...(typeof candidate.revision === "string" ? { revision: candidate.revision } : {}),
+      ...(typeof candidate.imported_at === "string" && Number.isFinite(new Date(candidate.imported_at).getTime())
+        ? { imported_at: new Date(candidate.imported_at).toISOString() }
+        : {}),
+      local_only: true,
+    } as ChatEvidenceEventV1];
+  }).sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+}
+
+function isChatDerivedBlock(block: WorkBlock): boolean {
+  return Array.isArray(block.derived_from) && block.derived_from.some(
+    (id) => typeof id === "string" && /^chat-(?:call-)?(?:slack|google_chat|webex|teams)-/.test(id),
   );
+}
+
+/** Preserve reviewed corrections while removing legacy automatic conversation labels. */
+export function sanitizePersistedWorkBlocks(value: unknown): WorkBlock[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.work_block_id !== "string") return [];
+    const block = entry as unknown as WorkBlock;
+    if (!isChatDerivedBlock(block) || block.user_verified === true) return [block];
+    const projectName = Number.isFinite(block.estimated_capacity_pct) && block.estimated_capacity_pct <= 0
+      ? "Directed chat request"
+      : block.category === "Meetings / stakeholder syncs"
+        ? "Chat call"
+        : block.category === "Admin / coordination" && block.mode === "Collaborative"
+          ? "Chat coordination"
+          : "Reactive messaging";
+    return [{
+      ...block,
+      project_name: projectName,
+      stakeholder_group: "Workplace chat",
+      evidence: ["Legacy content-free Chat evidence; automatic conversation labels removed during upgrade"],
+    }];
+  });
 }
 
 /**
@@ -869,9 +1031,10 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
       // (simplified return, same mapping as before)
       return {
         version: 1,
-        blocks: parsed.blocks as WorkBlock[],
+        blocks: sanitizePersistedWorkBlocks(parsed.blocks),
         calendarEvents: parseCalendarEvents(parsed.calendarEvents),
-        chatEvents: parseChatEvents(parsed.chatEvents),
+        chatEvents: sanitizePersistedChatEvents(parsed.chatEvents),
+        chatEvidence: sanitizePersistedChatEvidence(parsed.chatEvidence),
         activeWindowSamples: Array.isArray(parsed.activeWindowSamples) ? (parsed.activeWindowSamples as ActiveWindowSample[]) : [],
         auditEvents: parseAuditEvents(parsed.auditEvents),
         corrections: Array.isArray(parsed.corrections) ? (parsed.corrections as UserCorrection[]) : [],
@@ -919,9 +1082,10 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
 
     return {
       version: 1,
-      blocks: parsed.blocks as WorkBlock[],
+      blocks: sanitizePersistedWorkBlocks(parsed.blocks),
       calendarEvents: parseCalendarEvents(parsed.calendarEvents),
-      chatEvents: parseChatEvents(parsed.chatEvents),
+      chatEvents: sanitizePersistedChatEvents(parsed.chatEvents),
+      chatEvidence: sanitizePersistedChatEvidence(parsed.chatEvidence),
       activeWindowSamples: Array.isArray(parsed.activeWindowSamples)
         ? (parsed.activeWindowSamples as ActiveWindowSample[])
         : [],

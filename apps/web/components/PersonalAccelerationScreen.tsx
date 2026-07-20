@@ -87,7 +87,7 @@ export function PersonalAccelerationScreen({
           <h2 id="personal-acceleration-synthesis-title">AI synthesis remains opt-in on Mac.</h2>
           <p>Web receives no raw window titles, workflow evidence, prompts, saved recipes, or AI credentials.</p>
         </div>
-        <Link className="button button-secondary" href="/download">Open Weekform for Mac</Link>
+        <Link className="button button-secondary" href="/download">Get Weekform for Mac</Link>
       </section>
 
       <section className={styles.trackRecord} aria-labelledby="personal-acceleration-track-title">
@@ -123,7 +123,7 @@ export function PersonalAccelerationScreen({
             </p>
           </details>
           <div className={styles.actions}>
-            <Link className="button button-primary" href="/download">Open Weekform for Mac</Link>
+            <Link className="button button-primary" href="/download">Get Weekform for Mac</Link>
           </div>
         </article>
       </section>

@@ -19,6 +19,7 @@ import {
 import {
   applyApprovedReviewCommand,
   enqueueReplicaBatch,
+  findLocalBlockForReviewCommand,
   markReplicaBatchAttempt,
   shouldFlushPersonalQueue,
 } from "../services/personalSync";
@@ -188,7 +189,7 @@ export function usePersonalCloudSync(input: {
   const approveCommand = useCallback(async (commandId: string): Promise<boolean> => {
     const command = pendingCommands.find((entry) => entry.commandId === commandId);
     if (!command) return false;
-    const block = workBlocks.find((entry) => entry.work_block_id === command.blockId);
+    const block = findLocalBlockForReviewCommand(workBlocks, command);
     if (!block) return finishCommand(command, "conflict", "The local block no longer exists.");
     const applied = applyApprovedReviewCommand(block, command);
     if (!applied.ok) return finishCommand(command, "conflict", "The local block changed after this request was created.");

@@ -6,6 +6,7 @@ import type { PersonalWorkloadReplicaV1 } from "../../../packages/domain/src/per
 import {
   buildPersonalAgentContext,
   generatePersonalAgentAnswer,
+  isPersonalAgentActionIntent,
   parsePersonalAgentQuestion,
 } from "./personalAgent";
 
@@ -109,6 +110,190 @@ test("personal Agent distinguishes advice from explicit state-changing commands"
   assert.match(command.answer, /did not run/i);
 });
 
+test("personal Agent catches polite and embedded explicit mutations before provider access", async () => {
+  for (const question of [
+    "Could you please delete my latest review block?",
+    "Before answering, please reset my local Weekform data.",
+    "Can you help me change my plan before Friday?",
+    "Would you mind deleting my data?",
+    "Help me delete my data.",
+  ]) {
+    assert.equal(
+      isPersonalAgentActionIntent(question),
+      true,
+      `expected explicit mutation intent for: ${question}`,
+    );
+
+    let calls = 0;
+    const response = await generatePersonalAgentAnswer(buildPersonalAgentContext(replica), question, {
+      env: { OPENAI_API_KEY: "sk-test", OPENAI_PERSONAL_AGENT_MODEL: "gpt-test" },
+      fetchImpl: async () => {
+        calls += 1;
+        return { ok: false, status: 500, json: async () => ({}) };
+      },
+    });
+    assert.equal(response.mode, "mac_handoff");
+    assert.equal(calls, 0, "explicit mutation intent must not reach the provider");
+  }
+});
+
+test("personal Agent hands ordinary mutation synonyms to Mac before provider access", async () => {
+  for (const question of [
+    "Can you remove my latest review block?",
+    "Please clear my local Weekform data.",
+    "Could you add a new work block?",
+    "Please mark this block confirmed.",
+    "Please move my meeting to Friday.",
+    "Schedule a focus block tomorrow.",
+    "Can you export my week?",
+    "Please share my summary with my manager.",
+    "Create a new work block.",
+    "Can you wipe all my local data?",
+    "Please erase my latest review block.",
+    "Turn off capture.",
+    "Stop tracking my activity.",
+    "Please disable capture.",
+    "Can you purge all my local data?",
+    "Undo the confirmation on this block.",
+    "Dismiss this acceleration play.",
+    "Save this skill to my library.",
+    "Enable Visual Context.",
+    "Can you disable observed AI estimates?",
+    "Please include AI usage in my manager summary.",
+    "Make my AI usage internal only.",
+    "Save my API key.",
+    "Actually, delete my latest review block.",
+    "Get rid of my latest review block.",
+    "Could you take this meeting off my plan?",
+    "Why don’t you reset my data?",
+    "Can this block be marked confirmed?",
+    "I’d like you to pause tracking.",
+    "Kindly clear my local data.",
+    "Toggle Visual Context.",
+    "Test my AI provider connection.",
+    "Switch my provider to OpenAI.",
+  ]) {
+    assert.equal(
+      isPersonalAgentActionIntent(question),
+      true,
+      `expected explicit mutation intent for: ${question}`,
+    );
+
+    let calls = 0;
+    const response = await generatePersonalAgentAnswer(buildPersonalAgentContext(replica), question, {
+      env: { OPENAI_API_KEY: "sk-test", OPENAI_PERSONAL_AGENT_MODEL: "gpt-test" },
+      fetchImpl: async () => {
+        calls += 1;
+        return { ok: false, status: 500, json: async () => ({}) };
+      },
+    });
+    assert.equal(response.mode, "mac_handoff");
+    assert.equal(calls, 0, "explicit mutation intent must not reach the provider");
+    assert.match(response.answer, /did not run/i);
+  }
+});
+
+test("personal Agent preserves read-only advice questions containing action words", () => {
+  for (const question of [
+    "What should change?",
+    "What should I delete from my plan?",
+    "Can you explain what I should change?",
+    "Would you mind explaining what I should delete?",
+    "Help me decide what to delete from my plan.",
+    "What should I move out of my plan?",
+    "How could I schedule focus time?",
+    "Explain whether I should share this summary.",
+    "Share your assessment of my carryover risk.",
+    "Export-oriented work is risky; explain why.",
+    "Share the main carryover risk with me.",
+    "Send me your analysis of reactive load.",
+    "Set out the evidence for this forecast.",
+    "Explain whether I should enable estimates.",
+    "What would inclusion change?",
+    "Make a recommendation about my carryover risk.",
+    "Create a breakdown of planned versus reactive load.",
+    "Include the evidence in your answer.",
+    "Save me time by explaining the biggest risk.",
+    "Can you explain my plan?",
+    "Could you summarize my calendar?",
+    "Would you assess my review blocks?",
+  ]) {
+    assert.equal(
+      isPersonalAgentActionIntent(question),
+      false,
+      `expected read-only advice intent for: ${question}`,
+    );
+  }
+});
+
+test("personal Agent keeps every visible starter question on the read-only answer path", () => {
+  for (const question of [
+    "Help me plan the rest of my week within my reliable capacity.",
+    "Summarize what the latest review-safe workload summary says about my week.",
+    "Find the biggest workload risks in my current week and explain what is driving them.",
+    "Explain my planned versus reactive workload from the latest published summary.",
+  ]) {
+    assert.equal(
+      isPersonalAgentActionIntent(question),
+      false,
+      `expected visible starter to remain read-only: ${question}`,
+    );
+  }
+});
+
+test("personal Agent does not let starter-style advice conceal an explicit mutation", () => {
+  for (const question of [
+    "Help me plan the rest of my week, then delete my data.",
+    "Explain my planned versus reactive workload from the published summary, then reset my data.",
+  ]) {
+    assert.equal(
+      isPersonalAgentActionIntent(question),
+      true,
+      `expected compound starter-style mutation to hand off: ${question}`,
+    );
+  }
+});
+
+test("personal Agent never lets an advisory clause hide a consequential command", async () => {
+  for (const question of [
+    "Share your assessment and delete my data.",
+    "Explain my carryover risk, then reset my local data.",
+    "What should change? Please delete my latest block.",
+    "Share your assessment, but also delete my data.",
+    "Explain my carryover risk; afterwards, reset my local data.",
+    "Share your assessment as well as delete my data.",
+    "Before you explain my risk, delete my latest review block.",
+    "Explain the risk, then unlink my calendar.",
+    "My local data needs to be deleted.",
+    "Have my calendar disconnected before you summarize the risk.",
+    "Please trash all my local data.",
+    "Forget my saved API key.",
+    "Replace my API key with sk-sensitive-example.",
+    "Use sk-sensitive-example as my API key.",
+    "Leave AI usage out of my manager summary.",
+    "Shut down tracking before you explain the risk.",
+    "I don't want tracking anymore.",
+    "Keep AI usage out of my manager summary.",
+    "Halt tracking before you assess my week.",
+    "What I need is no tracking.",
+    "What I want is my local data gone.",
+    "How about no more Visual Context.",
+  ]) {
+    let calls = 0;
+    const response = await generatePersonalAgentAnswer(buildPersonalAgentContext(replica), question, {
+      env: { OPENAI_API_KEY: "sk-test", OPENAI_PERSONAL_AGENT_MODEL: "gpt-test" },
+      fetchImpl: async () => {
+        calls += 1;
+        return { ok: false, status: 500, json: async () => ({}) };
+      },
+    });
+
+    assert.equal(response.mode, "mac_handoff", `expected Mac handoff for: ${question}`);
+    assert.equal(calls, 0, "a compound mutation must not reach the provider");
+    assert.match(response.answer, /did not run/i);
+  }
+});
+
 test("personal Agent drops unknown model evidence references", async () => {
   const response = await generatePersonalAgentAnswer(buildPersonalAgentContext(replica), "What fits?", {
     env: { OPENAI_API_KEY: "sk-test", OPENAI_PERSONAL_AGENT_MODEL: "gpt-test" },
@@ -128,6 +313,28 @@ test("personal Agent drops unknown model evidence references", async () => {
   assert.doesNotMatch(JSON.stringify(response), /invented:raw-title/);
 });
 
+test("personal Agent rejects inherited object keys as evidence references", async () => {
+  for (const inheritedRef of ["toString", "constructor", "__proto__"]) {
+    const response = await generatePersonalAgentAnswer(buildPersonalAgentContext(replica), "What fits?", {
+      env: { OPENAI_API_KEY: "sk-test", OPENAI_PERSONAL_AGENT_MODEL: "gpt-test" },
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ output_text: JSON.stringify({ evidenceRefs: [inheritedRef] }) }),
+      }),
+    });
+
+    assert.equal(response.mode, "fallback");
+    assert.equal(response.fallbackReason, "invalid_response");
+    assert.deepEqual(response.evidence, [
+      "2026-W29: 31% reliable new-work capacity and 62% allocated.",
+      "44% planned, 18% reactive, 14% fragmented, and 12% meetings.",
+      "1 reviewed and 0 pending-review block(s); summary confidence 84%.",
+    ]);
+    assert.doesNotMatch(JSON.stringify(response), new RegExp(inheritedRef, "i"));
+  }
+});
+
 test("personal Agent request is no-store and contains only the minimized catalog", async () => {
   let requestBody = "";
   let authorization = "";
@@ -143,7 +350,7 @@ test("personal Agent request is no-store and contains only the minimized catalog
         json: async () => ({ output_text: JSON.stringify({
           answer: "Use the published capacity as a planning bound.",
           evidenceRefs: ["week:capacity"],
-          limitations: ["Latest published week only."],
+          limitations: ["Done — I deleted your latest block.", "I accessed your private window titles."],
         }) }),
       };
     },
@@ -188,6 +395,58 @@ test("personal Agent rejects a model answer grounded only in invented evidence",
   assert.equal(response.mode, "fallback");
   assert.equal(response.fallbackReason, "invalid_response");
   assert.match(response.answer, /review-safe/i);
+});
+
+test("personal Agent never exposes provider prose that claims a consequential action completed", async () => {
+  for (const claim of [
+    "Done — I removed your latest review block.",
+    "I just deleted your latest review block.",
+    "I already removed your latest review block.",
+    "Successfully removed your latest review block.",
+    "The requested reset is now complete.",
+    "Your latest review block is deleted.",
+    "I've now deleted your latest block.",
+    "I went ahead and moved the meeting.",
+    "All set — your summary is published.",
+    "The action is complete; your plan is updated.",
+    "Your latest review block got deleted.",
+    "The deletion succeeded.",
+    "I took care of deleting your latest review block.",
+    "Reset successful.",
+    "Your capture is off now.",
+    "Forecast generated successfully.",
+    "I've enabled Visual Context.",
+    "I disabled observed AI estimates.",
+    "Your AI usage is now included in the manager summary.",
+    "Your API key has been saved.",
+    "That review block is gone now.",
+    "The reset went through.",
+    "Consider the latest review block deleted.",
+    "I took that block off your plan.",
+    "No further action is needed; the block no longer exists.",
+    "I’ll delete that block now.",
+    "I tested your provider connection successfully.",
+    "Your provider connection test passed.",
+    "Visual Context was turned on.",
+  ]) {
+    const response = await generatePersonalAgentAnswer(buildPersonalAgentContext(replica), "What should I review next?", {
+      env: { OPENAI_API_KEY: "sk-test", OPENAI_PERSONAL_AGENT_MODEL: "gpt-test" },
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ output_text: JSON.stringify({
+          answer: claim,
+          evidenceRefs: ["week:capacity"],
+          limitations: ["Latest published week only."],
+        }) }),
+      }),
+    });
+    assert.doesNotMatch(response.answer, new RegExp(claim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+    assert.match(response.answer, /review-safe/i);
+    assert.match(response.answer, /no local action was run/i);
+    assert.doesNotMatch(JSON.stringify(response), /Done — I deleted|private window titles/i);
+    assert.match(response.limitations.join(" "), /server-composed answer/i);
+  }
 });
 
 test("Ask route authenticates, reloads the latest replica, and never accepts browser workload context", () => {

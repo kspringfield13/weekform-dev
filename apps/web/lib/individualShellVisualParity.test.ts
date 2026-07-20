@@ -67,3 +67,30 @@ test("context tabs and page content use the current Desktop strip and content fr
   assert.match(screen, /margin:\s*0\s+auto\s*;/);
   assert.match(screen, /padding:\s*24px\s+32px\s+32px\s*;/);
 });
+
+test("the compact Web surface owns the viewport and keeps controls touch-ready", () => {
+  const compactShell = rule(".web-compact-shell");
+
+  assert.match(compactShell, /height:\s*100dvh\s*;/);
+  assert.match(compactShell, /overflow:\s*hidden\s*;/);
+  assert.match(
+    stylesSource,
+    /\.web-compact-action\s*\{[^}]*min-height:\s*40px\s*;[^}]*cursor:\s*pointer\s*;/,
+  );
+});
+
+test("the full Web shell becomes a single-column overlay layout before it can squeeze", () => {
+  assert.match(
+    stylesSource,
+    /@media\s*\(max-width:\s*820px\)[\s\S]*?\.web-individual-app\.app\s*\{[^}]*grid-template-columns:\s*0\s+minmax\(0,\s*1fr\)/,
+  );
+  assert.match(
+    stylesSource,
+    /@media\s*\(max-width:\s*820px\)[\s\S]*?\.web-individual-app\s*>\s*\.sidebar\s*\{[^}]*position:\s*fixed/,
+  );
+  assert.match(
+    stylesSource,
+    /@media\s*\(max-width:\s*820px\)[\s\S]*?\.web-sidebar-toggle\s*\{[^}]*display:\s*grid/,
+    "the overlay navigation must retain a visible keyboard-accessible open control below the older 760px rail breakpoint",
+  );
+});

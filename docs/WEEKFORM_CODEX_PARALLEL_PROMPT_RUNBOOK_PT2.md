@@ -30,7 +30,7 @@ Baseline at Part 2 authoring (July 19, 2026): `verify:wave3` exit 0 — 97/97 de
 | 15 | Weekly review ritual (B1) | DONE (2026-07-19; audit rerun env-blocked) | Pure local checklist `apps/desktop/src/services/weeklyReview.ts` + 6 tests; routed `WeeklyReviewScreen`; current-week forecast comparison; cloud-disabled omission and matching sync-audit/consent-receipt proof; one idempotent ids/counts-only `weekly_review` audit event. Gates: `verify:wave3` exit 0 (103/103 desktop-cloud, 162/162 web, 12 routes / 11 static pages), root build exit 0, diff check clean. `audit:check` ran but registry DNS returned `ENOTFOUND`; no dependencies changed. |
 | 16 | Manager action follow-through — closed learning loop (B2) | DONE (2026-07-19; live migration proof env-blocked) | Create, resolve/drop, and delete are manager-authorized security-definer RPCs; the server derives `id`, `created_by`, `status`, `created_at`, and `resolved_at`. The additive `202607190005_team_actions_rpc_hardening.sql` also repairs databases that applied the earlier direct-write boundary. Direct INSERT/UPDATE/DELETE abuse is pinned by 8 migration-contract tests and an 80-assertion pgTAP contract. Final gates: focused 18/18, verify:wave3 exit 0 (133/133 desktop-cloud + 199/199 web), build and diff check exit 0, and `audit:check` exit 0 with zero vulnerabilities in both workspaces. The migrations remain SQL-review-only and no live RLS claim is made. |
 | 17 | Demand mapping and capacity reservations (B4) | READY | Prompt 16 repository gates are complete; live migration proof remains separately environment-blocked. |
-| 18 | Connector contracts and role-based views (B3 + B5) | READY — live OAuth [env-blocked] | — |
+| 18 | Connector contracts and role-based views (B3 + B5) | PARTIAL — B3 implementation present; live-account proof [env-blocked]; B5 READY | Native Slack/Google Chat/Webex boundary, content-free normalization, and synthetic contract tests are present; provider registration and live-account execution remain unclaimed. |
 | 19 | Privacy thresholds and self-benchmarking (C2 + C3) | READY (after 17) | — |
 | 20 | Portfolio views and explainable planning APIs (C1 + C4) | BLOCKED on 19 | — |
 | 21 | Part 2 adversarial critic and release gate | BLOCKED on 13–19 | — |
@@ -66,7 +66,7 @@ Non-negotiables: sharing defaults off; null is never zero; medians/ranges, never
 | G2 | Weekly review ritual (B1) — no guided weekly close-out that turns corrections into a habit loop | Blueprint §17 Phase B | **CLOSED by Prompt 15** — deterministic local checklist, routed ritual, approval/audit completion |
 | G3 | Manager action follow-through (B2) — briefings surface risk, but no loop records what the manager did and whether it helped | Blueprint §17 Phase B | **DONE; live migration proof env-blocked** — manager-only action log + correlation-only team follow-through after two later weeks |
 | G4 | Demand mapping & capacity reservations (B4) — capacity supply exists; demand side is absent | Blueprint §17 Phase B | Buildable now → **Prompt 17** |
-| G5 | Live connectors (B3) — calendar/chat OAuth sources are "coming soon" disabled stubs (`calendarSource.ts`, `chatSource.ts`); only local file import works | Blueprint §17 Phase B | Contract-first now; live OAuth **[env-blocked]** → **Prompt 18** |
+| G5 | Live connectors (B3) — calendar sources and native Slack/Google Chat/Webex implementations now exist; provider registration, deployed broker configuration, and live-account execution are not proven | Blueprint §17 Phase B | **PARTIAL July 20** — repository implementation + synthetic contract tests present; live-account proof **[env-blocked]** |
 | G6 | Role-based client views (B5) | Blueprint §17 Phase B | Buildable now → **Prompt 18** |
 | G7 | Privacy thresholds / aggregation minimums (C2) and self-benchmarking-only (C3) | Blueprint §17 Phase C | Buildable now → **Prompt 19** |
 | G8 | Multi-team orgs/portfolios (C1), explainable planning APIs (C4) | Blueprint §17 Phase C | Contract-first → **Prompt 20** |
@@ -374,10 +374,12 @@ Demand items can reference or be assigned to members; fit verdicts collapse rang
 
 ## Prompt 18 — Connector contracts and role-based views (B3 + B5)
 
-**Status:** READY — live OAuth **[env-blocked]** (no provider app registrations on this machine; contract-first per roadmap ground rules).
+**Status:** PARTIAL — B3 repository implementation is present; provider registration, deployed Webex broker configuration, and live-account execution remain **[env-blocked]**. B5 remains READY.
 **Owner:** Integrations agent (B3) + web agent (B5), parallel.
 **Depends on:** `packages/integrations` source registry; team roles in `apps/web/lib/teams.ts`.
 **Mode:** High effort; B3 ships contracts + fixture-driven tests only, never fake live calls.
+
+**July 20 B3 follow-through:** the current tree supersedes the historical B3 instructions below with native Slack, Google Chat, and Webex adapters, a content-free attention-evidence contract, native Settings controls, and synthetic contract tests. No provider registration or live-account success is claimed. The original prompt text remains here as planning history; B5 is still outstanding.
 
 ```text
 Read AGENTS.md and docs/EXPANSION_ROADMAP.md. Two parallel slices:

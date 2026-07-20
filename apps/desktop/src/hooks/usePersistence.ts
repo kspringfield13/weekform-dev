@@ -44,6 +44,7 @@ export function usePersistence(
     persistData.blocks,
     persistData.calendarEvents,
     persistData.chatEvents,
+    persistData.chatEvidence,
     persistData.activeWindowSamples,
     persistData.auditEvents,
     persistData.corrections,

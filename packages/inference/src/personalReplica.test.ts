@@ -112,3 +112,60 @@ test("replica revisions are stable across timestamps and change with reviewable 
   assert.notEqual(first.blocks[0].revision, reviewed.blocks[0].revision);
   assert.notEqual(replicaContentFingerprint(first), replicaContentFingerprint(reviewed));
 });
+
+test("personal replica replaces every Chat-derived local id with a stable provider-free id", () => {
+  const chatBlocks: WorkBlock[] = [
+    {
+      ...block,
+      work_block_id: "chat-review-slack-canonical-chat-hash-slack",
+      derived_from: ["chat-slack-review-canonical-chat-hash-slack"],
+    },
+    {
+      ...block,
+      work_block_id: "imported-observed-google",
+      derived_from: ["chat-google_chat-canonical-chat-hash-google"],
+    },
+    {
+      ...block,
+      work_block_id: "chat-teams-legacy-provider-id",
+      derived_from: ["chat-teams-legacy-source-id"],
+    },
+    {
+      ...block,
+      work_block_id: "imported-observed-webex",
+      derived_from: ["chat-webex-canonical-chat-hash-webex"],
+    },
+  ];
+  const local = { ...block, work_block_id: "local-id-remains-stable" };
+  const first = buildPersonalWorkloadReplica({
+    weekId: "2026-W29",
+    blocks: [...chatBlocks, local],
+    snapshot,
+    now: "2026-07-19T20:00:00.000Z",
+  });
+  const retry = buildPersonalWorkloadReplica({
+    weekId: "2026-W29",
+    blocks: [...chatBlocks, local],
+    snapshot,
+    now: "2026-07-19T20:05:00.000Z",
+  });
+
+  const chatReplicaBlocks = first.blocks.filter((entry) => entry.blockId !== local.work_block_id);
+  assert.equal(chatReplicaBlocks.length, 4);
+  assert.equal(new Set(chatReplicaBlocks.map((entry) => entry.blockId)).size, 4);
+  assert.equal(chatReplicaBlocks.every((entry) => /^wfb-[a-f0-9]{64}$/.test(entry.blockId)), true);
+  assert.deepEqual(first.blocks.map((entry) => entry.blockId), retry.blocks.map((entry) => entry.blockId));
+  assert.equal(first.blocks.some((entry) => entry.blockId === local.work_block_id), true);
+  const serialized = JSON.stringify(first);
+  for (const forbidden of [
+    "slack",
+    "google_chat",
+    "webex",
+    "teams",
+    "canonical-chat-hash",
+    "legacy-provider-id",
+    "legacy-source-id",
+  ]) {
+    assert.equal(serialized.toLowerCase().includes(forbidden), false, `replica leaked ${forbidden}`);
+  }
+});

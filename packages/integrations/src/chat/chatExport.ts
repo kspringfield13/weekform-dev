@@ -5,19 +5,21 @@ import {
   type RawEventImport,
   type RawEventImportResult
 } from "../import/rawEvents";
+import type { WorkBlock } from "../../../domain/src/models";
+import { stableHash } from "../internal/normalize";
 
 /**
- * Workplace chat → reactive-work signal.
+ * Workplace chat → reviewed attention evidence.
  *
- * Chat is the one source that exposes interruption load and ad-hoc/reactive
- * work — the part of the capacity model that calendar + git can't see. A burst
- * of messages (especially mentions) over a short window is a reactive
- * interruption; this module turns a *provider-neutral, metadata-only* chat
- * export into reactive `WorkBlock`s by:
+ * Chat can expose observed response, coordination, and call participation that
+ * calendar + git cannot see. Availability is not work: ambient inbound traffic
+ * is ignored and a directed-only mention stays a zero-capacity review card.
+ * This module turns a *provider-neutral, metadata-only* legacy export into
+ * reviewable `WorkBlock`s by:
  *   1. {@link parseChatExport} — JSON export → {@link ChatMessageRecord}[]
  *   2. {@link chatMessagesToImport} — messages → session {@link RawEventImport}[]
- *      (consecutive text pings collapse into one reactive block; `call`/`huddle`
- *      surfaces collapse into collaborative *meeting* blocks instead)
+ *      (self-sent text becomes response or coordination episodes;
+ *      `call`/`huddle` surfaces become collaborative meeting blocks)
  *   3. {@link importChatExport} — the full pipeline, normalized through the
  *      shared {@link importRawEvents} so capacity/id/dedup heuristics stay
  *      identical to every other source.
@@ -26,15 +28,17 @@ import {
  *
  * There is ONE `chat` `SourceType`, not one per vendor: most orgs standardize
  * on a single chat app, so the workload signal is identical across
- * Slack / Microsoft Teams / Webex. The specific app rides on the per-message
- * `provider` field (and, later, the `ChatSource` descriptor), never as a
- * separate source type.
+ * Slack / Google Chat / Webex. The specific app rides on the per-message
+ * `provider` metadata field (legacy Teams files remain readable), never as a
+ * separate source type or downstream display label.
  *
  * ## Privacy — METADATA ONLY (hard constraint)
  *
  * Message bodies are sensitive like window titles. This whole family is
  * metadata-only: timestamps, channel/DM/thread surface, direction, mention
- * flag, thread id, participant counts, and (non-secret) channel names. The
+ * flag, opaque thread correlation, and participant-count buckets. Conversation
+ * display names are intentionally discarded because channels and spaces can be
+ * sensitive, identifying, or DM counterpart names. The
  * parser reads ONLY the whitelisted fields below — it has no field that could
  * carry message text, so even an export that includes a `text`/`body` field is
  * never read, stored in evidence, or sent anywhere.
@@ -47,7 +51,7 @@ import {
  * ```json
  * {
  *   "timestamp": "2026-06-22T09:01:00Z",
- *   "provider": "slack",        // slack | teams | webex
+ *   "provider": "slack",        // slack | google_chat | webex | teams (legacy)
  *   "surface": "channel",       // channel | dm | thread | call | huddle
  *   "direction": "received",    // sent | received
  *   "mentioned_me": true,
@@ -62,13 +66,13 @@ import {
  * `mentioned_me: false`). Malformed messages (missing/invalid timestamp or an
  * unrecognized provider) are dropped, mirroring `parseGitLog` / `parseOutlookIcs`.
  *
- * The live Slack Web API / Microsoft Graph / Webex fetch is **[manual / Rust]**
- * — it belongs in `apps/desktop/src-tauri/` (OAuth + native fetch) and is a
- * follow-up. This module is the pure, testable half that the Rust side feeds.
+ * Live Slack, Google Chat, and Webex connections use the versioned native
+ * evidence contract in `chatSync.ts`. This module remains the pure compatibility
+ * path for existing Weekform-normalized JSON files.
  */
 
-/** Supported chat vendors. The signal is vendor-uniform; this only labels it. */
-export type ChatProvider = "slack" | "teams" | "webex";
+/** Supported live vendors plus the legacy Teams file-import compatibility id. */
+export type ChatProvider = "slack" | "google_chat" | "webex" | "teams";
 
 /**
  * Where a message was exchanged. `call`/`huddle` mark synchronous voice/video
@@ -91,18 +95,20 @@ export interface ChatMessageRecord {
   mentioned_me: boolean;
   thread_id: string | null;
   participant_count: number | null;
-  /** Channel/DM display name — a label, never message content. */
+  /** @deprecated Display names are discarded during parsing and always null. */
   channel_name: string | null;
 }
 
 export interface ChatExportOptions extends ImportRawEventsOptions {
-  /** Messages more than this many minutes apart start a new reactive block. */
+  /** Observed actions more than this many minutes apart start a new episode. */
   sessionGapMinutes?: number;
   /** Minutes of attention assumed before a burst's first message. */
   leadMinutes?: number;
+  /** Maximum gap between a directed signal and an observed response. */
+  responseWindowMinutes?: number;
 }
 
-const CHAT_PROVIDERS: readonly ChatProvider[] = ["slack", "teams", "webex"];
+const CHAT_PROVIDERS: readonly ChatProvider[] = ["slack", "google_chat", "webex", "teams"];
 const CHAT_SURFACES: readonly ChatSurface[] = ["channel", "dm", "thread", "call", "huddle"];
 const CHAT_DIRECTIONS: readonly ChatDirection[] = ["sent", "received"];
 
@@ -114,33 +120,6 @@ function isCallSurface(surface: ChatSurface): boolean {
   return CALL_SURFACES.includes(surface);
 }
 
-/**
- * Surfaces whose `channel_name` is a shared, topic-style label safe to surface
- * as a project name. Only a `channel` name qualifies — it is unambiguously a
- * shared named space (`#data-requests`). Every other surface can be scoped to a
- * person: a `dm`/`call`/`huddle` name is frequently the counterpart's display
- * name (or a sensitive meeting subject), and even a `thread` can be a threaded
- * reply inside a DM whose name is personal. Because the surface alone can't
- * prove such a name is non-personal, those names are treated as PII we must
- * never leak into `project_name`/`project_hint`/evidence (this module's
- * metadata-only privacy constraint) and are dropped — the burst falls back to a
- * generic label instead. A threaded reply in a real channel thus loses only the
- * nicety of a channel label, not correctness.
- */
-const SHAREABLE_LABEL_SURFACES: readonly ChatSurface[] = ["channel"];
-
-/** True when a surface's `channel_name` is a shared topic label, not a person. */
-function surfaceHasShareableLabel(surface: ChatSurface): boolean {
-  return SHAREABLE_LABEL_SURFACES.includes(surface);
-}
-
-/** Human label for a provider, used in the imported event's `app_name`. */
-const PROVIDER_LABEL: Record<ChatProvider, string> = {
-  slack: "Slack",
-  teams: "Microsoft Teams",
-  webex: "Webex"
-};
-
 // Chat bursts are tighter than coding sessions, so the default gap is shorter
 // than gitLog's 90m and the lead is small (a reactive ping costs a few minutes
 // of context switch, not a half-hour of ramp-up).
@@ -149,6 +128,7 @@ const PROVIDER_LABEL: Record<ChatProvider, string> = {
 // value that would silently lie if the default gap ever moves.
 export const DEFAULT_SESSION_GAP_MINUTES = 20;
 const DEFAULT_LEAD_MINUTES = 5;
+const DEFAULT_RESPONSE_WINDOW_MINUTES = 30;
 
 /** Normalize common vendor aliases to the canonical provider id. */
 function normalizeProvider(value: unknown): ChatProvider | null {
@@ -161,6 +141,15 @@ function normalizeProvider(value: unknown): ChatProvider | null {
   }
   if (key === "microsoft_teams" || key === "ms_teams" || key === "msteams") {
     return "teams";
+  }
+  if (
+    key === "google chat" ||
+    key === "google-chat" ||
+    key === "googlechat" ||
+    key === "gchat" ||
+    key === "hangouts_chat"
+  ) {
+    return "google_chat";
   }
   if (key === "cisco_webex" || key === "webex_teams") {
     return "webex";
@@ -245,168 +234,232 @@ export function parseChatExport(
       mentioned_me: message.mentioned_me === true,
       thread_id: normalizeLabel(message.thread_id),
       participant_count: normalizeCount(message.participant_count),
-      channel_name: normalizeLabel(message.channel_name)
+      // Conversation display names can identify a person, client, incident, or
+      // confidential project. Do not retain them even when an old normalized
+      // export contains the field.
+      channel_name: null
     });
   }
 
   return records;
 }
 
-/**
- * Group messages into bursts and emit one `RawEventImport` per burst.
- *
- * Messages are grouped by provider AND kind (text vs. `call`/`huddle`), sorted
- * by time, then split wherever two consecutive messages are more than
- * `sessionGapMinutes` apart — exactly how {@link gitCommitsToImport} splits
- * commits. Keying on kind keeps a synchronous call from merging into an adjacent
- * text burst. Each burst spans `leadMinutes` before its first message through its
- * last message, so even a lone ping gets a non-zero block.
- *
- * Text bursts become reactive interruption blocks (`Ad hoc stakeholder
- * requests` / `Reactive`); call/huddle bursts become collaborative *meeting*
- * blocks (`Meetings / stakeholder syncs` / `Collaborative` / `fixed`), tagged
- * `metadata.kind = "call"` so callers can route them to calendar dedup. The
- * emitted metadata is counts + channel/participant labels only; no message text.
- */
-export function chatMessagesToImport(
-  messages: ChatMessageRecord[],
-  options: ChatExportOptions = {}
-): RawEventImport[] {
-  const gapMs = Math.max(0, options.sessionGapMinutes ?? DEFAULT_SESSION_GAP_MINUTES) * 60_000;
-  const leadMs = Math.max(0, options.leadMinutes ?? DEFAULT_LEAD_MINUTES) * 60_000;
+interface LegacyChatEpisode {
+  provider: ChatProvider;
+  correlationKey: string;
+  isCall: boolean;
+  messages: ChatMessageRecord[];
+}
 
-  // Group by provider + kind so a call never sessionizes together with the text
-  // pings around it. The key embeds both; the value carries the typed pieces.
-  const groups = new Map<string, { provider: ChatProvider; isCall: boolean; messages: ChatMessageRecord[] }>();
+interface LegacyChatAttentionModel {
+  imports: RawEventImport[];
+  reviewBlocks: WorkBlock[];
+}
+
+function legacyCorrelationKey(message: ChatMessageRecord): string {
+  if (message.thread_id) return `thread:${message.thread_id}`;
+  if (message.surface === "dm") return "dm";
+  return `surface:${message.surface}`;
+}
+
+function sharesDirectedContext(
+  directed: ChatMessageRecord,
+  observed: ChatMessageRecord
+): boolean {
+  if (directed.provider !== observed.provider) return false;
+  if (directed.thread_id && observed.thread_id) {
+    return directed.thread_id === observed.thread_id;
+  }
+  // The legacy shape has no safe conversation id once display names are
+  // discarded. Two unkeyed DMs or channel messages can belong to different
+  // people/spaces, so fail closed rather than inventing a response link.
+  return false;
+}
+
+function isoWeekId(date: Date): string {
+  const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = utc.getUTCDay() || 7;
+  utc.setUTCDate(utc.getUTCDate() + 4 - day);
+  const year = utc.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const week = Math.ceil(((utc.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+
+function sessionizeLegacyMessages(
+  messages: readonly ChatMessageRecord[],
+  gapMs: number
+): LegacyChatEpisode[] {
+  const groups = new Map<string, LegacyChatEpisode>();
   for (const message of messages) {
     const isCall = isCallSurface(message.surface);
-    const key = `${message.provider}::${isCall ? "call" : "text"}`;
+    const correlationKey = legacyCorrelationKey(message);
+    const key = `${message.provider}:${isCall ? "call" : "text"}:${correlationKey}`;
     const group = groups.get(key);
     if (group) {
       group.messages.push(message);
     } else {
-      groups.set(key, { provider: message.provider, isCall, messages: [message] });
+      groups.set(key, { provider: message.provider, correlationKey, isCall, messages: [message] });
     }
   }
 
-  const imports: RawEventImport[] = [];
-  for (const { provider, isCall, messages: groupMessages } of groups.values()) {
-    const sorted = [...groupMessages].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-    let session: ChatMessageRecord[] = [];
-
-    const flush = () => {
-      if (session.length === 0) {
-        return;
-      }
-      const first = session[0];
-      const last = session[session.length - 1];
-      const end = last.timestamp;
-      // Pad backwards by leadMs, but never collapse to a zero-length span:
-      // importRawEvents drops any record with end <= start, which would
-      // silently lose a lone message.
-      const start = new Date(Math.min(first.timestamp.getTime() - leadMs, end.getTime() - 60_000));
-
-      const received = session.filter((m) => m.direction === "received").length;
-      const sent = session.length - received;
-      const mentions = session.filter((m) => m.mentioned_me).length;
-      // Only a `channel` surface contributes a channel_name label — a
-      // dm/thread/call/huddle name can be a counterpart's display name (PII)
-      // or a sensitive meeting subject, so it is excluded here, before it can
-      // reach project_name/project_hint/evidence. A burst with no shareable
-      // name falls back to the generic `fallbackName` below.
-      const channels = [
-        ...new Set(
-          session
-            .filter((m) => surfaceHasShareableLabel(m.surface))
-            .map((m) => m.channel_name)
-            .filter((c): c is string => c !== null)
-        )
-      ];
-      const surfaces = [...new Set(session.map((m) => m.surface))];
-      const threads = new Set(session.map((m) => m.thread_id).filter((t): t is string => t !== null)).size;
-      const participantCounts = session
-        .map((m) => m.participant_count)
-        .filter((n): n is number => n !== null);
-      const maxParticipants = participantCounts.length > 0 ? Math.max(...participantCounts) : null;
-
-      // Metadata-only: counts + channel/participant labels. NO message text.
-      const metadata: Record<string, string> = {
-        provider,
-        kind: isCall ? "call" : "message",
-        messages: String(session.length),
-        received: String(received),
-        sent: String(sent),
-        mentions: String(mentions),
-        surfaces: surfaces.join(", ")
-      };
-      if (channels.length > 0) {
-        // Join with a newline, NOT ", ": a channel/space display name can itself
-        // contain a comma (Webex spaces, free-form Teams channels), so a comma
-        // delimiter would let `capacity.ts#parseChannelLabels` split one real
-        // channel into phantom stakeholder groups. A display name is single-line,
-        // so a newline is an unambiguous separator. Parser must split on the same.
-        metadata.channels = channels.join("\n");
-      }
-      if (threads > 0) {
-        metadata.threads = String(threads);
-      }
-      if (maxParticipants !== null) {
-        metadata.participants = String(maxParticipants);
-      }
-
-      // A single dominant channel labels the block; mixed-channel bursts fall
-      // back to a generic name (call vs. reactive messaging).
-      const singleChannel = channels.length === 1 ? channels[0] : null;
-      const fallbackName = isCall ? `${PROVIDER_LABEL[provider]} call` : "Reactive messaging";
-
-      imports.push({
-        // Sessions within a provider+kind never overlap (sorted + gap-split), so
-        // the first message's instant keys the burst uniquely. Only call bursts
-        // take a prefix — text bursts keep the original `chat-<provider>-<iso>`
-        // id so a re-import upserts existing reactive blocks instead of
-        // duplicating them, while a call and a text burst that start at the same
-        // instant still resolve to distinct ids.
-        event_id: `chat-${isCall ? "call-" : ""}${provider}-${first.timestamp.toISOString()}`,
-        timestamp_start: start.toISOString(),
-        timestamp_end: end.toISOString(),
-        source_type: "chat",
-        app_name: PROVIDER_LABEL[provider],
-        project_hint: singleChannel,
-        project_name: singleChannel ?? fallbackName,
-        // Call/huddle bursts are synchronous meetings, not reactive pings.
-        ...(isCall
-          ? {
-              category: "Meetings / stakeholder syncs" as const,
-              mode: "Collaborative" as const,
-              planned_status: "fixed" as const
-            }
-          : {}),
-        metadata
-      });
-      session = [];
-    };
-
+  const episodes: LegacyChatEpisode[] = [];
+  for (const group of groups.values()) {
+    const sorted = [...group.messages].sort((left, right) =>
+      left.timestamp.getTime() - right.timestamp.getTime()
+    );
+    let current: ChatMessageRecord[] = [];
     for (const message of sorted) {
-      if (
-        session.length > 0 &&
-        message.timestamp.getTime() - session[session.length - 1].timestamp.getTime() > gapMs
-      ) {
-        flush();
+      const previous = current[current.length - 1];
+      if (previous && message.timestamp.getTime() - previous.timestamp.getTime() > gapMs) {
+        episodes.push({ ...group, messages: current });
+        current = [];
       }
-      session.push(message);
+      current.push(message);
     }
-    flush();
+    if (current.length > 0) episodes.push({ ...group, messages: current });
   }
-
-  return imports;
+  return episodes.sort((left, right) =>
+    left.messages[0].timestamp.getTime() - right.messages[0].timestamp.getTime()
+  );
 }
 
 /**
- * Full pipeline: parse a metadata-only chat export, sessionize it into reactive
- * bursts, and normalize through {@link importRawEvents}. Returns
- * `{ events, work_blocks, skipped }` exactly like every other source import —
- * the work blocks are reactive (`Ad hoc stakeholder requests` / `Reactive` /
- * `unplanned`), keyed by provider → burst.
+ * Apply the same attention contract as the live connectors to normalized
+ * legacy JSON. Ambient inbound traffic is ignored; received mentions remain
+ * zero-capacity review evidence; only self-sent text and joined calls create
+ * observed workload episodes.
+ */
+function buildLegacyAttentionModel(
+  messages: ChatMessageRecord[],
+  options: ChatExportOptions
+): LegacyChatAttentionModel {
+  const gapMs = Math.max(0, options.sessionGapMinutes ?? DEFAULT_SESSION_GAP_MINUTES) * 60_000;
+  const leadMs = Math.max(0, options.leadMinutes ?? DEFAULT_LEAD_MINUTES) * 60_000;
+  const responseWindowMs = Math.max(
+    1,
+    options.responseWindowMinutes ?? DEFAULT_RESPONSE_WINDOW_MINUTES
+  ) * 60_000;
+  const directed = messages
+    .filter((message) =>
+      !isCallSurface(message.surface) &&
+      message.direction === "received" &&
+      message.mentioned_me
+    )
+    .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
+  const observed = messages.filter((message) =>
+    isCallSurface(message.surface) || message.direction === "sent"
+  );
+  const episodes = sessionizeLegacyMessages(observed, gapMs);
+  const consumedDirected = new Set<ChatMessageRecord>();
+  const imports = episodes.map((episode) => {
+    const first = episode.messages[0];
+    const last = episode.messages[episode.messages.length - 1];
+    const lastAt = last.timestamp.getTime();
+    const precursors = episode.isCall
+      ? []
+      : directed.filter((candidate) => {
+          if (consumedDirected.has(candidate) || !sharesDirectedContext(candidate, last)) return false;
+          const candidateAt = candidate.timestamp.getTime();
+          return candidateAt <= lastAt && lastAt - candidateAt <= responseWindowMs;
+        });
+    precursors.forEach((message) => consumedDirected.add(message));
+
+    const isResponse = !episode.isCall && precursors.length > 0;
+    const kind = episode.isCall
+      ? "call"
+      : isResponse
+        ? "response_episode"
+        : "coordination_episode";
+    const projectName = episode.isCall
+      ? "Chat call"
+      : isResponse
+        ? "Reactive messaging"
+        : "Chat coordination";
+    const metadata: Record<string, string> = {
+      provider: episode.provider,
+      kind,
+      attention_grade: "observed",
+      attention_signal: episode.isCall ? "call_joined" : "self_sent",
+      coverage: "observed"
+    };
+    if (isResponse) metadata.directed_trigger = "true";
+
+    return {
+      event_id: `chat-${episode.isCall ? "call-" : ""}${episode.provider}-${first.timestamp.toISOString()}`,
+      timestamp_start: new Date(first.timestamp.getTime() - leadMs).toISOString(),
+      timestamp_end: new Date(lastAt + 60_000).toISOString(),
+      source_type: "chat" as const,
+      // Provider remains in local metadata for individual source analysis. It
+      // must not ride into display evidence or downstream AI/replica copy.
+      app_name: "Workplace chat",
+      project_name: projectName,
+      privacy_level: "derived_only" as const,
+      metadata,
+      ...(episode.isCall
+        ? {
+            category: "Meetings / stakeholder syncs" as const,
+            mode: "Collaborative" as const,
+            planned_status: "fixed" as const
+          }
+        : !isResponse
+          ? {
+              category: "Admin / coordination" as const,
+              mode: "Collaborative" as const,
+              planned_status: "unplanned" as const
+            }
+          : {})
+    };
+  });
+
+  const unmatchedDirected = directed.filter((message) => !consumedDirected.has(message));
+  const reviewEpisodes = sessionizeLegacyMessages(unmatchedDirected, gapMs);
+  const reviewBlocks = reviewEpisodes.map((episode) => {
+    const first = episode.messages[0];
+    const start = first.timestamp;
+    const opaqueId = stableHash(
+      `${episode.provider}:${episode.correlationKey}:${first.timestamp.toISOString()}`
+    );
+    const derivedId = `chat-${episode.provider}-review-${opaqueId}`;
+    return {
+      work_block_id: `chat-review-${episode.provider}-${opaqueId}`,
+      week_id: options.weekId ?? isoWeekId(start),
+      start_time: start.toISOString(),
+      end_time: new Date(start.getTime() + 60_000).toISOString(),
+      estimated_capacity_pct: 0,
+      category: "Ad hoc stakeholder requests",
+      mode: "Reactive",
+      planned_status: "unplanned",
+      project_name: "Directed chat request",
+      stakeholder_group: "Workplace chat",
+      derived_from: [derivedId],
+      evidence: [
+        "A content-free directed chat signal was detected without an observed response",
+        "This review card contributes 0% until you correct its time and confirm it"
+      ],
+      confidence: 0.45,
+      user_verified: false,
+      blocker_flag: false,
+      notes: null
+    } satisfies WorkBlock;
+  });
+
+  return { imports, reviewBlocks };
+}
+
+/** Emit observed, content-free legacy Chat episodes as canonical raw imports. */
+export function chatMessagesToImport(
+  messages: ChatMessageRecord[],
+  options: ChatExportOptions = {}
+): RawEventImport[] {
+  return buildLegacyAttentionModel(messages, options).imports;
+}
+
+/**
+ * Full pipeline: parse a metadata-only chat export, apply the reviewed-attention
+ * contract, and normalize observed episodes through {@link importRawEvents}.
+ * Directed-only signals are returned as zero-capacity review cards; ambient
+ * inbound traffic is ignored.
  *
  * A malformed JSON export does NOT throw (aligning with the never-throwing
  * calendar source): it returns an empty result whose `error` the UI can surface.
@@ -428,6 +481,20 @@ export function importChatExport(
     };
   }
   const messages = parseChatExport(data as string | unknown[] | { messages?: unknown[]; events?: unknown[] });
-  const imports = chatMessagesToImport(messages, options);
-  return importRawEvents(imports, { weekId: options.weekId, userId: options.userId });
+  const model = buildLegacyAttentionModel(messages, options);
+  const imported = importRawEvents(model.imports, {
+    weekId: options.weekId,
+    userId: options.userId
+  });
+  const observedBlocks = imported.work_blocks.map((block) => ({
+    ...block,
+    confidence: 0.82,
+    stakeholder_group: "Workplace chat"
+  }));
+  return {
+    ...imported,
+    work_blocks: [...observedBlocks, ...model.reviewBlocks].sort((left, right) =>
+      left.start_time.localeCompare(right.start_time)
+    )
+  };
 }

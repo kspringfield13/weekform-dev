@@ -64,7 +64,7 @@ test("Acceleration preserves the Desktop decision hierarchy without inventing pr
     "Generate Skills",
     "Realized savings",
     "Acceleration plays",
-    "Open Weekform for Mac",
+    "Get Weekform for Mac",
   ]) {
     assert.match(accelerationSource, new RegExp(phrase));
   }
@@ -78,7 +78,7 @@ test("Skills mirrors the Desktop empty-library hierarchy and routes back to Acce
     "No saved skills",
     "Your skills library is empty",
     "Browse acceleration plays",
-    "Open Weekform for Mac",
+    "Get Weekform for Mac",
   ]) {
     assert.match(skillsSource, new RegExp(phrase));
   }

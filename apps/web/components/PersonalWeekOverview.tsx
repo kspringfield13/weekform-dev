@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import {
   aggregateReplicaModes,
   aggregateReplicaCategories,
+  capacityForPresentation,
   capacityCoverage,
   displayPercent,
   isElevatedRatioScore,
@@ -40,36 +41,38 @@ export function PersonalWeekOverview({
   replica: PersonalWorkloadReplicaV1;
 }) {
   const capacity = replica.capacity;
-  const available = safePercent(capacity.reliableNewWorkCapacityPct);
-  const coverage = capacityCoverage(capacity);
+  const hasCurrentWeekSignal = replica.blocks.length > 0;
+  const displayCapacity = capacityForPresentation(capacity, hasCurrentWeekSignal);
+  const available = safePercent(displayCapacity.reliableNewWorkCapacityPct);
+  const coverage = capacityCoverage(displayCapacity, hasCurrentWeekSignal);
   const categories = aggregateReplicaCategories(replica.blocks);
   const metrics = [
     {
       key: "committed",
       icon: "calendar" as const,
       label: "Committed",
-      value: capacity.committedUtilizationPct,
+      value: displayCapacity.committedUtilizationPct,
       helper: "Work and risk already carried by the week",
     },
     {
       key: "planned",
       icon: "focus" as const,
       label: "Planned work",
-      value: capacity.plannedPct,
+      value: displayCapacity.plannedPct,
       helper: "Work scheduled ahead of time",
     },
     {
       key: "reactive",
       icon: "message" as const,
       label: "Reactive work",
-      value: capacity.reactivePct,
+      value: displayCapacity.reactivePct,
       helper: "Unplanned requests and interruption time",
     },
     {
       key: "available",
       icon: "plus" as const,
       label: "New work capacity",
-      value: capacity.reliableNewWorkCapacityPct,
+      value: displayCapacity.reliableNewWorkCapacityPct,
       helper: "Dependable room for new planned work",
     },
   ];
@@ -86,24 +89,29 @@ export function PersonalWeekOverview({
     share: mode.sharePct,
     tone: modeTone[mode.label] ?? "blocked",
   }));
-  const trackedTotal = workModes.reduce((sum, mode) => sum + mode.value, 0);
+  const derivedTotal = workModes.reduce((sum, mode) => sum + mode.value, 0);
   let donutCursor = 0;
   const donutSegments = workModes.map((mode) => {
     const segment = { ...mode, start: donutCursor };
     donutCursor += mode.share;
     return segment;
   });
-  const focusTip = capacity.blockedPct > 0
+  const focusTip = !hasCurrentWeekSignal
+    ? {
+        title: "Review work on your Mac",
+        detail: "Review or import work in Weekform for Mac, then sync this derived weekly picture again.",
+      }
+    : replica.blocks.some((block) => block.blockerFlag)
     ? {
         title: "Clear active blockers",
         detail: "Resolving blocked work is the fastest way to reduce carryover risk.",
       }
-    : isElevatedRatioScore(capacity.contextSwitchScore, 0.3)
+    : isElevatedRatioScore(displayCapacity.contextSwitchScore, 0.3)
       ? {
           title: "Protect more deep-work time",
           detail: "Batch meetings and reactive requests to preserve longer focus blocks.",
         }
-      : capacity.reactivePct >= 25
+      : displayCapacity.reactivePct >= 25
         ? {
             title: "Batch reactive requests",
             detail: "Create set response windows so unplanned work interrupts less of the week.",
@@ -123,7 +131,9 @@ export function PersonalWeekOverview({
         <div
           className="personal-week-gauge week-dashboard-gauge"
           role="img"
-          aria-label={`${pct(available)} dependable capacity for new planned work`}
+          aria-label={hasCurrentWeekSignal
+            ? `${pct(available)} dependable capacity for new planned work`
+            : "No review-safe work is available for this week yet"}
         >
           <svg viewBox="0 0 120 120" aria-hidden="true">
             <circle className="personal-week-gauge-track" cx="60" cy="60" r="50" pathLength="100" />
@@ -139,14 +149,32 @@ export function PersonalWeekOverview({
           <span><strong>{pct(available)}</strong><small>available</small></span>
         </div>
         <div className="personal-week-hero-copy">
-          <h4 id="week-capacity-headline">
-            You have {pct(available)} capacity for new planned work.
-          </h4>
-          <p>
-            {pct(capacity.committedUtilizationPct)} of the week is already
-            committed. This view contains derived workload signals only; the
-            supporting activity stays on your Mac.
-          </p>
+          {hasCurrentWeekSignal ? (
+            <>
+              <h4 id="week-capacity-headline">
+                You have {pct(available)} capacity for new planned work.
+              </h4>
+              <p>
+                {pct(displayCapacity.committedUtilizationPct)} of the week is already committed.{" "}
+                {available >= 30
+                  ? "There is room for another focused commitment while keeping a healthy delivery buffer."
+                  : available >= 15
+                    ? "Keep new commitments focused to protect delivery."
+                    : available > 0
+                      ? "Capacity is tight—keep additional commitments small until some load clears."
+                      : "Let existing work clear before committing to more planned work."}{" "}
+                This view contains derived workload signals only; the supporting activity stays on your Mac.
+              </p>
+            </>
+          ) : (
+            <>
+              <h4 id="week-capacity-headline">No review-safe work this week yet.</h4>
+              <p>
+                Enable Private Web workspace in Weekform for Mac, review or import this week&apos;s work,
+                then sync again. Until then, no capacity or delivery buffer is inferred here.
+              </p>
+            </>
+          )}
         </div>
         <div className="personal-week-signal" aria-hidden="true">
           <span />
@@ -193,7 +221,9 @@ export function PersonalWeekOverview({
           <div
             className="personal-week-coverage-bar"
             role="img"
-            aria-label={`${pct(coverage.committedPct)} committed, ${pct(coverage.availablePct)} available for new planned work, and ${pct(coverage.protectedPct)} protected as delivery buffer`}
+            aria-label={hasCurrentWeekSignal
+              ? `${pct(coverage.committedPct)} committed, ${pct(coverage.availablePct)} available for new planned work, and ${pct(coverage.protectedPct)} protected as delivery buffer`
+              : "No commitment, headroom, or protected delivery buffer is inferred until review-safe blocks sync"}
           >
             <span className="is-committed" style={{ width: `${coverage.committedPct}%` }} />
             <span className="is-available" style={{ width: `${coverage.availablePct}%` }} />
@@ -205,8 +235,9 @@ export function PersonalWeekOverview({
             <span><i className="is-protected" />Protected buffer</span>
           </div>
           <p className="personal-week-panel-note">
-            Available capacity already accounts for recurring work,
-            interruptions, carryover, and delivery risk.
+            {hasCurrentWeekSignal
+              ? "Available capacity already accounts for recurring work, interruptions, carryover, and delivery risk."
+              : "The allocation track stays empty until review-safe blocks sync from Weekform for Mac."}
           </p>
 
           <div className="personal-week-categories">
@@ -236,7 +267,9 @@ export function PersonalWeekOverview({
             <div
               className="personal-week-donut"
               role="img"
-              aria-label={`Tracked time by work mode: ${donutSegments.map((mode) => `${mode.label}, ${Math.round(mode.share)}%`).join("; ")}`}
+              aria-label={donutSegments.length > 0
+                ? `Derived capacity by work mode: ${donutSegments.map((mode) => `${mode.label}, ${Math.round(mode.share)}%`).join("; ")}`
+                : "No derived work-mode allocation is available for this week"}
             >
               <svg viewBox="0 0 160 160" aria-hidden="true">
                 <circle className="personal-week-donut-track" cx="80" cy="80" r="58" pathLength="100" />
@@ -259,7 +292,7 @@ export function PersonalWeekOverview({
                   ) : null;
                 })}
               </svg>
-              <span aria-hidden="true"><strong>{pct(trackedTotal)}</strong><small>tracked</small></span>
+              <span aria-hidden="true"><strong>{pct(derivedTotal)}</strong><small>derived</small></span>
             </div>
             <ul className="personal-week-time-legend">
               {donutSegments.map((mode) => (
@@ -296,9 +329,9 @@ export function PersonalWeekOverview({
             <span>Derived metrics only; supporting activity stays on your Mac</span>
           </header>
           <dl>
-            <div><dt>Context switching</dt><dd>{ratioScorePercent(capacity.contextSwitchScore)}/100</dd></div>
-            <div><dt>Work in progress load</dt><dd>{ratioScorePercent(capacity.wipLoadScore)}/100</dd></div>
-            <div><dt>Carryover risk</dt><dd>{pct(capacity.carryoverRiskPct)}</dd></div>
+            <div><dt>Context switching</dt><dd>{ratioScorePercent(displayCapacity.contextSwitchScore)}/100</dd></div>
+            <div><dt>Work in progress load</dt><dd>{ratioScorePercent(displayCapacity.wipLoadScore)}/100</dd></div>
+            <div><dt>Carryover risk</dt><dd>{pct(displayCapacity.carryoverRiskPct)}</dd></div>
           </dl>
         </div>
       </details>

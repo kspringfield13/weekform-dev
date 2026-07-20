@@ -941,42 +941,42 @@ export function WeeklyCapacityScreen({
           {interruptionLoad && (
             <section className="week-dashboard-interruptions" aria-labelledby="week-interruptions-heading">
               <div className="week-dashboard-detail-heading">
-                <h3 id="week-interruptions-heading"><Zap size={15} aria-hidden="true" />Chat interruption signals</h3>
-                <span>Metadata only—never message text</span>
+                <h3 id="week-interruptions-heading"><Zap size={15} aria-hidden="true" />Chat response patterns</h3>
+                <span>Modeled from observed, content-free actions</span>
               </div>
               <ul>
-                <li><strong>{interruptionLoad.burst_count}</strong><span>reactive bursts</span></li>
-                <li><strong>{interruptionLoad.messages_per_active_hour}/hr</strong><span>messages while active</span></li>
-                <li><strong>{formatCount(interruptionLoad.mention_count)}</strong><span>direct @-mentions</span></li>
-                <li><strong>{interruptionLoad.interrupted_deep_work_pct}%</strong><span>deep work interrupted</span></li>
+                <li><strong>{interruptionLoad.observed_response_episode_count}</strong><span>observed response episodes</span></li>
+                <li><strong>{Math.round(interruptionLoad.active_hours * 60)}m</strong><span>modeled unioned response span</span></li>
+                <li><strong>{formatCount(interruptionLoad.directed_response_episode_count)}</strong><span>followed a directed signal</span></li>
+                <li><strong>{interruptionLoad.focus_overlap_pct}%</strong><span>focus blocks with chat co-occurrence</span></li>
               </ul>
               {interruptionLoad.peak_day && interruptionLoad.active_day_count >= 2 && (
                 <p>
-                  Reactive load peaked on <strong>{interruptionLoad.peak_day}</strong>
+                  Observed response activity peaked on <strong>{interruptionLoad.peak_day}</strong>
                   {interruptionLoad.peak_hour !== null && <> around <strong>{formatHourOfDay(interruptionLoad.peak_hour)}</strong></>}.
                   {interruptionLoad.calm_day && interruptionLoad.calm_day !== interruptionLoad.peak_day && (
                     <> Your quietest active day was <strong>{interruptionLoad.calm_day}</strong>—a good candidate for protected focus time.</>
                   )}
                 </p>
               )}
-              {interruptionLoad.after_hours_message_count > 0 && (
+              {interruptionLoad.after_hours_episode_count > 0 && (
                 <p>
-                  <strong>{interruptionLoad.after_hours_pct}%</strong> of reactive messages arrived outside core hours ({formatHourOfDay(CORE_HOURS_START)}–{formatHourOfDay(CORE_HOURS_END)}).
+                  <strong>{interruptionLoad.after_hours_pct}%</strong> of observed response episodes occurred outside the prototype core-hours window ({formatHourOfDay(CORE_HOURS_START)}–{formatHourOfDay(CORE_HOURS_END)}).
                 </p>
               )}
               {chatStakeholders && chatStakeholders.groups.length > 0 && (
                 <div className="week-dashboard-stakeholders">
-                  <span>Reactive time served</span>
+                  <span>Observed episodes by provider</span>
                   <div>
                     {chatStakeholders.groups.map((group) => (
-                      <span key={group.label} title={`${group.burst_count} ${group.burst_count === 1 ? "burst" : "bursts"}`}>
+                      <span key={group.label} title={`${group.episode_count} observed ${group.episode_count === 1 ? "episode" : "episodes"}`}>
                         {group.label} <strong>{group.share_pct}%</strong>
                       </span>
                     ))}
                   </div>
                   {chatStakeholders.group_count > chatStakeholders.groups.length && (
                     <small>
-                      Top {chatStakeholders.groups.length} of {chatStakeholders.group_count} groups · {chatStakeholders.group_count - chatStakeholders.groups.length} more not shown
+                      Top {chatStakeholders.groups.length} of {chatStakeholders.group_count} providers · {chatStakeholders.group_count - chatStakeholders.groups.length} more not shown
                     </small>
                   )}
                 </div>

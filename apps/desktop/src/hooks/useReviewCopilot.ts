@@ -19,6 +19,7 @@ import { createAuditEvent } from "../lib/audit";
 import { aiAuditSource, generationProviderUnsupportedMessage, providerSupportsGeneration } from "../services/aiProviders";
 import { withAiTimeout } from "../lib/aiTimeout";
 import { stableHash } from "../lib/blocks";
+import { resolveExternalWorkBlockIds } from "../../../../packages/inference/src/externalWorkBlock";
 
 interface NativeReviewCopilotSuggestion {
   action: ReviewCopilotAction;
@@ -111,7 +112,6 @@ export function useReviewCopilot({
           { request: { prompt, ai_config: aiConfig } }
         )
       );
-      const blockIds = new Set(blocks.map((block) => block.work_block_id));
       // The native response is JSON.parse-only (the strict schema is server-side and
       // unenforceable for a custom provider), so `suggestions` and each `work_block_ids`
       // are trusted-TS-but-not-runtime-checked arrays. A non-array would throw in the
@@ -137,7 +137,7 @@ export function useReviewCopilot({
             confidence: Number.isFinite(suggestion.confidence)
               ? Math.max(0, Math.min(1, suggestion.confidence))
               : 0,
-            work_block_ids: rawBlockIds.filter((blockId) => blockIds.has(blockId)),
+            work_block_ids: resolveExternalWorkBlockIds(blocks, rawBlockIds),
             suggestion_id: `review-${stableHash(
               `${startedAt}-${suggestion.action}-${rawBlockIds.join("|")}-${suggestion.title}`
             )}`,

@@ -157,10 +157,13 @@ metadata-minimal: titles/ids only where consented, never message bodies.
   review but remains unapplied/live-unverified in this environment. The final
   repository gates pass, including a zero-vulnerability audit in both
   workspaces; live RLS/RPC execution remains unclaimed.
-- **B3. Slack/Teams/Jira/Linear connectors [env-blocked]:** contract-first —
-  a `ConnectorSignalV1` schema (counts and time-shape only), per-connector
-  allowlist preview identical in UX to the share preview, fixture-tested
-  mappers before any OAuth app exists.
+- **B3. Calendar and Chat connectors — PARTIAL July 20; live proof
+  [env-blocked]:** calendar sources plus native Slack, Google Chat, and Webex
+  adapters now project provider responses into content-free, reviewable
+  attention evidence. Synthetic contract tests cover the repository boundary;
+  provider registration, deployed Webex broker configuration, and live-account
+  execution remain unclaimed. Jira and Linear remain future connector work and
+  are not represented as available.
 - **B4. Project/stakeholder demand mapping & capacity reservations:**
   extends A1's scenario engine from a single ask to named demand streams;
   reservation = a labeled claim against median shared headroom, never a
@@ -170,7 +173,8 @@ metadata-minimal: titles/ids only where consented, never message bodies.
   posture as existing roles (policy tests first).
 
 **Phase B exit criteria:** B1–B2 shipped gate-green on synthetic data; B3
-schema + mappers merged with fixtures; B4 shipped atop A1; B5 policy-tested.
+repository contracts and adapters gate-green plus separately evidenced live
+provider execution; B4 shipped atop A1; B5 policy-tested.
 
 ---
 

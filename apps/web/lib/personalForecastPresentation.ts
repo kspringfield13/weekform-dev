@@ -8,6 +8,16 @@ export interface PersonalForecastRisk {
   detail: string;
 }
 
+export interface PersonalForecastTrajectoryPoint {
+  weekId: string;
+  allocatedPct: number;
+  reactivePct: number;
+  deepWorkPct: number;
+  reliableCapacityPct: number;
+  meetingPct: number;
+  summaryConfidencePct: number;
+}
+
 export interface PersonalForecastPresentation {
   status: "unavailable" | "baseline" | "history";
   sourceWeekId: string | null;
@@ -19,11 +29,40 @@ export interface PersonalForecastPresentation {
   recommendation: string;
   assumptions: string[];
   explanation: string;
+  trajectory: PersonalForecastTrajectoryPoint[];
+  trajectoryDeltaPts: number | null;
+}
+
+export interface PersonalForecastRangeGeometry {
+  conservativePct: number;
+  likelyPct: number;
+  optimisticPct: number;
+  leftPct: number;
+  widthPct: number;
 }
 
 function safePercent(value: number): number | null {
   if (!Number.isFinite(value)) return null;
   return Math.round(Math.max(0, Math.min(100, value)));
+}
+
+export function personalForecastRangeGeometry(scenarios: {
+  conservative: number;
+  likely: number;
+  optimistic: number;
+}): PersonalForecastRangeGeometry {
+  const conservativePct = safePercent(scenarios.conservative) ?? 0;
+  const optimisticPct = safePercent(scenarios.optimistic) ?? conservativePct;
+  const leftPct = Math.min(conservativePct, optimisticPct);
+  const rightPct = Math.max(conservativePct, optimisticPct);
+  const likelyPct = Math.max(leftPct, Math.min(rightPct, safePercent(scenarios.likely) ?? leftPct));
+  return {
+    conservativePct,
+    likelyPct,
+    optimisticPct,
+    leftPct,
+    widthPct: rightPct - leftPct,
+  };
 }
 
 function weeksInIsoYear(year: number): number {
@@ -89,9 +128,16 @@ export function buildPersonalForecastPresentation(
 ): PersonalForecastPresentation {
   const uniqueWeeks = new Map<string, PersonalWorkloadReplicaV1>();
   for (const replica of replicas) {
-    if (!/^(\d{4})-W(\d{2})$/.test(replica.weekId) || uniqueWeeks.has(replica.weekId)) continue;
+    if (!/^(\d{4})-W(\d{2})$/.test(replica.weekId)) continue;
     if (safePercent(replica.capacity.reliableNewWorkCapacityPct) === null) continue;
-    uniqueWeeks.set(replica.weekId, replica);
+    const existing = uniqueWeeks.get(replica.weekId);
+    if (!existing || replica.sourceUpdatedAt.localeCompare(existing.sourceUpdatedAt) > 0
+      || (replica.sourceUpdatedAt === existing.sourceUpdatedAt
+        && (replica.generatedAt.localeCompare(existing.generatedAt) > 0
+          || (replica.generatedAt === existing.generatedAt
+            && replica.replicaId.localeCompare(existing.replicaId) > 0)))) {
+      uniqueWeeks.set(replica.weekId, replica);
+    }
   }
   const history = [...uniqueWeeks.values()]
     .sort((left, right) => left.weekId.localeCompare(right.weekId))
@@ -109,6 +155,8 @@ export function buildPersonalForecastPresentation(
       recommendation: "Connect a review-safe workload replica from Weekform for Mac before planning against a forecast.",
       assumptions: [],
       explanation: "There is no review-safe workload replica to forecast from, so Weekform Web does not invent a number.",
+      trajectory: [],
+      trajectoryDeltaPts: null,
     };
   }
 
@@ -120,6 +168,15 @@ export function buildPersonalForecastPresentation(
     optimistic: Math.max(...values),
   };
   const status = history.length === 1 ? "baseline" : "history";
+  const trajectory = history.map((row) => ({
+    weekId: row.weekId,
+    allocatedPct: safePercent(row.capacity.allocatedPct) ?? 0,
+    reactivePct: safePercent(row.capacity.reactivePct) ?? 0,
+    deepWorkPct: safePercent(row.capacity.deepWorkPct) ?? 0,
+    reliableCapacityPct: safePercent(row.capacity.reliableNewWorkCapacityPct)!,
+    meetingPct: safePercent(row.capacity.meetingPct) ?? 0,
+    summaryConfidencePct: safePercent(row.capacity.summaryConfidence * 100) ?? 0,
+  }));
   return {
     status,
     sourceWeekId: latest.weekId,
@@ -137,5 +194,9 @@ export function buildPersonalForecastPresentation(
     explanation: status === "baseline"
       ? "One synced week provides a deterministic baseline, not an AI-generated forecast or a calibrated trend."
       : `Derived from ${history.length} synced weekly capacity baselines. The likely case is their median; the range is the observed low-to-high span.`,
+    trajectory,
+    trajectoryDeltaPts: trajectory.length < 2
+      ? null
+      : trajectory.at(-1)!.reliableCapacityPct - trajectory[0]!.reliableCapacityPct,
   };
 }

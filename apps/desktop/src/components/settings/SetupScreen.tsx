@@ -11,7 +11,6 @@ import {
   FileText,
   LoaderCircle,
   Lock,
-  MessagesSquare,
   Monitor,
   Pause,
   Play,
@@ -63,17 +62,15 @@ import {
 } from "../../services/aiConnection";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { AgentMark } from "../common/AgentMark";
-import { CHAT_PROVIDERS } from "../../../../../packages/integrations/src/chat/chatSource";
 import { ModelPricingPanel } from "./ModelPricingPanel";
 import { CloudAccountPanel } from "./CloudAccountPanel";
 import type { CloudController } from "../../hooks/useCloudSync";
 import type { CalendarSourcesController } from "../../hooks/useCalendarSources";
 import type { CalendarProviderId, CalendarRangeInput } from "../../../../../packages/integrations/src/calendar/calendarSync";
 import { CalendarSourcesPanel } from "./CalendarSourcesPanel";
-
-// Chat sources the prototype can ingest today: local file exports parsed on-device.
-// Providers that would need a native OAuth connector are omitted until one exists.
-const FILE_IMPORT_CHAT_PROVIDERS = CHAT_PROVIDERS.filter((provider) => provider.loopSafe);
+import { EmailSourcePanel } from "./EmailSourcePanel";
+import type { ChatSourcesController } from "../../hooks/useChatSources";
+import { ChatSourcesPanel } from "./ChatSourcesPanel";
 
 // Retention windows (in days) offered for auto-expiring stored activity samples.
 const RETENTION_OPTIONS = [7, 14, 30, 90] as const;
@@ -129,6 +126,7 @@ export function SetupScreen({
   importError,
   lastCalendarImportSummary,
   calendarSources,
+  chatSources,
   onImportCalendar,
   chatImportError,
   onImportChatExport,
@@ -171,6 +169,7 @@ export function SetupScreen({
   importError: string | null;
   lastCalendarImportSummary: string | null;
   calendarSources: CalendarSourcesController;
+  chatSources: ChatSourcesController;
   onImportCalendar: (provider: CalendarProviderId, file: File, range: CalendarRangeInput) => void;
   chatImportError: string | null;
   onImportChatExport: (file: File) => void;
@@ -559,35 +558,13 @@ export function SetupScreen({
         onImport={onImportCalendar}
       />
 
-      <section className="settings-row">
-        <div className="settings-row-icon"><MessagesSquare size={18} aria-hidden /></div>
-        <div>
-          <h3>Workplace chat</h3>
-          <p>Turn Slack, Teams, or Webex activity into reactive-work signals. Only metadata is read — timestamps, channels, and message counts — never message text, and nothing leaves this device.</p>
-        </div>
-        <div className="settings-row-status">
-          <strong>Metadata only</strong>
-          <span>No message text imported</span>
-          {chatImportError && <small className="import-error" role="alert">{chatImportError}</small>}
-        </div>
-        <div className="chat-connect-options">
-          {FILE_IMPORT_CHAT_PROVIDERS.map((provider) => (
-            <label key={provider.id} className="settings-control" title={provider.description}>
-              <Upload size={15} aria-hidden />
-              <span>Import {provider.label}</span>
-              <input
-                accept=".json,application/json"
-                type="file"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) onImportChatExport(file);
-                  event.currentTarget.value = "";
-                }}
-              />
-            </label>
-          ))}
-        </div>
-      </section>
+      <EmailSourcePanel />
+
+      <ChatSourcesPanel
+        controller={chatSources}
+        legacyImportError={chatImportError}
+        onImportLegacy={onImportChatExport}
+      />
 
       <section className="settings-row">
         <div className="settings-row-icon"><Eye size={18} aria-hidden /></div>
@@ -1029,15 +1006,15 @@ export function SetupScreen({
       <div className="settings-section-heading">
         <div>
           <h2>Data control</h2>
-          <span>Your ledger stays local. Export it, or set how long raw activity samples are kept.</span>
+          <span>Your ledger stays local. Export it, or set how long raw activity and canonical Chat evidence are kept.</span>
         </div>
       </div>
 
       <section className="settings-row">
         <div className="settings-row-icon"><Timer size={18} aria-hidden /></div>
         <div>
-          <h3>Activity retention</h3>
-          <p>Automatically delete stored active-window samples older than the window you choose. Sessions and work blocks already derived from them are kept — only the raw samples expire.</p>
+          <h3>Raw evidence retention</h3>
+          <p>Automatically delete active-window samples plus canonical and derived Chat event evidence older than the window you choose. Sessions and work blocks already derived from them are kept.</p>
         </div>
         <div className="settings-row-status">
           <strong>{formatCount(activeWindowSamples.length)} sample{activeWindowSamples.length === 1 ? "" : "s"} stored</strong>
@@ -1130,7 +1107,7 @@ export function SetupScreen({
         <div className="settings-row-icon"><RotateCcw size={18} aria-hidden /></div>
         <div>
           <h3>Reset all local data</h3>
-          <p>Permanently clears everything Weekform has stored on this device — work blocks, activity samples, corrections, the audit trail, forecasts, and calendar imports. Export first if you want a copy.</p>
+          <p>Permanently clears everything Weekform has stored on this device — work blocks, activity and Chat evidence, corrections, the audit trail, forecasts, imports, and Calendar/Chat connections. Export first if you want a copy.</p>
         </div>
         <div className="settings-row-status">
           <strong>Irreversible</strong>
@@ -1173,7 +1150,8 @@ export function SetupScreen({
             <li>{formatCount(blocks.length)} work {blocks.length === 1 ? "block" : "blocks"} &amp; activity samples</li>
             <li>{formatCount(corrections.length)} {corrections.length === 1 ? "correction" : "corrections"}</li>
             <li>The audit trail, forecasts &amp; weekly history</li>
-            <li>Calendar imports &amp; retention settings</li>
+            <li>Calendar imports, Chat evidence &amp; retention settings</li>
+            <li>Calendar and Chat connection credentials &amp; cursors</li>
             <li>Your saved AI provider settings &amp; credentials</li>
           </ul>
           <button

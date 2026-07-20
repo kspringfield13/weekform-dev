@@ -131,7 +131,7 @@ export function PersonalWeeklyReviewScreen({
               <button className="button button-secondary" type="button" disabled title="Completion requires the local audit trail">
                 Finish weekly review
               </button>
-              <Link className="button button-primary" href="/download">Open Weekform for Mac</Link>
+              <Link className="button button-primary" href="/download">Get Weekform for Mac</Link>
             </div>
           </footer>
         </>

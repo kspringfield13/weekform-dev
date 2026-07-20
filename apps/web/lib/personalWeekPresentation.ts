@@ -1,3 +1,5 @@
+import type { PersonalReplicaCapacityV1 } from "../../../packages/domain/src/personalCloud";
+
 export interface CapacityCoverageInput {
   committedUtilizationPct: number;
   reliableNewWorkCapacityPct: number;
@@ -31,6 +33,28 @@ export interface ReplicaModeSummary {
   sharePct: number;
 }
 
+export function capacityForPresentation(
+  input: PersonalReplicaCapacityV1,
+  hasCurrentWeekSignal: boolean,
+): PersonalReplicaCapacityV1 {
+  if (hasCurrentWeekSignal) return input;
+  return {
+    allocatedPct: 0,
+    deepWorkPct: 0,
+    fragmentedWorkPct: 0,
+    meetingPct: 0,
+    reactivePct: 0,
+    plannedPct: 0,
+    blockedPct: 0,
+    reliableNewWorkCapacityPct: 0,
+    committedUtilizationPct: 0,
+    carryoverRiskPct: 0,
+    wipLoadScore: 0,
+    contextSwitchScore: 0,
+    summaryConfidence: 0,
+  };
+}
+
 export function safePercent(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.min(100, Math.max(0, value));
@@ -53,7 +77,13 @@ function roundedPercent(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
-export function capacityCoverage(input: CapacityCoverageInput): CapacityCoverage {
+export function capacityCoverage(
+  input: CapacityCoverageInput,
+  hasCurrentWeekSignal = true,
+): CapacityCoverage {
+  if (!hasCurrentWeekSignal) {
+    return { committedPct: 0, availablePct: 0, protectedPct: 0 };
+  }
   const committedPct = safePercent(input.committedUtilizationPct);
   const availablePct = roundedPercent(Math.min(
     safePercent(input.reliableNewWorkCapacityPct),

@@ -3,24 +3,10 @@ import { Check, Clock, GraduationCap, ShieldCheck, X } from "lucide-react";
 import type { WorkBlock, WorkCategory, PlannedStatus, WorkMode } from "../../../../../packages/domain/src/models";
 import { workCategories, plannedStatuses, workModes } from "../../../../../packages/domain/src/taxonomy";
 import { applyLocalTime, fieldLabel, formatRange, humanizeCorrectionValue, pct, plannedStatusLabel, toLocalTimeInput } from "../../lib/format";
+import { blockOrigin } from "../../lib/blockOrigin";
 import type { LearnedLabelMatch } from "../../lib/learnedLabels";
 import { ConfidenceChip } from "../common/ConfidenceChip";
 import { EvidenceDetails } from "../common/EvidenceDetails";
-
-// Provenance label derived from the `work_block_id` prefix — the same convention
-// `App.tsx` keys cross-source dedup off of (`calendar-outlook-` = calendar, `imported-`
-// = generic source import). Workplace chat is the only `imported-` source surfaced in
-// the UI today; if a future non-chat `imported-` source lands, refine the label off
-// `derived_from`/`evidence` rather than assuming chat here.
-function blockOrigin(workBlockId: string): { label: string; title: string } {
-  if (workBlockId.startsWith("calendar-outlook-")) {
-    return { label: "Calendar", title: "Imported from your connected or local calendar" };
-  }
-  if (workBlockId.startsWith("imported-")) {
-    return { label: "Workplace chat", title: "Derived from imported workplace-chat activity" };
-  }
-  return { label: "Activity capture", title: "Captured from your foreground-app activity" };
-}
 
 export function BlockCard({
   block,
@@ -41,7 +27,7 @@ export function BlockCard({
   const [draftStart, setDraftStart] = useState("");
   const [draftEnd, setDraftEnd] = useState("");
   const [timeError, setTimeError] = useState(false);
-  const origin = blockOrigin(block.work_block_id);
+  const origin = blockOrigin(block);
 
   function handleStartTimeEdit() {
     setDraftStart(toLocalTimeInput(block.start_time));

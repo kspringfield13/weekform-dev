@@ -37,9 +37,12 @@ export function PersonalAIUsageScreen() {
         <div>
           <p className={styles.kicker}>Local usage detail</p>
           <h2 id="local-usage-detail-title">Continue with the complete private source.</h2>
-          <p>Provider activity, pricing overlays, budgets, and assistant-session detail remain on your Mac and are not uploaded to Web.</p>
+          <p>
+            Provider activity, pricing overlays, budgets, and assistant-session detail remain on your Mac and are not uploaded to Web. Need the local controls?{" "}
+            <Link href="/download">Get Weekform for Mac</Link>.
+          </p>
         </div>
-        <Link className={`button button-primary ${styles.action}`} href="/download">Open Weekform for Mac</Link>
+        <Link className={`button button-primary ${styles.action}`} href="/app?screen=setup&settings_tab=ai-usage">Review AI Usage settings</Link>
       </section>
     </section>
   );

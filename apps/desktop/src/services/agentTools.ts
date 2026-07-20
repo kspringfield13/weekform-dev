@@ -8,6 +8,10 @@ import type {
   WeeklyAIUsageSummary,
   WeeklyCapacitySnapshot,
 } from "../../../../packages/domain/src/models";
+import {
+  externalSafeCorrections,
+  externalSafeWorkBlock,
+} from "../../../../packages/inference/src/externalWorkBlock";
 import { unionSpanMs } from "../lib/meetingLoad";
 
 /**
@@ -51,7 +55,8 @@ export const getWeekWorkload = defineTool({
   description: "Summarize the week's work blocks: top projects by capacity, categories, modes (deep/reactive), verified status.",
   inputSchema: z.object({}),
   execute: async ({}: {}, { blocks }: { blocks: WorkBlock[] }) => {
-    const byProject = blocks.reduce((acc, b) => {
+    const safeBlocks = blocks.map(externalSafeWorkBlock);
+    const byProject = safeBlocks.reduce((acc, b) => {
       acc[b.project_name] = (acc[b.project_name] || 0) + b.estimated_capacity_pct;
       return acc;
     }, {} as Record<string, number>);
@@ -59,15 +64,15 @@ export const getWeekWorkload = defineTool({
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
       .map(([p, c]) => ({ project: p, capacityPct: Math.round(c) }));
-    const byCategory = blocks.reduce((acc, b) => {
+    const byCategory = safeBlocks.reduce((acc, b) => {
       acc[b.category] = (acc[b.category] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
     return {
-      totalBlocks: blocks.length,
+      totalBlocks: safeBlocks.length,
       topProjects,
       categories: byCategory,
-      verifiedCount: blocks.filter(b => b.user_verified).length,
+      verifiedCount: safeBlocks.filter(b => b.user_verified).length,
     };
   },
 });
@@ -99,7 +104,7 @@ export const getPrimaryFocus = defineTool({
   inputSchema: z.object({}),
   execute: async ({}: {}, { blocks }: { blocks: WorkBlock[] }) => {
     const byProject: Record<string, number> = {};
-    blocks.forEach(b => { byProject[b.project_name] = (byProject[b.project_name]||0) + b.estimated_capacity_pct; });
+    blocks.map(externalSafeWorkBlock).forEach(b => { byProject[b.project_name] = (byProject[b.project_name]||0) + b.estimated_capacity_pct; });
     const top = Object.entries(byProject).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([p,c]) => ({project:p, capacityPct:Math.round(c)}));
     return { topProjects: top };
   },
@@ -108,13 +113,19 @@ export const getPrimaryFocus = defineTool({
 export const getRecentCorrections = defineTool({
   description: "List recent user corrections and adjustments for workload understanding.",
   inputSchema: z.object({ limit: z.number().default(5) }),
-  execute: async ({ limit }: { limit: number }, { corrections }: { corrections: UserCorrection[] }) => {
+  execute: async (
+    { limit }: { limit: number },
+    { corrections, blocks }: { corrections: UserCorrection[]; blocks: WorkBlock[] },
+  ) => {
     // `corrections` is appended oldest-first (useBlocksLedger.ts `[...current, fullCorrection]`), so
     // take the TAIL and reverse for genuinely-recent (newest-first) — a front slice returned the
     // oldest/seeded relabels mislabeled "recent". `limit` is untrusted model input, so clamp to a
     // positive int (a 0/negative/NaN would make `slice(-limit)` return the whole array).
     const take = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 5;
-    return corrections.slice(-take).reverse().map(c => ({ field: c.field, old: c.old_value, new: c.new_value, reason: c.reason }));
+    return externalSafeCorrections(corrections, blocks)
+      .slice(-take)
+      .reverse()
+      .map(c => ({ field: c.field, old: c.old_value, new: c.new_value, reason: c.reason }));
   },
 });
 

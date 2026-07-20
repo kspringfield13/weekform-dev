@@ -100,7 +100,14 @@ export function computeWeeklyCapacitySnapshot(
   weekId: string,
   blocks: WorkBlock[]
 ): WeeklyCapacitySnapshot {
-  const included = blocks.filter((block) => block.planned_status !== "blocked" || block.blocker_flag);
+  // A zero-capacity block is a review surface, not modeled workload. Chat uses this
+  // deliberately for directed-only evidence: it can appear in Today for the user to
+  // confirm or exclude, but it must not alter confidence, WIP, allocation, blocked
+  // load, or reliable capacity until the user assigns actual time.
+  const measurableBlocks = blocks.filter((block) => finite(block.estimated_capacity_pct) > 0);
+  const included = measurableBlocks.filter(
+    (block) => block.planned_status !== "blocked" || block.blocker_flag,
+  );
   const allocated = roundPct(sum(included, () => true));
   const meetingPct = roundPct(sum(included, (block) => block.category === "Meetings / stakeholder syncs"));
 
@@ -141,7 +148,7 @@ export function computeWeeklyCapacitySnapshot(
   // would otherwise never be counted anywhere.
   const blockedPct = roundPct(
     sum(
-      blocks,
+      measurableBlocks,
       (block) =>
         block.blocker_flag ||
         block.planned_status === "blocked" ||
@@ -458,48 +465,30 @@ export function analyzeCorrections(corrections: UserCorrection[]): CorrectionBia
   };
 }
 
-/**
- * Chat-driven interruption load, derived from imported workplace-chat events. Chat is the one
- * source that exposes reactive interruption density — the part of the capacity model that
- * calendar + git can't see — so this quantifies how much it fragmented the week's deep work,
- * feeding the same `context_switch_score` / `fragmented_work_pct` story.
- *
- * - `messages_per_active_hour` is the interruption density while engaged in chat bursts.
- * - `burst_count` is the reactive-burst frequency (one imported chat event per burst).
- * - `interrupted_deep_work_pct` is how often a chat burst overlapped a deep-work block in the
- *   same window — the interleave signal.
- */
+/** Content-free, provider-neutral analysis of observed chat response episodes. */
 export interface InterruptionLoadAnalysis {
-  /** Reactive chat bursts in the window (one per imported chat event). */
-  burst_count: number;
-  /** Total messages across bursts (metadata count only — never message text). */
-  message_count: number;
-  /** Direct @-mentions — the sharpest interruption signal. */
-  mention_count: number;
-  /**
-   * Share (0–100) of reactive messages that were direct @-mentions — how much of the chat
-   * pressure was aimed at the user by name (harder to batch/defer than ambient channel chatter).
-   * Floored to 1 when there is any mention volume (so a non-zero count never displays alongside
-   * "0%"), capped at 100 to stay sane if a malformed export reports more mentions than messages;
-   * 0 only when there are no mentions or no messages to divide by.
-   */
-  mention_pct: number;
-  /** Hours spent inside chat bursts. */
+  /** Sessions with observed self activity; message volume is deliberately unavailable. */
+  observed_response_episode_count: number;
+  /** Observed episodes that followed a directed signal in the bounded correlation window. */
+  directed_response_episode_count: number;
+  /** Share of observed episodes with a directed precursor. */
+  directed_response_pct: number;
+  /** Unioned hours inside observed response episodes. */
   active_hours: number;
-  /** Messages per active chat hour — interruption density while engaged. */
-  messages_per_active_hour: number;
-  /** Deep-work blocks active during the chat window. */
-  deep_work_block_count: number;
-  /** Deep-work blocks a chat burst overlapped (interleaved). */
-  interrupted_deep_work_count: number;
-  /** Share (0–100) of in-window deep-work blocks a chat burst interleaved. */
-  interrupted_deep_work_pct: number;
-  /** Distinct local weekdays that carried reactive message volume (0–7; caller scopes to a week). */
+  /** Observed response episodes per unioned active hour (descriptive, never a capacity multiplier). */
+  response_episodes_per_active_hour: number;
+  /** Focus blocks active in the same bounded observation window. */
+  focus_block_count: number;
+  /** Focus blocks that co-occurred with observed chat activity; this does not prove causation. */
+  focus_overlap_block_count: number;
+  /** Share of in-window focus blocks with chat co-occurrence. */
+  focus_overlap_pct: number;
+  /** Distinct local weekdays that carried observed response episodes. */
   active_day_count: number;
-  /** Weekday name (local time) reactive message volume peaked on; null when no message volume. */
+  /** Weekday name observed response episodes peaked on. */
   peak_day: string | null;
-  /** Reactive messages on `peak_day` (metadata count only); 0 when `peak_day` is null. */
-  peak_day_message_count: number;
+  /** Observed response episodes on `peak_day`. */
+  peak_day_episode_count: number;
   /**
    * Local hour (0–23) reactive volume concentrated in ON the peak day — the time-of-day axis the
    * weekday peak can't show. Non-null exactly when `peak_day` is non-null (the peak day always
@@ -532,12 +521,9 @@ export interface InterruptionLoadAnalysis {
    * contrast — so the caller can gate the "batchable" note on this one boolean.
    */
   concentration_is_clustered: boolean;
-  /** Reactive messages that landed outside core hours (before 08:00 / at-or-after 18:00 local). */
-  after_hours_message_count: number;
-  /**
-   * Share (0–100) of reactive messages that landed after hours; 0 only when there is no after-hours
-   * volume, floored to 1 when there is any (so a non-zero count never displays alongside "0%").
-   */
+  /** Observed response episodes outside the fixed prototype core-hours window. */
+  after_hours_episode_count: number;
+  /** Share of observed response episodes outside core hours. */
   after_hours_pct: number;
 }
 
@@ -576,155 +562,107 @@ function metadataCount(value: string | null | undefined): number {
 }
 
 /**
- * Quantify chat-driven interruption load from imported chat events plus the work blocks they
- * could have fragmented. Pure and domain-typed (no persistence/frontend types) so it stays
- * unit-testable like `scoreForecastAccuracy`. **Privacy:** reads ONLY the metadata-only counts
- * the chat parser emits (`messages`/`mentions`) plus event time spans — never message text.
- * Returns `null` when there is no chat signal so the caller can hide the panel.
+ * Quantify observed chat response episodes without inferring work from ambient
+ * traffic or using message volume as a multiplier. Overlap with focus work is
+ * reported only as co-occurrence; it does not establish that chat caused an
+ * interruption. Legacy records are accepted only when they show sent activity
+ * or a directed mention, so old ambient channel traffic is not promoted.
  */
 export function analyzeInterruptionLoad(
   chatEvents: RawEvent[],
   workBlocks: WorkBlock[]
 ): InterruptionLoadAnalysis | null {
-  const bursts: { start: number; end: number }[] = [];
-  // Reactive message volume bucketed by local weekday (0–6) so we can name the day focus took the
-  // most chat pressure. Local time is the right semantic — the user's sense of "Wednesday".
-  const dayMessages = new Map<number, number>();
-  // Reactive message volume bucketed by (local weekday, local hour) via `dayIndex * 24 + hour`, so
-  // once the peak day is known we can name the hour reactive load concentrated in ON that day —
-  // the time-of-day axis, not conflated with any other day's hourly pattern.
-  const dayHourMessages = new Map<number, number>();
-  let messageCount = 0;
-  let mentionCount = 0;
-  let afterHoursMessages = 0;
+  const episodes: { start: number; end: number }[] = [];
+  const dayEpisodes = new Map<number, number>();
+  const dayHourEpisodes = new Map<number, number>();
+  let directedResponseCount = 0;
+  let afterHoursEpisodeCount = 0;
   for (const event of chatEvents) {
     if (event.source_type !== "chat") continue;
     const start = new Date(event.timestamp_start).getTime();
     const end = new Date(event.timestamp_end).getTime();
     if (Number.isNaN(start) || Number.isNaN(end) || end <= start) continue;
-    // `metadata` is typed non-null, but events can arrive from untrusted persisted
-    // JSON — fall back to an empty bag so a malformed record can't throw here.
     const metadata = event.metadata ?? {};
-    const messages = metadataCount(metadata.messages);
-    // A chat burst with no message volume carries no reactive signal — it is a malformed
-    // record, not an interruption — so skip it entirely before it can inflate `burst_count`,
-    // `active_hours`, or the deep-work-overlap window. This closes an inconsistency with the
-    // per-day / peak / after-hours buckets below, whose guard already documents that a
-    // "malformed 0-message burst … can't inflate the count" — but `burst_count`/`active_hours`
-    // were derived from bursts pushed BEFORE that guard, so a 0-message record still inflated
-    // them. The real importer always emits `messages >= 1` (chatExport.ts stamps
-    // `String(session.length)` for a non-empty burst), so this is byte-identical on real/demo
-    // data and only defends corrupt/hand-authored persisted JSON.
-    if (messages === 0) continue;
-    bursts.push({ start, end });
-    messageCount += messages;
-    mentionCount += metadataCount(metadata.mentions);
-    // Bucket the burst's reactive volume by local weekday (and by weekday+hour). `messages > 0`
-    // is guaranteed above, so these aggregates and `burst_count` / `active_hours` now agree on
-    // exactly which bursts count. Local time is the right semantic — the user's sense of "Wednesday".
+    const canonicalObserved =
+      metadata.kind === "response_episode" && metadata.attention_grade === "observed";
+    const legacyObserved =
+      metadataCount(metadata.messages) > 0 &&
+      (metadataCount(metadata.sent) > 0 || metadataCount(metadata.mentions) > 0);
+    if (!canonicalObserved && !legacyObserved) continue;
+
+    episodes.push({ start, end });
+    const directed = metadata.directed_trigger === "true" || metadataCount(metadata.mentions) > 0;
+    if (directed) directedResponseCount += 1;
     const startDate = new Date(start);
     const dayIndex = startDate.getDay();
-    dayMessages.set(dayIndex, (dayMessages.get(dayIndex) ?? 0) + messages);
-    // Attribute the burst's messages to "after hours" by its start hour, mirroring the weekday
-    // bucketing — a metadata-only sustainability cue, never message text.
+    dayEpisodes.set(dayIndex, (dayEpisodes.get(dayIndex) ?? 0) + 1);
     const startHour = startDate.getHours();
-    dayHourMessages.set(
+    dayHourEpisodes.set(
       dayIndex * 24 + startHour,
-      (dayHourMessages.get(dayIndex * 24 + startHour) ?? 0) + messages
+      (dayHourEpisodes.get(dayIndex * 24 + startHour) ?? 0) + 1
     );
     if (startHour < CORE_HOURS_START || startHour >= CORE_HOURS_END) {
-      afterHoursMessages += messages;
+      afterHoursEpisodeCount += 1;
     }
   }
-  if (bursts.length === 0) return null;
+  if (episodes.length === 0) return null;
 
-  // Name the weekday reactive volume peaked on. Iterate by ascending weekday index so ties resolve
-  // to the lower index deterministically regardless of event order; strict `>` from a 0 baseline
-  // leaves `peak_day` null for a burst-only week with no message counts (nothing worth naming).
   let peakDayIndex = -1;
-  let peakDayMessages = 0;
-  for (const dayIndex of [...dayMessages.keys()].sort((left, right) => left - right)) {
-    const total = dayMessages.get(dayIndex) ?? 0;
-    if (total > peakDayMessages) {
-      peakDayMessages = total;
+  let peakDayEpisodes = 0;
+  for (const dayIndex of [...dayEpisodes.keys()].sort((left, right) => left - right)) {
+    const total = dayEpisodes.get(dayIndex) ?? 0;
+    if (total > peakDayEpisodes) {
+      peakDayEpisodes = total;
       peakDayIndex = dayIndex;
     }
   }
 
-  // Within the peak day, name the local hour reactive volume concentrated in — the time-of-day the
-  // user is likeliest to lose focus, an axis the weekday peak alone can't surface. Iterate hours
-  // ascending with strict `>` so ties resolve to the earlier hour deterministically. The peak day
-  // always carries ≥1 message-bearing hour bucket, so `peakHourIndex` is set whenever `peakDayIndex`
-  // is — i.e. `peak_hour` is non-null exactly when `peak_day` is.
   let peakHourIndex = -1;
-  let peakHourMessages = 0;
+  let peakHourEpisodes = 0;
   if (peakDayIndex >= 0) {
     for (let hour = 0; hour < 24; hour += 1) {
-      const total = dayHourMessages.get(peakDayIndex * 24 + hour) ?? 0;
-      if (total > peakHourMessages) {
-        peakHourMessages = total;
+      const total = dayHourEpisodes.get(peakDayIndex * 24 + hour) ?? 0;
+      if (total > peakHourEpisodes) {
+        peakHourEpisodes = total;
         peakHourIndex = hour;
       }
     }
   }
 
-  // Name the calmest *active* weekday (lowest reactive volume) so the footnote can suggest a
-  // concrete day to protect for deep work. Only meaningful with ≥2 active days — with one (or
-  // zero) message-bearing day there is no quieter day to contrast against the peak, so leave it
-  // null. Same ascending-index iteration + strict `<` from a high baseline → lowest-index-wins
-  // tie-break, mirroring the peak computation above, but SKIP the peak day: naming the same
-  // weekday both busiest and calmest is a contradiction. Excluding it is a no-op except when the
-  // peak day is also a min-volume day (which requires every active day to carry equal volume,
-  // since the peak day holds the global max) — the exact tie that produced `calm_day === peak_day`.
-  // Then guard the residual identical case: if the calmest non-peak day is not actually quieter
-  // than the peak (all active days equal), there is no meaningful contrast, so leave it null.
   let calmDayIndex = -1;
-  if (dayMessages.size >= 2) {
-    let calmDayMessages = Number.POSITIVE_INFINITY;
-    for (const dayIndex of [...dayMessages.keys()].sort((left, right) => left - right)) {
+  if (dayEpisodes.size >= 2) {
+    let calmDayEpisodes = Number.POSITIVE_INFINITY;
+    for (const dayIndex of [...dayEpisodes.keys()].sort((left, right) => left - right)) {
       if (dayIndex === peakDayIndex) continue;
-      const total = dayMessages.get(dayIndex) ?? 0;
-      if (total < calmDayMessages) {
-        calmDayMessages = total;
+      const total = dayEpisodes.get(dayIndex) ?? 0;
+      if (total < calmDayEpisodes) {
+        calmDayEpisodes = total;
         calmDayIndex = dayIndex;
       }
     }
-    // `peakDayMessages` is the global max, so `calmDayMessages` can only equal it when every
-    // active day is tied — in which case no day is genuinely calmer than the peak.
-    if (calmDayIndex >= 0 && calmDayMessages >= peakDayMessages) {
+    if (calmDayIndex >= 0 && calmDayEpisodes >= peakDayEpisodes) {
       calmDayIndex = -1;
     }
   }
 
-  // How concentrated the reactive load is across the active days: the share of total reactive
-  // message volume that landed in the busiest one-or-two days. An even spread is endemic (hard to
-  // batch); a heavy cluster in a day or two is batchable — the caller can suggest protecting the
-  // rest. Take the top min(2, active days) so a single-active-day week reports its one day and a
-  // multi-day week its worst two. Sum of `dayMessages` values equals `messageCount` (both count
-  // only message-bearing bursts), so the share can never exceed 100.
-  const sortedDayVolumes = [...dayMessages.values()].sort((left, right) => right - left);
+  const sortedDayVolumes = [...dayEpisodes.values()].sort((left, right) => right - left);
   const concentrationDayCount = Math.min(2, sortedDayVolumes.length);
-  const concentratedMessages = sortedDayVolumes
+  const concentratedEpisodes = sortedDayVolumes
     .slice(0, concentrationDayCount)
     .reduce((sum, volume) => sum + volume, 0);
-  const concentrationPct =
-    messageCount > 0 ? Math.round((concentratedMessages / messageCount) * 100) : 0;
-  // Clustered only when the top days lead an even spread by a real margin AND quieter days remain —
-  // i.e. `active_day_count (= dayMessages.size) > concentrationDayCount`, which forces ≥3 active days
-  // (so `concentrationDayCount` is 2). Decide it here so the view just reads one boolean, mirroring
-  // how the mention/after-hours floors are computed in this function rather than in the screen.
+  const concentrationPct = Math.round((concentratedEpisodes / episodes.length) * 100);
   const evenSharePct =
-    dayMessages.size > 0 ? Math.round((concentrationDayCount / dayMessages.size) * 100) : 0;
+    dayEpisodes.size > 0 ? Math.round((concentrationDayCount / dayEpisodes.size) * 100) : 0;
   const concentrationIsClustered =
-    dayMessages.size > concentrationDayCount &&
+    dayEpisodes.size > concentrationDayCount &&
     concentrationPct >= evenSharePct + CONCENTRATION_MARGIN_PCT;
 
-  // Scope deep-work blocks to the chat window so the interleave denominator reflects the period
-  // chat could actually have fragmented, not the user's entire history.
-  const windowStart = Math.min(...bursts.map((burst) => burst.start));
-  const windowEnd = Math.max(...bursts.map((burst) => burst.end));
-  const deepWorkInWindow = workBlocks
-    .filter((block) => block.mode === "Deep work")
+  const windowStart = Math.min(...episodes.map((episode) => episode.start));
+  const windowEnd = Math.max(...episodes.map((episode) => episode.end));
+  const focusBlocksInWindow = workBlocks
+    .filter(
+      (block) => block.mode === "Deep work" && finite(block.estimated_capacity_pct) > 0,
+    )
     .map((block) => ({
       start: new Date(block.start_time).getTime(),
       end: new Date(block.end_time).getTime()
@@ -737,18 +675,12 @@ export function analyzeInterruptionLoad(
         windowStart < span.end
     );
 
-  const interrupted = deepWorkInWindow.filter((span) =>
-    bursts.some((burst) => burst.start < span.end && span.start < burst.end)
+  const focusOverlapCount = focusBlocksInWindow.filter((span) =>
+    episodes.some((episode) => episode.start < span.end && span.start < episode.end)
   ).length;
 
-  // Active chat time is the UNION of the burst spans, NOT their raw sum. Bursts within one
-  // provider+kind group are gap-split so they can't overlap, but bursts from DIFFERENT groups
-  // (a Slack text burst running while Teams text bursts arrive) routinely overlap in wall-clock
-  // time — summing them would double-count the overlap, inflating active_hours and deflating the
-  // derived messages_per_active_hour density. Merge the sorted spans and total the merged lengths
-  // so overlapping time is counted once. `bursts` is non-empty here (the length===0 early return
-  // above), and every burst has end > start (guarded in the loop), so each merged span is positive.
-  const sortedBursts = [...bursts].sort((left, right) => left.start - right.start);
+  // Union spans so simultaneous activity from multiple providers is not counted twice.
+  const sortedBursts = [...episodes].sort((left, right) => left.start - right.start);
   let activeMs = 0;
   let spanStart = sortedBursts[0].start;
   let spanEnd = sortedBursts[0].end;
@@ -765,156 +697,98 @@ export function analyzeInterruptionLoad(
   activeMs += spanEnd - spanStart;
   const activeHours = activeMs / 3_600_000;
   return {
-    burst_count: bursts.length,
-    message_count: messageCount,
-    mention_count: mentionCount,
-    // Floor to 1% when there is any mention volume (mirrors `after_hours_pct`) so a non-zero
-    // count never renders beside "0%"; cap at 100 so a malformed export reporting more mentions
-    // than messages can't exceed 100%. Guard `messageCount > 0` (a mentions-only, 0-message burst
-    // is possible) so the division never yields Infinity.
-    mention_pct:
-      mentionCount > 0 && messageCount > 0
-        ? Math.min(100, Math.max(1, Math.round((mentionCount / messageCount) * 100)))
-        : 0,
+    observed_response_episode_count: episodes.length,
+    directed_response_episode_count: directedResponseCount,
+    directed_response_pct: directedResponseCount > 0
+      ? Math.round((directedResponseCount / episodes.length) * 100)
+      : 0,
     active_hours: Number(activeHours.toFixed(2)),
-    messages_per_active_hour: activeHours > 0 ? Math.round(messageCount / activeHours) : 0,
-    deep_work_block_count: deepWorkInWindow.length,
-    interrupted_deep_work_count: interrupted,
-    interrupted_deep_work_pct:
-      deepWorkInWindow.length > 0 ? Math.round((interrupted / deepWorkInWindow.length) * 100) : 0,
-    active_day_count: dayMessages.size,
+    response_episodes_per_active_hour: activeHours > 0 ? Math.round(episodes.length / activeHours) : 0,
+    focus_block_count: focusBlocksInWindow.length,
+    focus_overlap_block_count: focusOverlapCount,
+    focus_overlap_pct: focusBlocksInWindow.length > 0
+      ? Math.round((focusOverlapCount / focusBlocksInWindow.length) * 100)
+      : 0,
+    active_day_count: dayEpisodes.size,
     peak_day: peakDayIndex >= 0 ? WEEKDAY_NAMES[peakDayIndex] : null,
-    peak_day_message_count: peakDayMessages,
+    peak_day_episode_count: peakDayEpisodes,
     peak_hour: peakHourIndex >= 0 ? peakHourIndex : null,
     calm_day: calmDayIndex >= 0 ? WEEKDAY_NAMES[calmDayIndex] : null,
     concentration_day_count: concentrationDayCount,
     concentration_pct: concentrationPct,
     concentration_is_clustered: concentrationIsClustered,
-    after_hours_message_count: afterHoursMessages,
-    // Floor to 1% when there is any after-hours volume so the footnote (gated on the count) never
-    // shows "0%" beside a non-zero count. messageCount ≥ afterHoursMessages > 0 here, so safe.
-    after_hours_pct:
-      afterHoursMessages > 0 ? Math.max(1, Math.round((afterHoursMessages / messageCount) * 100)) : 0
+    after_hours_episode_count: afterHoursEpisodeCount,
+    after_hours_pct: afterHoursEpisodeCount > 0
+      ? Math.round((afterHoursEpisodeCount / episodes.length) * 100)
+      : 0
   };
 }
 
-/**
- * A stakeholder group (channel / DM) the week's reactive chat work served, ranked by message
- * volume. Channel/participant labels only — never message content.
- */
+/** Safe provider-level split of observed response episodes for the individual view. */
 export interface ChatStakeholderGroup {
-  /** Channel/untagged display label (e.g. "#data-requests", "Direct & untagged"). Never message text. */
+  /** Provider product label. Never a workspace, channel, space, or person label. */
   label: string;
-  /** Reactive bursts that involved this group (the concrete, always-exact count). */
-  burst_count: number;
-  /**
-   * Share (0–100) of the window's reactive message *volume* this group accounts for. A burst
-   * spanning multiple channels splits its volume evenly so no channel is over-credited; that
-   * fractional weight drives the share but is never surfaced as a misleading rounded count.
-   */
+  /** Observed response episodes attributed to the provider. */
+  episode_count: number;
+  /** Share of observed episodes attributed to the provider. */
   share_pct: number;
 }
 
 export interface ChatStakeholderSummary {
-  /** Total reactive messages across every group in the window (metadata counts only). */
-  total_message_count: number;
-  /** Distinct stakeholder groups seen, before the top-N cut. */
+  /** Total observed response episodes across connected providers. */
+  total_episode_count: number;
+  /** Distinct providers seen, before the top-N cut. */
   group_count: number;
-  /** Top groups by reactive message volume, descending. */
+  /** Providers by observed episode count, descending. */
   groups: ChatStakeholderGroup[];
 }
 
 const DEFAULT_STAKEHOLDER_LIMIT = 4;
-// Bursts with no channel/DM label (e.g. a DM export that omits the participant name) still
-// served reactive time — bucket them honestly rather than silently dropping the volume.
-const UNLABELED_STAKEHOLDER_GROUP = "Direct & untagged";
+const CHAT_PROVIDER_LABELS: Record<string, string> = {
+  slack: "Slack",
+  google_chat: "Google Chat",
+  webex: "Webex",
+};
 
 /**
- * Split a metadata `channels` value ("#a\n#b") into DISTINCT trimmed labels; missing/empty → [].
- * Splits on NEWLINE, not comma: a channel/space display name can itself contain a comma
- * (Webex spaces, free-form Teams channels), and `chatExport.ts` joins the burst's labels
- * with "\n" for exactly that reason — a comma split would fracture one real channel into
- * phantom stakeholder groups. (Records written before the delimiter switch used ", "; a
- * legacy single-channel name now parses whole — correct — while a legacy multi-channel
- * burst merges into one label until it is re-imported, a self-healing display-only edge.)
- * Deduped (post-trim) so the parser is symmetric with the emitter, which collects the burst's
- * labels through a `Set` before joining (`chatExport.ts`): a corrupt/hand-authored `channels`
- * carrying a repeated label ("#a\n#a") must not credit its group's `burst_count` twice for one
- * burst — `summarizeChatStakeholders` increments `bursts` once per target — nor skew the even
- * `perLabel` weight split (a "#a\n#b\n#a" burst would otherwise weight #a 2:1 over #b). Real/demo
- * records already carry distinct labels, so this only defends corrupt persisted JSON.
- */
-function parseChannelLabels(value: string | null | undefined): string[] {
-  if (typeof value !== "string") return [];
-  return [
-    ...new Set(
-      value
-        .split(/\r?\n/)
-        .map((label) => label.trim())
-        .filter((label) => label.length > 0)
-    )
-  ];
-}
-
-/**
- * Rank the stakeholder groups (channels / DMs) the week's reactive chat work served, so the user
- * can see *who* their ad-hoc time went to — the collaboration view calendar + git can't surface.
- * Pure and domain-typed (no persistence/frontend types) so it stays unit-testable like
- * `analyzeInterruptionLoad`. **Privacy:** reads ONLY the metadata-only labels/counts the chat
- * parser emits (`channels` labels + `messages` count) plus event time spans — never message text.
- * A burst spanning multiple channels splits its volume evenly so no channel is over-credited.
- * Returns `null` when there is no chat signal so the caller can hide the panel.
+ * Summarize observed episodes by provider. Provider is useful operational
+ * context for the individual and cannot expose a channel, space, project, or
+ * counterpart. Unknown/legacy provider labels are omitted rather than guessed.
  */
 export function summarizeChatStakeholders(
   chatEvents: RawEvent[],
   options: { limit?: number } = {}
 ): ChatStakeholderSummary | null {
   const limit = Math.max(1, options.limit ?? DEFAULT_STAKEHOLDER_LIMIT);
-  const groups = new Map<string, { label: string; weight: number; bursts: number }>();
-  let totalMessages = 0;
+  const groups = new Map<string, number>();
+  let totalEpisodes = 0;
   for (const event of chatEvents) {
     if (event.source_type !== "chat") continue;
     const start = new Date(event.timestamp_start).getTime();
     const end = new Date(event.timestamp_end).getTime();
     if (Number.isNaN(start) || Number.isNaN(end) || end <= start) continue;
-    // `metadata` is typed non-null, but events can arrive from untrusted persisted JSON —
-    // fall back to an empty bag so a malformed record can't throw here.
     const metadata = event.metadata ?? {};
-    const messages = metadataCount(metadata.messages);
-    // A 0-message burst carries no reactive volume: its `perLabel` weight is 0 (so it never
-    // credits a group's `share_pct`), and it must not count toward a group's `burst_count`
-    // either — skip it so the per-group burst tally stays exact, mirroring the same-file
-    // `analyzeInterruptionLoad` guard. Byte-identical on real/demo data (the importer always
-    // emits `messages >= 1`); this only defends corrupt/hand-authored persisted JSON.
-    if (messages === 0) continue;
-    const labels = parseChannelLabels(metadata.channels);
-    const targets = labels.length > 0 ? labels : [UNLABELED_STAKEHOLDER_GROUP];
-    const perLabel = messages / targets.length;
-    totalMessages += messages;
-    for (const label of targets) {
-      const existing = groups.get(label) ?? { label, weight: 0, bursts: 0 };
-      existing.weight += perLabel;
-      existing.bursts += 1;
-      groups.set(label, existing);
-    }
+    const canonicalObserved = metadata.kind === "response_episode" && metadata.attention_grade === "observed";
+    const legacyObserved = metadataCount(metadata.messages) > 0
+      && (metadataCount(metadata.sent) > 0 || metadataCount(metadata.mentions) > 0);
+    if (!canonicalObserved && !legacyObserved) continue;
+    const label = CHAT_PROVIDER_LABELS[metadata.provider ?? ""];
+    if (!label) continue;
+    groups.set(label, (groups.get(label) ?? 0) + 1);
+    totalEpisodes += 1;
   }
-  // No reactive message volume (no chat events, or only zero-message bursts) → nothing worth
-  // ranking, so hide the panel rather than render a row of meaningless 0% chips.
-  if (totalMessages === 0) return null;
+  if (totalEpisodes === 0) return null;
 
-  const ranked = [...groups.values()]
-    .sort((left, right) => right.weight - left.weight || right.bursts - left.bursts || left.label.localeCompare(right.label))
-    .map((group) => ({
-      label: group.label,
-      burst_count: group.bursts,
-      // Floor to 1% (mirrors `mention_pct`/`after_hours_pct`) so a real group — every group here
-      // has `weight > 0` and `burst_count >= 1` thanks to the `messages === 0` skip above — never
-      // renders "N bursts · 0%" when a skewed week rounds its share down to 0.
-      share_pct: Math.max(1, Math.round((group.weight / totalMessages) * 100))
+  const ranked = [...groups.entries()]
+    .sort(([leftLabel, leftCount], [rightLabel, rightCount]) => rightCount - leftCount || leftLabel.localeCompare(rightLabel))
+    .map(([label, episodeCount]) => ({
+      label,
+      episode_count: episodeCount,
+      share_pct: Math.max(1, Math.round((episodeCount / totalEpisodes) * 100))
     }));
 
   return {
-    total_message_count: totalMessages,
+    total_episode_count: totalEpisodes,
     group_count: ranked.length,
     groups: ranked.slice(0, limit)
   };

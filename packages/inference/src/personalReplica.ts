@@ -3,6 +3,7 @@ import type {
   PersonalReplicaBlockV1,
   PersonalWorkloadReplicaV1,
 } from "../../domain/src/personalCloud";
+import { externalWorkBlockId } from "./externalWorkBlock";
 
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -31,7 +32,7 @@ function finite(value: number, min: number, max: number): number {
 
 export function personalReplicaBlock(block: WorkBlock): PersonalReplicaBlockV1 {
   const content = {
-    blockId: block.work_block_id,
+    blockId: externalWorkBlockId(block),
     weekId: block.week_id,
     startTime: block.start_time,
     endTime: block.end_time,

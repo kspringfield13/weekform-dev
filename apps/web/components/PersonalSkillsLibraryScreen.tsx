@@ -44,7 +44,7 @@ export function PersonalSkillsLibraryScreen() {
             Browse acceleration plays
           </button>
           <Link className={`button button-primary ${styles.action}`} href="/download">
-            Open Weekform for Mac
+            Get Weekform for Mac
           </Link>
         </div>
       </section>

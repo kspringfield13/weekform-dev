@@ -5,6 +5,8 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { WeekformMark } from "@/components/WeekformMark";
+import { WebCompactWindowHandoff } from "@/components/WebCompactWindowHandoff";
+import { WebCompactWorkspace } from "@/components/WebCompactWorkspace";
 import {
   resolveIndividualWorkspaceRoute,
   screenForIndividualWorkspaceRoute,
@@ -12,6 +14,12 @@ import {
   type IndividualSubview,
   type IndividualWorkspaceRoute,
 } from "@/lib/individualWorkspaceRoute";
+import {
+  expandCurrentWebWindow,
+  openCompactWebWindow,
+  restoreFullWebWindowFromHandoff,
+  type WebWindowSurface,
+} from "@/lib/webCompactWindow";
 
 const DESTINATIONS: Array<{
   id: IndividualDestination;
@@ -73,6 +81,14 @@ function NavIcon({ id }: { id: IndividualDestination | "manager" }) {
   return <svg className="web-nav-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[id]}</svg>;
 }
 
+function CompactWindowIcon() {
+  return (
+    <svg className="web-window-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M4 4h16v16H4zM14 4v6h6M4 14h6v6" />
+    </svg>
+  );
+}
+
 export function IndividualWorkspaceShell({
   children,
   greetingName,
@@ -82,6 +98,7 @@ export function IndividualWorkspaceShell({
   managerHref,
   accountActions,
   initialScreen,
+  initialWindowSurface,
 }: {
   children: ReactNode;
   greetingName: string;
@@ -91,12 +108,21 @@ export function IndividualWorkspaceShell({
   managerHref: string;
   accountActions: ReactNode;
   initialScreen: string | undefined;
+  initialWindowSurface: WebWindowSurface;
 }) {
   const initialRoute = resolveIndividualWorkspaceRoute(initialScreen);
   const [active, setActive] = useState<IndividualDestination>(initialRoute.destination);
   const [activeSubview, setActiveSubview] = useState<IndividualSubview>(initialRoute.subview);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [windowSurface, setWindowSurface] = useState<WebWindowSurface>(initialWindowSurface);
+  const [inlineCompactFallback, setInlineCompactFallback] = useState(false);
   const contextTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  useEffect(() => {
+    const route = resolveIndividualWorkspaceRoute(initialScreen);
+    setActive(route.destination);
+    setActiveSubview(route.subview);
+  }, [initialScreen]);
 
   useEffect(() => {
     const applyRoute = (route: IndividualWorkspaceRoute) => {
@@ -119,6 +145,17 @@ export function IndividualWorkspaceShell({
       window.removeEventListener("weekform:web-navigate", handleNavigate);
       window.removeEventListener("popstate", handlePopState);
     };
+  }, []);
+
+  useEffect(() => {
+    const narrowViewport = window.matchMedia("(max-width: 820px)");
+    const collapseForNarrowViewport = (matches: boolean) => {
+      if (matches) setSidebarCollapsed(true);
+    };
+    collapseForNarrowViewport(narrowViewport.matches);
+    const handleChange = (event: MediaQueryListEvent) => collapseForNarrowViewport(event.matches);
+    narrowViewport.addEventListener("change", handleChange);
+    return () => narrowViewport.removeEventListener("change", handleChange);
   }, []);
 
   const navigateToRoute = (route: IndividualWorkspaceRoute) => {
@@ -152,6 +189,55 @@ export function IndividualWorkspaceShell({
     selectContextView(nextIndex);
   };
 
+  const activateCompactWindow = () => {
+    if (openCompactWebWindow()) return;
+    setInlineCompactFallback(true);
+    setWindowSurface("compact");
+  };
+
+  const expandFromCompact = () => {
+    if (inlineCompactFallback) {
+      setInlineCompactFallback(false);
+      setWindowSurface("full");
+      return;
+    }
+    expandCurrentWebWindow();
+  };
+
+  const openFromCompact = (route: IndividualWorkspaceRoute) => {
+    if (inlineCompactFallback) {
+      setInlineCompactFallback(false);
+      setWindowSurface("full");
+      navigateToRoute(route);
+      return;
+    }
+    expandCurrentWebWindow(screenForIndividualWorkspaceRoute(route));
+  };
+
+  if (windowSurface === "handoff") {
+    return (
+      <WebCompactWindowHandoff
+        onRestore={() => restoreFullWebWindowFromHandoff()}
+      />
+    );
+  }
+
+  if (windowSurface === "compact") {
+    return (
+      <WebCompactWorkspace
+        greetingName={greetingName}
+        reliableCapacity={reliableCapacity}
+        reviewCount={reviewCount}
+        inlineFallback={inlineCompactFallback}
+        onExpand={expandFromCompact}
+        onOpenToday={() => openFromCompact({ destination: "today", subview: "today" })}
+        onOpenCapacity={() => openFromCompact({ destination: "week", subview: "capacity" })}
+        onOpenAgent={() => openFromCompact({ destination: "agent", subview: "agent" })}
+        onOpenSettings={() => openFromCompact({ destination: "settings", subview: "settings" })}
+      />
+    );
+  }
+
   return (
     <div
       className={`app web-individual-app${sidebarCollapsed ? " sidebar-collapsed" : ""}`}
@@ -166,7 +252,19 @@ export function IndividualWorkspaceShell({
         <div className="web-toolbar-state" role="status">
           <i aria-hidden="true" /> API-connected · no workload cache
         </div>
-        <div className="web-toolbar-actions">{accountActions}</div>
+        <div className="web-toolbar-actions">
+          <button
+            className="web-toolbar-button web-window-button"
+            type="button"
+            aria-label="Use compact Web window"
+            title="Use compact Web window"
+            onClick={activateCompactWindow}
+          >
+            <CompactWindowIcon />
+            <span>Compact</span>
+          </button>
+          {accountActions}
+        </div>
       </header>
 
       <aside className="sidebar" id="web-primary-sidebar" aria-label="Primary navigation">

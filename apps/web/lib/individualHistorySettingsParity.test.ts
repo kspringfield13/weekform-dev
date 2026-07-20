@@ -32,10 +32,28 @@ test("Web Settings mirrors desktop sections without exposing local-only controls
   }
 
   assert.match(source, /Raw activity stays on your Mac/);
-  assert.match(source, /Open Weekform for Mac/);
+  assert.match(source, /Get Weekform for Mac/);
   assert.match(source, /role="tabpanel"/);
   assert.match(source, /aria-controls=/);
   assert.match(source, /tabIndex=/);
   assert.match(source, /onKeyDown=/);
   assert.doesNotMatch(source, /localStorage|sessionStorage|fetch\(|createClient\(/);
+});
+
+test("Individual Settings Mac handoffs describe acquisition truthfully", () => {
+  const source = existsSync(componentUrl) ? readFileSync(componentUrl, "utf8") : "";
+  const downloadLabels = Array.from(
+    source.matchAll(/<Link\s+[^>]*href=["']\/download["'][^>]*>([\s\S]*?)<\/Link>/g),
+    (match) => (match[1] ?? "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim(),
+  );
+
+  assert.ok(downloadLabels.length > 0, "Settings must retain a visible Mac acquisition path");
+  assert.deepEqual(
+    downloadLabels,
+    downloadLabels.map(() => "Get Weekform for Mac"),
+    "a /download link must describe acquisition, not claim Web can open an installed app or its review surface",
+  );
 });

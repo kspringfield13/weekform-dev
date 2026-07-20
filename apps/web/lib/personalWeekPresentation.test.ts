@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   aggregateReplicaModes,
   aggregateReplicaCategories,
+  capacityForPresentation,
   capacityCoverage,
   displayPercent,
   isElevatedRatioScore,
@@ -27,6 +28,40 @@ test("capacity coverage clamps impossible replica values and always totals 100 p
     }),
     { committedPct: 0, availablePct: 0, protectedPct: 100 },
   );
+});
+
+test("capacity coverage stays visually empty when the current replica has no review-safe signal", () => {
+  assert.deepEqual(
+    capacityCoverage({
+      committedUtilizationPct: 84,
+      reliableNewWorkCapacityPct: 16,
+    }, false),
+    { committedPct: 0, availablePct: 0, protectedPct: 0 },
+  );
+});
+
+test("an empty replica zeroes every capacity field in the presentation model", () => {
+  const source = {
+    allocatedPct: 91,
+    deepWorkPct: 22,
+    fragmentedWorkPct: 18,
+    meetingPct: 31,
+    reactivePct: 29,
+    plannedPct: 62,
+    blockedPct: 12,
+    reliableNewWorkCapacityPct: 9,
+    committedUtilizationPct: 91,
+    carryoverRiskPct: 27,
+    wipLoadScore: 0.42,
+    contextSwitchScore: 0.38,
+    summaryConfidence: 0.93,
+  };
+
+  assert.deepEqual(
+    capacityForPresentation(source, false),
+    Object.fromEntries(Object.keys(source).map((key) => [key, 0])),
+  );
+  assert.equal(capacityForPresentation(source, true), source);
 });
 
 test("safe percent keeps presentation widths finite and bounded", () => {

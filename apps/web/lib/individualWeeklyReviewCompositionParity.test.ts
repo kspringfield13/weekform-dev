@@ -55,7 +55,7 @@ test("Individual Web Review preserves the Desktop close-out composition and acce
   assert.match(webSource, /role=["']status["'][^>]*aria-live=["']polite["']/s);
   assert.match(webSource, /disabled(?:=\{true\}|\s)/);
   assert.match(webSource, /Finish weekly review/);
-  assert.match(webSource, /Mac remains authoritative|Open Weekform for Mac/);
+  assert.match(webSource, /Mac remains authoritative|Get Weekform for Mac/);
   assert.match(webSource, /href=["']\/download["']/);
 });
 

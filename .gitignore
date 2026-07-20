@@ -17,6 +17,8 @@ packages/integrations/src/usage/*.candidate.json
 .absoloop/
 absoloop/
 .vercel
+supabase/.branches/
+supabase/.temp/
 
 # Claude Code workspace (local tooling, not project source)
 .claude/

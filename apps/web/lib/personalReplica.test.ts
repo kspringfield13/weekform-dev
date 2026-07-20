@@ -4,7 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {
+  listOwnReviewCommands,
   listOwnPersonalReplicas,
+  parseReviewCommandRow,
   parsePersonalReplicaRow,
   reviewCommandInput,
 } from "./personalReplica";
@@ -82,6 +84,17 @@ test("web parser accepts a canonical review-safe replica fixture", () => {
   assert.equal(parsed.replicaId, "personal-2026-W30");
   assert.equal(parsed.payload.blocks[0]?.blockId, "block-1");
   assert.equal(parsed.payload.capacity.reliableNewWorkCapacityPct, 28);
+});
+
+test("web parser accepts PostgREST timestamp precision for the database-owned sync time", () => {
+  for (const syncedAt of [
+    "2026-07-20T12:01:00+00:00",
+    "2026-07-20T12:01:00.123456+00:00",
+  ]) {
+    const row = validReplicaRow();
+    row.synced_at = syncedAt;
+    assert.ok(parsePersonalReplicaRow(row));
+  }
 });
 
 test("web parser rejects non-canonical or impossible replica timestamps", () => {
@@ -273,6 +286,109 @@ test("review command input rejects malformed identifiers before the RPC boundary
     assert.equal(reviewCommandInput(input), null);
   }
 });
+
+test("Web accepts only the review-command lifecycle allowlist", () => {
+  const row = {
+    command_id: "019c6e27-e55b-73d1-87d8-4e01f1f75043",
+    block_id: "block-1",
+    week_id: "2026-W29",
+    expected_revision: "0123456789abcdef",
+    action: "confirm",
+    status: "pending",
+    created_at: "2026-07-20T12:00:00.000Z",
+    decided_at: null,
+  };
+  assert.deepEqual(parseReviewCommandRow(row), {
+    commandId: row.command_id,
+    blockId: "block-1",
+    weekId: "2026-W29",
+    expectedRevision: "0123456789abcdef",
+    action: "confirm",
+    status: "pending",
+    createdAt: row.created_at,
+    decidedAt: null,
+  });
+  assert.equal(parseReviewCommandRow({ ...row, decision_reason: "private detail" }), null);
+  assert.equal(parseReviewCommandRow({ ...row, status: "unknown" }), null);
+  assert.equal(parseReviewCommandRow({ ...row, decided_at: "not-a-date" }), null);
+  assert.equal(parseReviewCommandRow({ ...row, command_id: "not-a-uuid" }), null);
+  assert.ok(parseReviewCommandRow({ ...row, created_at: "2026-07-20T12:00:00+00:00" }));
+  assert.ok(parseReviewCommandRow({ ...row, created_at: "2026-07-20T12:00:00.123456+00:00" }));
+  assert.equal(parseReviewCommandRow({ ...row, created_at: "2026-02-30T12:00:00.000Z" }), null);
+  assert.equal(parseReviewCommandRow({
+    ...row,
+    status: "applied",
+    decided_at: "2026-07-20T11:59:59.000Z",
+  }), null);
+});
+
+test("review-command loading fails closed instead of hiding malformed lifecycle state", async () => {
+  const canonical = {
+    command_id: "019c6e27-e55b-73d1-87d8-4e01f1f75043",
+    block_id: "block-1",
+    week_id: "2026-W29",
+    expected_revision: "0123456789abcdef",
+    action: "confirm",
+    status: "applied",
+    created_at: "2026-07-20T12:00:00.000Z",
+    decided_at: "2026-07-20T12:05:00.000Z",
+  };
+  const client = (data: unknown, error: { message?: string } | null = null) => ({
+    from() { return { select() { return { eq() { return { order() { return { limit: async () => ({ data, error }) }; } }; } }; } }; },
+  });
+
+  const success = await listOwnReviewCommands(client([canonical]), "2026-W29");
+  assert.equal(success.error, null);
+  assert.equal(success.commands[0]?.status, "applied");
+
+  const invalid = await listOwnReviewCommands(client([{ ...canonical, raw_evidence: "secret" }]), "2026-W29");
+  assert.deepEqual(invalid, {
+    commands: [],
+    error: "Weekform Web received invalid review-request status data. Reload after your Mac syncs again.",
+  });
+
+  const wrongWeek = await listOwnReviewCommands(client([
+    { ...canonical, week_id: "2026-W28" },
+  ]), "2026-W29");
+  assert.deepEqual(wrongWeek, invalid);
+
+  const failed = await listOwnReviewCommands(client(null, { message: "private postgres diagnostic" }), "2026-W29");
+  assert.deepEqual(failed, {
+    commands: [],
+    error: "Weekform Web could not load review-request status. Reload this page or check your connection.",
+  });
+  assert.doesNotMatch(failed.error ?? "", /postgres|private diagnostic/i);
+
+  const overflow = await listOwnReviewCommands(client(Array.from({ length: 101 }, () => canonical)), "2026-W29");
+  assert.deepEqual(overflow, {
+    commands: [],
+    error: "Weekform Web received too many review-request statuses to validate safely. Resolve pending requests on your Mac, then reload.",
+  });
+
+  const duplicateId = await listOwnReviewCommands(client([
+    canonical,
+    { ...canonical, status: "rejected", decided_at: "2026-07-20T12:06:00.000Z" },
+  ]), "2026-W29");
+  assert.deepEqual(duplicateId, {
+    commands: [],
+    error: "Weekform Web received invalid review-request status data. Reload after your Mac syncs again.",
+  });
+
+  const duplicatePending = await listOwnReviewCommands(client([
+    { ...canonical, status: "pending", decided_at: null },
+    {
+      ...canonical,
+      command_id: "019c6e27-e55b-73d1-87d8-4e01f1f75044",
+      status: "pending",
+      decided_at: null,
+    },
+  ]), "2026-W29");
+  assert.deepEqual(duplicatePending, {
+    commands: [],
+    error: "Weekform Web received invalid review-request status data. Reload after your Mac syncs again.",
+  });
+});
+
 
 test("migration pins private realtime, idempotent batches, devices, cursors, and command RPCs", () => {
   const sql = fs.readFileSync(

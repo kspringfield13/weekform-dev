@@ -7,9 +7,13 @@ import type {
 } from "../../../../packages/domain/src/models";
 import { plannedStatuses, workCategories, workModes } from "../../../../packages/domain/src/taxonomy";
 import { analyzeCorrections } from "../../../../packages/inference/src/capacity";
+import {
+  externalSafeCorrections,
+  externalSafeWorkBlock,
+} from "../../../../packages/inference/src/externalWorkBlock";
 import { summarizeSessionForPrompt, summarizeVisualInsightForPrompt } from "./promptSummaries";
 
-export const WORK_BLOCK_CLASSIFIER_PROMPT_VERSION = "weekform-work-block-classifier-v4";
+export const WORK_BLOCK_CLASSIFIER_PROMPT_VERSION = "weekform-work-block-classifier-v5";
 
 // How many systematic biases to surface as few-shot relabel hints. The analysis
 // already sorts by frequency and applies a repeat threshold, so the top handful are
@@ -73,14 +77,15 @@ export function buildWorkBlockClassifierPrompt({
   calendarEvents: OutlookCalendarEvent[];
   corrections: UserCorrection[];
 }) {
-  const recentCorrections = [...corrections]
+  const safeCorrections = externalSafeCorrections(corrections, existingBlocks);
+  const recentCorrections = [...safeCorrections]
     .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
     .slice(0, 40);
 
   // Distill the user's correction history into the strongest systematic relabels and
   // present them as explicit pre-apply hints. These carry only taxonomy/label values
   // (category, mode, planned status, stakeholder, blocker) — never titles or app names.
-  const learnedLabelCorrections = analyzeCorrections(corrections)
+  const learnedLabelCorrections = analyzeCorrections(safeCorrections)
     .biases.slice(0, MAX_LEARNED_LABEL_HINTS)
     .map((bias) => ({
       field: bias.field,
@@ -130,7 +135,7 @@ export function buildWorkBlockClassifierPrompt({
           sessions.some((session) => session.session_id === insight.session_id)
       )
       .map(summarizeVisualInsightForPrompt),
-    existing_work_blocks: sortByStartTime(existingBlocks).map(summarizeExistingBlock),
+    existing_work_blocks: sortByStartTime(existingBlocks).map(externalSafeWorkBlock).map(summarizeExistingBlock),
     outlook_calendar_context: sortByStartTime(calendarEvents).map(summarizeCalendarEvent),
     recent_user_corrections: recentCorrections.map(summarizeCorrection),
     learned_label_corrections: learnedLabelCorrections,

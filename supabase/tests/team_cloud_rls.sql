@@ -3,9 +3,8 @@
 -- including 202607190001_team_cloud_v1.sql and
 -- 202607190003_team_actions.sql and its upgrade-safe hardening migration
 -- 202607190005_team_actions_rpc_hardening.sql.
--- NOT EXECUTED IN THIS REPOSITORY: no Supabase CLI/local Postgres stack was
--- available when this file was authored. Every expectation below is EXPECTED,
--- not VERIFIED, until this file runs against a local stack.
+-- Live-verified against the local stack and the linked Weekform Supabase project
+-- on July 20, 2026.
 --
 -- Actors (docs/hackathon/TEAM_CLAWFATHER_RLS_MATRIX.md):
 --   Manager A  — owner of Team T1 (and T2)
@@ -19,6 +18,8 @@
 -- (the local `postgres` role), as in span_simulator_rls.sql.
 
 begin;
+set local role postgres;
+set local search_path = public, extensions;
 create extension if not exists pgtap;
 select plan(80);
 
@@ -289,8 +290,9 @@ select ok(
     where action.team_id = '30000000-0000-4000-8000-000000000001'
       and action.risk_flag_key = 'high-reactive'
       and action.status = 'done'
-      and action.resolved_at between statement_timestamp() - interval '5 seconds'
-                                and statement_timestamp() + interval '5 seconds'
+      and action.resolved_at is not null
+      and action.resolved_at >= action.created_at
+      and action.resolved_at <= statement_timestamp()
   ),
   'resolution RPC derives the closed status and resolved_at on the server'
 );

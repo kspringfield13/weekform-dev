@@ -80,6 +80,11 @@ test("/app restores a validated Desktop-equivalent screen from the URL", () => {
     /resolveIndividualWorkspaceRoute\(initialScreen\)/,
     "the shell must validate URL state through the shared route contract",
   );
+  assert.match(
+    individualShellSource,
+    /useEffect\(\(\) => \{[\s\S]*?resolveIndividualWorkspaceRoute\(initialScreen\)[\s\S]*?setActive\([\s\S]*?setActiveSubview\([\s\S]*?\}, \[initialScreen\]\)/,
+    "the preserved client shell must reconcile its visible surface when a Next query-link supplies a new initialScreen",
+  );
 });
 
 test("Individual workspace navigation remains addressable through browser history", () => {

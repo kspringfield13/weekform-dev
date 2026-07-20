@@ -83,7 +83,13 @@ export function dedupeChatCallsAgainstCalendar(
 ): ChatCallDedupResult {
   // Compute the calendar meeting spans once up front (O(calls × meetings) total).
   const meetingSpans = existingBlocks
-    .filter((block) => block.category === MEETING_CATEGORY)
+    // Category alone is not provenance: a manually-entered meeting must not
+    // suppress a distinct observed chat call. Calendar mappers own this stable
+    // work-block prefix across Outlook, Google, and Apple sources.
+    .filter(
+      (block) =>
+        block.category === MEETING_CATEGORY && block.work_block_id.startsWith("calendar-")
+    )
     .map(blockSpan)
     .filter((span): span is Span => span !== null);
 

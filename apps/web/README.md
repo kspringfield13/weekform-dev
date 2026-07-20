@@ -47,10 +47,10 @@ cp .env.example .env.local   # then fill in your Supabase values
 npm run dev                  # http://localhost:3000
 ```
 
-Environment variables. Every page, server action, and query uses only the
-publishable URL/anon key plus the signed-in user's cookie session — the
-**only** secret/service key in this app is the optional one below, and it is
-read in exactly one server route handler:
+Environment variables. Account, team, and workload pages use only the
+publishable URL/anon key plus the signed-in user's cookie session. Two optional
+server-only boundaries use secrets: signed artifact delivery and the Webex
+OAuth token broker. Neither secret is bundled into browser or desktop code.
 
 | Variable | Purpose |
 | --- | --- |
@@ -60,6 +60,10 @@ read in exactly one server route handler:
 | `WEEKFORM_ARTIFACT_PATH` | Optional. Object path within that bucket, e.g. `releases/Weekform_0.1.0_universal.dmg` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Optional, **secret**. Used only in `app/download/artifact/route.ts` to mint short-lived signed URLs; never sent to the browser |
 | `WEEKFORM_ARTIFACT_SIGNED_URL_TTL_SECONDS` | Optional. Signed-URL lifetime in seconds; defaults to 300, clamped to 30-3600 |
+| `WEBEX_CHAT_CLIENT_ID` | Optional. Must match the public client ID configured in the Mac build |
+| `WEBEX_CHAT_CLIENT_SECRET` | Optional, **secret**. Used only in `app/api/oauth/webex/token/route.ts` for Webex token exchange/refresh |
+| `WEBEX_CHAT_REDIRECT_URI` | Optional. Exact registered loopback callback, normally `http://127.0.0.1:49323/chat-auth/callback` |
+| `WEBEX_CHAT_BROKER_SECURITY_VERIFIED` | Operational attestation. Set to exactly `true` only after deployed rate limiting and credential-safe request/proxy/observability logging are verified; otherwise the broker returns 503 |
 
 Supabase dashboard configuration expected at runtime:
 
@@ -131,6 +135,40 @@ configured.
   then either 307-redirects to a freshly minted signed Supabase Storage URL
   (when the artifact env vars are configured) or returns an honest 503
   explaining the fallback (when they are not)
+- `/api/oauth/webex/token` — optional server-to-server OAuth boundary used by
+  the native Mac app. It accepts only a fixed-client authorization-code/PKCE or
+  refresh request, adds the server-only Webex secret, and returns an allowlisted
+  no-store token response. It never receives Chat messages or workload data.
+
+## Webex Chat token broker
+
+Webex requires the registered integration secret during authorization-code and
+refresh exchanges, including PKCE flows, so that secret cannot ship in the Mac
+app. To enable the connector:
+
+1. Register a Webex Integration with the exact loopback redirect configured in
+   `WEBEX_CHAT_REDIRECT_URI` and the read-only room, message, people, and KMS
+   scopes.
+2. Set the client id, secret, and redirect `WEBEX_CHAT_*` variables on this server. Configure the desktop
+   with the same public client id and
+   `WEEKFORM_CHAT_OAUTH_BROKER_URL=https://<site-origin>/api`; the Mac appends
+   `/oauth/webex/token`.
+3. Add deployment-level rate limiting for this route and ensure request bodies,
+   authorization codes, and token responses are excluded from application,
+   proxy, and observability logs.
+4. After verifying both controls in the deployed environment, set
+   `WEBEX_CHAT_BROKER_SECURITY_VERIFIED=true` on the broker and in the native
+   release configuration. The broker and native connector otherwise remain
+   unavailable even when the client id, secret, redirect, and URL are present.
+5. Exercise initial authorization, refresh, disconnect, expiry, denial, and
+   rate-limit paths against a non-production Webex account before presenting
+   the connector as live-proven.
+
+The route is intentionally independent of a weekform.com account session: the
+native app is bound by the one-time authorization code, state, PKCE verifier,
+fixed client id, and fixed redirect. The broker processes credentials/tokens
+only; the Mac calls Webex message APIs directly and performs the content-free
+projection locally.
 
 ## Teams and invitations
 

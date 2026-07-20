@@ -1,10 +1,12 @@
 -- pgTAP contract for 202607190007_personal_replica_sync.sql.
--- Intended for `supabase test db`. Not executed in this repository because the
--- Supabase CLI/local stack is unavailable; expectations are not live proof yet.
+-- Live-verified with `supabase test db` against the local stack and the linked
+-- Weekform Supabase project on July 20, 2026.
 
 begin;
+set local role postgres;
+set local search_path = public, extensions;
 create extension if not exists pgtap;
-select plan(27);
+select plan(32);
 
 select has_table('public', 'weekform_devices', 'device registry exists');
 select has_table('public', 'personal_replica_batches', 'idempotent batch receipts exist');
@@ -81,6 +83,18 @@ select lives_ok(
   'A can queue a revision-bound command for their own replica'
 );
 select is((select count(*)::integer from public.review_commands where status = 'pending'), 1, 'A sees one pending command');
+select is(
+  public.queue_review_command('block-1','2026-W29','fedcba9876543210','confirm',null),
+  (select command_id from public.review_commands where block_id = 'block-1' and status = 'pending'),
+  'an identical retry returns the existing pending request id'
+);
+select is((select count(*)::integer from public.review_commands where status = 'pending'), 1, 'an identical retry does not create a duplicate');
+select throws_ok(
+  $$ select public.queue_review_command('block-1','2026-W29','fedcba9876543210','exclude',null) $$,
+  'P0001',
+  'another review request is already pending for this block revision',
+  'a contradictory request fails loudly while approval is pending'
+);
 
 select throws_ok(
   $$ update public.review_commands set status = 'applied' where block_id = 'block-1' $$,
@@ -100,6 +114,11 @@ select lives_ok(
   'registered Mac can complete the command'
 );
 select is((select count(*)::integer from public.review_commands where status = 'applied'), 1, 'command lifecycle is server-owned');
+select lives_ok(
+  $$ select public.queue_review_command('block-1','2026-W29','fedcba9876543210','exclude',null) $$,
+  'a terminalized request allows a new pending decision'
+);
+select is((select count(*)::integer from public.review_commands where status = 'pending'), 1, 'only the new decision is pending');
 
 set local "request.jwt.claim.sub" = '71000000-0000-4000-8000-000000000002';
 select is((select count(*)::integer from public.personal_workload_replicas), 0, 'B cannot enumerate A replicas');

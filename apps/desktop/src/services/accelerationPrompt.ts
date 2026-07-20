@@ -1,6 +1,7 @@
-import type { AccelerationSignal } from "../../../../packages/domain/src/models";
+import type { AccelerationSignal, WorkBlock } from "../../../../packages/domain/src/models";
+import { externalSafeAccelerationSignal } from "../../../../packages/inference/src/externalWorkBlock";
 
-export const ACCELERATION_PROMPT_VERSION = "weekform-acceleration-v1";
+export const ACCELERATION_PROMPT_VERSION = "weekform-acceleration-v2";
 
 /**
  * Build the Acceleration synthesis prompt from the deterministic miner's output.
@@ -28,10 +29,12 @@ function summarizeSignal(signal: AccelerationSignal) {
 
 export function buildAccelerationPrompt({
   weekRangeLabel,
-  signals
+  signals,
+  blocks,
 }: {
   weekRangeLabel: string;
   signals: AccelerationSignal[];
+  blocks: WorkBlock[];
 }) {
   const context = {
     product: "Weekform",
@@ -49,7 +52,9 @@ export function buildAccelerationPrompt({
     observed_week: {
       display_range: weekRangeLabel
     },
-    acceleration_signals: signals.map(summarizeSignal),
+    acceleration_signals: signals
+      .map((signal) => externalSafeAccelerationSignal(signal, blocks))
+      .map(summarizeSignal),
     output_rules: {
       automate:
         "For type 'automate', author a concrete, runnable skill recipe (clear ordered imperative steps grounded in the cited app flow) in the `recipe` field; leave `recommended_tools` empty. Also author it as a reusable Agent Skill in SKILL.md format: set `skill_name` to a short hyphenated slug (lowercase, only a-z, 0-9, and hyphens; e.g. 'weekly-revenue-report'), and `skill_description` to one or two sentences, in the third person, describing what the skill does AND when to use it (the triggering condition) so it can be matched later — keep it under ~300 characters.",

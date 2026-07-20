@@ -10,6 +10,7 @@ The desktop app can collect:
 - front-window title
 - capture timestamp
 - optionally imported or live-synced Outlook, Google, and Apple calendar metadata
+- optionally live-synced, content-free attention evidence from Slack, Google Chat, or Webex
 - user corrections, exclusions, and confirmations
 - derived activity sessions, work blocks, forecasts, and narratives
 - an audit trail of collection and review events
@@ -57,6 +58,163 @@ reset boundaries emit local audit records without storing credentials. Reset
 Local Data attempts to remove all three calendar connection records from
 Keychain in addition to clearing imported calendar events.
 
+## Chat Sources
+
+The three live Chat connection options are exactly **Slack, Google Chat, and
+Webex**. They are optional, individual-account sources controlled in Weekform
+for Mac; weekform.com does not expose source-connection controls. Legacy
+Weekform-normalized Microsoft Teams JSON remains readable as a local,
+import-only compatibility path. Teams is not a fourth live connector.
+
+Each live connector uses a user-selected inclusive range capped at 90 days; the
+default covers the prior 14 days through today. Transfers are manual and
+bounded, not continuous background monitoring. Receipts report complete,
+scope-limited, partial, rate-limited, or permission-limited coverage. Resumable
+pages may add canonical, content-free evidence locally, but they do not enter
+the workload model until an intact run that began at the first page finishes.
+Only that intact completion updates the displayed last-successful sync time. A
+resumable page is labeled as retained/in progress; a terminal rate-limit,
+permission, malformed, or orphaned receipt is labeled incomplete and leaves the
+previous successful time unchanged.
+
+Provider reconciliation follows the receipt rather than assuming every empty
+result proves absence:
+
+- Slack reads top-level history from the user's currently listed,
+  non-archived conversations. It does not call the separate thread-replies
+  endpoint. Even an intact Slack run is therefore scope-limited, applies
+  additively, and never removes existing Slack evidence based on absence.
+- A completed, intact Google Chat or Webex run can authoritatively reconcile
+  that provider inside the requested range, including removing missing,
+  unreviewed evidence. A documented empty Google Chat message-list object is a
+  valid empty collection, not a malformed response. Other providers and dates
+  remain untouched.
+- Partial, interrupted, permission-limited, or orphaned runs have no deletion
+  authority. User-confirmed blocks and explicit exclusions remain reviewed
+  truth under every receipt state.
+
+Provider APIs can return message content and account/conversation details while
+answering an authorized request. The Rust process minimally inspects the fields
+needed to distinguish the authorized user, a direct message or explicit
+mention, and a self-sent action. Before anything crosses into React, it projects
+the result into a versioned, content-free contract and drops ambient inbound
+traffic. The retained local contract contains only salted hashes for event and
+conversation/thread correlation, timestamp, a local provider tag, coarse
+surface and participant-count bucket when available, direction, attention
+grade, revision state, and coverage receipt.
+
+Message bodies, attachments, URLs, workspace/space/channel/room names, people
+names and email addresses, raw provider identifiers, and exact participant
+counts are discarded at the native boundary. The normalized JSON import path
+applies the same ambient and display-name discard boundary before it creates
+workload evidence. Discarded fields are not persisted, included in a Weekform
+export, sent to an AI provider, placed in audit records, or shared with Web or
+Manager Access. Canonical content-free Chat evidence can be included in the
+user-triggered local full-data backup. A random salt held in macOS Keychain
+scopes its hashes to this installation; the raw identifiers are not retained
+alongside those hashes.
+
+The local transformation is deliberately attention-based, not volume-based:
+
+1. Ambient inbound channel/space traffic is discarded at the native or import
+   boundary. It cannot affect workload, and Weekform does not score message
+   volume, availability, after-hours activity, or response speed.
+2. An inbound direct message or explicit mention without a safely correlated
+   self action becomes one local 0%-capacity review card. It cannot affect
+   capacity, confidence, focus overlap, acceleration patterns, or
+   manager-visible review counts unless the user assigns measured time and
+   confirms it.
+3. Live adapters currently produce directed inbound and observed self-sent
+   message evidence. A self-sent action correlated to the same direct-message
+   context or explicit thread within the bounded response window becomes a
+   reactive response episode; an uncorrelated self-sent burst becomes proactive
+   coordination. Response latency is never converted into work time. Nearby
+   observed actions are sessionized, and the deterministic prototype window
+   starts five minutes before the first observed action and ends one minute
+   after the last. That is modeled time, not a claim of continuous activity.
+4. The broader normalized compatibility contract can represent a self reaction
+   or joined call, and the legacy JSON importer can map explicit call/huddle
+   records into collaborative meeting blocks. The current live message adapters
+   do not collect reactions, huddles, or call attendance. Calendar provenance
+   is required before an imported Chat call can be deduplicated as the same
+   meeting.
+5. The user can correct, confirm, annotate, or exclude every resulting work
+   block through the existing review flow.
+
+On load or upgrade, persisted Chat evidence is revalidated against explicit
+field and value allowlists. Legacy provider-bearing raw events are reduced to
+generic `Workplace chat` evidence, and unreviewed auto-generated conversation
+labels are replaced with generic response, coordination, call, or directed-card
+labels. User-confirmed corrections remain reviewed truth and are not silently
+rewritten by that migration.
+
+Canonical Chat evidence and sync receipts are not included in AI requests. Once
+that evidence becomes a work block, every AI serializer projects it through the
+same external-safe boundary: the provider and canonical hashes are removed;
+source evidence and notes are replaced or omitted; labels become generic; and
+the local block id becomes a stable opaque `wfb-...` id. Corrections use the
+same mapping. Returned ids are resolved to local blocks on the Mac and unknown
+or provider-bearing ids fail closed. The generic derived block can then
+participate in optional classification, forecast, narrative, Review Copilot,
+or Agent context under the AI controls below; source identity is not added back.
+
+If the user separately enables the private Weekform Web replica, a derived Chat
+work block can enter that review-safe block contract only under its opaque id
+and fixed workload fields. The replica has no provider, hashes, receipt,
+conversation, person, project/stakeholder label, evidence, notes, or message
+content. Web review commands refer to the opaque id and still require approval
+on the Mac.
+
+Manager sharing is a separate, explicit boundary. A manager can receive only
+the exact allowlisted aggregate workload fields in the member-previewed and
+member-approved snapshot. Zero-capacity directed cards are excluded even from
+its review-coverage counts. Provider, workspace, conversation, person, Chat
+event timing, response-pattern, and volume details are never manager snapshot
+fields.
+
+Slack uses user-scoped authorization-code OAuth with PKCE over a loopback
+callback; the registered Slack app must be configured to issue rotating refresh
+tokens because the native client does not carry a client secret. Google Chat
+uses Google's installed-app authorization-code flow with PKCE and a loopback
+callback, requesting `chat.spaces.readonly` and `chat.messages.readonly` plus
+identity. Google classifies `chat.messages.readonly` as restricted, so a
+production OAuth app can require verification. Slack and Google token exchange
+and refresh occur directly between the Mac and the provider.
+
+Webex also uses authorization code with PKCE, but Webex requires the registered
+integration's confidential secret at token exchange and refresh. The Mac sends
+only the authorization or refresh credential to the configured HTTPS Weekform
+broker; the broker adds the server-only secret, exchanges with Webex, allowlists
+the token response, and returns it with `no-store`. Chat messages and canonical
+Chat evidence never transit that broker or weekform.com. Only the optional
+provider-free derived replica and separate approved aggregate snapshot can
+reach weekform.com under the boundaries above. A production broker still needs
+deployment-level rate limiting and monitoring that never logs credential
+bodies. The broker fails closed with 503 until operators explicitly attest both
+controls with `WEBEX_CHAT_BROKER_SECURITY_VERIFIED=true`; the flag records an
+operational verification and does not implement either control by itself.
+
+Refresh tokens, provider self identifiers, bounded pagination cursors, and the
+hash salt live in macOS Keychain and are excluded from React app state and
+Weekform exports. On the Mac, access tokens are held only for the native
+provider request.
+Disconnect removes the selected provider's local token and cursor and stops
+future Weekform transfers; it retains already derived evidence for review and
+does not revoke the provider-side grant. Users can revoke that grant in the
+provider's own account controls. Raw-evidence retention expires canonical Chat
+evidence and derived Chat raw events while leaving reviewable work blocks.
+Reset Local Data clears Chat evidence and work blocks and attempts to remove all
+Chat credentials, cursors, and the hash salt; a failed durable cleanup is
+reported as requiring a retry. No admin or compliance token is supported.
+
+The connector contracts, projection tests, builds, and local UI can be verified
+without provider credentials. A live Slack, Google Chat, or Webex authorization
+and transfer was not exercised in this development environment. Production
+readiness therefore still requires registered provider applications, Google
+OAuth verification where applicable, a deployed and rate-limited Webex token
+broker, and account-level transfer tests against each provider's current API
+and retention limits.
+
 ## AI and OpenAI/Codex Data
 
 OpenAI is Weekform's default and recommended AI provider. AI is optional and supports two distinct connection boundaries:
@@ -102,7 +260,9 @@ Desktop Google and GitHub sign-in opens the provider flow in the system browser 
 
 The private Web workspace is a separate contract from team sharing. After the signed-in user explicitly enables it, the Mac registers a device id and uploads idempotent, cursor-receipted batches containing `PersonalWorkloadReplicaV1`. That allowlist contains only week ids, block ids, times, capacity percentage, category, work mode, planned status, confidence, reviewed/blocker flags, deterministic revisions, and derived capacity metrics. It cannot contain raw samples, sessions, app/window titles, evidence, notes, project or stakeholder names, calendar/chat details, screenshots, audit detail, AI outputs, or credentials. Offline batches remain in the local cloud envelope until a later successful sync; a newer unsent revision replaces an older revision for the same week.
 
-Web review actions create `review_commands`; they do not mutate the replica or desktop state. The Mac polls pending commands while open and shows Approve on Mac and Reject controls. Approval applies only a closed set of confirm, exclude, category, mode, planned-status, and blocker changes. Every command carries the block revision it was created against; stale commands become visible conflicts rather than overwriting newer local work. Applied changes enter the normal local correction and audit path, then the next derived replica sync reflects the result.
+Web review actions create `review_commands`; they do not mutate the replica or desktop state. The Mac polls pending commands while open and shows Approve on Mac and Reject controls. Approval applies only a closed set of confirm, exclude, category, mode, planned-status, and blocker changes. Every command carries the block revision it was created against; stale commands become visible conflicts rather than overwriting newer local work. At most one request can remain pending for the same user, week, block, and revision; identical retries return that request, while contradictory retries fail visibly. Applied changes enter the normal local correction and audit path, then the next derived replica sync reflects the result.
+
+Today’s **Confirm all** uses the same approval boundary. Web sends one bounded batch of at most 50 block id, week id, and expected-revision triples; it cannot supply the action, patch, identity, status, or timestamps. A security-definer RPC validates the complete batch against the signed-in user’s current unverified replica before writing any request, so stale, malformed, duplicate, or unauthorized targets fail the whole batch without partial requests. Identical confirm retries return the existing request ids. The Mac still decides whether to apply each request and remains the only writer of local correction and audit truth.
 
 To share anything, the user must, in order: sign in with the account created on weekform.com; select exactly one recipient team they belong to; turn sharing on; choose a share level and individual metric toggles (and, at the "projects" level, an explicit project-name allowlist); review the **exact JSON payload** that will be uploaded; and record consent. Only then does a manually approved "Sync Now" upload one `SharedWorkloadSnapshotV1` row — a versioned, allowlist-built weekly summary produced by `packages/inference/src/sharedSnapshot.ts`. The preview and the upload are the same object; a disabled metric is omitted, never sent as zero. Changing the recipient team or the shared fields clears the recorded consent and requires a new review.
 

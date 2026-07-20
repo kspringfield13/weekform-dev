@@ -32,6 +32,7 @@ use tauri::{
 };
 
 mod calendar_sources;
+mod chat_sources;
 
 const MAIN_WINDOW_LABEL: &str = "main";
 const COMPACT_WINDOW_WIDTH: u32 = 620;
@@ -2990,6 +2991,11 @@ pub fn run() {
             calendar_sources::connect_calendar_source,
             calendar_sources::sync_calendar_source,
             calendar_sources::disconnect_calendar_source,
+            chat_sources::chat_source_statuses,
+            chat_sources::connect_chat_source,
+            chat_sources::sync_chat_source,
+            chat_sources::disconnect_chat_source,
+            chat_sources::clear_chat_source_storage,
             present_main_window,
             chat_with_agent,
             ai_complete,

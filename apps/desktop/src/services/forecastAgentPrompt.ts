@@ -5,9 +5,13 @@ import type {
   WeeklyCapacitySnapshot,
   WorkBlock
 } from "../../../../packages/domain/src/models";
+import {
+  externalSafeCorrections,
+  externalSafeWorkBlock,
+} from "../../../../packages/inference/src/externalWorkBlock";
 import { summarizeSessionForPrompt } from "./promptSummaries";
 
-export const FORECAST_AGENT_PROMPT_VERSION = "weekform-forecast-agent-v2";
+export const FORECAST_AGENT_PROMPT_VERSION = "weekform-forecast-agent-v3";
 
 function sortByStartTime<T extends { start_time: string }>(items: T[]) {
   return [...items].sort((left, right) => new Date(left.start_time).getTime() - new Date(right.start_time).getTime());
@@ -75,7 +79,7 @@ export function buildForecastAgentPrompt({
   calendarEvents: OutlookCalendarEvent[];
   corrections: UserCorrection[];
 }) {
-  const recentCorrections = [...corrections]
+  const recentCorrections = externalSafeCorrections(corrections, blocks)
     .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
     .slice(0, 50);
   const context = {
@@ -100,7 +104,7 @@ export function buildForecastAgentPrompt({
       display_range: nextWeekRangeLabel
     },
     weekly_capacity_snapshot: snapshot,
-    current_work_blocks: sortByStartTime(blocks).map(summarizeBlock),
+    current_work_blocks: sortByStartTime(blocks).map(externalSafeWorkBlock).map(summarizeBlock),
     active_window_sessions: sortByStartTime(activeWindowSessions).map(summarizeSessionForPrompt),
     outlook_calendar_events: sortByStartTime(calendarEvents).map(summarizeCalendarEvent),
     recent_user_corrections: recentCorrections.map(summarizeCorrection),

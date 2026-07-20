@@ -2,6 +2,8 @@
 -- Intended for `supabase test db` after all migrations are applied.
 
 begin;
+set local role postgres;
+set local search_path = public, extensions;
 create extension if not exists pgtap;
 create extension if not exists pgcrypto;
 select plan(10);
@@ -87,7 +89,7 @@ select throws_ok(
   'authenticated users cannot grant themselves simulator access'
 );
 
-reset role;
+set local role postgres;
 delete from private.simulator_admins
 where user_id = '11000000-0000-0000-0000-000000000001';
 set local role authenticated;

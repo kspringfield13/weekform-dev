@@ -1,7 +1,6 @@
 import type { PersonalWorkloadReplicaV1 } from "../../../packages/domain/src/personalCloud";
 
 const MAX_QUESTION_LENGTH = 600;
-const MAX_ANSWER_LENGTH = 6_000;
 
 export interface PersonalAgentContext {
   weekId: string;
@@ -101,10 +100,67 @@ export function buildPersonalAgentContext(replica: PersonalWorkloadReplicaV1): P
   };
 }
 
-const ACTION_INTENT = /^(?:(?:please|can you|could you|would you|go ahead and|i want you to)\s+)?(?:delete|reset|exclude|relabel|confirm|approve|classify|capture|connect|disconnect|pause|resume|generate (?:a )?(?:forecast|summary|narrative)|change|update|edit)\b/i;
+const ACTION_VERB = String.raw`(?:delete|remove|clear|wipe|erase|purge|reset|undo|add|create|mark|move|reschedule|schedule|cancel|enable|disable|toggle|switch|test|turn\s+off|stop\s+tracking|include|exclude|relabel|rename|confirm|approve|classify|capture|connect|disconnect|pause|resume|dismiss|share|export|import|publish|send|set|assign|archive|restore|save|make|generate\s+(?:a\s+)?(?:forecast|summary|narrative)|change|update|edit)`;
+const ACTION_VERB_END = String.raw`${ACTION_VERB}(?=\s|[.!?,;:]|$)`;
+const DIRECT_ACTION_INTENT = new RegExp(
+  String.raw`^\s*(?:(?:please|go\s+ahead\s+and)\s+)?${ACTION_VERB_END}`,
+  "i",
+);
+const REQUESTED_ACTION_INTENT = new RegExp(
+  String.raw`\b(?:` +
+    String.raw`(?:please\s+)?(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:help\s+me\s+(?:to\s+)?|go\s+ahead\s+and\s+|try\s+to\s+)?|` +
+    String.raw`please\s+|go\s+ahead\s+and\s+|` +
+    String.raw`i\s+(?:want|need|would\s+like)\s+(?:you\s+)?to\s+` +
+  String.raw`)${ACTION_VERB_END}`,
+  "i",
+);
+const HELP_ACTION_INTENT = new RegExp(
+  String.raw`\bhelp\s+me\s+(?:to\s+)?${ACTION_VERB_END}`,
+  "i",
+);
+const MIND_ACTION_INTENT = /\bwould\s+you\s+mind\s+(?:deleting|removing|clearing|wiping|erasing|purging|resetting|undoing|adding|creating|marking|moving|rescheduling|scheduling|canceling|cancelling|enabling|disabling|turning\s+off|stopping\s+tracking|including|excluding|relabeling|renaming|confirming|approving|classifying|capturing|connecting|disconnecting|pausing|resuming|dismissing|sharing|exporting|importing|publishing|sending|setting|assigning|archiving|restoring|saving|making|generating\s+(?:a\s+)?(?:forecast|summary|narrative)|changing|updating|editing)\b/i;
+const ADVISORY_INTENTS = [
+  /\bshare\s+(?:with\s+me\s+)?your\s+(?:assessment|analysis|opinion|view|thoughts?|recommendations?)\b/i,
+  /\bshare\b[^.!?]{0,120}\bwith\s+me\b/i,
+  /\bsend\s+me\s+(?:your|the)\s+(?:assessment|analysis|opinion|view|thoughts?|recommendations?|evidence|explanation|breakdown)\b/i,
+  /\bset\s+out\s+(?:the\s+)?(?:assessment|analysis|evidence|reasons?|case|options?)\b/i,
+  /\bmake\s+sense\s+of\b/i,
+  /\bmake\s+(?:me\s+)?a?\s*recommendation\b/i,
+  /\bcreate\s+(?:me\s+)?a?\s*(?:breakdown|analysis|assessment|explanation)\b/i,
+  /\binclude\s+(?:the\s+)?evidence\s+in\s+(?:the|your)\s+answer\b/i,
+  /\bsave\s+me\s+time\s+by\s+(?:explaining|summarizing|finding|analyzing)\b/i,
+  /\b(?:explain|summarize|analyze|assess|recommend|find)\b[^.!?]{0,100}\b(?:whether|what|why|how|risk|capacity|load|evidence|breakdown)\b/i,
+  /\b(?:what|how)\s+(?:should|could|would)\b/i,
+  /\bhelp\s+me\s+(?:decide|understand|plan|assess)\b/i,
+];
+const MUTATION_TARGET = /\b(?:local\s+data|data|review\s+blocks?|blocks?|meetings?|plans?|work\s+blocks?|capture|tracking|activity|visual\s+context|observed\s+ai\s+estimates?|estimates?|ai\s+usage|manager\s+summar(?:y|ies)|api\s+keys?|skills?|provider(?:\s+connection)?|forecasts?|summar(?:y|ies)|narratives?|calendar|settings?|connections?)\b/i;
+const MUTATION_OPERATION = /\b(?:delete|remove|clear|wipe|erase|purge|reset|undo|add|create|mark(?:ed)?|move|reschedule|schedule|cancel|enable|disable|toggle|switch|test|turn(?:ed)?\s+(?:on|off)|stop\s+tracking|shut\s+down|include|exclude|omit|leave\s+[^.!?]{0,40}\s+out|relabel|rename|replace|rotate|swap|use|confirm|approve|classify|capture|connect|disconnect|pause|resume|dismiss|share|export|import|publish|send|sent|set|assign|archive|restore|save|make|generate|change|update|edit|unlink(?:ed|ing)?|detach(?:ed|ing)?|unpair(?:ed|ing)?|trash(?:ed|ing)?|discard(?:ed|ing)?|drop|dropp(?:ed|ing)|revoke(?:d|ing)?|forget|forgot(?:ten)?|(?:delet|remov|clear|wip|eras|purg|add|creat|mark|mov|reschedul|schedul|cancel|enabl|disabl|toggl|switch|test|includ|exclud|omitt|relabel|renam|replac|rotat|swapp|confirm|approv|classif|captur|connect|disconnect|paus|resum|dismiss|shar|export|import|publish|assign|archiv|restor|sav|generat|chang|updat|edit)(?:ed|ing)|get\s+rid\s+of|take\s+[^.!?]{0,40}\s+off)\b/i;
+const SENSITIVE_CREDENTIAL_INPUT = /\b(?:sk-[a-z0-9_-]{8,}|api\s+key\s*(?:is|:|=)\s*\S+)/i;
+const SIMPLE_READ_ONLY_TARGET_QUESTION = /^\s*(?:(?:what|why|how|when|where|which)\s+(?:is|are|was|were|do|does|did|can|could|would|should|will|may|might)\b[^,;.!?]*\?|(?:(?:can|could|would)\s+you\s+|would\s+you\s+mind\s+)?(?:explain|summarize|analyze|assess|recommend|help\s+me\s+understand|tell\s+me\s+about)\b[^,;.!?]*[?.]?)\s*$/i;
+const SIMPLE_READ_ONLY_PLANNING_REQUEST = /^\s*help\s+me\s+plan\b[^,;.!?]*[?.]?\s*$/i;
+const MULTI_CLAUSE_CONNECTOR = /\b(?:and|but|then|before|after|afterwards|while|however|regardless|also|as\s+well\s+as)\b/i;
+const PURE_MUTATION_ADVICE = [
+  new RegExp(String.raw`^\s*(?:what|which|how)\s+(?:should|could|would)\s+(?:(?:i|we)\s+)?${ACTION_VERB_END}[^.!?]*[?.]?\s*$`, "i"),
+  new RegExp(String.raw`^\s*(?:(?:can|could)\s+you\s+|would\s+you\s+mind\s+)?(?:explain|summarize|analyze|assess|recommend)\b[^.!?]*\b(?:what|whether)\s+(?:i|we)\s+should\s+${ACTION_VERB_END}[^.!?]*[?.]?\s*$`, "i"),
+  new RegExp(String.raw`^\s*help\s+me\s+decide\s+what\s+to\s+${ACTION_VERB_END}[^.!?]*[?.]?\s*$`, "i"),
+  /^\s*set\s+out\s+(?:the\s+)?(?:assessment|analysis|evidence|reasons?|case|options?)[^.!?]*[?.]?\s*$/i,
+];
 
 export function isPersonalAgentActionIntent(question: string): boolean {
-  return ACTION_INTENT.test(question);
+  if (SENSITIVE_CREDENTIAL_INPUT.test(question)) return true;
+  if (MUTATION_TARGET.test(question)) {
+    const operationCount = question.match(new RegExp(MUTATION_OPERATION.source, "gi"))?.length ?? 0;
+    if (operationCount === 1 && PURE_MUTATION_ADVICE.some((pattern) => pattern.test(question))) return false;
+    if (operationCount === 0 && SIMPLE_READ_ONLY_PLANNING_REQUEST.test(question)) return false;
+    if (SIMPLE_READ_ONLY_TARGET_QUESTION.test(question) && !MULTI_CLAUSE_CONNECTOR.test(question)) return false;
+    if (operationCount > 0) return true;
+    return true;
+  }
+  if (ADVISORY_INTENTS.some((pattern) => pattern.test(question))) return false;
+  return DIRECT_ACTION_INTENT.test(question)
+    || REQUESTED_ACTION_INTENT.test(question)
+    || HELP_ACTION_INTENT.test(question)
+    || MIND_ACTION_INTENT.test(question);
 }
 
 function deterministicAnswer(context: PersonalAgentContext, question: string): PersonalAgentResponse {
@@ -156,16 +212,16 @@ function responseText(payload: unknown): string | null {
 }
 
 function validatedModelAnswer(value: unknown, context: PersonalAgentContext): Omit<PersonalAgentResponse, "mode" | "model"> | null {
-  if (!isRecord(value) || typeof value.answer !== "string") return null;
-  const answer = value.answer.trim();
-  if (!answer || answer.length > MAX_ANSWER_LENGTH || !Array.isArray(value.evidenceRefs) || !Array.isArray(value.limitations)) return null;
-  const refs = value.evidenceRefs.filter((ref): ref is string => typeof ref === "string" && ref in context.evidenceCatalog);
+  if (!isRecord(value) || !Array.isArray(value.evidenceRefs)) return null;
+  const refs = value.evidenceRefs.filter(
+    (ref): ref is string => typeof ref === "string" && Object.hasOwn(context.evidenceCatalog, ref),
+  );
   if (refs.length === 0) return null;
-  const limitations = value.limitations.filter((item): item is string => typeof item === "string" && item.trim().length > 0 && item.length <= 300).slice(0, 4);
+  const evidence = catalogEntries(context.evidenceCatalog, [...new Set(refs)].slice(0, 6));
   return {
-    answer,
-    evidence: catalogEntries(context.evidenceCatalog, [...new Set(refs)].slice(0, 6)),
-    limitations,
+    answer: `The review-safe evidence selected for your question shows: ${evidence.join(" ")} Use this as planning context; no local action was run.`,
+    evidence,
+    limitations: ["This server-composed answer uses only the latest review-safe Web replica; no provider-authored prose or local evidence is shown."],
   };
 }
 
@@ -204,7 +260,7 @@ export async function generatePersonalAgentAnswer(
       body: JSON.stringify({
         model,
         store: false,
-        instructions: "You are Weekform Agent. Answer only from the supplied review-safe evidence catalog. Never claim access to raw activity, titles, notes, screenshots, local files, or omitted evidence. Do not execute or imply actions. Return JSON with answer (string), evidenceRefs (catalog keys only), and limitations (string array).",
+        instructions: "You are Weekform Agent. Select only the supplied review-safe evidence that best answers the question. Never claim access to raw activity, titles, notes, screenshots, local files, or omitted evidence. Do not execute or imply actions. Return JSON with evidenceRefs (catalog keys only). Weekform composes all visible prose from validated fields; do not return answer or limitation prose.",
         input: JSON.stringify({ question, evidenceCatalog: context.evidenceCatalog }),
         text: { format: { type: "json_object" } },
       }),
@@ -216,7 +272,12 @@ export async function generatePersonalAgentAnswer(
     let parsed: unknown;
     try { parsed = JSON.parse(text); } catch { return { ...fallback, fallbackReason: "invalid_response", model }; }
     const validated = validatedModelAnswer(parsed, context);
-    if (!validated) return { ...fallback, fallbackReason: "invalid_response", model };
+    if (!validated) return {
+      ...fallback,
+      answer: `${fallback.answer} No local action was run.`,
+      fallbackReason: "invalid_response",
+      model,
+    };
     return { ...validated, mode: "model", model };
   } catch (error) {
     const reason = error instanceof Error && error.name === "AbortError" ? "timeout" : "provider_error";

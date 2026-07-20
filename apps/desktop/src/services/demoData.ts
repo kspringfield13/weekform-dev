@@ -82,8 +82,9 @@ function workBlock(
   };
 }
 
-// Metadata-only workplace-chat burst (no message text), shaped exactly like the chat
-// importer's output so the interruption-load panel renders in demo mode.
+// Synthetic, content-free observed response episode, shaped like the canonical
+// chat transformer output. Counts below only vary the fixture's directed flag;
+// message volume and conversation labels never enter the event.
 function chatEvent(
   start: Date,
   id: string,
@@ -93,24 +94,16 @@ function chatEvent(
   input: { messages: number; mentions: number; channel?: string; surface: "channel" | "dm" | "thread" }
 ): RawEvent {
   const begin = at(start, day, minute);
-  const received = Math.max(0, input.messages - 1);
-  // Mirror the chat parser's privacy rule (SHAREABLE_LABEL_SURFACES = ["channel"]):
-  // only a `channel`-surface name is a shared topic label. A dm/thread name is the
-  // counterpart's display name (PII), so it never reaches project_hint/channels — the
-  // burst falls back to a null label and buckets into "Direct & untagged" downstream,
-  // exactly as a real DM export would after the DM-PII fix.
-  const shareableLabel = input.surface === "channel" ? input.channel ?? null : null;
   const metadata: Record<string, string> = {
     provider: "slack",
-    messages: String(input.messages),
-    received: String(received),
-    sent: String(input.messages - received),
-    mentions: String(input.mentions),
-    surfaces: input.surface
+    kind: "response_episode",
+    attention_grade: "observed",
+    attention_signal: "self_sent",
+    observed_actions: "1",
+    surface: input.surface,
+    coverage: "synthetic_complete",
   };
-  if (shareableLabel) {
-    metadata.channels = shareableLabel;
-  }
+  if (input.mentions > 0) metadata.directed_trigger = "true";
   return {
     event_id: id,
     user_id: "local-user",
@@ -121,7 +114,7 @@ function chatEvent(
     window_title: null,
     domain: null,
     file_path: null,
-    project_hint: shareableLabel,
+    project_hint: null,
     metadata,
     privacy_level: "derived_only"
   };
@@ -340,15 +333,13 @@ export function createDemoState(reference = new Date()): PersistedAppState {
     imported_at: importedAt.toISOString()
   }));
 
-  // Reactive chat bursts spread across the week. Two overlap the deep-work blocks above
-  // (capacity model Monday, dashboard Tuesday) so the interruption panel shows real interleave.
+  // Observed response episodes spread across the week. Two co-occur with focus
+  // blocks above so the panel can show overlap without claiming causation.
   const chatEvents: RawEvent[] = [
     chatEvent(monday, "demo-chat-1", 0, 60, 18, { messages: 9, mentions: 3, channel: "#data-requests", surface: "channel" }),
     chatEvent(monday, "demo-chat-2", 1, 120, 18, { messages: 7, mentions: 2, channel: "#exec-dashboard", surface: "channel" }),
-    // 19:00 (9:00 + 600m) — an after-hours DM so the after-hours reactive-load footnote renders in
-    // demo. A DM carries no shareable label (parser drops counterpart names), so this burst buckets
-    // into the honest "Direct & untagged" stakeholder group. Same day/volume as before, so peak/calm-
-    // day and stakeholder shares are unchanged — only the chip label differs.
+    // 19:00 (9:00 + 600m) — an after-hours DM episode for the
+    // sustainability cue. No counterpart or conversation label is retained.
     chatEvent(monday, "demo-chat-3", 2, 600, 12, { messages: 5, mentions: 1, surface: "dm" }),
     chatEvent(monday, "demo-chat-4", 3, 40, 15, { messages: 4, mentions: 0, channel: "#team-ops", surface: "channel" })
   ];
