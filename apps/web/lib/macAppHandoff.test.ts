@@ -49,6 +49,14 @@ test("the packaged Mac app owns the Weekform scheme and focuses one existing ins
   assert.match(nativeSource, /tauri_plugin_single_instance::init/);
   assert.match(nativeSource, /tauri_plugin_deep_link::init/);
   assert.match(nativeSource, /show_large_dashboard/);
+  assert.match(
+    nativeSource,
+    /fn show_large_dashboard[\s\S]{0,400}ActivationPolicy::Regular/,
+  );
+  assert.match(
+    nativeSource,
+    /CloseRequested[\s\S]{0,300}ActivationPolicy::Accessory/,
+  );
   assert.equal(existsSync(macActivationSourceUrl), true);
   const macActivationSource = existsSync(macActivationSourceUrl)
     ? readFileSync(macActivationSourceUrl, "utf8")

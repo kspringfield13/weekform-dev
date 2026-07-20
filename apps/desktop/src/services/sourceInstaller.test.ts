@@ -25,3 +25,8 @@ test("source installer explains that the extracted source folder can be removed"
   assert.match(installer, /temporary build copy was removed/i);
   assert.match(installer, /extracted source folder can be moved to Trash/i);
 });
+
+test("source installer never bypasses Gatekeeper quarantine", () => {
+  assert.doesNotMatch(installer, /xattr\s+-[dr]+\s+com\.apple\.quarantine/i);
+  assert.doesNotMatch(installer, /right-click Weekform\.app and choose Open/i);
+});

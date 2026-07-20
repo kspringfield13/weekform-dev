@@ -319,13 +319,6 @@ else
   die "Could not replace the installed app; the previous version was restored."
 fi
 
-# This build isn't signed by an Apple Developer account, so macOS quarantines
-# it. Clearing the flag lets it open without the "unidentified developer"
-# block. (Safe here: you built this app yourself from source moments ago.)
-xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true
-if xattr -p com.apple.quarantine "$DEST" >/dev/null 2>&1; then
-  warn "macOS kept the quarantine flag. If launch is blocked, right-click Weekform.app and choose Open."
-fi
 ok "Installed to $DEST"
 
 # Keep one installed app. Tauri's source build also leaves the exact bundle it

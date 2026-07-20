@@ -476,6 +476,9 @@ fn show_quick_view(app: &AppHandle) {
 }
 
 fn show_large_dashboard(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+
     show_dashboard(app);
     apply_window_mode(app, "large");
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
@@ -2281,7 +2284,7 @@ fn start_activity_capture(app: AppHandle, paused: Arc<AtomicBool>) {
 }
 
 fn dispatch_to_main_window(app: &AppHandle, script: &str) {
-    show_dashboard(app);
+    show_large_dashboard(app);
 
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let _ = window.eval(script);
@@ -4632,6 +4635,10 @@ pub fn run() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                #[cfg(target_os = "macos")]
+                let _ = window
+                    .app_handle()
+                    .set_activation_policy(tauri::ActivationPolicy::Accessory);
             }
         })
         .run(tauri::generate_context!())
