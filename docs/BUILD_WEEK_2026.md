@@ -224,6 +224,16 @@ the alignment QA.
   This follow-through was reproduced red-first, then verified with 224/224 Web
   tests, Web typecheck, optimized Next.js build, root build, and an unauthenticated
   browser check proving `/app` preserves `next=/app` through sign-in.
+- **Mac release packaging and download experience:** the protected `/download`
+  surface now leads with one native `.dmg` action and replaces developer setup
+  instructions with a standard Mac install flow, release notes, product
+  features, first-week tips, and accurate local/privacy boundaries. A universal
+  `Weekform_0.1.0_universal.dmg` was built locally with Apple silicon and Intel
+  slices; `hdiutil verify`, mounted-content inspection, bundle metadata, and
+  architecture checks passed. The page was reviewed at 1440px and 390px with
+  no console errors or horizontal overflow. Developer ID signing, Apple
+  notarization, private-bucket upload, and production publication remain
+  explicitly pending and are not claimed as complete.
 
 ### Layered Supabase sign-in
 

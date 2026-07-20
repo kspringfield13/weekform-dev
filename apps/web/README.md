@@ -57,7 +57,7 @@ read in exactly one server route handler:
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase publishable (anon) key |
 | `WEEKFORM_ARTIFACT_BUCKET` | Optional. Private Supabase Storage bucket holding the official packaged Mac artifact |
-| `WEEKFORM_ARTIFACT_PATH` | Optional. Object path within that bucket, e.g. `releases/weekform-0.1.0.zip` |
+| `WEEKFORM_ARTIFACT_PATH` | Optional. Object path within that bucket, e.g. `releases/Weekform_0.1.0_universal.dmg` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Optional, **secret**. Used only in `app/download/artifact/route.ts` to mint short-lived signed URLs; never sent to the browser |
 | `WEEKFORM_ARTIFACT_SIGNED_URL_TTL_SECONDS` | Optional. Signed-URL lifetime in seconds; defaults to 300, clamped to 30-3600 |
 
@@ -122,11 +122,11 @@ configured.
   button (GET never mutates, so prefetchers can't consume the one-time
   token); RPC failures (wrong email, expired, reused, unknown token,
   already a member) map to clear human messages
-- `/download` — protected; version/date/macOS requirements, the
-  source-build/notarization limitation, privacy-permission expectations, and
-  install steps. Links to a real signed download when the private-bucket
-  artifact env vars are set, otherwise honestly falls back to the public
-  source archive — see "Official Mac download" below
+- `/download` — protected; one native DMG action, release notes, features,
+  first-week tips, privacy-permission expectations, and a standard Mac install
+  flow. Enables the download when the private-bucket artifact env vars are set;
+  otherwise it keeps the action visibly unavailable — see "Official Mac
+  download" below
 - `/download/artifact` — protected server route; re-checks the session,
   then either 307-redirects to a freshly minted signed Supabase Storage URL
   (when the artifact env vars are configured) or returns an honest 503
@@ -154,20 +154,21 @@ The gate controls the *official packaged distribution path*, not the source
 — the page never claims the public GitHub repository is inaccessible, and
 always links or names it.
 
-**Current state of this environment:** no live Supabase project or private
-storage bucket exists on this machine, so the packaged-artifact env vars
-(below) are unset and `/download` shows the documented fallback: an honest
-prototype label, the public source archive link, and guided
-`npm ci && npm run desktop:dev` / `npm run desktop:build` install steps.
-`/download/artifact` mirrors this — it returns a `503` with a message
-pointing back at the fallback rather than pretending a signed download
-exists.
+**Current state of this environment:** a 6.1 MB universal DMG is built at
+`apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/Weekform_0.1.0_universal.dmg`.
+It contains Apple silicon and Intel slices plus the standard Applications
+shortcut. The app is ad-hoc signed, not Developer ID signed or Apple-notarized.
+The private Storage bucket and service-role credential are not configured on
+this machine, so `/download` shows the full release experience with an honest
+unavailable action instead of sending people into source-build instructions.
+`/download/artifact` mirrors this state with a `503` rather than pretending a
+published package exists.
 
 **To enable the real signed-URL path** once a packaged artifact exists:
 
-1. In the Supabase dashboard, create a **private** Storage bucket (e.g.
-   `weekform-releases`) and upload the built artifact (source ZIP or `.app`
-   archive) to it, e.g. at `releases/weekform-0.1.0.zip`.
+1. After Developer ID signing and Apple notarization, create a **private**
+   Supabase Storage bucket (e.g. `weekform-releases`) and upload the DMG at
+   `releases/Weekform_0.1.0_universal.dmg`.
 2. Leave the bucket's RLS/policies closed to public/anon access — only the
    service-role key (used server-side) should be able to read it.
 3. Set, in the deployment's environment (never committed):
@@ -177,14 +178,15 @@ exists.
      role (secret); do **not** prefix it `NEXT_PUBLIC_`
    - optionally `WEEKFORM_ARTIFACT_SIGNED_URL_TTL_SECONDS` (default `300`,
      clamped to `30`-`3600`)
-4. Redeploy. `/download` will now render a "Download the packaged build"
-   panel whose link hits `/download/artifact`, which re-checks the session
-   server-side and 307-redirects to a signed URL minted with
+4. Redeploy. `/download` will enable its single "Download now" action. The
+   action hits `/download/artifact`, which re-checks the session server-side
+   and 307-redirects to a signed URL minted with
    `storage.from(bucket).createSignedUrl(path, ttl)`. The service-role key is
    read only inside that route handler and is never sent to the browser or
    included in any client bundle.
 5. Update `RELEASE_INFO` in `apps/web/lib/download.ts` (version, generated
-   date) to match the uploaded build.
+   date, artifact filename, release notes, and verification status) to match
+   the uploaded build.
 
 ## Testing status (honest)
 
@@ -193,8 +195,12 @@ exists.
   covered by `lib/invites.test.ts` (`node:test`, run from the repo root
   with `npm run test:web`).
 - Pure download-config helpers (artifact env parsing, missing/blank-var
-  fallback, TTL clamping, TTL copy formatting) are covered by
+  fallback, TTL clamping, TTL copy formatting, DMG metadata, and the
+  one-action/no-developer-setup page contract) are covered by
   `lib/download.test.ts`, run the same way.
+- The local DMG has passed `hdiutil verify`; its mounted contents include
+  `Weekform.app` and `Applications -> /Applications`; `lipo -archs` reports
+  `x86_64 arm64`; its bundle reports version `0.1.0` and minimum macOS `13.0`.
 - **Integration and RLS cases have NOT been executed.** No Supabase project
   or local Supabase CLI stack is available on this machine, so team
   creation, invite insert authorization, and `accept_team_invite`
@@ -221,7 +227,8 @@ exists.
 - Invites are member-role only; manager-role invites, invite revocation UI,
   and role changes are not built yet (revocation is permitted by RLS but has
   no button).
-- The packaged, signed macOS artifact is not yet attached to `/download`.
+- The universal macOS artifact exists locally but is not Developer ID signed,
+  notarized, uploaded, or attached to the production `/download` action.
 - Sessions are standard Supabase cookie sessions; this is a prototype, not
   audited production auth.
 
