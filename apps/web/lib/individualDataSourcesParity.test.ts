@@ -11,7 +11,7 @@ const styles = readFileSync(
   "utf8",
 );
 
-test("Individual Web preserves Desktop sources and marks unavailable Email without browser controls", () => {
+test("Individual Web explains implemented evidence sources without presenting Email as a control", () => {
   assert.doesNotMatch(
     source,
     /from ["']lucide-react["']/,
@@ -21,7 +21,6 @@ test("Individual Web preserves Desktop sources and marks unavailable Email witho
   for (const sourceName of [
     "Active window activity",
     "Calendar",
-    "Email",
     "Chat",
     "Visual context",
   ]) {
@@ -31,18 +30,18 @@ test("Individual Web preserves Desktop sources and marks unavailable Email witho
   assert.match(source, /DATA_SOURCES\.map\(\(source\) =>/);
   assert.match(source, /<h3>\{source\.title\}<\/h3>/);
   assert.match(source, /<strong>\{source\.statusTitle\}<\/strong>/);
-  assert.match(source, /<LocalSettingsControl label=\{source\.badge\} \/>/);
-  assert.match(source, /Data sources are controlled locally/);
-  assert.match(source, /<LocalSettingsHandoff[\s\S]*?href="\/download"/);
-  assert.match(source, /<LocalSettingsHandoff[\s\S]*?actionLabel="Get Weekform for Mac"/, "the single terminal handoff needs download-accurate CTA copy");
+  assert.match(source, /Web receives a derived weekly replica, not source records/);
+  assert.match(source, /<SettingsBoundaryNote/);
+  assert.doesNotMatch(source, /LocalSettingsControl|LocalSettingsHandoff|Get Weekform for Mac/);
+  assert.doesNotMatch(source, /title: ["']Email["']/);
   assert.doesNotMatch(source, /<input|<select|onClick=/, "Web must not expose fake local-source controls");
 });
 
-test("Individual Web places native-only Chat directly below the unavailable Email boundary", () => {
+test("Individual Web describes Chat and the non-collection of email content accurately", () => {
   assert.match(
     source,
-    /title: ["']Email["'][\s\S]*?icon: ["']email["'],\s*},\s*{\s*title: ["']Chat["']/,
-    "The unavailable Email boundary must be followed directly by Chat",
+    /title: ["']Calendar["'][\s\S]*?icon: ["']calendar["'],\s*},\s*{\s*title: ["']Chat["']/,
+    "Chat should follow the implemented Calendar source",
   );
 
   const chatStart = source.indexOf('title: "Chat"');
@@ -58,12 +57,9 @@ test("Individual Web places native-only Chat directly below the unavailable Emai
   assert.match(chatSource, /Mac Settings/, "Web must direct Chat connection to native Mac Settings");
   assert.match(chatSource, /content-free attention evidence/, "Chat must describe the content-free attention model");
   assert.match(chatSource, /message-volume scor(?:e|es|ing)/, "Chat must reject message-volume productivity scoring");
-  assert.match(source, /no source OAuth controls/, "Web must not imply that provider OAuth works in the browser");
-  assert.match(source, /Neither Web nor Mac requests inbox access/);
-  assert.match(source, /localDetail: ["']Not available["']/);
-  assert.match(source, /statusTitle: ["']Unavailable["']/);
-  assert.match(source, /badge: ["']Unavailable["']/);
-  assert.doesNotMatch(source, /manage Email|Email source controls belong in Weekform for Mac/);
+  assert.match(source, /Email message content is not collected/);
+  assert.match(source, /does not request inbox access or import email bodies, attachments, or message content/);
+  assert.doesNotMatch(source, /localDetail: ["']Not available["']|statusTitle: ["']Unavailable["']/);
 });
 
 test("Individual Web data-source rows retain Desktop source-row scale", () => {

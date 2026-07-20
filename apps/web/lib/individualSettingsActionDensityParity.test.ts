@@ -15,29 +15,30 @@ function source(url: URL): string {
   return existsSync(url) ? readFileSync(url, "utf8") : "";
 }
 
-test("local-only Settings rows keep the Desktop control footprint without fake actions", () => {
-  assert.equal(existsSync(componentUrl), true, "shared local-control composition must exist");
+test("local Settings boundaries use a shared informational note without fake actions", () => {
+  assert.equal(existsSync(componentUrl), true, "shared boundary-note composition must exist");
   const component = source(componentUrl);
 
-  assert.match(component, /aria-disabled="true"/);
-  assert.match(component, /Local control/);
-  assert.doesNotMatch(component, /<button\b/);
+  assert.match(component, /SettingsBoundaryNote/);
+  assert.match(component, /On-device settings/);
+  assert.doesNotMatch(component, /aria-disabled="true"|<button\b|<Link\b/);
 });
 
-test("each local-only Settings tab uses one terminal Mac handoff", () => {
+test("each informational Settings tab uses one terminal ownership note", () => {
   for (const file of [
+    "PersonalDataSourcesSettings.tsx",
     "PersonalAIAssistanceSettings.tsx",
+    "PersonalAIUsageSettings.tsx",
     "PersonalNotificationsSettings.tsx",
     "PersonalWebDataControl.tsx",
   ]) {
     const value = source(new URL(`../components/${file}`, import.meta.url));
-    assert.match(value, /<LocalSettingsHandoff\b/);
-    assert.match(value, /<LocalSettingsControl\b/);
-    assert.doesNotMatch(value, /<Link\b[^>]*href=["']\/download["']/);
+    assert.match(value, /<SettingsBoundaryNote\b/);
+    assert.doesNotMatch(value, /<LocalSettings(?:Control|Handoff)\b|<Link\b[^>]*href=["']\/download["']/);
   }
 
   const shared = source(componentUrl);
-  assert.equal((shared.match(/<Link\b/g) ?? []).length, 1);
+  assert.equal((shared.match(/<Link\b/g) ?? []).length, 0);
 });
 
 test("Data Control keeps the operational Web deletion separate from local-only controls", () => {
@@ -48,15 +49,15 @@ test("Data Control keeps the operational Web deletion separate from local-only c
   assert.match(deleteForm, /<FormSubmitButton\b/);
   assert.match(deleteForm, /confirmMessage=/);
   assert.match(deleteForm, /Delete private Web history/);
-  assert.doesNotMatch(deleteForm, /LocalSettingsControl|LocalSettingsHandoff/);
-  assert.equal((value.match(/<LocalSettingsControl\b/g) ?? []).length, 3);
-  assert.equal((value.match(/<LocalSettingsHandoff\b/g) ?? []).length, 1);
+  assert.doesNotMatch(deleteForm, /SettingsBoundaryNote/);
+  assert.equal((value.match(/<LocalSettingsControl\b/g) ?? []).length, 0);
+  assert.equal((value.match(/<SettingsBoundaryNote\b/g) ?? []).length, 1);
 });
 
-test("the shared Settings control and handoff match Desktop geometry and collapse narrowly", () => {
+test("the shared Settings boundary note keeps a fluid, compact geometry", () => {
   const styles = source(stylesUrl);
 
-  assert.match(styles, /\.localControl\s*\{[\s\S]*?min-width:\s*82px[\s\S]*?min-height:\s*32px/);
-  assert.match(styles, /\.handoff\s*\{[\s\S]*?display:\s*flex/);
-  assert.match(styles, /@media\s*\(max-width:\s*620px\)[\s\S]*?\.handoff\s*\{[\s\S]*?flex-direction:\s*column/);
+  assert.doesNotMatch(styles, /\.localControl\s*\{/);
+  assert.match(styles, /\.handoff\s*\{[\s\S]*?display:\s*grid[\s\S]*?grid-template-columns:\s*7px minmax\(0, 1fr\)/);
+  assert.match(styles, /@media\s*\(max-width:\s*620px\)[\s\S]*?\.handoff\s*\{[\s\S]*?align-items:\s*start/);
 });

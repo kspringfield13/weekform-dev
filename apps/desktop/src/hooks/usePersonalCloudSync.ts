@@ -6,7 +6,7 @@ import type {
 } from "../../../../packages/domain/src/models";
 import type { ReviewCommandV1 } from "../../../../packages/domain/src/personalCloud";
 import {
-  buildPersonalWorkloadReplica,
+  buildPersonalWorkloadReplicas,
   replicaContentFingerprint,
 } from "../../../../packages/inference/src/personalReplica";
 import {
@@ -112,24 +112,26 @@ export function usePersonalCloudSync(input: {
     if (!enabled) quiescingRef.current = false;
   }, [enabled]);
 
-  const replica = useMemo(() => buildPersonalWorkloadReplica({
-    weekId: snapshot.week_id,
+  const replicas = useMemo(() => buildPersonalWorkloadReplicas({
+    currentSnapshot: snapshot,
     blocks: workBlocks,
-    snapshot,
     now: new Date().toISOString(),
   }), [snapshot, workBlocks]);
-  const fingerprint = useMemo(() => replicaContentFingerprint(replica), [replica]);
+  const fingerprintedReplicas = useMemo(() => replicas.map((payload) => ({
+    fingerprint: replicaContentFingerprint(payload),
+    payload,
+  })), [replicas]);
 
   // Durable offline queue: a newer version supersedes an unsent version of the
   // same week, while other weeks remain queued. Nothing queues before explicit consent.
   useEffect(() => {
     if (!enabled) return;
-    account.setPersonalSyncState((current) => enqueueReplicaBatchWithClock(current, {
-        fingerprint,
-        payload: replica,
-        now: new Date().toISOString(),
-      }));
-  }, [enabled, fingerprint, replica, account.setPersonalSyncState]);
+    const now = new Date().toISOString();
+    account.setPersonalSyncState((current) => fingerprintedReplicas.reduce(
+      (state, replica) => enqueueReplicaBatchWithClock(state, { ...replica, now }),
+      current,
+    ));
+  }, [enabled, fingerprintedReplicas, account.setPersonalSyncState]);
 
   const ensureDevice = useCallback(async () => {
     const current = accountRef.current;
@@ -178,6 +180,8 @@ export function usePersonalCloudSync(input: {
       let queue = durableAccount.personalSyncState.queue;
       let cursor = durableAccount.personalSyncState.cursor;
       let lastSuccessAt = durableAccount.personalSyncState.lastSuccessAt;
+      const syncedWeekIds: string[] = [];
+      let syncedBlockCount = 0;
       for (const item of queue) {
         const result = await syncPersonalReplicaBatch(
           ready.env,
@@ -202,6 +206,8 @@ export function usePersonalCloudSync(input: {
         }
         cursor = Math.max(cursor, result.value.cursor);
         lastSuccessAt = result.value.syncedAt;
+        syncedWeekIds.push(item.payload.weekId);
+        syncedBlockCount += item.payload.blocks.length;
         queue = queue.filter((queued) => queued.batchId !== item.batchId);
         currentAccount.setPersonalSyncState((current) => ({
           ...current,
@@ -214,8 +220,8 @@ export function usePersonalCloudSync(input: {
       }
       if (lastSuccessAt) {
         currentAccount.emitAudit("personal_sync_success", "Updated the private Weekform Web workspace with reviewed, derived fields", {
-          week_id: replica.weekId,
-          block_count: replica.blocks.length,
+          week_ids: syncedWeekIds,
+          block_count: syncedBlockCount,
           cursor,
         });
       }
@@ -225,7 +231,7 @@ export function usePersonalCloudSync(input: {
       setSyncBusy(false);
       operation.finish();
     }
-  }, [beginOperation, enabled, ensureDevice, replica]);
+  }, [beginOperation, enabled, ensureDevice]);
 
   const refreshCommands = useCallback(async () => {
     const operation = beginOperation();

@@ -14,6 +14,10 @@ const dashboardSource = readFileSync(
   new URL("../app/dashboard/page.tsx", import.meta.url),
   "utf8",
 );
+const globalsSource = readFileSync(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 function position(source: string, token: string): number {
   const index = source.indexOf(token);
@@ -25,7 +29,6 @@ test("Individual Web Capacity follows the Desktop's visible dashboard hierarchy"
   const landmarks = [
     { desktop: "Weekly capacity", web: "Weekly capacity" },
     { desktop: "capacity for new planned work", web: "capacity for new planned work" },
-    { desktop: "Capacity summary", web: "Capacity summary" },
     { desktop: "Commitment and headroom", web: "Commitment and headroom" },
     { desktop: "Top categories", web: "Top categories" },
     { desktop: "How tracked time is spent", web: "How tracked time is spent" },
@@ -74,7 +77,9 @@ test("Individual Web Capacity reuses the Desktop dashboard styling seams", () =>
 
 test("Capacity semantics remain inspectable and avoid a competing Web-only hero", () => {
   assert.match(webCapacitySource, /aria-labelledby=["']week-capacity-headline["']/);
-  assert.match(webCapacitySource, /aria-labelledby=["']week-summary-heading["']/);
+  assert.match(webCapacitySource, /className=["']personal-week-metrics week-dashboard-metrics["'][^>]*aria-label=["']Capacity summary["']/);
+  assert.doesNotMatch(webCapacitySource, /week-summary-heading|>Capacity summary<\/h2>/);
+  assert.match(globalsSource, /\.personal-week-metrics\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s);
   assert.match(webCapacitySource, /role=["'](?:group|img)["'][^>]*aria-label=/s);
   assert.match(webCapacitySource, /<details\b[^>]*className=["'][^"']*week-dashboard-explainability/);
   assert.match(webCapacitySource, /<summary>/);

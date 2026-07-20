@@ -4,6 +4,7 @@ import { useEffect } from "react";
 
 import { WeekformMark } from "@/components/WeekformMark";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { WebEditionBadge } from "@/components/WebEditionBadge";
 import { positionCompactWebWindow } from "@/lib/webCompactWindow";
 
 function ExpandIcon() {
@@ -56,7 +57,7 @@ export function WebCompactWorkspace({
       <header className="web-compact-toolbar">
         <div className="web-compact-brand">
           <WeekformMark className="web-compact-mark" />
-          <span><strong>Weekform</strong><small>Web</small></span>
+          <span><strong>Weekform</strong><WebEditionBadge /></span>
         </div>
         <div className="web-compact-toolbar-actions">
           <ThemeToggle className="web-compact-theme-toggle" />

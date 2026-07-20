@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/app/auth/actions";
 import { WeekformMark } from "@/components/WeekformMark";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { WebEditionBadge } from "@/components/WebEditionBadge";
 import { managerAccessMemberships } from "@/lib/managerAccess";
 import { listUserTeams } from "@/lib/teams";
 import { productEntry } from "@/lib/productEntry";
@@ -43,9 +44,10 @@ export async function SiteHeader({
   return (
     <header className={variant === "immersive" ? "site-header site-header-immersive" : "site-header"}>
       <div className="container site-header-inner">
-        <Link href="/" className="wordmark" aria-label="Weekform home">
+        <Link href="/" className="wordmark" aria-label="Weekform Web home">
           <WeekformMark className="wordmark-mark" />
           <span className="wordmark-text">Weekform</span>
+          <WebEditionBadge />
         </Link>
         <nav className="nav-links" aria-label="Primary">
           {signedIn ? (

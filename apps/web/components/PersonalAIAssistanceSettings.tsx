@@ -1,14 +1,13 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { LocalSettingsControl, LocalSettingsHandoff } from "./PersonalSettingsLocalControl";
+import { SettingsBoundaryNote } from "./PersonalSettingsLocalControl";
 import styles from "./PersonalAISettings.module.css";
 
-type AssistanceIconName = "provider" | "connection" | "guidance" | "vision";
+type AssistanceIconName = "connection" | "guidance" | "vision";
 
 function AssistanceIcon({ name }: { name: AssistanceIconName }) {
   const paths: Record<AssistanceIconName, ReactNode> = {
-    provider: <><path d="M8 12h8M12 8v8" /><rect x="4" y="4" width="16" height="16" rx="4" /></>,
     connection: <><path d="M8 12h8M12 8v8" /><path d="M5 5 3 3m16 2 2-2M5 19l-2 2m16-2 2 2" /></>,
     guidance: <><path d="m12 3 2.1 4.3L19 8l-3.5 3.4.8 4.8-4.3-2.3-4.3 2.3.8-4.8L5 8l4.9-.7L12 3Z" /></>,
     vision: <><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" /><circle cx="12" cy="12" r="2.5" /></>,
@@ -26,22 +25,25 @@ const ASSISTANCE_ROWS = [
     id: "provider-connection",
     icon: "connection" as const,
     title: "Provider connection",
-    description: "Test the provider endpoint and save an API key only in the local Weekform store.",
-    detail: "Key and endpoint",
+    description: "Choose an API provider or an isolated ChatGPT/Codex-plan connection. Native API credentials use macOS Keychain; only the credential binding and provider preferences remain in local app state.",
+    ownership: "On-device configuration",
+    detail: "Credentials never enter Web",
   },
   {
     id: "classification-guidance",
     icon: "guidance" as const,
     title: "Classification and guidance",
     description: "Use an OpenAI (or OpenAI-compatible) key for reviewable classification, forecasts, summaries, Review Copilot, acceleration, and Visual Context. Other providers currently power only the Agent chat.",
-    detail: "Approval-gated output",
+    ownership: "Runs from Weekform for Mac",
+    detail: "Reviewable output · approval before changes",
   },
   {
     id: "visual-context",
     icon: "vision" as const,
     title: "Visual Context",
     description: "Opt in to rate-limited screenshot analysis from the Mac that captured the screen. Images are never copied into this Web workspace.",
-    detail: "Explicit local opt-in",
+    ownership: "Explicit local opt-in",
+    detail: "Images and derived insights excluded from Web",
   },
 ] as const;
 
@@ -51,28 +53,19 @@ export function PersonalAIAssistanceSettings() {
       <div className="settings-section-heading">
         <div>
           <h2 id="web-ai-assistance-title">AI assistance</h2>
-          <span>Review the same AI capability boundaries as Desktop. Desktop provider configuration and sensitive local evidence remain on your Mac.</span>
+          <span>Understand which AI runs against local evidence and which capability belongs to your authenticated Web workspace.</span>
         </div>
       </div>
 
       <div className={styles.boundary} role="status">
         <div>
-          <strong>Desktop AI Provider</strong>
-          <span>Your Desktop API keys, model IDs, and custom endpoints are stored locally only. Web cannot inspect whether a Desktop provider is configured.</span>
+          <strong>Separate local and Web AI boundaries</strong>
+          <span>Weekform Web cannot inspect or inherit your local provider, model, endpoint, credential, prompts, or generated output. Web Ask uses its own authenticated server path and a minimized weekly evidence catalog.</span>
         </div>
         <span className={styles.badge}>Local configuration</span>
       </div>
 
       <div className={styles.rows}>
-        <section className={`${styles.row} ${styles.leadRow}`} aria-labelledby="web-ai-provider-title">
-          <div className={styles.icon}><AssistanceIcon name="provider" /></div>
-          <div className={styles.copy}>
-            <h3 id="web-ai-provider-title">Desktop AI Provider</h3>
-            <p>Choose OpenAI or another supported provider, then review model and vision-model settings beside the local evidence they may process.</p>
-          </div>
-          <div className={styles.status}><strong>Mac only</strong><span>Credentials never enter Web</span></div>
-          <LocalSettingsControl />
-        </section>
         {ASSISTANCE_ROWS.map((row) => (
           <section className={styles.row} key={row.id} aria-labelledby={`web-ai-${row.id}`}>
             <div className={styles.icon}><AssistanceIcon name={row.icon} /></div>
@@ -80,8 +73,7 @@ export function PersonalAIAssistanceSettings() {
               <h3 id={`web-ai-${row.id}`}>{row.title}</h3>
               <p>{row.description}</p>
             </div>
-            <div className={styles.status}><strong>Mac only</strong><span>{row.detail}</span></div>
-            <LocalSettingsControl />
+            <div className={styles.status}><strong>{row.ownership}</strong><span>{row.detail}</span></div>
           </section>
         ))}
         <section className={`${styles.row} ${styles.webRow}`} aria-labelledby="web-ai-web-ask">
@@ -95,11 +87,9 @@ export function PersonalAIAssistanceSettings() {
         </section>
       </div>
 
-      <LocalSettingsHandoff
-        actionLabel="Get Weekform for Mac"
-        href="/download"
+      <SettingsBoundaryNote
         title="Change AI provider settings beside the evidence they affect"
-        description="Weekform for Mac owns provider credentials, connection tests, generation capabilities, and Visual Context consent. Web keeps these rows read-only and never receives that configuration."
+        description="Provider credentials, connection tests, model capability checks, and Visual Context consent remain on the device. Web presents their privacy boundary for clarity instead of duplicating controls it cannot safely operate."
       />
 
       <p className={styles.footnote}>Desktop AI output remains reviewable. This Web settings surface does not receive raw local activity, window titles, screenshots, Desktop AI prompts, local provider credentials, or local AI configuration. Web Ask uses its separate authenticated server path and does not inherit these Desktop settings; its conversation stays temporary, requests use no-store processing, and you should not enter sensitive, confidential, or regulated information.</p>

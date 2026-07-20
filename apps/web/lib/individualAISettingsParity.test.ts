@@ -35,7 +35,6 @@ test("AI Assistance keeps Desktop hierarchy while making local ownership explici
 
   for (const label of [
     "AI assistance",
-    "AI Provider",
     "Provider connection",
     "Classification and guidance",
     "Visual Context",
@@ -43,7 +42,8 @@ test("AI Assistance keeps Desktop hierarchy while making local ownership explici
     assert.match(source, new RegExp(label, "i"));
   }
 
-  assert.match(source, /stored locally only/i);
+  assert.match(source, /macOS Keychain/i);
+  assert.match(source, /local app state/i);
   assert.match(source, /reviewable/i);
   assert.match(
     source,
@@ -52,7 +52,7 @@ test("AI Assistance keeps Desktop hierarchy while making local ownership explici
   );
   assert.match(source, /Web Ask uses its separate authenticated server path/i);
   assert.doesNotMatch(source, /browser does not receive[^.]*private prompts/i);
-  assert.match(source, /href=["']\/download["']/);
+  assert.doesNotMatch(source, /href=["']\/download["']|Get Weekform for Mac/);
 });
 
 test("AI Usage keeps Desktop hierarchy without reconstructing local measurements", () => {
@@ -68,8 +68,8 @@ test("AI Usage keeps Desktop hierarchy without reconstructing local measurements
     assert.match(source, new RegExp(label, "i"));
   }
 
-  assert.match(source, /not copied|never uploaded|stays on your Mac/i);
-  assert.match(source, /href=["']\/download["']/);
+  assert.match(source, /not copied|not uploaded|private Web replica/i);
+  assert.doesNotMatch(source, /href=["']\/download["']|Get Weekform for Mac/);
   assert.doesNotMatch(source, /Measured tokens|Measured prompts|Estimated cost|Model mix/i);
 });
 

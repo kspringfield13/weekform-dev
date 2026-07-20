@@ -3,7 +3,11 @@ import type {
   PersonalReplicaBlockV1,
   PersonalWorkloadReplicaV1,
 } from "../../domain/src/personalCloud";
+import { computeWeeklyCapacitySnapshot, normalizeWeekId } from "./capacity";
 import { externalWorkBlockId } from "./externalWorkBlock";
+
+const PERSONAL_REPLICA_HISTORY_LIMIT = 20;
+const CANONICAL_WEEK_ID = /^[0-9]{4}-W(0[1-9]|[1-4][0-9]|5[0-3])$/;
 
 function stableStringify(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -53,9 +57,10 @@ export function buildPersonalWorkloadReplica(input: {
   snapshot: WeeklyCapacitySnapshot;
   now: string;
 }): PersonalWorkloadReplicaV1 {
+  const weekId = normalizeWeekId(input.weekId);
   const blocks = input.blocks
-    .filter((block) => block.week_id === input.weekId)
-    .map(personalReplicaBlock)
+    .filter((block) => normalizeWeekId(block.week_id) === weekId)
+    .map((block) => personalReplicaBlock(block.week_id === weekId ? block : { ...block, week_id: weekId }))
     .sort((left, right) => left.startTime.localeCompare(right.startTime) || left.blockId.localeCompare(right.blockId));
   // Freshness is the time this exact allowlisted replica was derived, not the
   // end time of its newest work block. Review, relabel, capacity-only, and
@@ -65,8 +70,8 @@ export function buildPersonalWorkloadReplica(input: {
   const sourceUpdatedAt = input.now;
   return {
     schemaVersion: 1,
-    replicaId: `personal-${input.weekId}`,
-    weekId: input.weekId,
+    replicaId: `personal-${weekId}`,
+    weekId,
     generatedAt: input.now,
     sourceUpdatedAt,
     blocks,
@@ -86,6 +91,44 @@ export function buildPersonalWorkloadReplica(input: {
       summaryConfidence: finite(input.snapshot.summary_confidence, 0, 1),
     },
   };
+}
+
+/**
+ * Build the bounded set the private Web workspace needs from the complete local
+ * ledger. The current capacity week remains present even when empty, while
+ * every retained week containing reviewable work gets its own deterministic
+ * snapshot instead of being silently omitted by the current-week view.
+ */
+export function buildPersonalWorkloadReplicas(input: {
+  currentSnapshot: WeeklyCapacitySnapshot;
+  blocks: WorkBlock[];
+  now: string;
+}): PersonalWorkloadReplicaV1[] {
+  const currentWeekId = normalizeWeekId(input.currentSnapshot.week_id);
+  const weekIds = new Set<string>();
+  if (CANONICAL_WEEK_ID.test(currentWeekId)) weekIds.add(currentWeekId);
+  for (const block of input.blocks) {
+    const weekId = normalizeWeekId(block.week_id);
+    if (CANONICAL_WEEK_ID.test(weekId)) weekIds.add(weekId);
+  }
+
+  return [...weekIds]
+    .sort((left, right) => left.localeCompare(right))
+    .slice(-PERSONAL_REPLICA_HISTORY_LIMIT)
+    .map((weekId) => {
+      const weekBlocks = input.blocks.filter(
+        (block) => normalizeWeekId(block.week_id) === weekId,
+      );
+      const snapshot = weekId === currentWeekId
+        ? { ...input.currentSnapshot, week_id: currentWeekId }
+        : computeWeeklyCapacitySnapshot(weekId, weekBlocks);
+      return buildPersonalWorkloadReplica({
+        weekId,
+        blocks: weekBlocks,
+        snapshot,
+        now: input.now,
+      });
+    });
 }
 
 export function replicaContentFingerprint(replica: PersonalWorkloadReplicaV1): string {

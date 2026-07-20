@@ -58,6 +58,10 @@
   padding: 12px 8px;
 }
 
+.referenceRow {
+  grid-template-columns: 34px minmax(220px, 1fr) minmax(210px, 0.5fr);
+}
+
 .icon {
   display: grid;
   width: 34px;
@@ -110,6 +114,10 @@
     grid-template-columns: 34px minmax(0, 1fr) auto;
   }
 
+  .referenceRow {
+    grid-template-columns: 34px minmax(0, 1fr);
+  }
+
   .status {
     grid-column: 2 / -1;
     text-align: left;
@@ -127,8 +135,7 @@
   }
 
   .status,
-  .deleteForm,
-  .row > :global([aria-disabled="true"]) {
+  .deleteForm {
     grid-column: 2;
     justify-self: start;
   }

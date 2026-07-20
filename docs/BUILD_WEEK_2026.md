@@ -729,6 +729,16 @@ The hackathon-readiness and provenance task is supplemental evidence:
   Webex token broker, and live-account transfer remain unclaimed. Codex task
   `019f7f6c-b19e-7d71-a333-58c951ef34c5` contains the implementation and review
   evidence; raw task artifacts are not public submission material.
+  A July 20 connection-UX follow-through replaces the disabled unavailable
+  actions with provider-specific **Connect now** guides. Each guide links to the
+  official credential console and authorization documentation, names the exact
+  public desktop build settings, separates build setup from account consent,
+  previews requested access and the local content-discard boundary, and offers
+  a status recheck before browser authorization. Focused Chat setup and sync
+  tests pass 17/17 and the authoritative root build passes. Browser verification
+  covered all three missing-setup guides, modal focus entry and wrapping, Escape,
+  and focus trapping with no console or page errors; it does not claim a live
+  provider authorization, native Keychain exercise, or packaged-app proof.
 
 - **Codex Session ID:** `019f75f1-73fc-7850-98a4-c23ec0aae893`
 - **Task title:** `Prepare Weekform for Build Week`

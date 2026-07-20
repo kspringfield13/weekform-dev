@@ -15,23 +15,20 @@ function sourceIfPresent(url: URL): string {
   return existsSync(url) ? readFileSync(url, "utf8") : "";
 }
 
-test("AI settings hand off to a truthful Mac acquisition path", () => {
+test("AI settings explain the on-device boundary without acquisition prompts", () => {
   const combined = `${sourceIfPresent(assistanceUrl)}\n${sourceIfPresent(usageUrl)}`;
 
-  assert.match(combined, /Get Weekform for Mac/);
-  assert.doesNotMatch(
-    combined,
-    /Open (?:Weekform for Mac|on Mac)/,
-    "a /download link must not imply Web can launch an installed desktop app",
-  );
+  assert.match(combined, /SettingsBoundaryNote/);
+  assert.doesNotMatch(combined, /Get Weekform for Mac|href=["']\/download["']/);
 });
 
 test("AI settings expose availability without inventing browser-owned configuration", () => {
   const assistance = sourceIfPresent(assistanceUrl);
   const usage = sourceIfPresent(usageUrl);
 
-  assert.match(assistance, /Mac only/i);
-  assert.match(assistance, /API (?:key|keys|credentials)/i);
+  assert.doesNotMatch(assistance, /Mac only/i);
+  assert.match(assistance, /API (?:key|keys|credentials)|API credentials/i);
+  assert.match(assistance, /macOS Keychain/);
   assert.match(assistance, /Provider|Model/);
   assert.doesNotMatch(
     assistance,
@@ -39,7 +36,7 @@ test("AI settings expose availability without inventing browser-owned configurat
     "read-only Web parity must not render Desktop configuration actions",
   );
 
-  assert.match(usage, /Mac only/i);
+  assert.doesNotMatch(usage, /Mac only/i);
   assert.match(usage, /estimates/i);
   assert.match(usage, /manager summar(?:y|ies)/i);
   assert.doesNotMatch(
@@ -67,20 +64,10 @@ test("AI Assistance exposes the operational authenticated Web Ask path", () => {
   );
 });
 
-test("AI Usage exposes its operational review-safe Web boundary", () => {
+test("AI Usage documents its review-safe Web boundary without a redundant action", () => {
   const usage = sourceIfPresent(usageUrl);
 
-  assert.match(usage, /Web usage boundary/i);
-  assert.match(
-    usage,
-    /href=["']\/app\?screen=usage["']/,
-    "AI Usage settings must reach the existing authenticated Week usage screen",
-  );
-  assert.match(usage, /Available in Web/);
-  assert.match(usage, /no (?:usage )?measurements|review-safe boundary/i);
-  assert.doesNotMatch(
-    usage,
-    /Web usage boundary[\s\S]{0,500}<strong>Mac only<\/strong>/,
-    "the review-safe Web usage boundary must not be presented as Mac-only",
-  );
+  assert.match(usage, /Not uploaded/);
+  assert.match(usage, /not part of the private Web replica|underlying measurements/i);
+  assert.doesNotMatch(usage, /href=["']\/app\?screen=usage["']|Review Web boundary/);
 });

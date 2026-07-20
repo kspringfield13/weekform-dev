@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import type { WeeklyCapacitySnapshot, WorkBlock } from "../../domain/src/models";
 import {
   buildPersonalWorkloadReplica,
+  buildPersonalWorkloadReplicas,
   replicaContentFingerprint,
 } from "./personalReplica";
 
@@ -85,6 +86,38 @@ test("personal replica is a review-safe allowlist, never a filtered WorkBlock", 
   ]) {
     assert.equal(serialized.includes(forbidden), false, `replica leaked ${forbidden}`);
   }
+});
+
+test("personal Web replicas include every ledger week with work, even when the current week is empty", () => {
+  const priorWeekBlock: WorkBlock = {
+    ...block,
+    work_block_id: "block-prior-week",
+    week_id: "2026-W28",
+    start_time: "2026-07-07T13:00:00.000Z",
+    end_time: "2026-07-07T14:30:00.000Z",
+  };
+  const futureWeekBlock: WorkBlock = {
+    ...block,
+    work_block_id: "block-future-week",
+    week_id: "2026-W31",
+    start_time: "2026-07-28T13:00:00.000Z",
+    end_time: "2026-07-28T14:30:00.000Z",
+  };
+
+  const replicas = buildPersonalWorkloadReplicas({
+    currentSnapshot: { ...snapshot, week_id: "2026-W30" },
+    blocks: [priorWeekBlock, futureWeekBlock],
+    now: "2026-07-20T20:00:00.000Z",
+  });
+
+  assert.deepEqual(replicas.map((replica) => replica.weekId), [
+    "2026-W28",
+    "2026-W30",
+    "2026-W31",
+  ]);
+  assert.deepEqual(replicas.map((replica) => replica.blocks.length), [1, 0, 1]);
+  assert.equal(replicas[0].capacity.allocatedPct, priorWeekBlock.estimated_capacity_pct);
+  assert.equal(replicas[2].capacity.allocatedPct, futureWeekBlock.estimated_capacity_pct);
 });
 
 test("replica revisions are stable across timestamps and change with reviewable content", () => {

@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { deletePersonalReplicaHistory } from "@/app/dashboard/personalActions";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
 
-import { LocalSettingsControl, LocalSettingsHandoff } from "./PersonalSettingsLocalControl";
+import { SettingsBoundaryNote } from "./PersonalSettingsLocalControl";
 import styles from "./PersonalWebDataControl.module.css";
 
 type ControlIconName = "cloud" | "timer" | "download" | "reset";
@@ -84,42 +84,37 @@ export function PersonalWebDataControl({
           </form>
         </section>
 
-        <section className={styles.row} aria-labelledby="web-retention-title">
+        <section className={`${styles.row} ${styles.referenceRow}`} aria-labelledby="web-retention-title">
           <div className={styles.icon}><ControlIcon name="timer" /></div>
           <div className={styles.copy}>
             <h3 id="web-retention-title">Activity retention</h3>
             <p>Choose how long raw active-window samples remain on the device that captured them. Web never receives those samples.</p>
           </div>
-          <div className={styles.status}><strong>Mac only</strong><span>Local raw evidence</span></div>
-          <LocalSettingsControl />
+          <div className={styles.status}><strong>On-device control</strong><span>Applies to encrypted raw activity history</span></div>
         </section>
 
-        <section className={styles.row} aria-labelledby="web-export-title">
+        <section className={`${styles.row} ${styles.referenceRow}`} aria-labelledby="web-export-title">
           <div className={styles.icon}><ControlIcon name="download" /></div>
           <div className={styles.copy}>
             <h3 id="web-export-title">Export work ledger</h3>
             <p>Export full classified blocks and the explainability trail as JSON or CSV from the local source. Web only has the review-safe allowlist.</p>
           </div>
-          <div className={styles.status}><strong>Mac only</strong><span>Full-detail local export</span></div>
-          <LocalSettingsControl />
+          <div className={styles.status}><strong>On-device control</strong><span>Plaintext full backup from the local source</span></div>
         </section>
 
-        <section className={styles.row} aria-labelledby="web-reset-title">
+        <section className={`${styles.row} ${styles.referenceRow}`} aria-labelledby="web-reset-title">
           <div className={styles.icon}><ControlIcon name="reset" /></div>
           <div className={styles.copy}>
             <h3 id="web-reset-title">Reset all local data</h3>
             <p>Reset activity, work blocks, corrections, forecasts, imports, and local audit history only from Weekform for Mac, after reviewing the full consequence.</p>
           </div>
-          <div className={styles.status}><strong>Mac only · irreversible</strong><span>Never initiated by Web</span></div>
-          <LocalSettingsControl />
+          <div className={styles.status}><strong>On-device · irreversible</strong><span>Never initiated from this browser</span></div>
         </section>
       </div>
 
-      <LocalSettingsHandoff
-        actionLabel="Get Weekform for Mac"
-        href="/download"
+      <SettingsBoundaryNote
         title="Manage full-detail evidence on the Mac that stores it"
-        description="Weekform for Mac owns retention, full-ledger export, and local reset. Web keeps those controls read-only while the separate private Web history action above remains available for this authenticated account."
+        description="Retention, full-backup export, and local reset act on data that never enters Weekform Web, so those controls stay with the encrypted activity journal and local app state. The Web-history deletion above is separate and affects only this account’s cloud replica and review-command history."
       />
     </section>
   );

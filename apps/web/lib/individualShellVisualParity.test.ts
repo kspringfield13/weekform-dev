@@ -63,7 +63,7 @@ test("the Web toolbar leads with the review purpose and ends with the product lo
   assert.match(shellSource, /Private evidence stays on your Mac/);
   assert.match(
     shellSource,
-    /className="web-toolbar-actions"[\s\S]*className="web-toolbar-product"[\s\S]*<strong>Weekform<\/strong>[\s\S]*<span>Web<\/span>/,
+    /className="web-toolbar-actions"[\s\S]*className="web-toolbar-product"[\s\S]*<strong>Weekform<\/strong>[\s\S]*<WebEditionBadge/,
   );
 
   const product = rule(".web-toolbar-product");

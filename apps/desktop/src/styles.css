@@ -1826,6 +1826,9 @@ h3 {
 .calendar-provider-mark.is-google { color: #4285f4; }
 .calendar-provider-mark.is-apple { color: var(--text); }
 .calendar-provider-mark.is-outlook { color: #2563eb; }
+.calendar-provider-mark.is-slack { color: #36c5f0; }
+.calendar-provider-mark.is-google_chat { color: #4285f4; }
+.calendar-provider-mark.is-webex { color: #00bceb; }
 
 .calendar-provider-title,
 .calendar-provider-meta,
@@ -1842,6 +1845,178 @@ h3 {
 .calendar-provider-actions { justify-content: flex-end; gap: 6px; }
 .calendar-provider-actions .settings-control { white-space: nowrap; }
 .calendar-provider-actions .icon-button { width: 32px; height: 32px; }
+
+.chat-connect-overlay {
+  z-index: 2100;
+}
+
+.dialog-panel.chat-connect-dialog {
+  width: min(560px, 100%);
+  max-width: 560px;
+  gap: 14px;
+  padding: 22px;
+  background: var(--surface-elevated);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.48), 0 0 0 1px rgba(255, 255, 255, 0.025);
+}
+
+.chat-connect-header {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.chat-connect-eyebrow {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-subtle);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.chat-connect-steps {
+  display: grid;
+  gap: 0;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-connect-steps > li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 11px;
+  min-height: 64px;
+  padding: 0 0 14px;
+}
+
+.chat-connect-steps > li:last-child {
+  min-height: 0;
+  padding-bottom: 0;
+}
+
+.chat-connect-steps > li:not(:last-child)::after {
+  position: absolute;
+  top: 27px;
+  bottom: 2px;
+  left: 13px;
+  width: 1px;
+  background: var(--border);
+  content: "";
+}
+
+.chat-connect-step-number {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--surface-elevated);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.chat-connect-steps strong {
+  display: block;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.chat-connect-steps p,
+.chat-connect-steps ul {
+  margin: 3px 0 0;
+  color: var(--text-subtle);
+  font-size: 11px;
+  line-height: 1.48;
+}
+
+.chat-connect-steps ul {
+  display: grid;
+  gap: 2px;
+  padding-left: 17px;
+}
+
+.chat-connect-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.chat-connect-links button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.chat-connect-links button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.chat-connect-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.chat-connect-settings code {
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  font-size: 9px;
+}
+
+.chat-connect-privacy {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--text-muted);
+  background: var(--surface-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.chat-connect-privacy svg {
+  margin-top: 1px;
+  color: var(--success);
+}
+
+.chat-connect-build-detail {
+  margin: -3px 0 0;
+  color: var(--text-subtle);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.chat-connect-dialog .dialog-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
 
 .calendar-live-note {
   margin: 9px 0 0 48px;

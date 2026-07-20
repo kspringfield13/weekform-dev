@@ -1,7 +1,6 @@
-import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { LocalSettingsControl, LocalSettingsHandoff } from "./PersonalSettingsLocalControl";
+import { SettingsBoundaryNote } from "./PersonalSettingsLocalControl";
 import styles from "./PersonalAISettings.module.css";
 
 type UsageIconName = "estimate" | "share" | "import" | "pricing";
@@ -78,29 +77,18 @@ export function PersonalAIUsageSettings() {
               <h3 id={`web-ai-usage-${row.id}`}>{row.title}</h3>
               <p>{row.description}</p>
             </div>
-            <div className={styles.status}><strong>Mac only</strong><span>{row.detail}</span></div>
-            <LocalSettingsControl />
+            <div className={styles.status}><strong>Local measurement</strong><span>{row.detail}</span></div>
           </section>
         ))}
-        <section className={`${styles.row} ${styles.webRow}`} aria-labelledby="web-ai-usage-boundary">
-          <div className={styles.icon}><UsageIcon name="estimate" /></div>
-          <div className={styles.copy}>
-            <h3 id="web-ai-usage-boundary">Web usage boundary</h3>
-            <p>Review exactly which AI usage details remain local. No usage measurements are uploaded or reconstructed in the browser.</p>
-          </div>
-          <div className={styles.status}><strong>Available in Web</strong><span>Review-safe boundary</span></div>
-          <Link className={`button button-primary ${styles.localAction}`} href="/app?screen=usage">Review Web boundary</Link>
-        </section>
       </div>
 
-      <LocalSettingsHandoff
-        actionLabel="Get Weekform for Mac"
-        href="/download"
+      <SettingsBoundaryNote
+        eyebrow="Not uploaded"
         title="Keep AI usage measurement beside its local source"
-        description="Weekform for Mac owns observed estimates, imports, pricing overrides, and sharing preferences. Web keeps these controls read-only and never reconstructs private usage totals."
+        description="Observed estimates, provider exports, token records, pricing overrides, budgets, and sharing preferences are not part of the private Web replica. This page documents that boundary; it does not reconstruct private usage totals."
       />
 
-      <p className={styles.footnote}>Web shows no inferred usage totals, provider imports, budgets, prices, or sharing preference. Use Weekform for Mac to review or change them.</p>
+      <p className={styles.footnote}>Manager Access can receive a usage note only when the individual explicitly enables that field in an approved team snapshot; the private Web workspace still does not receive the underlying measurements.</p>
     </section>
   );
 }

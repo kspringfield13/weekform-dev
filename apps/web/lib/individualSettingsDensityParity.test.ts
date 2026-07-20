@@ -62,53 +62,44 @@ test("Settings keeps the stable Desktop header and all six routed boundaries", (
   assert.match(shell, /tabIndex=\{tab\s*===\s*item\.id\s*\?\s*0\s*:\s*-1\}/);
 });
 
-test("each local-control Settings tab uses one terminal Mac handoff instead of a CTA in every row", () => {
+test("each informational Settings tab ends with a non-interactive ownership note", () => {
   const sharedControl = source("../components/PersonalSettingsLocalControl.tsx");
-  assert.equal(
-    Array.from(sharedControl.matchAll(/<Link\b[^>]*href=\{href\}[^>]*>/g)).length,
-    1,
-    "the shared handoff should own the sole Mac acquisition link",
-  );
-  assert.match(sharedControl, /aria-disabled="true"/);
+  assert.match(sharedControl, /export function SettingsBoundaryNote/);
+  assert.doesNotMatch(sharedControl, /<Link\b|aria-disabled="true"|className="button/);
 
   for (const surface of surfaces) {
     const component = source(surface.component);
     assert.equal(
-      Array.from(component.matchAll(/<LocalSettingsHandoff\b/g)).length,
+      Array.from(component.matchAll(/<SettingsBoundaryNote\b/g)).length,
       1,
-      `${surface.label} should expose one acquisition action after its rows`,
+      `${surface.label} should expose one ownership note after its rows`,
     );
     assert.match(
       component,
-      /<LocalSettingsHandoff\b/,
-      `${surface.label} should reserve one terminal handoff region`,
+      /<SettingsBoundaryNote\b/,
+      `${surface.label} should reserve one terminal boundary-note region`,
     );
 
     const rowsStart = component.indexOf(`className={styles.rows}`);
-    const handoffStart = component.lastIndexOf(`<LocalSettingsHandoff`);
+    const handoffStart = component.lastIndexOf(`<SettingsBoundaryNote`);
     assert.ok(rowsStart >= 0, `${surface.label} should retain its Desktop-shaped row list`);
     assert.ok(handoffStart > rowsStart, `${surface.label} handoff should follow the row list`);
     assert.doesNotMatch(
       component.slice(rowsStart, handoffStart),
-      /<Link\b[^>]*href=["']\/download["']/,
-      `${surface.label} row controls should be inert local-state labels, not repeated acquisition links`,
-    );
-    assert.match(
-      component.slice(rowsStart, handoffStart),
-      /<LocalSettingsControl\b/,
-      `${surface.label} local rows should keep the Desktop control column without enabling a Web mutation`,
+      /<Link\b[^>]*href=["']\/download["']|<LocalSettingsControl\b/,
+      `${surface.label} should not show acquisition links or disabled faux controls`,
     );
   }
 });
 
-test("Settings local-control rows retain Desktop icon, copy, status, and control geometry", () => {
+test("Settings information rows retain Desktop icon, copy, and status geometry", () => {
   for (const surface of surfaces) {
     const styles = source(surface.styles);
     const rowRule = styles.match(/\.row\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
     assert.match(
       rowRule,
-      /grid-template-columns:\s*34px\s+minmax\([^)]*\)\s+minmax\([^)]*\)\s+auto\s*;/,
-      `${surface.label} should match Desktop's four-part settings row silhouette`,
+      /grid-template-columns:\s*34px\s+minmax\([^)]*\)\s+minmax\([^)]*\)(?:\s+auto)?\s*;/,
+      `${surface.label} should keep the icon, copy, and status silhouette, with an action column only where needed`,
     );
     assert.match(rowRule, /min-height:\s*80px\s*;/, `${surface.label} should use Desktop's exact 80px row height`);
     assert.match(rowRule, /padding:\s*12px\s+8px\s*;/, `${surface.label} should use Desktop's exact row inset`);
@@ -120,12 +111,12 @@ test("Settings local-control rows retain Desktop icon, copy, status, and control
   }
 });
 
-test("Settings rows and the terminal handoff collapse without horizontal clipping", () => {
+test("Settings rows and boundary notes collapse without horizontal clipping", () => {
   const sharedStyles = source("../components/PersonalSettingsLocalControl.module.css");
   assert.match(
     sharedStyles,
-    /@media\s*\(max-width:\s*6[0-2]\dpx\)[\s\S]*?\.handoff\s*\{[\s\S]*?flex-direction:\s*column\s*;/,
-    "the shared terminal handoff should stack its copy and action on narrow screens",
+    /\.handoff\s*\{[\s\S]*?grid-template-columns:\s*7px\s+minmax\(0,\s*1fr\)\s*;/,
+    "the shared boundary note should keep a bounded marker and fluid copy column",
   );
 
   for (const surface of surfaces) {

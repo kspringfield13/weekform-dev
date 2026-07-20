@@ -1,33 +1,22 @@
-import Link from "next/link";
-
 import styles from "./PersonalSettingsLocalControl.module.css";
 
-export function LocalSettingsControl({ label = "Local control" }: { label?: string }) {
-  return (
-    <span className={styles.localControl} aria-disabled="true" title="Change this setting in Weekform for Mac">
-      {label}
-    </span>
-  );
-}
-
-export function LocalSettingsHandoff({
-  actionLabel = "Get Weekform for Mac",
-  href = "/download",
+export function SettingsBoundaryNote({
+  eyebrow = "On-device settings",
   title,
   description,
 }: {
-  actionLabel?: "Get Weekform for Mac";
-  href?: "/download";
+  eyebrow?: string;
   title: string;
   description: string;
 }) {
   return (
-    <aside className={styles.handoff} aria-label="Weekform for Mac settings handoff">
+    <aside className={styles.handoff} aria-label={title}>
+      <span className={styles.marker} aria-hidden="true" />
       <div>
+        <span className={styles.eyebrow}>{eyebrow}</span>
         <strong>{title}</strong>
         <span>{description}</span>
       </div>
-      <Link href={href} className="button button-primary">{actionLabel}</Link>
     </aside>
   );
 }

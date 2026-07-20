@@ -195,8 +195,7 @@ export function PersonalWeekOverview({
         </div>
       </section>
 
-      <section className="personal-week-metrics week-dashboard-metrics" aria-labelledby="week-summary-heading">
-        <h2 id="week-summary-heading" className="sr-only">Capacity summary</h2>
+      <section className="personal-week-metrics week-dashboard-metrics" aria-label="Capacity summary">
         {metrics.map((metric) => {
           const value = safePercent(metric.value);
           return (

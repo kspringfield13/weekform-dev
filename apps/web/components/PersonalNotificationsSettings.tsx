@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { LocalSettingsControl, LocalSettingsHandoff } from "./PersonalSettingsLocalControl";
+import { SettingsBoundaryNote } from "./PersonalSettingsLocalControl";
 import styles from "./PersonalNotificationsSettings.module.css";
 
 type NotificationIconName = "alerts" | "guardrail" | "review" | "calendar" | "fragmentation" | "summary";
@@ -78,10 +78,9 @@ export function PersonalNotificationsSettings() {
             <p>Menu-bar alerts use capacity metrics only — never window titles or app names — and are capped at 4 per day.</p>
           </div>
           <div className={styles.status}>
-            <strong>Mac only</strong>
-            <span>Delivery and master switch</span>
+            <strong>On-device delivery</strong>
+            <span>System permission and master switch</span>
           </div>
-          <LocalSettingsControl />
         </section>
         {ALERT_ROWS.map((row) => (
           <section className={styles.row} key={row.id} aria-labelledby={`web-notification-${row.id}`}>
@@ -91,19 +90,16 @@ export function PersonalNotificationsSettings() {
               <p>{row.description}</p>
             </div>
             <div className={styles.status}>
-              <strong>Mac only</strong>
+              <strong>On-device alert rule</strong>
               <span>{row.status}</span>
             </div>
-            <LocalSettingsControl />
           </section>
         ))}
       </div>
 
-      <LocalSettingsHandoff
-        actionLabel="Get Weekform for Mac"
-        href="/download"
+      <SettingsBoundaryNote
         title="Choose alert delivery on the Mac that owns your workload model"
-        description="Weekform for Mac controls notification permission, thresholds, and delivery. Web shows the same signal boundaries without requesting browser permission or keeping another settings copy."
+        description="System notification permission, thresholds, quiet delivery, and the daily alert cap remain on-device. Web documents the alert logic without requesting browser notification permission or keeping a second settings copy."
       />
 
       <p className={styles.footnote}>Web does not request browser notification permission or keep a second copy of your alert settings.</p>

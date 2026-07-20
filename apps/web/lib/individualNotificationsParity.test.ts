@@ -51,9 +51,10 @@ test("Notifications preserves Desktop alert hierarchy and truthful delivery stat
 
   assert.match(source, /capped at 4 per day/i);
   assert.match(source, /never window titles or app names/i);
-  assert.match(source, /Mac only/);
-  assert.match(source, /Get Weekform for Mac/);
-  assert.doesNotMatch(source, /Open on Mac/);
+  assert.match(source, /On-device delivery/);
+  assert.match(source, /On-device alert rule/);
+  assert.match(source, /SettingsBoundaryNote/);
+  assert.doesNotMatch(source, /Mac only|Get Weekform for Mac|Open on Mac/);
   assert.match(source, /aria-labelledby=/);
 });
 
@@ -77,7 +78,7 @@ test("Notifications keeps the Desktop row grid responsive on Web", () => {
     ? readFileSync(notificationsStylesUrl, "utf8")
     : "";
 
-  assert.match(source, /grid-template-columns:\s*34px minmax\(220px, 1fr\) minmax\(130px, 0\.36fr\) auto/);
+  assert.match(source, /grid-template-columns:\s*34px minmax\(220px, 1fr\) minmax\(210px, 0\.5fr\)/);
   assert.match(source, /@media \(max-width: 920px\)[\s\S]*grid-template-columns:\s*34px minmax\(0, 1fr\) auto/);
   assert.match(source, /@media \(max-width: 620px\)[\s\S]*grid-template-columns:\s*34px minmax\(0, 1fr\)/);
 });

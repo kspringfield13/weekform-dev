@@ -50,7 +50,7 @@
 
 .row {
   display: grid;
-  grid-template-columns: 34px minmax(220px, 1fr) minmax(145px, 0.4fr) auto;
+  grid-template-columns: 34px minmax(220px, 1fr) minmax(210px, 0.5fr);
   align-items: center;
   gap: 14px;
   min-height: 80px;
@@ -144,8 +144,7 @@
   }
 
   .status,
-  .localAction,
-  .row > :global([aria-disabled="true"]) {
+  .localAction {
     grid-column: 2;
     justify-self: start;
   }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Link2,
   LoaderCircle,
@@ -17,6 +18,7 @@ import type {
   ChatSourcesController,
 } from "../../hooks/useChatSources";
 import { formatAuditTime, formatCount } from "../../lib/format";
+import { ChatConnectWizard } from "./ChatConnectWizard";
 
 const COVERAGE_LABELS: Record<ChatCoverageState, string> = {
   complete: "Complete",
@@ -35,7 +37,7 @@ function statusLabel(status: { available: boolean; connected: boolean; stale: bo
   if (status?.stale) return "Status unknown";
   if (status?.connected) return "Connected";
   if (status?.available) return "Ready";
-  return "Unavailable";
+  return "Setup needed";
 }
 
 export function ChatSourcesPanel({
@@ -49,6 +51,10 @@ export function ChatSourcesPanel({
 }) {
   const { range, rangeError, rangeInput } = controller;
   const rangeFeedbackId = "chat-range-feedback";
+  const [wizardProvider, setWizardProvider] = useState<ChatProviderId | null>(null);
+  const wizardDescriptor = CHAT_PROVIDERS.find((provider) => provider.id === wizardProvider);
+  const wizardStatus = controller.statuses.find((status) => status.provider === wizardProvider);
+  const wizardActivity = wizardProvider ? controller.activity[wizardProvider] : null;
 
   return (
     <section className="calendar-sources" aria-labelledby="chat-sources-title">
@@ -129,7 +135,11 @@ export function ChatSourcesPanel({
                 </div>
                 <p>{provider.description} {note}</p>
                 <div className="calendar-provider-meta" aria-live="polite">
-                  <span>{status?.detail ?? "Checking native connector availability…"}</span>
+                  <span>{status
+                    ? status.available || status.connected || status.stale
+                      ? status.detail
+                      : "Connector setup is missing from this desktop build. Open the guide to get the required credential."
+                    : "Checking native connector availability…"}</span>
                   {receipt ? (
                     <>
                       <span>{COVERAGE_LABELS[receipt.coverage]} coverage</span>
@@ -206,16 +216,15 @@ export function ChatSourcesPanel({
                   <button
                     className="settings-control"
                     type="button"
-                    disabled={!status?.available || !range || busy}
-                    title={!status?.available ? status?.detail : undefined}
+                    disabled={busy}
                     aria-busy={activity.phase === "connecting"}
                     aria-describedby={activity.message ? errorId : undefined}
-                    onClick={() => void controller.connect(provider.id).catch(() => undefined)}
+                    onClick={() => setWizardProvider(provider.id)}
                   >
                     {activity.phase === "connecting"
                       ? <LoaderCircle className="spin" size={15} aria-hidden />
                       : <Link2 size={15} aria-hidden />}
-                    <span>{activity.phase === "connecting" ? "Connecting…" : "Connect"}</span>
+                    <span>{activity.phase === "connecting" ? "Connecting…" : "Connect now"}</span>
                   </button>
                 )}
               </div>
@@ -251,6 +260,22 @@ export function ChatSourcesPanel({
           <small>Compatibility path for existing Weekform-normalized files; vendor exports are not accepted directly.</small>
           {legacyImportError && <small className="import-error" role="alert">{legacyImportError}</small>}
         </div>
+      )}
+      {wizardProvider && wizardDescriptor && (
+        <ChatConnectWizard
+          provider={wizardProvider}
+          label={wizardDescriptor.label}
+          status={wizardStatus}
+          rangeIsValid={Boolean(range)}
+          busy={wizardActivity?.phase === "connecting"}
+          refreshing={controller.refreshingStatuses}
+          onClose={() => setWizardProvider(null)}
+          onRecheck={() => void controller.refreshStatuses().catch(() => undefined)}
+          onConnect={() => {
+            setWizardProvider(null);
+            void controller.connect(wizardProvider).catch(() => undefined);
+          }}
+        />
       )}
     </section>
   );
