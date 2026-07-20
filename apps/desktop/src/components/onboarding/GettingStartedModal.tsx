@@ -48,6 +48,7 @@ export function GettingStartedModal({
   onConnectViaChatGpt,
   onConnectViaCodex,
   onOpenDemo,
+  onStartTour,
   onDismiss,
 }: {
   /** Live tracking state — the tracking step flips to its confirmation state when false. */
@@ -70,6 +71,8 @@ export function GettingStartedModal({
   onConnectViaCodex: () => Promise<string>;
   /** Open the simulated-week demo (finishes the wizard first). */
   onOpenDemo: () => void;
+  /** Start the optional guided tour (finishes the wizard first). */
+  onStartTour: () => void;
   /** Close the wizard — Finish, "I'll do this later", or Escape all land here. */
   onDismiss: () => void;
 }) {
@@ -407,12 +410,19 @@ export function GettingStartedModal({
                   <Compass size={17} />
                 </span>
                 <div>
-                  <h2>Where should I start?</h2>
-                  <ul>
-                    <li>Review today&rsquo;s activity on Today as work blocks appear</li>
-                    <li>Import a calendar from Settings for a fuller picture</li>
-                    <li>Return to Week later to see workload and capacity trends</li>
-                  </ul>
+                  <h2>Want a quick tour first?</h2>
+                  <p>
+                    Optional: a 60-second walkthrough of where things live — Today&rsquo;s review
+                    queue, the Week capacity view, the Agent, and your History. You can also replay
+                    it anytime from Settings.
+                  </p>
+                  <button
+                    className="getting-started-btn getting-started-step-action"
+                    type="button"
+                    onClick={onStartTour}
+                  >
+                    <Compass size={14} aria-hidden="true" /> Take the tour
+                  </button>
                 </div>
               </section>
             </>

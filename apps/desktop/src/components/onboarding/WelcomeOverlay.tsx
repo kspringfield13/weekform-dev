@@ -66,7 +66,7 @@ export function WelcomeOverlay({ onBegin }: { onBegin: () => void }) {
         <button className="welcome-begin" type="button" onClick={onBegin} ref={buttonRef}>
           Get started <ArrowRight size={15} aria-hidden="true" />
         </button>
-        <p className="welcome-footnote">A two-minute tour and setup comes next.</p>
+        <p className="welcome-footnote">A one-minute setup comes next — the tour is optional.</p>
       </div>
     </div>
   );

@@ -1442,6 +1442,7 @@ export function App() {
   // `outcome` distinguishes a completed tour from an early skip in the audit
   // trail without adding a second event type.
   function endWalkthrough(outcome: "completed" | "skipped") {
+    setTourRequested(false);
     if (walkthroughCompleted) return;
     setWalkthroughCompleted(true);
     if (isDemoMode) return;
@@ -1466,15 +1467,20 @@ export function App() {
   }
 
   // Branded first-launch welcome, acknowledged per session: it fronts the
-  // walkthrough on a genuine first run, and an interrupted onboarding greets
-  // the user again next launch (nothing persisted until the walkthrough ends).
+  // getting-started wizard on a genuine first run, and an interrupted
+  // onboarding greets the user again next launch (nothing persisted until the
+  // wizard is finished or deferred).
   const [welcomeAcknowledged, setWelcomeAcknowledged] = useState(false);
 
-  // Let the user replay the guided tour from Settings. Skips the branded
-  // welcome — replays go straight into the tour.
+  // The guided tour is optional and explicitly requested — offered at the end
+  // of the getting-started wizard, or replayed from Settings. Session-scoped.
+  const [tourRequested, setTourRequested] = useState(false);
+
+  // Let the user replay the guided tour from Settings (or start it from the
+  // wizard's final step). Resets the persisted flag so the outcome re-audits.
   function replayWalkthrough() {
-    setWelcomeAcknowledged(true);
     setWalkthroughCompleted(false);
+    setTourRequested(true);
   }
 
   // Post-walkthrough "Getting started" modal closed. `outcome` records whether the
@@ -2209,7 +2215,7 @@ export function App() {
     // Settings is the intentional escape hatch from first-run guidance. The
     // walkthrough otherwise owns the pointer plane, so dismiss it before the
     // requested screen opens instead of making Settings appear unresponsive.
-    if (screen === "setup" && !walkthroughCompleted) {
+    if (screen === "setup" && tourRequested) {
       endWalkthrough("skipped");
     }
     setActive(screen);
@@ -2273,16 +2279,16 @@ export function App() {
   // OPENAI_API_KEY environment fallback the Rust commands use. Every AI-triggering
   // button disables (with an explanatory tooltip) when this is false.
   const aiAvailable = Boolean(aiConfig?.apiKey?.trim()) || envOpenAiKeyPresent;
-  // Onboarding sequence: branded welcome → walkthrough → getting-started wizard.
+  // Onboarding sequence: branded welcome → getting-started wizard → optional
+  // guided tour (offered on the wizard's last step, replayable from Settings).
   const showWelcome =
-    !isDemoMode && windowMode === "large" && !walkthroughCompleted && !welcomeAcknowledged;
-  const showWalkthrough =
-    !isDemoMode && windowMode === "large" && !walkthroughCompleted && welcomeAcknowledged;
-  // The "Getting started" (enable tracking) modal takes over the moment the
-  // walkthrough finishes: same large-window/demo gating, but keyed on the
-  // walkthrough being DONE so the two full-screen layers never stack.
+    !isDemoMode && windowMode === "large" && gettingStartedStatus === "unseen" && !welcomeAcknowledged;
   const showGettingStarted =
-    !isDemoMode && windowMode === "large" && walkthroughCompleted && gettingStartedStatus === "unseen";
+    !isDemoMode && windowMode === "large" && gettingStartedStatus === "unseen" && welcomeAcknowledged;
+  // The tour renders only when explicitly requested, and never under the
+  // welcome/wizard layers so the full-screen surfaces don't stack.
+  const showWalkthrough =
+    !isDemoMode && windowMode === "large" && tourRequested && !showWelcome && !showGettingStarted;
   // Persistent nudge after "I'll do this later": stays until tracking is enabled
   // (the skipped→complete effect above then retires it for good).
   const showTrackingReminder =
@@ -2480,6 +2486,10 @@ export function App() {
           onConnectViaChatGpt={connectViaChatGptFromWizard}
           onConnectViaCodex={connectViaCodexFromWizard}
           onOpenDemo={openDemoSimulation}
+          onStartTour={() => {
+            finishGettingStarted(paused ? "skipped" : "enabled");
+            replayWalkthrough();
+          }}
           onDismiss={() => finishGettingStarted(paused ? "skipped" : "enabled")}
         />
       )}
