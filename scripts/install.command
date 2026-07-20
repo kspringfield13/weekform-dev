@@ -271,8 +271,10 @@ SELECTED_DEVELOPER_DIR="$(xcode-select -p)"
 DEVELOPER_DIR="$SELECTED_DEVELOPER_DIR" CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" npm run desktop:build
 ok "Build complete"
 
-APP_PATH="$(find apps/desktop/src-tauri/target/release/bundle/macos -maxdepth 1 -name 'Weekform.app' -print -quit 2>/dev/null || true)"
+EXPECTED_BUILD_APP="$PROJECT_DIR/apps/desktop/src-tauri/target/release/bundle/macos/Weekform.app"
+APP_PATH="$(find "$PROJECT_DIR/apps/desktop/src-tauri/target/release/bundle/macos" -maxdepth 1 -name 'Weekform.app' -print -quit 2>/dev/null || true)"
 [ -n "$APP_PATH" ] || die "Could not find the built app. Check the build output above for errors."
+[ "$APP_PATH" = "$EXPECTED_BUILD_APP" ] || die "The build returned an unexpected app path; nothing was installed or removed."
 
 # ---------------------------------------------------------------------------
 # 7. Install into /Applications
@@ -326,12 +328,22 @@ if xattr -p com.apple.quarantine "$DEST" >/dev/null 2>&1; then
 fi
 ok "Installed to $DEST"
 
+# Keep one installed app. Tauri's source build also leaves the exact bundle it
+# produced under target/release/bundle/macos; once the verified copy above is
+# safely in Applications, that build output is redundant and confuses Finder.
+[ "$APP_PATH" = "$EXPECTED_BUILD_APP" ] || die "The temporary build path changed unexpectedly; leaving it untouched."
+rm -rf -- "$APP_PATH"
+ok "Temporary build copy was removed"
+
 # ---------------------------------------------------------------------------
 # Done — explain permissions and open the app
 # ---------------------------------------------------------------------------
 cat <<DONE
 
 ${BOLD}${GREEN}✓ All set!${RESET} Weekform is in your Applications folder.
+
+  The temporary build copy was removed. If you downloaded the source ZIP,
+  its extracted source folder can be moved to Trash after Weekform opens.
 
 ${BOLD}One more thing — launching the app:${RESET}
   • Weekform opens its ${BOLD}full window${RESET} every time you launch it; the

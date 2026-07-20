@@ -247,14 +247,14 @@ The repository and Web deployment contain no public DMG fallback. The official
 release proof below are present, then re-checks the signed-in session before
 minting a short-lived private Storage URL.
 
-While Apple's notarization service processes the final DMG, `/download` may
-offer an explicitly separate **Beta Version** through `/download/beta`. The
-beta requires its own Developer ID signature, checksum, timestamp, private
-object, and server-side session re-check. Its disclosure states that the exact
-beta is not Apple-notarized or stapled; beta configuration can never satisfy or
-weaken the official signed/notarized/stapled release gate. Once the official
-configuration is complete, the page and direct beta route retire in favor of
-the trusted release.
+The code retains an isolated **Beta Version** route for authenticated internal
+evaluation, but production no longer configures or advertises it: the signed,
+unnotarized beta was rejected by Gatekeeper. While the official release remains
+pending, `/download` offers the public source ZIP and guided local-build
+installer instead. That installer places one copy in Applications and removes
+its redundant `target/release/bundle/macos/Weekform.app` build output after a
+successful install. Beta configuration can never satisfy or weaken the
+official signed/notarized/stapled release gate.
 
 **To publish a trusted private artifact:**
 
@@ -319,9 +319,9 @@ attestations true and for comparing the uploaded bytes with the checksum.
 
 - Linked and production RLS behavior remains separately unverified (see
   "Testing status" above).
-- The Beta Version is Developer ID signed but intentionally not presented as
-  Apple-notarized or stapled. macOS may prevent it from launching while the
-  official notarization submission is pending.
+- The private Beta Version artifact is Developer ID signed but not
+  Apple-notarized or stapled. Gatekeeper rejects it, so its production download
+  configuration is retired; the source-build fallback remains available.
 - Invites are member-role only; manager-role invites, invite revocation UI,
   and role changes are not built yet (revocation is permitted by RLS but has
   no button).

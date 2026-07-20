@@ -156,7 +156,7 @@ Seeded `auth.users` rows have `NULL encrypted_password`, so they **cannot be sig
 
 ### Install Weekform (desktop)
 
-Weekform currently builds from source on your Mac. The [guided installer](scripts/install.command) is the easiest path for first-time users: it checks the required tools, asks before installing anything missing, builds the app locally, and places **Weekform.app** in `/Applications`.
+Weekform currently builds from source on your Mac. The [guided installer](scripts/install.command) is the easiest path for first-time users: it checks the required tools, asks before installing anything missing, builds the app locally, places **Weekform.app** in `/Applications`, and removes the redundant `target/release/bundle/macos/Weekform.app` build copy after installation succeeds.
 
 **Download and double-click:**
 
@@ -174,7 +174,7 @@ cd weekform-dev
 bash scripts/install.command
 ```
 
-Already have the repository? Run `bash scripts/install.command` from its root. Re-running the installer rebuilds and reinstalls the current checkout.
+Already have the repository? Run `bash scripts/install.command` from its root. Re-running the installer rebuilds and reinstalls the current checkout. If you used the source ZIP, you can move the extracted source folder to Trash after Weekform opens.
 
 > [!NOTE]
 > Weekform lives in the macOS menu bar rather than the Dock. When you first resume tracking, macOS may ask for Accessibility permission so the app can identify the foreground application and window title — never your keystrokes. Screen content is not captured unless you explicitly enable Visual Context.

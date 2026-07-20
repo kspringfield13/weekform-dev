@@ -216,8 +216,23 @@ test("download page keeps unavailable releases out of disabled-button limbo", ()
   assert.doesNotMatch(source, /Expect a Gatekeeper warning|unsigned preview/i);
   assert.doesNotMatch(
     source,
-    /aria-disabled|is-disabled|private release bucket credentials|Developer ID certificate|notarization pending|npm ci|desktop:dev|xattr -dr|Download source archive|git clone/,
+    /aria-disabled|is-disabled|private release bucket credentials|Developer ID certificate|notarization pending|npm ci|desktop:dev|xattr -dr|git clone/,
   );
+});
+
+test("pending Mac release offers the guided source ZIP without weakening the trusted DMG gate", () => {
+  const source = readFileSync(
+    new URL("../app/download/page.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(source, /releasePresentation\.kind === "pending"/);
+  assert.match(source, /Download source ZIP/);
+  assert.match(source, /archive\/refs\/heads\/main\.zip/);
+  assert.match(source, /scripts\/install\.command/);
+  assert.match(source, /builds Weekform locally/i);
+  assert.match(source, /installs one copy in Applications/i);
+  assert.doesNotMatch(source, /ZIP.{0,80}(notarized|Gatekeeper-trusted)/is);
 });
 
 // --- planArtifactResponse: the full /download/artifact decision sequence ---

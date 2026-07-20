@@ -16174,3 +16174,69 @@ html[data-theme="dark"] .capacity-signal-field-glow {
   }
 }
 /* End capacity reduced-motion contract */
+/* Root render recovery: never leave the menu-bar window as an empty webview. */
+.startup-recovery {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+  background: var(--background);
+}
+
+.startup-recovery-card {
+  display: grid;
+  width: min(100%, 480px);
+  justify-items: start;
+  padding: 34px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.startup-recovery-mark {
+  display: flex;
+  align-items: end;
+  gap: 4px;
+  height: 34px;
+  margin-bottom: 22px;
+}
+
+.startup-recovery-mark i {
+  display: block;
+  width: 5px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--text);
+}
+
+.startup-recovery-mark i:nth-child(2),
+.startup-recovery-mark i:nth-child(4) { height: 27px; }
+.startup-recovery-mark i:nth-child(3) { height: 32px; }
+
+.startup-recovery-kicker {
+  margin: 0 0 8px;
+  color: var(--text-subtle);
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.startup-recovery h1 {
+  margin: 0;
+  font-size: clamp(28px, 5vw, 40px);
+  letter-spacing: -0.045em;
+  line-height: 1.05;
+}
+
+.startup-recovery-card > p:not(.startup-recovery-kicker) {
+  margin: 15px 0 24px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+@media (max-width: 520px) {
+  .startup-recovery { padding: 18px; }
+  .startup-recovery-card { padding: 24px; }
+}

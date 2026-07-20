@@ -5,6 +5,7 @@ import { App } from "./App";
 import { ManagerAccessRoot } from "./admin/AdminPortalApp";
 import { SpanSimulatorRoot } from "./admin/SpanSimulatorApp";
 import { CompactWindowHandoff } from "./components/compact/CompactWindowHandoff";
+import { StartupErrorBoundary } from "./components/common/StartupErrorBoundary";
 import { readStoredThemeSync, readThemePreference } from "./services/localStore";
 import "./styles.css";
 
@@ -21,12 +22,14 @@ readThemePreference().then((theme) => {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    {window.location.pathname === "/manager-access" || window.location.pathname === "/admin"
-      ? <ManagerAccessRoot />
-      : window.location.pathname === "/manager-access/simulation" || window.location.pathname === "/admin/simulation" || window.location.pathname === "/manager-access/span-simulator" || window.location.pathname === "/admin/span-simulator" || window.location.pathname.startsWith("/simulator-sandbox/")
-      ? <SpanSimulatorRoot />
-      : new URLSearchParams(window.location.search).get("window") === "compact-host"
-      ? <CompactWindowHandoff />
-      : <App />}
+    <StartupErrorBoundary>
+      {window.location.pathname === "/manager-access" || window.location.pathname === "/admin"
+        ? <ManagerAccessRoot />
+        : window.location.pathname === "/manager-access/simulation" || window.location.pathname === "/admin/simulation" || window.location.pathname === "/manager-access/span-simulator" || window.location.pathname === "/admin/span-simulator" || window.location.pathname.startsWith("/simulator-sandbox/")
+        ? <SpanSimulatorRoot />
+        : new URLSearchParams(window.location.search).get("window") === "compact-host"
+        ? <CompactWindowHandoff />
+        : <App />}
+    </StartupErrorBoundary>
   </React.StrictMode>
 );

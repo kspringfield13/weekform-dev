@@ -281,6 +281,19 @@ the alignment QA.
   hosting is accompanied by explicit Developer ID-signature, notarization,
   stapling, checksum, and verification-time metadata. This is a release gate,
   not evidence that signing or notarization occurred.
+- **July 20 Gatekeeper and source fallback follow-through:** a Developer ID
+  Application identity later became available and produced a correctly signed
+  universal beta, but live `spctl` and `stapler` checks proved it remained
+  unnotarized and unstapled; Gatekeeper rejected it and macOS launched it through
+  App Translocation. The beta's production download configuration was removed
+  rather than asking users to bypass macOS security. The authenticated download
+  page now offers the public source ZIP and guided local-build installer while
+  the trusted DMG gate remains pending. The installer removes only its exact
+  redundant `target/release/bundle/macos/Weekform.app` after the Applications
+  copy succeeds, and the desktop root now renders a local-data-safe recovery
+  screen instead of an empty white webview if React rendering fails. Focused
+  red-first regressions, the root build, desktop/web suites, optimized Web build,
+  shell syntax check, and both dependency audits passed before deployment.
 
 ### Layered Supabase sign-in
 
