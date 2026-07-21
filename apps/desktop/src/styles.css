@@ -13517,13 +13517,34 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
   color: var(--success);
 }
 
+.getting-started-codex-glyph {
+  width: 21px;
+  height: 21px;
+}
+
 .getting-started-codex-action {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+}
+
+/* The step's one primary action: it never wraps or shrinks — the fine print
+   beside it yields instead. */
+.getting-started-codex-connect {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  white-space: nowrap;
+}
+
+.getting-started-codex-connect-glyph {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
 }
 
 .getting-started-codex-action small {
+  flex: 1 1 0;
+  min-width: 0;
   color: var(--text-subtle);
   font-size: 9.5px;
   line-height: 1.35;

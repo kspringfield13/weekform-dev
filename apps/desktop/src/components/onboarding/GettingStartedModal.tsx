@@ -18,6 +18,7 @@ import {
   Timer,
 } from "lucide-react";
 import { WeekformMark } from "../common/WeekformMark";
+import { CodexMark } from "../common/CodexMark";
 import {
   GETTING_STARTED_STEPS,
   GETTING_STARTED_STEP_IDS,
@@ -399,7 +400,7 @@ export function GettingStartedModal({
                     >
                       <div className="getting-started-codex-heading">
                         <span className="getting-started-codex-icon" aria-hidden="true">
-                          <Sparkles size={18} />
+                          <CodexMark className="getting-started-codex-glyph" />
                         </span>
                         <div>
                           <span className="getting-started-codex-kicker">
@@ -425,14 +426,14 @@ export function GettingStartedModal({
                       </ul>
                       <div className="getting-started-codex-action">
                         <button
-                          className="getting-started-btn is-primary"
+                          className="getting-started-btn is-primary getting-started-codex-connect"
                           type="button"
                           onClick={() => void connectViaCodexPlan()}
                           disabled={codexBusy}
                           aria-busy={codexBusy}
                         >
-                          <Sparkles size={14} aria-hidden="true" />
-                          {codexBusy ? "Finish sign-in in your browser…" : "Connect ChatGPT / Codex"}
+                          <CodexMark className="getting-started-codex-connect-glyph" />
+                          {codexBusy ? "Finish sign-in in your browser…" : "Connect Codex"}
                         </button>
                         <small>
                           Secure browser sign-in · OAuth tokens stay with Codex. If macOS asks
