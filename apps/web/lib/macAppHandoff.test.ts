@@ -3,6 +3,14 @@ import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 const launcherUrl = new URL("../components/MacAppLink.tsx", import.meta.url);
+const landingSource = readFileSync(
+  new URL("../app/page.tsx", import.meta.url),
+  "utf8",
+);
+const downloadSource = readFileSync(
+  new URL("../app/download/page.tsx", import.meta.url),
+  "utf8",
+);
 const tauriConfig = JSON.parse(
   readFileSync(new URL("../../desktop/src-tauri/tauri.conf.json", import.meta.url), "utf8"),
 ) as {
@@ -33,12 +41,14 @@ const desktopAppSource = readFileSync(
   "utf8",
 );
 
-test("download acquisition opens an installed Mac app before falling back to download", () => {
+test("Mac download links navigate normally unless an authenticated desktop is identified", () => {
   assert.equal(existsSync(launcherUrl), true);
   const source = existsSync(launcherUrl) ? readFileSync(launcherUrl, "utf8") : "";
 
   assert.match(source, /export const WEEKFORM_OPEN_URL = "weekform:\/\/open/);
   assert.match(source, /openUrl\s*=\s*WEEKFORM_OPEN_URL/);
+  assert.match(source, /attemptAppOpen\s*=\s*false/);
+  assert.match(source, /!attemptAppOpen/);
   assert.match(source, /!openUrl/);
   assert.match(source, /window\.addEventListener\("blur"/);
   assert.match(source, /visibilitychange/);
@@ -47,11 +57,15 @@ test("download acquisition opens an installed Mac app before falling back to dow
   const fallbackDelay = source.match(
     /DOWNLOAD_FALLBACK_DELAY_MS\s*=\s*([\d_]+)/,
   );
-  assert.ok(fallbackDelay, "the not-installed fallback delay must stay explicit");
+  const fallbackDelayValue = fallbackDelay?.[1];
+  assert.ok(fallbackDelayValue, "the not-installed fallback delay must stay explicit");
   assert.ok(
-    Number(fallbackDelay[1].replaceAll("_", "")) >= 10_000,
+    Number(fallbackDelayValue.replaceAll("_", "")) >= 10_000,
     "Chrome's first-open confirmation needs enough time before download fallback",
   );
+  assert.match(landingSource, /attemptAppOpen=\{desktopIdentified\}/);
+  assert.match(downloadSource, /attemptAppOpen=\{desktopIdentified\}/);
+  assert.match(downloadSource, /desktopIdentified\s*\?\s*"Open Weekform Desktop"/);
 });
 
 test("the packaged Mac app owns the Weekform scheme and focuses one existing instance", () => {
@@ -95,6 +109,7 @@ test("Individual Today and Week offer a desktop-gated Start Tracking handoff", (
     individualShellSource,
     /weekform:\/\/open\?source=weekform\.dev&action=start-tracking&view=compact/,
   );
+  assert.match(individualShellSource, /attemptAppOpen=\{desktopIdentified\}/);
   assert.match(individualShellSource, /active === "today" \|\| active === "week"/);
   assert.match(individualShellSource, /fallbackHref="\/download"/);
   assert.match(individualShellSource, /Start Tracking/);

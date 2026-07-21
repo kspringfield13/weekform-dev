@@ -6,6 +6,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 import { MacAppLink } from "@/components/MacAppLink";
 import { WeekformMark } from "@/components/WeekformMark";
+import { hasOwnRegisteredDesktop } from "@/lib/desktopPresence";
 import {
   RELEASE_INFO,
   getBetaReleasePresentation,
@@ -77,6 +78,8 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
     redirect("/login?next=/download");
   }
 
+  const desktopIdentified = await hasOwnRegisteredDesktop(supabase);
+
   const artifactConfig = parseArtifactConfig(process.env);
   const betaArtifactConfig = parseBetaArtifactConfig(process.env);
   const officialReleasePresentation = getReleasePresentation(artifactConfig);
@@ -130,6 +133,7 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
 
             <div className="download-minimal-actions">
               <MacAppLink
+                attemptAppOpen={desktopIdentified}
                 fallbackHref={releasePresentation.kind === "pending"
                   ? "#source-install"
                   : releasePresentation.action.href}
@@ -140,7 +144,9 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
               >
                 <DownloadGlyph />
                 <span>
-                  {releasePresentation.kind === "pending"
+                  {desktopIdentified
+                    ? "Open Weekform Desktop"
+                    : releasePresentation.kind === "pending"
                     ? "Weekform Desktop"
                     : releasePresentation.action.label}
                 </span>

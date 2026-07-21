@@ -4,7 +4,9 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { MacAppLink } from "@/components/MacAppLink";
 import { WeekformMark } from "@/components/WeekformMark";
+import { hasOwnRegisteredDesktop } from "@/lib/desktopPresence";
 import { productEntry, type ProductEntry } from "@/lib/productEntry";
+import { createClient } from "@/lib/supabase/server";
 
 const WEB_ENTRY = productEntry("web");
 const MAC_ENTRY = productEntry("mac");
@@ -226,7 +228,13 @@ function ProductStage() {
   );
 }
 
-function EntryChoice({ entry }: { entry: ProductEntry }) {
+function EntryChoice({
+  entry,
+  desktopIdentified,
+}: {
+  entry: ProductEntry;
+  desktopIdentified: boolean;
+}) {
   const actionClassName = entry.id === "web"
     ? "button button-primary"
     : "button button-secondary";
@@ -248,7 +256,7 @@ function EntryChoice({ entry }: { entry: ProductEntry }) {
         {entry.limitations}
       </p>
       {entry.id === "mac" ? (
-        <MacAppLink fallbackHref={entry.href} className={actionClassName}>
+        <MacAppLink attemptAppOpen={desktopIdentified} fallbackHref={entry.href} className={actionClassName}>
           {entry.action} <span aria-hidden="true">→</span>
         </MacAppLink>
       ) : (
@@ -260,7 +268,15 @@ function EntryChoice({ entry }: { entry: ProductEntry }) {
   );
 }
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const supabase = await createClient();
+  let desktopIdentified = false;
+
+  if (supabase) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) desktopIdentified = await hasOwnRegisteredDesktop(supabase);
+  }
+
   return (
     <>
       <SiteHeader variant="immersive" />
@@ -282,7 +298,7 @@ export default function LandingPage() {
               <Link href={WEB_ENTRY.href} className="button button-primary button-large">
                 Open Web App
               </Link>
-              <MacAppLink fallbackHref={MAC_ENTRY.href} className="button button-secondary button-large">
+              <MacAppLink attemptAppOpen={desktopIdentified} fallbackHref={MAC_ENTRY.href} className="button button-secondary button-large">
                 {MAC_ENTRY.action}
               </MacAppLink>
             </div>
@@ -308,7 +324,7 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="entry-choice-grid">
-            <EntryChoice entry={WEB_ENTRY} />
+            <EntryChoice entry={WEB_ENTRY} desktopIdentified={desktopIdentified} />
             <div className="entry-boundary" aria-label="Only approved workload snapshots cross between the Mac app and web workspace">
               <span className="entry-boundary-line" aria-hidden="true" />
               <div>
@@ -318,7 +334,7 @@ export default function LandingPage() {
               </div>
               <span className="entry-boundary-line" aria-hidden="true" />
             </div>
-            <EntryChoice entry={MAC_ENTRY} />
+            <EntryChoice entry={MAC_ENTRY} desktopIdentified={desktopIdentified} />
           </div>
         </section>
 
@@ -453,7 +469,7 @@ export default function LandingPage() {
             </div>
             <div className="closing-actions">
               <Link href={WEB_ENTRY.href} className="button button-primary button-large">{WEB_ENTRY.action} <span aria-hidden="true">→</span></Link>
-              <MacAppLink fallbackHref={MAC_ENTRY.href} className="button button-secondary button-large">{MAC_ENTRY.action}</MacAppLink>
+              <MacAppLink attemptAppOpen={desktopIdentified} fallbackHref={MAC_ENTRY.href} className="button button-secondary button-large">{MAC_ENTRY.action}</MacAppLink>
             </div>
           </div>
         </section>

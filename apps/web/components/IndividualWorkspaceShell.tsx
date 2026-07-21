@@ -153,6 +153,7 @@ export function IndividualWorkspaceShell({
   accountActions,
   initialScreen,
   initialWindowSurface,
+  desktopIdentified = false,
 }: {
   children: ReactNode;
   greetingName: string;
@@ -166,6 +167,7 @@ export function IndividualWorkspaceShell({
   accountActions: ReactNode;
   initialScreen: string | undefined;
   initialWindowSurface: WebWindowSurface;
+  desktopIdentified?: boolean;
 }) {
   const initialRoute = resolveIndividualWorkspaceRoute(initialScreen);
   const [active, setActive] = useState<IndividualDestination>(initialRoute.destination);
@@ -189,6 +191,10 @@ export function IndividualWorkspaceShell({
   const memberTeamWorkspace = workspaceMode === "team";
   const teamWorkspace = managerWorkspace || memberTeamWorkspace;
   const teamModeLabel = teamRole === "member" ? "Team" : "Manager mode";
+  const settingsHref = workspaceHref(
+    managerWorkspace ? teamHref : "/app",
+    { destination: "settings", subview: "settings" },
+  );
 
   const closeMobileNavigation = () => {
     if (!mobileNavigationOpen) return;
@@ -288,6 +294,11 @@ export function IndividualWorkspaceShell({
   };
 
   const navigateToRoute = (route: IndividualWorkspaceRoute) => {
+    if (route.destination === "settings") {
+      closeMobileNavigation();
+      window.location.assign(settingsHref);
+      return;
+    }
     if (memberTeamWorkspace) {
       window.location.assign(workspaceHref("/app", route));
       return;
@@ -403,8 +414,7 @@ export function IndividualWorkspaceShell({
         aria-hidden={mobileNavigationOpen ? true : undefined}
       >
         <div className="web-toolbar-title">
-          <strong>{managerWorkspace ? "Your team, ready to coordinate" : memberTeamWorkspace ? "Your team connection" : "Your week, ready to review"}</strong>
-          <span>{teamWorkspace ? "Member-approved signals only" : "Private evidence stays on your Mac"}</span>
+          <strong>{managerWorkspace ? "Your team, ready to lead" : memberTeamWorkspace ? "Your team connection" : "Your week, ready to take shape"}</strong>
         </div>
         <div className="web-toolbar-state" role="status">
           {managerWorkspace ? <ManagerWindowIcon /> : <i aria-hidden="true" />} {managerWorkspace ? "Manager · synced summaries" : memberTeamWorkspace ? "Team member · your data only" : "API-connected · no workload cache"}
@@ -556,6 +566,7 @@ export function IndividualWorkspaceShell({
         <div className="web-workspace-mode-row">
           {!teamWorkspace && (active === "today" || active === "week") ? (
             <MacAppLink
+              attemptAppOpen={desktopIdentified}
               openUrl={WEEKFORM_START_TRACKING_URL}
               fallbackHref="/download"
               className="button button-primary web-start-tracking-action"

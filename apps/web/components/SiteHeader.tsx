@@ -8,6 +8,7 @@ import { WebEditionLabel } from "@/components/WebEditionLabel";
 import { listUserTeams } from "@/lib/teams";
 import { productEntry } from "@/lib/productEntry";
 import { MacAppLink } from "@/components/MacAppLink";
+import { hasOwnRegisteredDesktop } from "@/lib/desktopPresence";
 
 const WEB_ENTRY = productEntry("web");
 const MAC_ENTRY = productEntry("mac");
@@ -29,6 +30,7 @@ export async function SiteHeader({
   const supabase = await createClient();
   let signedIn = false;
   let teamAccess = false;
+  let desktopIdentified = false;
 
   if (supabase) {
     const {
@@ -36,8 +38,12 @@ export async function SiteHeader({
     } = await supabase.auth.getUser();
     signedIn = Boolean(user);
     if (user) {
-      const { teams, error } = await listUserTeams(supabase, user.id);
+      const [{ teams, error }, registeredDesktop] = await Promise.all([
+        listUserTeams(supabase, user.id),
+        hasOwnRegisteredDesktop(supabase),
+      ]);
       teamAccess = !error && teams.length > 0;
+      desktopIdentified = registeredDesktop;
     }
   }
 
@@ -62,8 +68,8 @@ export async function SiteHeader({
                   <span className="nav-label-short">Team</span>
                 </Link>
               ) : null}
-              <MacAppLink fallbackHref={MAC_ENTRY.href} className="button button-ghost nav-download-mac">
-                Download Mac
+              <MacAppLink attemptAppOpen={desktopIdentified} fallbackHref={MAC_ENTRY.href} className="button button-ghost nav-download-mac">
+                {desktopIdentified ? "Open Mac App" : "Download Mac"}
               </MacAppLink>
             </>
           ) : (

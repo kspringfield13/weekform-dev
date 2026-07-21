@@ -292,8 +292,9 @@ weaken the official signed/notarized/stapled release gate.
    read only inside that route handler and is never sent to the browser or
    included in any client bundle.
 6. Smoke-test the deployed authenticated download and a clean Mac install. The
-   installed-app handoff should open/focus one existing Weekform window; a Mac
-   without Weekform should fall back to the authenticated installer route.
+   installed-app handoff is attempted only for a signed-in account with an
+   unrevoked registered desktop, and should open/focus one existing Weekform
+   window. Otherwise the action follows the authenticated installer route.
    Update `RELEASE_INFO` in `apps/web/lib/download.ts` for every later version.
 
 The Web app validates that proof metadata is complete and well-formed; the

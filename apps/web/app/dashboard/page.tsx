@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { Download, LogOut, UserPlus, UsersRound } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
+import { hasOwnRegisteredDesktop } from "@/lib/desktopPresence";
 import { getOrCreateProfile } from "@/lib/profile";
 import { listUserTeams, type TeamMembershipSummary } from "@/lib/teams";
 import { listOwnLatestSnapshots, type LatestSnapshot } from "@/lib/snapshots";
@@ -151,6 +152,7 @@ export default async function DashboardPage({
   const managedTeams = managerAccessMemberships(teams);
   const teamHref = getTeamWorkspacePath(teams) ?? "/manager-access";
   const currentReplica = personalReplicas[0] ?? null;
+  const desktopIdentified = await hasOwnRegisteredDesktop(supabase);
 
   return (
     <IndividualWorkspaceShell
@@ -179,6 +181,7 @@ export default async function DashboardPage({
       )}
       initialScreen={params.screen}
       initialWindowSurface={resolveWebWindowSurface(windowSearch.toString())}
+      desktopIdentified={desktopIdentified}
     >
       <div className="container workspace-shell">
         {params.notice ? (

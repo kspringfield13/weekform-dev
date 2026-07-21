@@ -92,7 +92,7 @@ test("the Web manager landing view follows the Desktop Team decision contract", 
 test("members get a generalized Team workspace without manager-only data", () => {
   assert.match(teamPageSource, /workspaceMode="team"/);
   assert.match(teamPageSource, /teamRole=\{membership\.role\}/);
-  assert.match(teamPageSource, /Your team space/);
+  assert.match(teamPageSource, /Your team connection/);
   assert.match(teamPageSource, /Your coordination signal/);
   assert.match(teamPageSource, /team-status-rail/);
   assert.match(teamPageSource, /manager\s*\?\s*\([\s\S]*?<ManagerView[\s\S]*?\)\s*:\s*\([\s\S]*?<MemberView/);

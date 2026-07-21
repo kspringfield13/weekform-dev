@@ -15,6 +15,7 @@ type MacAppLinkProps = Omit<
   children: ReactNode;
   fallbackHref?: string;
   openUrl?: string;
+  attemptAppOpen?: boolean;
 };
 
 function isMacBrowser(): boolean {
@@ -23,18 +24,20 @@ function isMacBrowser(): boolean {
 }
 
 /**
- * Opens an installed Weekform app on macOS and keeps a real href as the
- * progressive-enhancement and not-installed fallback.
+ * Navigates to the real download href by default. Only a server-confirmed,
+ * signed-in desktop presence should opt into the native-app handoff.
  */
 export function MacAppLink({
   children,
   fallbackHref = "/download",
   openUrl = WEEKFORM_OPEN_URL,
+  attemptAppOpen = false,
   ...anchorProps
 }: MacAppLinkProps) {
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     if (
-      !openUrl
+      !attemptAppOpen
+      || !openUrl
       || event.defaultPrevented
       || event.button !== 0
       || event.metaKey

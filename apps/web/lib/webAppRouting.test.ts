@@ -111,6 +111,19 @@ test("Individual workspace navigation remains addressable through browser histor
   );
 });
 
+test("Settings always uses its canonical Web route", () => {
+  assert.match(
+    individualShellSource,
+    /const settingsHref = workspaceHref\([\s\S]*?destination: "settings"[\s\S]*?subview: "settings"/,
+    "Settings must have an addressable URL in Individual, Manager, and Team modes",
+  );
+  assert.match(
+    individualShellSource,
+    /route\.destination === "settings"[\s\S]*?window\.location\.assign\(settingsHref\)/,
+    "Settings navigation must not depend on transient in-memory view state",
+  );
+});
+
 test("approval-gated Web actions return feedback to the surface that initiated them", () => {
   assert.match(personalActionsSource, /workspaceNotice\(["']daily["']/);
   assert.match(personalActionsSource, /workspaceNotice\(["']setup["']/);

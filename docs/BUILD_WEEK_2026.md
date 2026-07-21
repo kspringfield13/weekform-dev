@@ -927,6 +927,27 @@ The public product-presentation refresh is recorded in a separate in-period task
 
 This task is supporting evidence for the public presentation only. It does not replace the primary Project-thread value used for `/feedback`.
 
+### Web acquisition handoff and Team-screen parity
+
+- **Date:** July 20, 2026
+- **Outcome:** Codex corrected the public Mac acquisition path so Download for
+  Mac follows the authenticated latest-download page by default instead of
+  invoking the `weekform://` scheme. Native app opening and Start Tracking now
+  require both a signed-in account and an unrevoked registered desktop; lookup
+  absence or failure stays on `/download`. The authenticated Web Team route now
+  uses the Desktop Team screen's compact header, role and workspace controls,
+  four-part evidence rail, asymmetric decision layout, 1180px content rail,
+  and responsive one-column collapse for both manager and member views.
+- **Evidence:** The new behavior was reproduced red-first. The full Web suite
+  passes 577/577, focused acquisition and Team-parity contracts pass 16/16,
+  the optimized Next build and authoritative root build exit 0, and Vercel
+  production deployment `dpl_2nNsjdXw9odcSWfV37mgedZ32rDM` is Ready at
+  `weekform.dev`. A fresh signed-out Mac browser replay follows Download for
+  Mac to `/login?next=%2Fdownload` without invoking the custom protocol; `/app`
+  and `/download` redirect to authentication, while `/download/artifact`
+  returns 401 without a session. Authenticated Team data and the registered-
+  desktop branch remain separate account-scoped verification surfaces.
+
 ### End-user positioning and three-minute demo
 
 The final positioning and product-demo narrative were refined in a separate in-period task:

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, LogOut, Mail, ShieldCheck, UsersRound } from "lucide-react";
+import { LogOut, Mail, ShieldCheck, UserRound, UsersRound, Waypoints } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -74,6 +74,7 @@ import { MacAppLink } from "@/components/MacAppLink";
 import { IndividualWorkspaceShell } from "@/components/IndividualWorkspaceShell";
 import { signOut } from "@/app/auth/actions";
 import { resolveWebWindowSurface } from "@/lib/webCompactWindow";
+import { hasOwnRegisteredDesktop } from "@/lib/desktopPresence";
 import { leaveTeam, updateTeamSharePolicy } from "@/app/teams/actions";
 import { InviteForm } from "./InviteForm";
 import {
@@ -288,6 +289,48 @@ function ForecastStat({
   );
 }
 
+function TeamWorkspaceHeader({
+  headingId,
+  manager,
+  role,
+  teamName,
+}: {
+  headingId?: string;
+  manager: boolean;
+  role: TeamRole;
+  teamName: string;
+}) {
+  return (
+    <header className="team-screen-header">
+      <div>
+        <span className="team-screen-eyebrow">
+          {manager ? "Team workload intelligence" : "Your team connection"}
+        </span>
+        <h1 id={headingId}>{manager ? `${teamName} workload` : `Your place in ${teamName}`}</h1>
+        <p>
+          {manager
+            ? "Coordinate commitments from member-approved summaries without ranking people."
+            : "Understand what you contribute, what stays private, and whether your team signal is current."}
+        </p>
+      </div>
+      <div className="team-screen-actions">
+        <div className="team-role-indicator">
+          {manager ? <Waypoints aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}
+          <span>{manager ? "Manager · approved summaries" : `${role} · your data only`}</span>
+        </div>
+        <div className="team-view-toggle" aria-label="Weekform workspace mode">
+          <Link href="/app">
+            <UserRound aria-hidden="true" /> Individual
+          </Link>
+          <span className="is-active" aria-current="page">
+            <Waypoints aria-hidden="true" /> {manager ? "Manager" : "Team"}
+          </span>
+        </div>
+      </div>
+    </header>
+  );
+}
+
 export default async function TeamPage({ params, searchParams }: TeamPageProps) {
   const [{ teamId }, query] = await Promise.all([
     params,
@@ -325,7 +368,10 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
     redirect(`/login?next=${encodeURIComponent(`/teams/${teamId}`)}`);
   }
 
-  const membership = await getOwnMembership(supabase, teamId, user.id);
+  const [membership, desktopIdentified] = await Promise.all([
+    getOwnMembership(supabase, teamId, user.id),
+    hasOwnRegisteredDesktop(supabase),
+  ]);
 
   if (!membership) {
     // Same view for "team does not exist" and "not a member": RLS returns
@@ -392,6 +438,7 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
       accountActions={toolbarAccountActions}
       initialScreen={query.screen}
       initialWindowSurface={initialWindowSurface}
+      desktopIdentified={desktopIdentified}
     >
       <div className="container workspace-shell team-workspace-shell">
         <div className="team-freshness-strip">
@@ -406,6 +453,7 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
           viewerId={user.id}
           role={membership.role}
           actionError={actionError ?? null}
+          desktopIdentified={desktopIdentified}
         />
       </div>
     </IndividualWorkspaceShell>
@@ -422,28 +470,14 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
       accountActions={toolbarAccountActions}
       initialScreen={undefined}
       initialWindowSurface={initialWindowSurface}
+      desktopIdentified={desktopIdentified}
     >
-      <main className="container workspace-shell team-page-container">
-        <header className="team-command-header">
-          <div className="team-command-copy">
-            <Link
-              href="/app"
-              className="team-back-link"
-            >
-              <ArrowLeft aria-hidden="true" />
-              Individual workspace
-            </Link>
-            <span className="team-command-eyebrow">Your team space</span>
-            <h1>{membership.teamName}</h1>
-            <p>See your membership, what you chose to share, and the team&apos;s coordination boundary.</p>
-          </div>
-          <div className="team-command-actions">
-            <span className="team-role-mark">
-              <ShieldCheck aria-hidden="true" />
-              {membership.role === "owner" ? "Team owner" : membership.role}
-            </span>
-          </div>
-        </header>
+      <main className="container workspace-shell team-page-container team-screen">
+        <TeamWorkspaceHeader
+          manager={false}
+          role={membership.role}
+          teamName={membership.teamName}
+        />
 
         <div className="team-freshness-strip">
           <RequestFreshnessRefresh />
@@ -504,7 +538,7 @@ async function MemberView({
 
   return (
     <>
-      <div className="team-status-rail" aria-label="Your team sharing status">
+      <div className="team-status-rail team-evidence-rail" aria-label="Your team sharing status">
         <div>
           <span>Membership</span>
           <strong>Active</strong>
@@ -527,8 +561,8 @@ async function MemberView({
         </div>
       </div>
 
-      <div className="team-decision-grid team-member-decision-grid">
-      <section className="panel team-member-signal" aria-labelledby="member-share-title">
+      <div className="team-decision-grid team-member-decision-grid team-decision-layout">
+      <section className="panel team-member-signal team-decision-card team-decision-card--primary" aria-labelledby="member-share-title">
         <span className="team-section-kicker">Your coordination signal</span>
         <h2 id="member-share-title">What {teamName} sees from you</h2>
         {error ? (
@@ -574,7 +608,7 @@ async function MemberView({
         </p>
       </section>
 
-      <aside className="panel team-member-boundary" aria-labelledby="member-boundary-title">
+      <aside className="panel team-member-boundary team-decision-card" aria-labelledby="member-boundary-title">
         <span className="team-section-kicker">What this helps decide</span>
         <h2 id="member-boundary-title">Coordinate without exposing your workday</h2>
         <p>
@@ -633,12 +667,14 @@ async function ManagerView({
   viewerId,
   role,
   actionError,
+  desktopIdentified,
 }: {
   teamId: string;
   teamName: string;
   viewerId: string;
   role: TeamRole;
   actionError: string | null;
+  desktopIdentified: boolean;
 }) {
   const supabase = await createClient();
   if (!supabase) {
@@ -698,15 +734,11 @@ async function ManagerView({
   const openActionsCount = actions.filter((action) => action.status === "open").length;
 
   return (
-    <div className="team-manager-workspace">
+    <div className="team-manager-workspace team-screen">
       <section data-web-view="today" className="team-workspace-view" aria-labelledby="team-today-title">
-        <header className="team-workspace-view-header">
-          <span className="team-section-kicker">Team workload intelligence</span>
-          <h1 id="team-today-title">{teamName} workload</h1>
-          <p>Coordinate commitments from member-approved summaries without ranking people.</p>
-        </header>
+        <TeamWorkspaceHeader headingId="team-today-title" manager role={role} teamName={teamName} />
 
-      <div className="team-status-rail team-desktop-evidence-rail" aria-label="Team evidence coverage">
+      <div className="team-status-rail team-desktop-evidence-rail team-evidence-rail" aria-label="Team evidence coverage">
         <div>
           <span>Active roster</span>
           <strong>{rosterError ? "—" : roster.length}</strong>
@@ -733,8 +765,8 @@ async function ManagerView({
         </div>
       </div>
 
-      <div className="team-decision-grid team-desktop-decision-grid">
-        <section className="panel team-member-signal" aria-labelledby="team-decision-now-title">
+      <div className="team-decision-grid team-desktop-decision-grid team-decision-layout">
+        <section className="panel team-member-signal team-decision-card team-decision-card--primary" aria-labelledby="team-decision-now-title">
           <span className="team-section-kicker">Decision now</span>
           <h2 id="team-decision-now-title">
             {snapshotsError || rosterError
@@ -774,7 +806,7 @@ async function ManagerView({
           </div>
         </section>
 
-        <aside className="panel team-member-boundary" aria-labelledby="team-self-boundary-title">
+        <aside className="panel team-member-boundary team-decision-card" aria-labelledby="team-self-boundary-title">
           <span className="team-section-kicker">Trust boundary</span>
           <h2 id="team-self-boundary-title">You are included in the team data</h2>
           <p>
@@ -791,7 +823,7 @@ async function ManagerView({
             <li><ShieldCheck aria-hidden="true" /> Raw activity, notes, screenshots, and window titles stay unavailable.</li>
           </ul>
           {!ownSnapshot ? (
-            <MacAppLink className="button button-secondary team-open-desktop-action">
+            <MacAppLink attemptAppOpen={desktopIdentified} className="button button-secondary team-open-desktop-action">
               Open Weekform Desktop to review sharing
             </MacAppLink>
           ) : null}

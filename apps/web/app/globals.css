@@ -6737,6 +6737,203 @@ button.web-team-gantt-cell {
   padding-bottom: 64px;
 }
 
+.team-screen {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+}
+
+.team-screen-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 20px;
+}
+
+.team-screen-header h1 {
+  margin: 0;
+  color: var(--text);
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.15;
+}
+
+.team-screen-header > div:first-child > p {
+  max-width: 680px;
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.team-screen-eyebrow {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--text-subtle);
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.team-screen-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-role-indicator,
+.team-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.team-role-indicator {
+  gap: 7px;
+  padding: 0 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.team-role-indicator svg,
+.team-view-toggle svg {
+  width: 14px;
+  height: 14px;
+}
+
+.team-view-toggle {
+  padding: 3px;
+}
+
+.team-view-toggle a,
+.team-view-toggle > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--text-subtle);
+  background: transparent;
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.team-view-toggle .is-active {
+  color: var(--text);
+  background: var(--surface-muted);
+}
+
+.team-evidence-rail.team-status-rail {
+  margin: 0 0 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.team-evidence-rail.team-status-rail > div {
+  grid-template-columns: 1fr;
+  gap: 4px;
+  padding: 14px 16px;
+}
+
+.team-evidence-rail.team-status-rail span,
+.team-evidence-rail.team-status-rail small {
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+
+.team-evidence-rail.team-status-rail span {
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.team-evidence-rail.team-status-rail strong {
+  grid-row: auto;
+  grid-column: auto;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-decision-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, .8fr);
+  gap: 14px;
+  margin-top: 0;
+}
+
+.team-decision-card.panel {
+  padding: 20px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.team-decision-card--primary.panel {
+  border-top: 2px solid color-mix(in srgb, var(--decision) 62%, var(--border));
+}
+
+.web-individual-app[data-workspace-mode="manager"] .web-workspace-mode-row,
+.web-individual-app[data-workspace-mode="team"] .web-workspace-mode-row {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .team-screen-header,
+  .team-screen-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .team-evidence-rail.team-status-rail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .team-evidence-rail.team-status-rail > div:nth-child(2) {
+    border-right: 0;
+  }
+
+  .team-evidence-rail.team-status-rail > div:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .team-decision-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .team-evidence-rail.team-status-rail,
+  .team-desktop-decision-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .team-evidence-rail.team-status-rail > div,
+  .team-evidence-rail.team-status-rail > div:nth-child(2) {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .team-evidence-rail.team-status-rail > div:last-child {
+    border-bottom: 0;
+  }
+}
+
 .team-workspace-shell > .team-freshness-strip {
   margin-bottom: 18px;
 }
@@ -6907,6 +7104,16 @@ button.web-team-gantt-cell {
 .web-individual-app[data-active-view="agent"] [data-web-view="agent"],
 .web-individual-app[data-active-view="history"] [data-web-view="history"],
 .web-individual-app[data-active-view="settings"] [data-web-view="settings"] { display: block; }
+
+/* Team views use the wrapper gap as the single owner of section rhythm. Keep
+   this after the generic visibility rule so the active view stays a grid. */
+.web-individual-app[data-workspace-mode="manager"][data-active-view="today"] [data-web-view="today"],
+.web-individual-app[data-workspace-mode="manager"][data-active-view="week"] [data-web-view="week"],
+.web-individual-app[data-workspace-mode="manager"][data-active-view="agent"] [data-web-view="agent"],
+.web-individual-app[data-workspace-mode="manager"][data-active-view="history"] [data-web-view="history"],
+.web-individual-app[data-workspace-mode="manager"][data-active-view="settings"] [data-web-view="settings"] {
+  display: grid;
+}
 
 .web-individual-app [data-web-subview] { display: none; }
 .web-individual-app[data-active-subview="capacity"] [data-web-subview="capacity"],
