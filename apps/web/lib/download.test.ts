@@ -190,11 +190,7 @@ test("configured artifact becomes an active, filename-specific download", () => 
   assert.equal(presentation.action.label, "Download now");
   assert.equal(presentation.action.href, "/download/artifact");
   assert.equal(presentation.filename, RELEASE_INFO.artifactFilename);
-  assert.match(presentation.note, /5 minutes/);
-  assert.match(presentation.note, /Developer ID signed/i);
-  assert.match(presentation.note, /notarized/i);
-  assert.match(presentation.note, /stapled/i);
-  assert.match(presentation.note, /verified July 20, 2026/i);
+  assert.equal("note" in presentation, false);
 });
 
 test("RELEASE_INFO carries non-empty version, date, and macOS requirement copy", () => {
@@ -218,6 +214,7 @@ test("download page keeps the Mac choice minimal and actionable", () => {
   assert.match(source, /officialReleasePresentation\.kind === "available"/);
   assert.match(source, /download-page-minimal/);
   assert.match(source, /<WeekformMark className="download-title-mark" \/>/);
+  assert.doesNotMatch(source, /download-release-note|releasePresentation\.note/);
   assert.match(source, /download-title-wordmark/);
   assert.match(source, /download-title-product/);
   assert.match(source, /download-hero-minimal/);

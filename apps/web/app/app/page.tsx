@@ -11,9 +11,6 @@ interface WeekformWebEntryPageProps {
     notice?: string;
     screen?: string;
     settings_tab?: string | string[];
-    mode?: string;
-    popup?: string;
-    window?: string;
   }>;
 }
 

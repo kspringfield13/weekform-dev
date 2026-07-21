@@ -44,6 +44,10 @@ const desktopAppSource = readFileSync(
   new URL("../../desktop/src/App.tsx", import.meta.url),
   "utf8",
 );
+const personalCloudSource = readFileSync(
+  new URL("../../desktop/src/hooks/usePersonalCloudSync.ts", import.meta.url),
+  "utf8",
+);
 
 test("Mac acquisition links always navigate normally without attempting a custom-protocol launch", () => {
   assert.equal(existsSync(launcherUrl), true);
@@ -117,21 +121,42 @@ test("the packaged Mac app owns the Weekform scheme and focuses one existing ins
   assert.match(nativeSource, /weekform_activate_app/);
 });
 
-test("Individual Today and Week offer a desktop-gated Start Tracking handoff", () => {
-  const launcherSource = readFileSync(launcherUrl, "utf8");
-
-  assert.match(launcherSource, /openUrl/);
-  assert.match(
-    individualShellSource,
-    /weekform:\/\/open\?source=weekform\.dev&action=start-tracking&view=compact/,
+test("Individual Today and Week queue a prompt-free authenticated Start Tracking action", () => {
+  const startTrackingSource = readFileSync(
+    new URL("../components/DesktopStartTrackingButton.tsx", import.meta.url),
+    "utf8",
   );
-  assert.match(individualShellSource, /attemptAppOpen=\{desktopIdentified\}/);
+  const actionsSource = readFileSync(
+    new URL("../app/dashboard/personalActions.ts", import.meta.url),
+    "utf8",
+  );
+  const migrationSource = readFileSync(
+    new URL("../../../supabase/migrations/202607210001_desktop_actions.sql", import.meta.url),
+    "utf8",
+  );
+
+  assert.doesNotMatch(individualShellSource, /weekform:\/\//);
+  assert.doesNotMatch(individualShellSource, /attemptAppOpen/);
   assert.match(individualShellSource, /active === "today" \|\| active === "week"/);
-  assert.match(individualShellSource, /fallbackHref="\/download"/);
+  assert.match(individualShellSource, /<DesktopStartTrackingButton/);
+  assert.match(startTrackingSource, /queueDesktopStartTracking/);
+  assert.match(startTrackingSource, /useActionState/);
   assert.match(individualShellSource, /Start Tracking/);
-  assert.match(nativeSource, /consume_pending_web_handoff/);
+  const deviceLookupAt = actionsSource.indexOf('.from("weekform_devices")');
+  const downloadAt = actionsSource.indexOf('redirect("/download")', deviceLookupAt);
+  const queueAt = actionsSource.indexOf('rpc("queue_start_tracking_action")', downloadAt);
+  assert.ok(
+    deviceLookupAt >= 0 && downloadAt > deviceLookupAt && queueAt > downloadAt,
+    "an account without a registered desktop must go to Download before any action can be queued",
+  );
+  assert.match(actionsSource, /\.is\("revoked_at", null\)[\s\S]*?\.limit\(1\)/);
+  assert.match(actionsSource, /queue_start_tracking_action/);
+  assert.match(migrationSource, /last_seen_at\s*>=\s*now\(\)\s*-\s*interval '60 seconds'/);
+  assert.match(migrationSource, /expires_at/);
+  assert.match(migrationSource, /acknowledge_desktop_action/);
+  assert.match(personalCloudSource, /fetchPendingDesktopActions/);
+  assert.match(personalCloudSource, /acknowledgeDesktopAction/);
   assert.match(nativeSource, /show_quick_view/);
-  assert.match(desktopAppSource, /resolveWebTrackingHandoff/);
-  assert.match(desktopAppSource, /setActiveSettingsTab\("account"\)/);
+  assert.match(desktopAppSource, /invoke\("show_quick_view"\)/);
   assert.match(desktopAppSource, /if \(!requestCapturePaused\(false\)\) return/);
 });

@@ -9,8 +9,6 @@ const lockupSources = [
   "../components/SiteFooter.tsx",
   "../components/IndividualWorkspaceShell.tsx",
   "../components/IndividualDashboardBoundaryShell.tsx",
-  "../components/WebCompactWorkspace.tsx",
-  "../components/WebCompactWindowHandoff.tsx",
 ].map((path) => ({ path, source: readFileSync(new URL(path, import.meta.url), "utf8") }));
 const siteHeaderSource = readFileSync(new URL("../components/SiteHeader.tsx", import.meta.url), "utf8");
 

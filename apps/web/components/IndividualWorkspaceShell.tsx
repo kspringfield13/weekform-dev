@@ -5,10 +5,8 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { WeekformMark } from "@/components/WeekformMark";
-import { MacAppLink } from "@/components/MacAppLink";
+import { DesktopStartTrackingButton } from "@/components/DesktopStartTrackingButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import { WebCompactWindowHandoff } from "@/components/WebCompactWindowHandoff";
-import { WebCompactWorkspace } from "@/components/WebCompactWorkspace";
 import { WebEditionLabel } from "@/components/WebEditionLabel";
 import { WorkspaceModeToggle } from "@/components/WorkspaceModeToggle";
 import {
@@ -19,12 +17,6 @@ import {
   type IndividualWorkspaceRoute,
 } from "@/lib/individualWorkspaceRoute";
 import { resolveMobileNavigationFocusAction } from "@/lib/mobileNavigationFocus";
-import {
-  expandCurrentWebWindow,
-  openCompactWebWindow,
-  restoreFullWebWindowFromHandoff,
-  type WebWindowSurface,
-} from "@/lib/webCompactWindow";
 
 const DESTINATIONS: Array<{
   id: IndividualDestination;
@@ -39,9 +31,6 @@ const DESTINATIONS: Array<{
   { id: "settings", label: "Settings", description: "Account and sharing", shortcutKey: "Meta+9" },
 ];
 const SETTINGS_DESTINATION = DESTINATIONS[4]!;
-const WEEKFORM_START_TRACKING_URL =
-  "weekform://open?source=weekform.dev&action=start-tracking&view=compact";
-
 const DEFAULT_SUBVIEW: Record<IndividualDestination, IndividualSubview> = {
   today: "today",
   week: "capacity",
@@ -111,14 +100,6 @@ function NavIcon({ id }: { id: IndividualDestination | "manager" }) {
   return <svg className="web-nav-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[id]}</svg>;
 }
 
-function CompactWindowIcon() {
-  return (
-    <svg className="web-window-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 4h16v16H4zM14 4v6h6M4 14h6v6" />
-    </svg>
-  );
-}
-
 function StartTrackingIcon() {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -142,7 +123,6 @@ function ManagerWindowIcon() {
 
 export function IndividualWorkspaceShell({
   children,
-  greetingName,
   reliableCapacity,
   reviewCount,
   activeWeekLabel,
@@ -152,11 +132,8 @@ export function IndividualWorkspaceShell({
   workspaceMode = "individual",
   accountActions,
   initialScreen,
-  initialWindowSurface,
-  desktopIdentified = false,
 }: {
   children: ReactNode;
-  greetingName: string;
   reliableCapacity: number | null;
   reviewCount: number;
   activeWeekLabel: string | null;
@@ -166,8 +143,6 @@ export function IndividualWorkspaceShell({
   workspaceMode?: "individual" | "manager" | "team";
   accountActions: ReactNode;
   initialScreen: string | undefined;
-  initialWindowSurface: WebWindowSurface;
-  desktopIdentified?: boolean;
 }) {
   const initialRoute = resolveIndividualWorkspaceRoute(initialScreen);
   const [active, setActive] = useState<IndividualDestination>(initialRoute.destination);
@@ -175,8 +150,6 @@ export function IndividualWorkspaceShell({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
   const [viewportResolved, setViewportResolved] = useState(false);
-  const [windowSurface, setWindowSurface] = useState<WebWindowSurface>(initialWindowSurface);
-  const [inlineCompactFallback, setInlineCompactFallback] = useState(false);
   const contextTabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const mobileNavigationRef = useRef<HTMLElement | null>(null);
   const mobileNavigationCloseRef = useRef<HTMLButtonElement | null>(null);
@@ -352,55 +325,6 @@ export function IndividualWorkspaceShell({
     selectContextView(nextIndex);
   };
 
-  const activateCompactWindow = () => {
-    if (openCompactWebWindow()) return;
-    setInlineCompactFallback(true);
-    setWindowSurface("compact");
-  };
-
-  const expandFromCompact = () => {
-    if (inlineCompactFallback) {
-      setInlineCompactFallback(false);
-      setWindowSurface("full");
-      return;
-    }
-    expandCurrentWebWindow();
-  };
-
-  const openFromCompact = (route: IndividualWorkspaceRoute) => {
-    if (inlineCompactFallback) {
-      setInlineCompactFallback(false);
-      setWindowSurface("full");
-      navigateToRoute(route);
-      return;
-    }
-    expandCurrentWebWindow(screenForIndividualWorkspaceRoute(route));
-  };
-
-  if (windowSurface === "handoff") {
-    return (
-      <WebCompactWindowHandoff
-        onRestore={() => restoreFullWebWindowFromHandoff()}
-      />
-    );
-  }
-
-  if (windowSurface === "compact") {
-    return (
-      <WebCompactWorkspace
-        greetingName={greetingName}
-        reliableCapacity={reliableCapacity}
-        reviewCount={reviewCount}
-        inlineFallback={inlineCompactFallback}
-        onExpand={expandFromCompact}
-        onOpenToday={() => openFromCompact({ destination: "today", subview: "today" })}
-        onOpenCapacity={() => openFromCompact({ destination: "week", subview: "capacity" })}
-        onOpenAgent={() => openFromCompact({ destination: "agent", subview: "agent" })}
-        onOpenSettings={() => openFromCompact({ destination: "settings", subview: "settings" })}
-      />
-    );
-  }
-
   return (
     <div
       className={`app web-individual-app${managerWorkspace ? " web-manager-app" : ""}${viewportResolved ? " viewport-resolved" : ""}${sidebarCollapsed ? " sidebar-collapsed" : ""}${mobileNavigationOpen ? " mobile-navigation-open" : ""}`}
@@ -429,16 +353,6 @@ export function IndividualWorkspaceShell({
               className="web-toolbar-button web-display-button web-theme-toggle-button"
               showLabel
             />
-            <button
-              className="web-toolbar-button web-display-button web-window-button"
-              type="button"
-              aria-label="Open compact Web window"
-              title="Open compact Web window"
-              onClick={activateCompactWindow}
-            >
-              <CompactWindowIcon />
-              <span>Compact</span>
-            </button>
           </div>
           <div className="web-toolbar-account-actions">
             {accountActions}
@@ -565,16 +479,10 @@ export function IndividualWorkspaceShell({
       >
         <div className="web-workspace-mode-row">
           {!teamWorkspace && (active === "today" || active === "week") ? (
-            <MacAppLink
-              attemptAppOpen={desktopIdentified}
-              openUrl={WEEKFORM_START_TRACKING_URL}
-              fallbackHref="/download"
-              className="button button-primary web-start-tracking-action"
-              title="Open compact Weekform Desktop and start local tracking"
-            >
+            <DesktopStartTrackingButton>
               <StartTrackingIcon />
               Start Tracking
-            </MacAppLink>
+            </DesktopStartTrackingButton>
           ) : null}
           <WorkspaceModeToggle
             individualHref={individualHref}

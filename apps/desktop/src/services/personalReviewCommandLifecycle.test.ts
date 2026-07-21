@@ -84,6 +84,19 @@ test("personal operations quiesce at a shared operation boundary before reset ca
   assert.match(resume, /operation\.finish\(\)/);
 });
 
+test("prompt-free desktop actions share the reset fence and acknowledge only after local application", () => {
+  const refresh = between("const refreshDesktopActions", "const finishCommand");
+  assert.match(refresh, /const operation = beginOperation\(\)/);
+  assert.match(refresh, /registerWeekformDeviceV2/);
+  assert.match(refresh, /fetchPendingDesktopActions/);
+  const applyAt = refresh.indexOf("await onStartTracking()");
+  const acknowledgeAt = refresh.indexOf("await acknowledgeDesktopAction", applyAt);
+  assert.ok(applyAt >= 0 && acknowledgeAt > applyAt, "the Mac must apply the explicit action before deleting its cloud control");
+  assert.match(refresh, /if \(!operation\.isCurrent\(\) \|\| !applied\) return/);
+  assert.match(refresh, /operation\.finish\(\)/);
+  assert.match(source, /setInterval\(\(\) => \{ void refreshDesktopActions\(\); \}, 2_000\)/);
+});
+
 test("replica upload is fenced behind a strict durable queue and source-clock write", () => {
   const sync = between("const syncNow", "const refreshCommands");
   const materializeAt = sync.indexOf("await currentAccount.setPersonalSyncStateDurably");

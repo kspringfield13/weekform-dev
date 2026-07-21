@@ -30,7 +30,8 @@ test("History keeps Desktop-density reviewed cards and receipt rows", () => {
 });
 
 test("History controls expose visible focus and collapse cleanly on narrow screens", () => {
+  assert.match(stylesSource, /\.searchBox\s*\{[^}]*flex:\s*0\s+0\s+auto;/s);
   assert.match(stylesSource, /\.searchBox button:focus-visible,[\s\S]*?\.auditFilters button:focus-visible\s*\{/);
   assert.match(stylesSource, /@media\s*\(max-width:\s*720px\)[\s\S]*?\.searchBox\s*\{[^}]*width:\s*100%;/s);
-  assert.match(stylesSource, /@media\s*\(max-width:\s*720px\)[\s\S]*?\.blockMain\s*\{[^}]*flex-direction:\s*column;/s);
+  assert.match(stylesSource, /@media\s*\(max-width:\s*720px\)[\s\S]*?\.blockDuration\s*\{[^}]*min-width:\s*70px;/s);
 });

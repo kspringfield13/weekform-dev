@@ -5,6 +5,7 @@ import {
   buildReviewSafeActivity,
   buildSyncAuditEntries,
   filterReviewSafeActivity,
+  formatHistoryDuration,
 } from "./individualHistoryPresentation";
 
 const replicas = [
@@ -62,6 +63,12 @@ test("review-safe activity is sorted newest first and retains correction state",
   assert.equal(activity[0]?.durationMinutes, 90);
   assert.equal(activity[0]?.reviewStatus, "Reviewed");
   assert.equal(activity[1]?.reviewStatus, "Needs review");
+});
+
+test("history durations stay compact and scannable across minutes and hours", () => {
+  assert.equal(formatHistoryDuration(45), "45m");
+  assert.equal(formatHistoryDuration(90), "1h 30m");
+  assert.equal(formatHistoryDuration(1_440), "24h");
 });
 
 test("activity search is case-insensitive across category, mode, week, and status", () => {

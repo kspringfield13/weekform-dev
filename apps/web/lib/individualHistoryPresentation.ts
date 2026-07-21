@@ -24,6 +24,15 @@ export interface SyncAuditEntry {
   summary: string;
 }
 
+export function formatHistoryDuration(durationMinutes: number): string {
+  const minutes = Math.max(0, Math.round(durationMinutes));
+  if (minutes < 60) return `${minutes}m`;
+
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder === 0 ? `${hours}h` : `${hours}h ${remainder}m`;
+}
+
 export function buildReviewSafeActivity(
   replicas: Pick<PersonalReplicaView, "weekId" | "payload">[],
 ): ReviewSafeActivityRow[] {

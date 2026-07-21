@@ -88,9 +88,24 @@ test("previous production parser requires the exact canonical alias and Weekform
     url: `https://${inspected.url}`,
   });
 
+  const currentCliShape = {
+    ...inspected,
+    aliases: [
+      "weekform-blerbz.vercel.app",
+      "weekform-blerbz-blerbz.vercel.app",
+    ],
+  };
+  assert.deepEqual(parsePreviousProduction(JSON.stringify(currentCliShape)), {
+    ...currentCliShape,
+    url: `https://${currentCliShape.url}`,
+  });
+
   for (const changed of [
     { ...inspected, name: "other" },
     { ...inspected, aliases: ["www.weekform.dev"] },
+    { ...inspected, aliases: [] },
+    { ...inspected, aliases: ["other-project.vercel.app"] },
+    { ...inspected, aliases: ["weekform-blerbz.vercel.app", "hostile.example"] },
     { ...inspected, target: null },
   ]) {
     assert.throws(

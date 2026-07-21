@@ -10,9 +10,11 @@ import {
   replicaContentFingerprint,
 } from "../../../../packages/inference/src/personalReplica";
 import {
+  acknowledgeDesktopAction,
   claimReviewCommandV2,
   completeReviewCommandV1,
   completeReviewCommandV2,
+  fetchPendingDesktopActions,
   fetchPendingReviewCommandsV1,
   fetchPendingReviewCommandsV2,
   getCloudEnv,
@@ -67,6 +69,7 @@ export function usePersonalCloudSync(input: {
   ) => Result;
   addCorrection: (correction: Omit<UserCorrection, "correction_id" | "timestamp">) => void;
   persistLatestLocalState: () => Promise<void>;
+  onStartTracking: () => Promise<boolean>;
 }): PersonalCloudSyncController {
   const {
     account,
@@ -75,12 +78,17 @@ export function usePersonalCloudSync(input: {
     mutateBlocksAtomically,
     addCorrection,
     persistLatestLocalState,
+    onStartTracking,
   } = input;
   const [syncBusy, setSyncBusy] = useState(false);
   const [lastNotice, setLastNotice] = useState<string | null>(null);
   const [pendingCommands, setPendingCommands] = useState<ReviewCommandV1[]>([]);
   const inFlight = useRef(false);
   const commandInFlight = useRef(false);
+  const desktopActionInFlight = useRef(false);
+  const desktopActionHeartbeatAt = useRef(0);
+  const desktopActionHeartbeatDeviceId = useRef<string | null>(null);
+  const handledDesktopActionIds = useRef(new Set<string>());
   const operationBoundaryRef = useRef<ConnectorResetBoundary | null>(null);
   if (operationBoundaryRef.current === null) {
     operationBoundaryRef.current = createConnectorResetBoundary();
@@ -92,6 +100,7 @@ export function usePersonalCloudSync(input: {
     && account.personalReplicaPolicy.consentedAt !== null
     && account.account !== null
     && !account.isDemoMode;
+  const desktopActionsEnabled = account.account !== null && !account.isDemoMode;
 
   const beginOperation = useCallback(() => operationBoundary.begin(), [operationBoundary]);
 
@@ -374,6 +383,63 @@ export function usePersonalCloudSync(input: {
       operation.finish();
     }
   }, [beginOperation, enabled, ensureDevice]);
+
+  const refreshDesktopActions = useCallback(async () => {
+    const operation = beginOperation();
+    if (!operation) return;
+    if (!desktopActionsEnabled || desktopActionInFlight.current) {
+      operation.finish();
+      return;
+    }
+    desktopActionInFlight.current = true;
+    try {
+      const current = accountRef.current;
+      const env = getCloudEnv();
+      const session = await current.getFreshSession();
+      if (!operation.isCurrent() || !env || !session) return;
+
+      const now = Date.now();
+      if (desktopActionHeartbeatDeviceId.current !== current.personalSyncState.deviceId
+        || now - desktopActionHeartbeatAt.current >= 15_000) {
+        const registered = await registerWeekformDeviceV2(
+          env,
+          session,
+          current.personalSyncState.deviceId,
+          current.personalSyncState.deviceName,
+        );
+        if (!operation.isCurrent() || !registered.ok) return;
+        desktopActionHeartbeatAt.current = now;
+        desktopActionHeartbeatDeviceId.current = current.personalSyncState.deviceId;
+      }
+
+      const actions = await fetchPendingDesktopActions(
+        env,
+        session,
+        current.personalSyncState.deviceId,
+      );
+      if (!operation.isCurrent() || !actions.ok) return;
+      for (const action of actions.value) {
+        const alreadyHandled = handledDesktopActionIds.current.has(action.actionId);
+        const expired = Date.parse(action.expiresAt) <= Date.now();
+        if (!alreadyHandled && !expired) {
+          const applied = await onStartTracking();
+          if (!operation.isCurrent() || !applied) return;
+          handledDesktopActionIds.current.add(action.actionId);
+        }
+        const acknowledged = await acknowledgeDesktopAction(
+          env,
+          session,
+          current.personalSyncState.deviceId,
+          action.actionId,
+        );
+        if (!operation.isCurrent()) return;
+        if (acknowledged.ok) handledDesktopActionIds.current.delete(action.actionId);
+      }
+    } finally {
+      desktopActionInFlight.current = false;
+      operation.finish();
+    }
+  }, [beginOperation, desktopActionsEnabled, onStartTracking]);
 
   const finishCommand = useCallback(async (
     command: ReviewCommandV1,
@@ -821,6 +887,21 @@ export function usePersonalCloudSync(input: {
       window.removeEventListener("online", online);
     };
   }, [enabled, refreshCommands, syncNow]);
+
+  // A signed-in, running menu-bar app advertises short-lived availability and
+  // checks only its own RLS-scoped controls. Reset closes this same operation
+  // boundary before capture, session, or local state can be cleared.
+  useEffect(() => {
+    if (!desktopActionsEnabled) return;
+    void refreshDesktopActions();
+    const timer = window.setInterval(() => { void refreshDesktopActions(); }, 2_000);
+    const online = () => { void refreshDesktopActions(); };
+    window.addEventListener("online", online);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("online", online);
+    };
+  }, [desktopActionsEnabled, refreshDesktopActions]);
 
   return useMemo(() => ({
     enabled,

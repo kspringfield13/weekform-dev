@@ -526,15 +526,27 @@ client `observed_at` and `source_updated_at` remain provenance and cannot win
 latest ordering through clock skew.
 
 In Individual mode, the Today and Week surfaces include a user-initiated
-**Start Tracking** handoff. The browser sends only the registered
-`weekform://` action; it does not start browser collection or receive Mac
-activity. An installed desktop waits until its local Weekform account state has
-been restored. If that desktop is signed in, it opens the compact top-right
-window and resumes the existing native collector under the same macOS
-permission, encrypted-journal, retention, and local audit boundaries described
-above. If it is signed out, Weekform opens Account & Sharing and leaves the
-current tracking pause state unchanged. If the app is unavailable, the browser
-falls back to the authenticated Mac download page.
+**Start Tracking** control for an already-running Weekform Mac. While signed in
+and running, the menu-bar app refreshes its opaque device heartbeat every 15
+seconds and polls its own RLS-scoped `desktop_actions` rows every two seconds.
+The browser re-authenticates the click and calls a security-definer RPC that can
+queue only `start_tracking`, targets only the caller's unrevoked Mac seen within
+the last 60 seconds, and expires the row after 90 seconds. The row contains only
+user, device, and random action ids, the fixed action, and creation/expiration
+timestamps—no activity or workload evidence. Clients cannot insert or delete
+rows directly.
+
+After the target Mac restores the signed-in account state, it resumes the
+existing native collector, opens the Desktop-only compact top-right window, and
+then acknowledges the action; acknowledgement deletes the cloud row instead of
+retaining a control history. The same Reset-owned personal-cloud operation
+barrier fences heartbeat, poll, local application, and acknowledgement. The
+browser never invokes `weekform://`, does not start browser collection, and does
+not receive Mac activity. A fully quit app cannot be silently launched by a Web
+page. If the account has no unrevoked registered desktop, Start Tracking opens
+the authenticated Download page. If a known desktop exists but is not currently
+active, Web tells the user to open Weekform from Applications or the menu bar
+and try again. Weekform Web has no compact popup or compact workspace view.
 
 ## Individual Web Ask (weekform.dev, server-side AI)
 

@@ -53,6 +53,13 @@ export type CloudResult<T> =
   | { ok: true; value: T }
   | { ok: false; message: string; status?: number };
 
+export interface DesktopActionV1 {
+  actionId: string;
+  action: "start_tracking";
+  createdAt: string;
+  expiresAt: string;
+}
+
 /** Publishable Supabase env, or null when this build has no cloud configured. */
 export function getCloudEnv(): CloudEnv | null {
   try {
@@ -666,6 +673,72 @@ export async function registerWeekformDeviceV2(
     });
     if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not register this Mac"), status: response.status };
     return { ok: true, value: null };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
+function parseDesktopAction(value: unknown): DesktopActionV1 | null {
+  if (typeof value !== "object" || value === null) return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.action_id !== "string" || !UUID_PATTERN.test(row.action_id)
+    || row.action !== "start_tracking"
+    || typeof row.created_at !== "string"
+    || typeof row.expires_at !== "string"
+  ) return null;
+  const createdAtMs = Date.parse(row.created_at);
+  const expiresAtMs = Date.parse(row.expires_at);
+  if (!Number.isFinite(createdAtMs) || !Number.isFinite(expiresAtMs)
+    || expiresAtMs <= createdAtMs || expiresAtMs - createdAtMs > 120_000) return null;
+  return {
+    actionId: row.action_id,
+    action: "start_tracking",
+    createdAt: new Date(createdAtMs).toISOString(),
+    expiresAt: new Date(expiresAtMs).toISOString(),
+  };
+}
+
+export async function fetchPendingDesktopActions(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  deviceId: string,
+): Promise<CloudResult<DesktopActionV1[]>> {
+  const query = `select=action_id,action,created_at,expires_at&device_id=eq.${encodeURIComponent(deviceId)}&order=created_at.asc&limit=10`;
+  try {
+    const response = await fetch(`${env.url}/rest/v1/desktop_actions?${query}`, {
+      headers: authHeaders(env, session.accessToken),
+    });
+    if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not load Desktop actions"), status: response.status };
+    const body: unknown = await response.json();
+    if (!Array.isArray(body)) return { ok: false, message: "Desktop action response was incomplete." };
+    const actions = body.map(parseDesktopAction);
+    if (actions.some((action) => action === null)) {
+      return { ok: false, message: "Desktop action response was incomplete." };
+    }
+    return { ok: true, value: actions as DesktopActionV1[] };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
+}
+
+export async function acknowledgeDesktopAction(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  deviceId: string,
+  actionId: string,
+): Promise<CloudResult<boolean>> {
+  try {
+    const response = await fetch(`${env.url}/rest/v1/rpc/acknowledge_desktop_action`, {
+      method: "POST",
+      headers: authHeaders(env, session.accessToken),
+      body: JSON.stringify({ p_device_id: deviceId, p_action_id: actionId }),
+    });
+    if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not acknowledge Desktop action"), status: response.status };
+    const acknowledged: unknown = await response.json();
+    return typeof acknowledged === "boolean"
+      ? { ok: true, value: acknowledged }
+      : { ok: false, message: "Desktop action acknowledgement was incomplete." };
   } catch {
     return { ok: false, message: NETWORK_ERROR_MESSAGE };
   }

@@ -2,12 +2,14 @@
 
 import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Search, X } from "lucide-react";
 
 import {
   buildReviewSafeActivity,
   buildSyncAuditEntries,
   filterReviewSafeActivity,
   filterSyncAuditEntries,
+  formatHistoryDuration,
 } from "@/lib/individualHistoryPresentation";
 import type { PersonalReplicaView } from "@/lib/personalReplica";
 import {
@@ -100,6 +102,7 @@ export function IndividualHistoryView({
     [auditEntries, auditQuery],
   );
   const current = activity[0];
+  const displayedActivity = query.trim() ? visibleActivity : visibleActivity.slice(1);
 
   return (
     <section className={`web-desktop-screen ${tab === "activity" ? "ledger-screen" : "audit-screen"} ${styles.historyScreen}`} aria-labelledby={`web-history-${initialTab}-title`}>
@@ -117,7 +120,7 @@ export function IndividualHistoryView({
         </div>
         {tab === "activity" ? (
           <label className={`search-box ${styles.searchBox}`}>
-            <span aria-hidden className={styles.searchGlyph}>⌕</span>
+            <Search aria-hidden className={styles.searchGlyph} />
             <input
               ref={activitySearchInputRef}
               aria-label="Search review-safe activity"
@@ -126,7 +129,7 @@ export function IndividualHistoryView({
               onKeyDown={(event) => { if (event.key === "Escape") setQuery(""); }}
               placeholder="Search category, mode, week, or review state"
             />
-            {query ? <button type="button" aria-label="Clear search" onClick={() => { setQuery(""); activitySearchInputRef.current?.focus(); }}>×</button> : null}
+            {query ? <button type="button" aria-label="Clear search" onClick={() => { setQuery(""); activitySearchInputRef.current?.focus(); }}><X aria-hidden /></button> : null}
           </label>
         ) : (
           <div className={styles.summaryScore} title={error ? "Web receipt count unavailable" : "Successful derived replica syncs available in Web"}>
@@ -146,7 +149,7 @@ export function IndividualHistoryView({
         <div className="form-alert" role="alert">History could not be loaded. Reload the page to try again.</div>
       ) : tab === "activity" ? (
         <>
-          {current ? (
+          {!query.trim() && current ? (
             <section className={styles.currentBlock} aria-label="Current review-safe work block">
               <div>
                 <span className={styles.eyebrow}>Current block</span>
@@ -163,29 +166,43 @@ export function IndividualHistoryView({
             <MacBoundary><h2>No review-safe work blocks yet</h2><p>Connect Private Web workspace from the desktop app to publish a derived weekly replica.</p></MacBoundary>
           ) : visibleActivity.length === 0 ? (
             <div className="panel web-screen-empty"><h2>No blocks match</h2><p>Try a category, mode, week, or review state.</p><button type="button" className="button button-secondary" onClick={() => setQuery("")}>Clear search</button></div>
-          ) : (
-            <div className={styles.ledgerList}>
-              <h2 className="visually-hidden">Review-safe work blocks</h2>
-              {visibleActivity.map((row) => (
-                <article className={`${styles.blockCard} ${row.reviewStatus === "Reviewed" ? styles.reviewedCard : ""}`} key={`${row.weekId}-${row.blockId}`}>
-                  <div className={styles.blockTopline}>
-                    <span>{row.weekId}</span>
-                    <span className={row.reviewStatus === "Reviewed" ? styles.reviewed : styles.needsReview}>{row.reviewStatus}</span>
-                  </div>
-                  <div className={styles.blockMain}>
-                    <div><h3>{row.category}</h3><p>{row.mode} · {row.plannedStatus}</p></div>
-                    <strong>{row.durationMinutes} min</strong>
-                  </div>
-                  <div className={styles.blockMeta}>
-                    <span>{formatDateTime(row.startTime)}</span>
-                    <span>{row.confidencePct}% inference confidence</span>
-                    <span>{Math.round(row.estimatedCapacityPct)}% of week</span>
-                    {row.blockerFlag ? <span className={styles.blocker}>Blocker flagged</span> : null}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
+          ) : displayedActivity.length > 0 ? (
+            <section className={styles.ledgerSection} aria-labelledby="history-block-list-title">
+              <header className={styles.ledgerHeading}>
+                <div>
+                  <span className={styles.eyebrow}>{query.trim() ? "Search results" : "Activity history"}</span>
+                  <h2 id="history-block-list-title">{query.trim() ? "Matching blocks" : "Earlier blocks"}</h2>
+                </div>
+                <span role="status">{displayedActivity.length} {displayedActivity.length === 1 ? "block" : "blocks"}</span>
+              </header>
+              <div className={styles.ledgerList}>
+                {displayedActivity.map((row) => (
+                  <article className={`${styles.blockCard} ${row.reviewStatus === "Reviewed" ? styles.reviewedCard : ""}`} key={`${row.weekId}-${row.blockId}`}>
+                    <div className={styles.blockMain}>
+                      <div className={styles.blockIdentity}>
+                        <div className={styles.blockTopline}>
+                          <span>{row.weekId}</span>
+                          <span className={row.reviewStatus === "Reviewed" ? styles.reviewed : styles.needsReview}>{row.reviewStatus}</span>
+                        </div>
+                        <h3>{row.category}</h3>
+                        <p>{row.mode} · {row.plannedStatus}</p>
+                      </div>
+                      <div className={styles.blockDuration}>
+                        <strong>{formatHistoryDuration(row.durationMinutes)}</strong>
+                        <span>Duration</span>
+                      </div>
+                    </div>
+                    <div className={styles.blockMeta}>
+                      <time dateTime={row.startTime}>{formatDateTime(row.startTime)}</time>
+                      <span>{row.confidencePct}% confidence</span>
+                      <span>{Math.round(row.estimatedCapacityPct)}% of week</span>
+                      {row.blockerFlag ? <span className={styles.blocker}>Blocker flagged</span> : null}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
         </>
       ) : (
         <>
@@ -197,7 +214,7 @@ export function IndividualHistoryView({
             {auditFilter === "receipts" ? (
               <label className={`search-box ${styles.searchBox}`}>
                 <span className="visually-hidden">Search sync receipts</span>
-                <span aria-hidden className={styles.searchGlyph}>⌕</span>
+                <Search aria-hidden className={styles.searchGlyph} />
                 <input
                   ref={auditSearchInputRef}
                   aria-label="Search sync receipts"
@@ -206,7 +223,7 @@ export function IndividualHistoryView({
                   onKeyDown={(event) => { if (event.key === "Escape") setAuditQuery(""); }}
                   placeholder="Search sync receipts"
                 />
-                {auditQuery ? <button type="button" aria-label="Clear search" onClick={() => { setAuditQuery(""); auditSearchInputRef.current?.focus(); }}>×</button> : null}
+                {auditQuery ? <button type="button" aria-label="Clear search" onClick={() => { setAuditQuery(""); auditSearchInputRef.current?.focus(); }}><X aria-hidden /></button> : null}
               </label>
             ) : <span>Web shows completed derived syncs only</span>}
           </div>

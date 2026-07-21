@@ -58,7 +58,7 @@ test("the site header places the theme toggle after the account action", () => {
   );
 });
 
-test("the authenticated Web header presents theme and compact mode as labeled display controls", () => {
+test("the authenticated Web header presents theme as its only display control", () => {
   assert.match(toggle, /showLabel\s*=\s*false/);
   assert.match(toggle, /theme-toggle-label/);
   assert.match(
@@ -66,14 +66,14 @@ test("the authenticated Web header presents theme and compact mode as labeled di
     /className="web-toolbar-display-controls"[\s\S]*role="group"[\s\S]*aria-label="Display controls"/,
   );
   assert.match(workspace, /<ThemeToggle[^>]*showLabel/);
-  assert.match(workspace, /<span>Compact<\/span>/);
+  assert.doesNotMatch(workspace, /<span>Compact<\/span>|Open compact Web window/);
   assert.match(globals, /\.web-toolbar-display-controls\s*\{/);
 });
 
-test("explicit theme selectors cover the public, authenticated, and compact surfaces", () => {
+test("explicit theme selectors cover the public and authenticated surfaces", () => {
   assert.match(globals, /:root\[data-theme="dark"\]\s*\{/);
   assert.match(globals, /:root\[data-theme="dark"\]\s+\.web-individual-app\.app\s*\{/);
-  assert.match(globals, /:root\[data-theme="dark"\]\s+\.web-compact-shell\s*\{/);
+  assert.doesNotMatch(globals, /\.web-compact-shell/);
   assert.doesNotMatch(
     globals,
     /@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:root\s*\{/,

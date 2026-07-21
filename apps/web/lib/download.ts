@@ -99,7 +99,6 @@ export type ReleasePresentation =
       kind: "available";
       action: { label: "Download now"; href: "/download/artifact" };
       filename: string;
-      note: string;
     }
   | {
       kind: "pending";
@@ -265,12 +264,10 @@ export function getReleasePresentation(
     };
   }
 
-  const verifiedDate = formatVerifiedDate(config.releaseProof.verifiedAt);
   return {
     kind: "available",
     action: { label: "Download now", href: "/download/artifact" },
     filename: RELEASE_INFO.artifactFilename,
-    note: `Developer ID signed, Apple-notarized, and stapled; verified ${verifiedDate}. Your private link lasts ${formatTtl(config.signedUrlTtlSeconds)}. Open the DMG, move Weekform to Applications, and launch it.`,
   };
 }
 

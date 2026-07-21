@@ -140,9 +140,7 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
                 <Link
                   href={releasePresentation.action.href}
                   className="button button-primary download-primary-action"
-                  aria-describedby={releasePresentation.kind === "beta"
-                    ? "download-beta-note"
-                    : "download-release-note"}
+                  aria-describedby={releasePresentation.kind === "beta" ? "download-beta-note" : undefined}
                 >
                   <DownloadGlyph />
                   <span>{releasePresentation.action.label}</span>
@@ -159,11 +157,6 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
             {releasePresentation.kind === "beta" ? (
               <p id="download-beta-note" className="download-minimal-note">
                 {releasePresentation.disclosure}
-              </p>
-            ) : null}
-            {releasePresentation.kind === "available" ? (
-              <p id="download-release-note" className="download-minimal-note">
-                {releasePresentation.note}
               </p>
             ) : null}
           </div>

@@ -584,7 +584,7 @@ fn apply_window_mode(app: &AppHandle, mode: &str) {
     }
 }
 
-fn show_quick_view(app: &AppHandle) {
+fn show_quick_view_internal(app: &AppHandle) {
     show_dashboard(app);
     apply_window_mode(app, "compact");
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
@@ -612,7 +612,7 @@ fn handle_weekform_open_url(app: &AppHandle, raw_url: &str) -> bool {
         if let Ok(mut pending) = app.state::<PendingWebHandoff>().0.lock() {
             *pending = Some(action.to_string());
         }
-        show_quick_view(app);
+        show_quick_view_internal(app);
         if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
             let _ =
                 window.eval("window.dispatchEvent(new CustomEvent('clear-capacity:web-handoff'))");
@@ -659,6 +659,11 @@ mod web_handoff_tests {
 #[tauri::command]
 fn set_clear_capacity_window_mode(app: AppHandle, mode: String) {
     apply_window_mode(&app, &mode);
+}
+
+#[tauri::command]
+fn show_quick_view(app: AppHandle) {
+    show_quick_view_internal(&app);
 }
 
 fn now_ms() -> u64 {
@@ -4706,7 +4711,7 @@ fn configure_tray(app: &tauri::App) -> tauri::Result<()> {
                     .compact
                     .load(Ordering::SeqCst)
                 {
-                    show_quick_view(app);
+                    show_quick_view_internal(app);
                 } else {
                     show_large_dashboard(app);
                 }
@@ -5077,6 +5082,7 @@ pub fn run() {
             generate_forecast_agent_with_openai,
             capture_visual_context_with_openai,
             set_clear_capacity_window_mode,
+            show_quick_view,
             set_default_window_mode,
             consume_pending_web_handoff,
             get_env_ai_key_status,

@@ -14,8 +14,6 @@ import {
 } from "@/lib/teams";
 import {
   TEAM_POLICY_NARROWING_NOTE,
-  TEAM_SHARE_LEVELS,
-  TEAM_SHARE_LEVEL_LABELS,
   describeTeamSharePolicy,
   parseTeamSharePolicy,
 } from "@/lib/teamPolicy";
@@ -73,8 +71,6 @@ import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
 import { MacAppLink } from "@/components/MacAppLink";
 import { IndividualWorkspaceShell } from "@/components/IndividualWorkspaceShell";
 import { signOut } from "@/app/auth/actions";
-import { resolveWebWindowSurface } from "@/lib/webCompactWindow";
-import { hasOwnRegisteredDesktop } from "@/lib/desktopPresence";
 import { leaveTeam, updateTeamSharePolicy } from "@/app/teams/actions";
 import { InviteForm } from "./InviteForm";
 import {
@@ -92,9 +88,6 @@ interface TeamPageProps {
     notice?: string;
     action_error?: string;
     screen?: string;
-    mode?: string;
-    popup?: string;
-    window?: string;
   }>;
 }
 
@@ -176,6 +169,41 @@ const ACTION_RISK_LABELS: Record<ActionRiskFlagKey, string> = {
 const ACTION_RISK_OPTIONS: ActionRiskOption[] = ACTION_RISK_FLAG_KEYS.map(
   (key) => ({ key, label: ACTION_RISK_LABELS[key] }),
 );
+
+const TEAM_SHARE_POLICY_OPTIONS = [
+  {
+    value: "none",
+    eyebrow: "Member choice",
+    title: "No team cap",
+    description:
+      "Keep every member’s own sharing choice unchanged. Weekform adds no team-wide cap.",
+    scope: ["Personal policy"],
+  },
+  {
+    value: "summary",
+    eyebrow: "Smallest team view",
+    title: "Summary only",
+    description:
+      "Capacity, allocation, and workload signals only. No categories or project names.",
+    scope: ["Summary"],
+  },
+  {
+    value: "categories",
+    eyebrow: "Pattern context",
+    title: "Summary + categories",
+    description:
+      "Adds category-level workload patterns, such as focus, meetings, and reactive work.",
+    scope: ["Summary", "Categories"],
+  },
+  {
+    value: "projects",
+    eyebrow: "Most context",
+    title: "Summary + projects",
+    description:
+      "Adds only projects each member explicitly allowlisted. Everything else stays private.",
+    scope: ["Summary", "Categories", "Allowlisted projects"],
+  },
+] as const;
 
 function countMemberStatus(
   assessment: AbsorptionAssessment,
@@ -368,10 +396,7 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
     redirect(`/login?next=${encodeURIComponent(`/teams/${teamId}`)}`);
   }
 
-  const [membership, desktopIdentified] = await Promise.all([
-    getOwnMembership(supabase, teamId, user.id),
-    hasOwnRegisteredDesktop(supabase),
-  ]);
+  const membership = await getOwnMembership(supabase, teamId, user.id);
 
   if (!membership) {
     // Same view for "team does not exist" and "not a member": RLS returns
@@ -403,11 +428,6 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
   }
 
   const manager = isManagerRole(membership.role);
-  const windowSearch = new URLSearchParams();
-  if (query.mode) windowSearch.set("mode", query.mode);
-  if (query.popup) windowSearch.set("popup", query.popup);
-  if (query.window) windowSearch.set("window", query.window);
-  const initialWindowSurface = resolveWebWindowSurface(windowSearch.toString());
   const toolbarAccountActions = (
     <>
       <span className="web-toolbar-identity">
@@ -427,7 +447,6 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
 
   return manager ? (
     <IndividualWorkspaceShell
-      greetingName={membership.teamName}
       reliableCapacity={null}
       reviewCount={0}
       activeWeekLabel={null}
@@ -437,8 +456,6 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
       workspaceMode="manager"
       accountActions={toolbarAccountActions}
       initialScreen={query.screen}
-      initialWindowSurface={initialWindowSurface}
-      desktopIdentified={desktopIdentified}
     >
       <div className="container workspace-shell team-workspace-shell">
         <div className="team-freshness-strip">
@@ -453,13 +470,11 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
           viewerId={user.id}
           role={membership.role}
           actionError={actionError ?? null}
-          desktopIdentified={desktopIdentified}
         />
       </div>
     </IndividualWorkspaceShell>
   ) : (
     <IndividualWorkspaceShell
-      greetingName={membership.teamName}
       reliableCapacity={null}
       reviewCount={0}
       activeWeekLabel={null}
@@ -469,8 +484,6 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
       workspaceMode="team"
       accountActions={toolbarAccountActions}
       initialScreen={undefined}
-      initialWindowSurface={initialWindowSurface}
-      desktopIdentified={desktopIdentified}
     >
       <main className="container workspace-shell team-page-container team-screen">
         <TeamWorkspaceHeader
@@ -667,14 +680,12 @@ async function ManagerView({
   viewerId,
   role,
   actionError,
-  desktopIdentified,
 }: {
   teamId: string;
   teamName: string;
   viewerId: string;
   role: TeamRole;
   actionError: string | null;
-  desktopIdentified: boolean;
 }) {
   const supabase = await createClient();
   if (!supabase) {
@@ -1282,25 +1293,47 @@ async function ManagerView({
               <strong>Current policy:</strong>{" "}
               {describeTeamSharePolicy(teamPolicy)}
             </p>
-            <form action={updateTeamSharePolicy}>
+            <form className="team-policy-form" action={updateTeamSharePolicy}>
               <input type="hidden" name="team_id" value={teamId} />
-              <div className="field">
-                <label htmlFor="share-policy-level">Share policy</label>
-                <select
-                  id="share-policy-level"
-                  name="share_policy_level"
-                  defaultValue={teamPolicy ? teamPolicy.maxShareLevel : "none"}
-                >
-                  <option value="none">
-                    No team policy — members&apos; own choices apply unchanged
-                  </option>
-                  {TEAM_SHARE_LEVELS.map((level) => (
-                    <option key={level} value={level}>
-                      Cap at: {TEAM_SHARE_LEVEL_LABELS[level]}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <fieldset className="team-share-choice-fieldset">
+                <legend>Choose the team maximum</legend>
+                <span className="team-share-choice-helper">
+                  Select the most detail this team may receive. A member&apos;s
+                  own consent can always be narrower.
+                </span>
+                <div className="team-share-choice-grid">
+                  {TEAM_SHARE_POLICY_OPTIONS.map((option) => {
+                    const selected =
+                      option.value === (teamPolicy?.maxShareLevel ?? "none");
+                    return (
+                      <label className="team-share-choice-card" key={option.value}>
+                        <input
+                          type="radio"
+                          name="share_policy_level"
+                          value={option.value}
+                          defaultChecked={selected}
+                        />
+                        <span className="team-share-choice-indicator" aria-hidden="true" />
+                        <span className="team-share-choice-copy">
+                          <span className="team-share-choice-eyebrow">
+                            {option.eyebrow}
+                          </span>
+                          <strong>{option.title}</strong>
+                          <small>{option.description}</small>
+                          <span className="team-share-choice-scope" aria-hidden="true">
+                            {option.scope.map((item) => (
+                              <span key={item}>{item}</span>
+                            ))}
+                          </span>
+                        </span>
+                        {selected ? (
+                          <span className="team-share-choice-current">Current</span>
+                        ) : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
               <FormSubmitButton
                 className="button button-secondary"
                 pendingLabel="Saving policy…"
@@ -1308,7 +1341,7 @@ async function ManagerView({
                 Save share policy
               </FormSubmitButton>
             </form>
-            <p style={{ marginTop: 12 }}>
+            <p className="team-policy-footnote">
               The cap is enforced on each member&apos;s device before anything
               is uploaded, and their consent preview shows exactly what the
               capped payload contains. Snapshots already shared are unaffected;

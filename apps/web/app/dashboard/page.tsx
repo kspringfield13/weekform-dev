@@ -4,8 +4,6 @@ import { redirect } from "next/navigation";
 import { Download, LogOut, UserPlus, UsersRound } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
-import { hasOwnRegisteredDesktop } from "@/lib/desktopPresence";
-import { getOrCreateProfile } from "@/lib/profile";
 import { listUserTeams, type TeamMembershipSummary } from "@/lib/teams";
 import { listOwnLatestSnapshots, type LatestSnapshot } from "@/lib/snapshots";
 import {
@@ -52,7 +50,6 @@ import {
 } from "@/components/IndividualHistorySettings";
 import { signOut } from "@/app/auth/actions";
 import { resolveIndividualSettingsTab } from "@/lib/individualSettingsRoute";
-import { resolveWebWindowSurface } from "@/lib/webCompactWindow";
 
 export const metadata: Metadata = { title: "Weekform Web" };
 export const dynamic = "force-dynamic";
@@ -63,9 +60,6 @@ interface DashboardPageProps {
     notice?: string;
     screen?: string;
     settings_tab?: string | string[];
-    mode?: string;
-    popup?: string;
-    window?: string;
   }>;
 }
 
@@ -127,12 +121,6 @@ export default async function DashboardPage({
   }
 
   const params = await searchParams;
-  const windowSearch = new URLSearchParams();
-  if (params.mode) windowSearch.set("mode", params.mode);
-  if (params.popup) windowSearch.set("popup", params.popup);
-  if (params.window) windowSearch.set("window", params.window);
-  const profile = await getOrCreateProfile(supabase, user);
-  const greetingName = profile?.display_name?.trim() || user.email || "there";
   const { teams, error: teamsError } = await listUserTeams(supabase, user.id);
   const { snapshots: ownSnapshots, error: snapshotsError } =
     await listOwnLatestSnapshots(supabase, user.id);
@@ -152,11 +140,8 @@ export default async function DashboardPage({
   const managedTeams = managerAccessMemberships(teams);
   const teamHref = getTeamWorkspacePath(teams) ?? "/manager-access";
   const currentReplica = personalReplicas[0] ?? null;
-  const desktopIdentified = await hasOwnRegisteredDesktop(supabase);
-
   return (
     <IndividualWorkspaceShell
-      greetingName={greetingName}
       reliableCapacity={currentReplica?.payload.capacity.reliableNewWorkCapacityPct ?? null}
       reviewCount={currentReplica?.payload.blocks.filter((block) => !block.userVerified).length ?? 0}
       activeWeekLabel={currentReplica?.weekId ?? null}
@@ -180,8 +165,6 @@ export default async function DashboardPage({
         </>
       )}
       initialScreen={params.screen}
-      initialWindowSurface={resolveWebWindowSurface(windowSearch.toString())}
-      desktopIdentified={desktopIdentified}
     >
       <div className="container workspace-shell">
         {params.notice ? (

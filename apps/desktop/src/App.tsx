@@ -918,6 +918,17 @@ export function App() {
       setConsentReceipts((current) => [...current, receipt].slice(-1000));
     },
   });
+  const handleDesktopStartTracking = useCallback(async (): Promise<boolean> => {
+    if (!isTauriRuntime || !requestCapturePaused(false)) return false;
+    try {
+      await invoke("show_quick_view");
+    } catch {
+      return false;
+    }
+    setWindowMode("compact");
+    pushToast({ tone: "success", message: "Tracking started from Weekform Web" });
+    return true;
+  }, [isTauriRuntime, pushToast, requestCapturePaused]);
   const personalCloud = usePersonalCloudSync({
     account: cloudAccount,
     snapshot,
@@ -925,6 +936,7 @@ export function App() {
     mutateBlocksAtomically,
     addCorrection,
     persistLatestLocalState: appPersistence.flushLatest,
+    onStartTracking: handleDesktopStartTracking,
   });
   const cloud: CloudController = useMemo(
     () => ({ account: cloudAccount, sync: cloudSync, personal: personalCloud }),

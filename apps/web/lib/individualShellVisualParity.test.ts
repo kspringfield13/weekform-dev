@@ -92,17 +92,6 @@ test("context tabs and page content use the current Desktop strip and content fr
   assert.match(screen, /padding:\s*24px\s+32px\s+32px\s*;/);
 });
 
-test("the compact Web surface owns the viewport and keeps controls touch-ready", () => {
-  const compactShell = rule(".web-compact-shell");
-
-  assert.match(compactShell, /height:\s*100dvh\s*;/);
-  assert.match(compactShell, /overflow:\s*hidden\s*;/);
-  assert.match(
-    stylesSource,
-    /\.web-compact-action\s*\{[^}]*min-height:\s*40px\s*;[^}]*cursor:\s*pointer\s*;/,
-  );
-});
-
 test("the full Web shell becomes a single-column overlay layout before it can squeeze", () => {
   assert.match(
     stylesSource,

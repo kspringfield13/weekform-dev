@@ -1,6 +1,7 @@
 const DEPLOYMENT_ID_PATTERN = /^dpl_[A-Za-z0-9]+$/;
 const EXPECTED_PROJECT = "weekform";
 const CANONICAL_HOST = "weekform.dev";
+const PROJECT_ALIAS_PATTERN = /^weekform(?:-[a-z0-9]+)*\.vercel\.app$/;
 
 function invalidMetadata(kind) {
   throw new Error(`The ${kind} deployment metadata was invalid.`);
@@ -94,10 +95,20 @@ export function parseInspectedCandidate(raw, { expectedId, expectedUrl }) {
 export function parsePreviousProduction(raw) {
   const root = parseJson(raw, "production");
   const deployment = validateCommon(root, "production");
+  const aliases = deployment.aliases;
+  const hasOwnedLookupAlias = Array.isArray(aliases) && aliases.some(
+    (alias) => alias === CANONICAL_HOST || PROJECT_ALIAS_PATTERN.test(alias),
+  );
+  const aliasesAreOwned = Array.isArray(aliases) && aliases.every(
+    (alias) =>
+      alias === CANONICAL_HOST ||
+      alias === `www.${CANONICAL_HOST}` ||
+      PROJECT_ALIAS_PATTERN.test(alias),
+  );
   if (
     deployment.name !== EXPECTED_PROJECT ||
-    !Array.isArray(deployment.aliases) ||
-    !deployment.aliases.includes(CANONICAL_HOST)
+    !hasOwnedLookupAlias ||
+    !aliasesAreOwned
   ) {
     invalidMetadata("production");
   }

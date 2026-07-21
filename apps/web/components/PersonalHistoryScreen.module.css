@@ -1,7 +1,7 @@
 .historyScreen {
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 12px;
   min-width: 0;
   min-height: 0;
 }
@@ -11,10 +11,11 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 10px;
+  margin-bottom: 0;
+  padding-bottom: 18px;
 }
 
-.activityHeader { align-items: center; }
+.activityHeader { align-items: flex-end; }
 
 .screenHeader > div:first-child {
   min-width: 0;
@@ -22,13 +23,13 @@
 }
 
 .screenHeader h1 {
-  margin: 5px 0 7px;
+  margin: 6px 0 8px;
   max-width: 720px;
   color: var(--text);
-  font-size: clamp(28px, 3vw, 40px);
-  font-weight: 600;
-  letter-spacing: -0.05em;
-  line-height: 1.15;
+  font-size: clamp(27px, 2.6vw, 36px);
+  font-weight: 640;
+  letter-spacing: -0.045em;
+  line-height: 1.08;
 }
 
 .screenHeader p,
@@ -37,6 +38,12 @@
 .flaggedBoundary p {
   margin: 0;
   color: var(--text-subtle);
+}
+
+.screenHeader p {
+  max-width: 650px;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .eyebrow {
@@ -85,17 +92,18 @@
   align-items: center;
   justify-content: space-between;
   gap: 22px;
-  padding: 18px 20px;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-  border-radius: 13px;
-  background: linear-gradient(120deg, color-mix(in srgb, var(--accent) 7%, var(--surface)), var(--surface));
-  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: linear-gradient(115deg, color-mix(in srgb, var(--accent) 5%, var(--surface)), var(--surface) 72%);
+  box-shadow: inset 3px 0 color-mix(in srgb, var(--accent) 72%, transparent), var(--shadow);
 }
 
 .currentBlock h2 {
-  margin: 5px 0 4px;
+  margin: 4px 0 3px;
   color: var(--text);
-  font-size: 18px;
+  font-size: 16px;
+  font-weight: 620;
   letter-spacing: -0.025em;
 }
 
@@ -109,7 +117,7 @@
 
 .capacityPulse strong {
   color: var(--accent);
-  font-size: 23px;
+  font-size: 22px;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.04em;
 }
@@ -123,10 +131,10 @@
 .searchBox {
   display: flex;
   align-items: center;
-  flex: 0 1 360px;
-  width: min(100%, 360px);
-  min-height: 38px;
-  padding: 0 10px;
+  flex: 0 0 auto;
+  width: min(100%, 380px);
+  min-height: 42px;
+  padding: 0 9px 0 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
@@ -138,25 +146,26 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-.searchBox input {
+.searchBox.searchBox input {
   min-width: 0;
   width: 100%;
-  min-height: 37px;
+  min-height: 40px;
   padding: 0 8px;
   border: 0;
+  border-radius: 0;
   outline: 0;
   color: var(--text);
   background: transparent;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
 }
 
-.searchGlyph { color: var(--text-subtle); font-size: 18px; }
+.searchGlyph { width: 15px; height: 15px; flex: 0 0 auto; color: var(--text-subtle); }
 
 .searchBox button {
   display: grid;
-  min-width: 28px;
-  min-height: 28px;
+  min-width: 30px;
+  min-height: 30px;
   padding: 0;
   place-items: center;
   border: 0;
@@ -164,7 +173,42 @@
   color: var(--text-subtle);
   background: transparent;
   cursor: pointer;
-  font-size: 20px;
+}
+
+.searchBox button svg { width: 15px; height: 15px; }
+
+.ledgerSection {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ledgerHeading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 2px 2px 0;
+}
+
+.ledgerHeading > div { min-width: 0; }
+
+.ledgerHeading h2 {
+  margin: 3px 0 0;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+}
+
+.ledgerHeading > span {
+  flex: 0 0 auto;
+  color: var(--text-subtle);
+  font-family: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
 }
 
 .ledgerList,
@@ -172,14 +216,14 @@
   display: grid;
   flex: 1 1 auto;
   align-content: start;
-  gap: 8px;
+  gap: 9px;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
 }
 
-.blockCard { padding: 11px 14px; }
+.blockCard { padding: 14px 16px; }
 
 .blockCard,
 .auditRow {
@@ -190,8 +234,8 @@
 }
 
 .reviewedCard {
-  border-color: color-mix(in srgb, var(--success) 35%, var(--border));
-  box-shadow: inset 3px 0 var(--success), var(--shadow);
+  border-color: var(--border);
+  box-shadow: inset 3px 0 color-mix(in srgb, var(--success) 72%, transparent), var(--shadow);
 }
 
 .blockTopline,
@@ -204,8 +248,11 @@
 }
 
 .blockTopline {
+  justify-content: flex-start;
+  gap: 8px;
   color: var(--text-subtle);
-  font-size: 12px;
+  font-family: "Geist Mono Variable", "Geist Mono", ui-monospace, monospace;
+  font-size: 10px;
 }
 
 .reviewed,
@@ -216,7 +263,8 @@
   align-items: center;
   padding: 3px 7px;
   border-radius: 999px;
-  font-size: 11px;
+  font-family: "Geist Variable", "Geist", sans-serif;
+  font-size: 9px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -233,19 +281,48 @@
   background: color-mix(in srgb, var(--warning) 11%, transparent);
 }
 
-.blockMain { align-items: flex-end; margin-top: 12px; }
-.blockMain h3 { margin: 0 0 4px; color: var(--text); font-size: 15px; }
-.blockMain p { font-size: 13px; }
-.blockMain > strong { color: var(--text); font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.04em; }
+.blockMain { align-items: center; margin-top: 0; }
+.blockIdentity { min-width: 0; }
+.blockMain h3 { margin: 7px 0 3px; color: var(--text); font-size: 15px; font-weight: 620; letter-spacing: -0.02em; }
+.blockMain p { font-size: 12px; }
+
+.blockDuration {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: end;
+  min-width: 92px;
+}
+
+.blockDuration strong {
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.blockDuration span {
+  margin-top: 4px;
+  color: var(--text-subtle);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
 
 .blockMeta {
   justify-content: flex-start;
   flex-wrap: wrap;
-  margin-top: 13px;
-  padding-top: 11px;
+  margin-top: 11px;
+  padding-top: 10px;
   border-top: 1px solid var(--border);
   color: var(--text-subtle);
-  font-size: 12px;
+  font-size: 11px;
+}
+
+.blockMeta > :not(:first-child):not(.blocker) {
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
 }
 
 .auditToolbar {
@@ -350,10 +427,12 @@
   .auditToolbar { align-items: flex-start; flex-direction: column; }
   .searchBox { width: 100%; }
   .summaryScore { justify-items: start; }
-  .currentBlock { align-items: flex-start; padding: 16px; }
+  .currentBlock { align-items: flex-start; padding: 14px; }
   .auditRow summary { grid-template-columns: 1fr; }
   .flaggedBoundary { grid-template-columns: 1fr; }
-  .blockMain { align-items: flex-start; flex-direction: column; }
+  .blockMain { align-items: flex-start; }
+  .blockDuration { min-width: 70px; }
+  .blockMeta > :not(:first-child):not(.blocker) { padding-left: 0; border-left: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

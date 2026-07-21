@@ -13,10 +13,12 @@ import assert from "node:assert/strict";
 import type { PersistedCloudSession } from "./cloudPolicy";
 import type { WorkloadSnapshotRow } from "./cloudPolicy";
 import {
+  acknowledgeDesktopAction,
   claimReviewCommandV2,
   completeReviewCommandV1,
   completeReviewCommandV2,
   deleteMySnapshotsForTeam,
+  fetchPendingDesktopActions,
   fetchPendingReviewCommandsV1,
   fetchPendingReviewCommandsV2,
   fetchManagerTeamWorkspace,
@@ -35,6 +37,69 @@ import {
   workloadSnapshotExists,
   type CloudEnv
 } from "./cloudClient";
+
+test("desktop actions accept only the fixed expiring start_tracking shape", async () => {
+  const createdAt = "2026-07-21T10:00:00.000Z";
+  await withFetch(
+    () => jsonResponse([{
+      action_id: "93000000-0000-4000-8000-000000000001",
+      action: "start_tracking",
+      created_at: createdAt,
+      expires_at: "2026-07-21T10:01:30.000Z",
+    }]),
+    async (requests) => {
+      const result = await fetchPendingDesktopActions(
+        env,
+        makeSession(),
+        "92000000-0000-4000-8000-000000000001",
+      );
+      assert.deepEqual(result, { ok: true, value: [{
+        actionId: "93000000-0000-4000-8000-000000000001",
+        action: "start_tracking",
+        createdAt,
+        expiresAt: "2026-07-21T10:01:30.000Z",
+      }] });
+      assert.match(requests[0].url, /desktop_actions\?/);
+      assert.match(requests[0].url, /device_id=eq\.92000000-0000-4000-8000-000000000001/);
+    },
+  );
+});
+
+test("desktop actions fail closed for unknown, malformed, or overlong controls", async () => {
+  for (const row of [
+    { action_id: "93000000-0000-4000-8000-000000000001", action: "pause_tracking", created_at: "2026-07-21T10:00:00Z", expires_at: "2026-07-21T10:01:00Z" },
+    { action_id: "not-a-uuid", action: "start_tracking", created_at: "2026-07-21T10:00:00Z", expires_at: "2026-07-21T10:01:00Z" },
+    { action_id: "93000000-0000-4000-8000-000000000001", action: "start_tracking", created_at: "2026-07-21T10:00:00Z", expires_at: "2026-07-21T10:05:00Z" },
+  ]) {
+    await withFetch(
+      () => jsonResponse([row]),
+      async () => {
+        const result = await fetchPendingDesktopActions(env, makeSession(), "92000000-0000-4000-8000-000000000001");
+        assert.deepEqual(result, { ok: false, message: "Desktop action response was incomplete." });
+      },
+    );
+  }
+});
+
+test("desktop action acknowledgement sends only target device and opaque action ids", async () => {
+  await withFetch(
+    () => jsonResponse(true),
+    async (requests) => {
+      const result = await acknowledgeDesktopAction(
+        env,
+        makeSession(),
+        "92000000-0000-4000-8000-000000000001",
+        "93000000-0000-4000-8000-000000000001",
+      );
+      assert.deepEqual(result, { ok: true, value: true });
+      assert.equal(requests[0].url, `${env.url}/rest/v1/rpc/acknowledge_desktop_action`);
+      assert.deepEqual(JSON.parse(requests[0].body ?? ""), {
+        p_device_id: "92000000-0000-4000-8000-000000000001",
+        p_action_id: "93000000-0000-4000-8000-000000000001",
+      });
+    },
+  );
+});
 
 const env: CloudEnv = { url: "https://cloud.example.test", anonKey: "anon-key-123" };
 

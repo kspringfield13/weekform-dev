@@ -51,7 +51,7 @@ test("History keeps Desktop's dense, viewport-owned Activity and Audit streams",
 
   assert.match(history, /display:\s*flex\s*;/);
   assert.match(history, /flex-direction:\s*column\s*;/);
-  assert.match(history, /gap:\s*0\s*;/);
+  assert.match(history, /gap:\s*12px\s*;/);
   assert.match(history, /min-height:\s*0\s*;/);
 
   for (const [name, list] of [["Activity", ledger], ["Audit", audit]] as const) {
@@ -61,10 +61,22 @@ test("History keeps Desktop's dense, viewport-owned Activity and Audit streams",
     assert.match(list, /padding-right:\s*4px\s*;/, `${name} list should preserve Desktop's scrollbar breathing room`);
   }
 
-  assert.match(activityCard, /padding:\s*11px\s+14px\s*;/);
+  assert.match(activityCard, /padding:\s*14px\s+16px\s*;/);
   assert.match(auditSummary, /grid-template-columns:\s*minmax\(260px,\s*0\.36fr\)\s+minmax\(0,\s*1fr\)\s*;/);
   assert.match(auditSummary, /align-items:\s*center\s*;/);
   assert.match(auditSummary, /padding:\s*12px\s+14px\s*;/);
+});
+
+test("Activity separates the current block from a compact earlier-block register", () => {
+  assert.match(componentSource, /query\.trim\(\)\s*\?\s*visibleActivity\s*:\s*visibleActivity\.slice\(1\)/);
+  assert.match(componentSource, /Search results[\s\S]*Earlier blocks/);
+  assert.match(componentSource, /formatHistoryDuration\(row\.durationMinutes\)/);
+
+  const currentBlock = rule(".currentBlock");
+  const ledgerHeading = rule(".ledgerHeading");
+  assert.match(currentBlock, /padding:\s*14px\s+16px\s*;/);
+  assert.match(ledgerHeading, /display:\s*flex\s*;/);
+  assert.match(stylesSource, /\.blockMain\s*\{[^}]*margin-top:\s*0\s*;/s);
 });
 
 test("History filters and search expose explicit keyboard and screen-reader contracts", () => {

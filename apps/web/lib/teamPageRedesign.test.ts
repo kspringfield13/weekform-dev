@@ -87,3 +87,29 @@ test("member email projection reauthorizes managers and excludes anonymous calle
     /grant execute on function public\.get_team_roster_identities\(uuid\) to authenticated/,
   );
 });
+
+test("manager sharing policy is an accessible descriptive card choice instead of a dropdown", () => {
+  assert.match(source, /<fieldset className="team-share-choice-fieldset">/);
+  assert.match(source, /<legend>Choose the team maximum<\/legend>/);
+  assert.doesNotMatch(
+    source,
+    /<select[\s\S]*?name="share_policy_level"/,
+    "the sharing policy should not hide its choices in a dropdown",
+  );
+  assert.match(source, /TEAM_SHARE_POLICY_OPTIONS\.map/);
+  assert.match(source, /type="radio"[\s\S]*?name="share_policy_level"/);
+  for (const value of ["none", "summary", "categories", "projects"]) {
+    assert.match(source, new RegExp(`value: ["']${value}["']`));
+  }
+  for (const description of [
+    "Keep every member’s own sharing choice unchanged",
+    "Capacity, allocation, and workload signals",
+    "Adds category-level workload patterns",
+    "Adds only projects each member explicitly allowlisted",
+  ]) {
+    assert.match(source, new RegExp(description));
+  }
+  assert.match(styles, /\.team-share-choice-grid\s*\{[\s\S]*?display:\s*grid/);
+  assert.match(styles, /\.team-share-choice-card:has\(input:checked\)/);
+  assert.match(styles, /\.team-share-choice-card:has\(input:focus-visible\)/);
+});
