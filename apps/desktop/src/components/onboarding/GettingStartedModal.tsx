@@ -426,7 +426,11 @@ export function GettingStartedModal({
                           <Sparkles size={14} aria-hidden="true" />
                           {codexBusy ? "Finish sign-in in your browser…" : "Connect ChatGPT / Codex"}
                         </button>
-                        <small>Secure browser sign-in · OAuth tokens stay with Codex</small>
+                        <small>
+                          Secure browser sign-in · OAuth tokens stay with Codex. If macOS asks
+                          about Keychain access, choose “Always Allow” — it is a one-time
+                          confirmation.
+                        </small>
                       </div>
                     </section>
                     {aiConnectError && (
@@ -471,7 +475,8 @@ export function GettingStartedModal({
                           </button>
                         </form>
                         <small className="getting-started-keychain-note">
-                          <Lock size={12} aria-hidden="true" /> Stored in macOS Keychain
+                          <Lock size={12} aria-hidden="true" /> Stored in macOS Keychain — if
+                          macOS asks for Keychain access, choose “Always Allow”
                         </small>
                       </div>
                     </details>

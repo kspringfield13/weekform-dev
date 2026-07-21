@@ -59,6 +59,27 @@ const CAPTURE_JOURNAL_MAX_RECORD_BYTES: usize = 1024 * 1024;
 const CAPTURE_JOURNAL_SESSION_GAP_MS: u64 = 90_000;
 const CAPTURE_JOURNAL_MAX_SESSION_LIMIT: usize = 10_000;
 const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
+const ERR_SEC_AUTH_FAILED: i32 = -25293;
+const ERR_SEC_USER_CANCELED: i32 = -128;
+const ERR_SEC_INTERACTION_NOT_ALLOWED: i32 = -25308;
+
+/// Renders Keychain failures as instructions the user can act on. macOS
+/// returns these codes when the user clicks Deny on the Keychain prompt or the
+/// login keychain is locked; the raw OSStatus text reads as an internal error
+/// and gives no way forward.
+fn describe_keychain_error(error: &security_framework::base::Error) -> String {
+    match error.code() {
+        ERR_SEC_AUTH_FAILED | ERR_SEC_USER_CANCELED => {
+            "macOS declined Keychain access — if a Keychain prompt appeared, it may have been denied. Try again and choose \"Always Allow\" so Weekform can keep using its stored secrets."
+                .to_string()
+        }
+        ERR_SEC_INTERACTION_NOT_ALLOWED => {
+            "the login Keychain is locked. Unlock it in Keychain Access (or log out and back in), then try again."
+                .to_string()
+        }
+        _ => error.to_string(),
+    }
+}
 const AI_HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 // Finish the native provider request before the frontend's 60-second timeout.
 // Tauri invoke promises do not provide transport cancellation, so this ordering
@@ -821,13 +842,17 @@ fn capture_journal_key_locked() -> Result<Vec<u8>, String> {
             OsRng.fill_bytes(&mut key);
             set_generic_password(KEYCHAIN_SERVICE, CAPTURE_JOURNAL_KEY_ACCOUNT, &key).map_err(
                 |error| {
-                    format!("Could not store the capture journal key in macOS Keychain: {error}")
+                    format!(
+                        "Could not store the capture journal key in macOS Keychain: {}",
+                        describe_keychain_error(&error)
+                    )
                 },
             )?;
             Ok(key)
         }
         Err(error) => Err(format!(
-            "Could not read the capture journal key from macOS Keychain: {error}"
+            "Could not read the capture journal key from macOS Keychain: {}",
+            describe_keychain_error(&error)
         )),
     }
 }
@@ -841,7 +866,8 @@ fn existing_capture_journal_key_locked() -> Result<Vec<u8>, String> {
                 .to_string(),
         ),
         Err(error) => Err(format!(
-            "Could not unlock the encrypted capture journal: {error}"
+            "Could not unlock the encrypted capture journal: {}",
+            describe_keychain_error(&error)
         )),
     }
 }
@@ -1731,15 +1757,22 @@ fn keychain_get_secret(key: String) -> Result<Option<String>, String> {
             .map(Some)
             .map_err(|_| "The macOS Keychain value was not valid UTF-8.".to_string()),
         Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(None),
-        Err(error) => Err(format!("Could not read from macOS Keychain: {error}")),
+        Err(error) => Err(format!(
+            "Could not read from macOS Keychain: {}",
+            describe_keychain_error(&error)
+        )),
     }
 }
 
 #[tauri::command]
 fn keychain_set_secret(key: String, value: String) -> Result<(), String> {
     validate_webview_keychain_account(&key)?;
-    set_generic_password(KEYCHAIN_SERVICE, &key, value.as_bytes())
-        .map_err(|error| format!("Could not write to macOS Keychain: {error}"))
+    set_generic_password(KEYCHAIN_SERVICE, &key, value.as_bytes()).map_err(|error| {
+        format!(
+            "Could not write to macOS Keychain: {}",
+            describe_keychain_error(&error)
+        )
+    })
 }
 
 #[tauri::command]
@@ -1748,7 +1781,10 @@ fn keychain_delete_secret(key: String) -> Result<(), String> {
     match delete_generic_password(KEYCHAIN_SERVICE, &key) {
         Ok(()) => Ok(()),
         Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(()),
-        Err(error) => Err(format!("Could not delete from macOS Keychain: {error}")),
+        Err(error) => Err(format!(
+            "Could not delete from macOS Keychain: {}",
+            describe_keychain_error(&error)
+        )),
     }
 }
 
@@ -1961,7 +1997,8 @@ fn clear_capture_journal(app: AppHandle) -> Result<(), String> {
             Ok(()) => Ok(()),
             Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(()),
             Err(error) => Err(format!(
-                "Capture data was removed, but its Keychain key could not be removed: {error}"
+                "Capture data was removed, but its Keychain key could not be removed: {}",
+                describe_keychain_error(&error)
             )),
         }
     })
@@ -2732,7 +2769,8 @@ fn delete_codex_keyring_credential(codex_home: &Path) -> Result<(), String> {
         Ok(()) => Ok(()),
         Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(()),
         Err(error) => Err(format!(
-            "Could not remove the isolated Codex credential from macOS Keychain: {error}"
+            "Could not remove the isolated Codex credential from macOS Keychain: {}",
+            describe_keychain_error(&error)
         )),
     }
 }
