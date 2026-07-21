@@ -633,8 +633,16 @@ export function App() {
     ].slice(-1000));
   }, [currentWeekId, setBlocks, setCalendarEvents]);
 
+  // True while the first-run wizard is (or is about to be) on screen. Every
+  // startup path that touches macOS Keychain — and can therefore raise the OS
+  // password prompt — waits on this, so the wizard's intro copy explaining the
+  // prompt is always shown before the prompt itself can appear.
+  const firstRunWizardPending =
+    !isDemoMode && windowMode === "large" && gettingStartedStatus === "unseen";
+
   const calendarSources = useCalendarSources({
     enabled: isTauriRuntime && !isDemoMode,
+    deferStatusProbe: firstRunWizardPending,
     onEvents: applyCalendarSourceEvents,
     onDisconnected: (provider) => {
       setAuditEvents((current) => [
@@ -790,6 +798,7 @@ export function App() {
 
   const chatSources = useChatSources({
     enabled: isTauriRuntime && !isDemoMode,
+    deferStatusProbe: firstRunWizardPending,
     onSyncResult: applyChatSourceResult,
     onConnectionEvent: (provider, action, success) => {
       // Every sync outcome carries its richer receipt in applyChatSourceResult.
@@ -926,7 +935,7 @@ export function App() {
     // Mirrors the deferred journal hydration above: no Keychain-backed storage
     // access while the first-run wizard (which explains the possible macOS
     // Keychain prompt) is still on screen.
-    deferHydration: !isDemoMode && windowMode === "large" && gettingStartedStatus === "unseen",
+    deferHydration: firstRunWizardPending,
     onAuditEvent: (event) => {
       if (isDemoMode) return;
       setAuditEvents((current) => [...current, event].slice(-1000));
@@ -3011,8 +3020,7 @@ export function App() {
   const aiAvailable = hasAIConnection(aiConfig, envOpenAiKeyPresent);
   // Onboarding sequence: one wizard with the branded introduction first, then
   // Settings. The guided tour is replayable from Settings after that handoff.
-  const showGettingStarted =
-    !isDemoMode && windowMode === "large" && gettingStartedStatus === "unseen";
+  const showGettingStarted = firstRunWizardPending;
   // The tour renders only when explicitly requested and never under the wizard.
   const showWalkthrough =
     !isDemoMode && windowMode === "large" && tourRequested && !showGettingStarted;

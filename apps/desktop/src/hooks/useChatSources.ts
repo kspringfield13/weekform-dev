@@ -743,6 +743,8 @@ export async function disconnectThenRefreshChatSource(input: {
 
 export function useChatSources(input: {
   enabled: boolean;
+  /** Hold the initial Keychain-backed status probe while the first-run wizard is on screen. */
+  deferStatusProbe?: boolean;
   onSyncResult: (result: ChatSourceSyncResult) => ChatSyncApplicationSummary | void;
   onDisconnected?: (provider: ChatProviderId) => void;
   onConnectionEvent?: (
@@ -1072,8 +1074,12 @@ export function useChatSources(input: {
   }, []);
 
   useEffect(() => {
+    // The status probe reads macOS Keychain natively, which can raise the OS
+    // password prompt. Callers defer it while the first-run wizard (which
+    // explains that prompt) is still on screen.
+    if (input.deferStatusProbe) return;
     void refreshStatuses().catch(() => undefined);
-  }, [refreshStatuses]);
+  }, [input.deferStatusProbe, refreshStatuses]);
 
   return {
     statuses,

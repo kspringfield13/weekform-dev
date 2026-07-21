@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
+  KeyRound,
   Lock,
   MonitorPlay,
   Radio,
@@ -237,12 +238,17 @@ export function GettingStartedModal({
                     Settings.
                   </p>
                 </div>
-                <p className="getting-started-fine-print">
-                  Weekform keeps its secrets — the key that encrypts your activity journal, and
-                  any credentials you add — in your Mac's Keychain. macOS may ask you to approve
-                  that access during setup, especially after a reinstall. Choose “Always Allow”
-                  to approve it once; your Mac password goes to macOS, never to Weekform.
-                </p>
+                <div className="getting-started-callout">
+                  <KeyRound size={16} aria-hidden="true" />
+                  <p>
+                    <strong>macOS may ask for your login password during setup.</strong>
+                    That prompt comes from macOS, not Weekform: your Mac's Keychain guards the
+                    key that encrypts your activity journal and any credentials you add, and
+                    macOS asks before letting Weekform open it — especially after a reinstall
+                    or update. Choose “Always Allow” to approve it once; your password goes to
+                    macOS, never to Weekform.
+                  </p>
+                </div>
               </section>
             )}
 

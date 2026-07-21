@@ -74,6 +74,8 @@ function rollingLiveRange(): CalendarRange {
 
 export function useCalendarSources(input: {
   enabled: boolean;
+  /** Hold the initial Keychain-backed status probe while the first-run wizard is on screen. */
+  deferStatusProbe?: boolean;
   onEvents: (
     provider: CalendarProviderId,
     range: CalendarRange,
@@ -221,8 +223,12 @@ export function useCalendarSources(input: {
   }, [calendarOperationBoundary, refreshStatuses]);
 
   useEffect(() => {
+    // The status probe reads macOS Keychain natively, which can raise the OS
+    // password prompt. Callers defer it while the first-run wizard (which
+    // explains that prompt) is still on screen.
+    if (input.deferStatusProbe) return;
     void refreshStatuses().catch(() => undefined);
-  }, [refreshStatuses]);
+  }, [input.deferStatusProbe, refreshStatuses]);
 
   const connectedKey = statuses
     .filter((status) => status.connected)
