@@ -1,6 +1,6 @@
 "use client";
 
-import { MacAppLink, WEEKFORM_OPEN_URL } from "@/components/MacAppLink";
+import { MacAppLink } from "@/components/MacAppLink";
 
 import {
   buildPersonalWeeklyReviewPresentation,
@@ -45,7 +45,6 @@ function ReviewAction({ item }: { item: PersonalWeeklyReviewItem }) {
 
   return (
     <MacAppLink
-      openUrl={WEEKFORM_OPEN_URL}
       className="button button-secondary weekly-review-action"
       aria-label={`${item.actionLabel}: ${item.title}`}
     >

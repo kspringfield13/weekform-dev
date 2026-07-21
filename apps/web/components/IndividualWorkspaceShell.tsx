@@ -17,7 +17,6 @@ import {
   type IndividualSubview,
   type IndividualWorkspaceRoute,
 } from "@/lib/individualWorkspaceRoute";
-import { desktopPageHandoffUrl } from "@/lib/desktopPageHandoff";
 import { resolveMobileNavigationFocusAction } from "@/lib/mobileNavigationFocus";
 
 const DESTINATIONS: Array<{
@@ -164,7 +163,6 @@ export function IndividualWorkspaceShell({
   const restoreSidebarFocusRef = useRef(false);
   const mobileNavigationOpen = isNarrowViewport && !sidebarCollapsed;
   const activeRoute = { destination: active, subview: activeSubview } satisfies IndividualWorkspaceRoute;
-  const desktopHandoffUrl = desktopPageHandoffUrl(activeRoute, workspaceMode);
   const individualHref = workspaceHref(individualHrefBase, activeRoute);
   const activeTeamHref = workspaceHref(teamHref, activeRoute);
   const teamDestinationHref = teamHref;
@@ -452,12 +450,10 @@ export function IndividualWorkspaceShell({
         </div>
         <div className="web-sidebar-footer-actions">
           <MacAppLink
-            attemptAppOpen
-            openUrl={desktopHandoffUrl}
             fallbackHref="/download"
             className="web-open-desktop-button"
-            aria-label="Open current page in Weekform Desktop"
-            title="Open current page in Weekform Desktop"
+            aria-label="Download Weekform Desktop"
+            title="Download Weekform Desktop"
           >
             <WeekformMark className="web-open-desktop-mark" />
           </MacAppLink>

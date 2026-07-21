@@ -303,14 +303,15 @@ weaken the official signed/notarized/stapled release gate.
    read only inside that route handler and is never sent to the browser or
    included in any client bundle.
 6. Smoke-test the deployed authenticated download and a clean Mac install. The
-   Web Start Tracking action targets only a recently active, unrevoked Desktop
-   registered to the signed-in account through the short-lived command queue.
-   It never invokes a custom protocol; offline users are told to open the Mac
-   app, while accounts without a registered desktop follow the authenticated
-   installer route. Separately, the explicit Weekform-mark button beside Web
-   Settings may invoke `weekform://` to open the current allowlisted screen in
-   the large Desktop window. That opt-in navigation can show the browser-owned
-   app-opening confirmation and does not carry account, team, or workload data.
+   Web Start Tracking action targets only the most recently reporting,
+   unrevoked Desktop registered to the signed-in account through the short-lived
+   command queue. It reports confirmed tracking only after a fresh native sample
+   is durably journaled, and the Mac acknowledges a start request only after that
+   confirmation. Offline users are told to open the Mac app, while accounts
+   without a registered desktop follow the authenticated installer route. Every
+   Web Mac link, including the Weekform mark beside Settings, navigates normally
+   to `/download`; Web never invokes `weekform://` or triggers a browser-owned
+   app-opening confirmation.
    Update `RELEASE_INFO` in `apps/web/lib/download.ts` for every later version.
 
 The Web app validates that proof metadata is complete and well-formed; the

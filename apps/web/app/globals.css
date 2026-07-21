@@ -6695,8 +6695,7 @@ button.web-team-gantt-cell {
   width: 36px;
   min-height: 36px;
   place-items: center;
-  border: 1px solid transparent;
-  border-radius: var(--radius);
+  border: 0;
   color: var(--text-subtle);
   background: transparent;
   padding: 0;
@@ -6704,14 +6703,12 @@ button.web-team-gantt-cell {
   cursor: pointer;
 }
 .web-open-desktop-button:hover {
-  border-color: var(--border);
   color: var(--text);
-  background: var(--hover-background);
 }
 .web-open-desktop-mark {
   display: block;
-  width: 11px;
-  height: 9px;
+  width: 22px;
+  height: 18px;
   flex: 0 0 auto;
 }
 .web-individual-app .settings-button:hover { color: var(--text); background: var(--hover-background); }

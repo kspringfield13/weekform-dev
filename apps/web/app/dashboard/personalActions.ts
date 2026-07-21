@@ -47,7 +47,7 @@ export async function queueDesktopStartTracking(
   if (result === "already_tracking") {
     return {
       status: "already-tracking",
-      message: "Tracking is already active in Weekform Desktop.",
+      message: "Weekform Desktop confirmed a successful capture recently.",
     };
   }
   if (result === "offline") {
@@ -62,7 +62,7 @@ export async function queueDesktopStartTracking(
 
   return {
     status: "queued",
-    message: "Request sent. Tracking will resume in Desktop compact view.",
+    message: "Start request sent. Waiting for Weekform Desktop to confirm a successful capture.",
   };
 }
 

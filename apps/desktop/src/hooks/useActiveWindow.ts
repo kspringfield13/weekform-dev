@@ -9,6 +9,7 @@ interface UseActiveWindowParams {
   captureAcceptAfterMsRef: React.MutableRefObject<number>;
   setActiveWindowSamples: React.Dispatch<React.SetStateAction<ActiveWindowSample[]>>;
   setCaptureError?: React.Dispatch<React.SetStateAction<string | null>>;
+  onSuccessfulCapture?: (timestampMs: number) => void;
 }
 
 export function useActiveWindow(params: UseActiveWindowParams) {
@@ -18,6 +19,7 @@ export function useActiveWindow(params: UseActiveWindowParams) {
     isDemoMode,
     setActiveWindowSamples,
     setCaptureError,
+    onSuccessfulCapture,
   } = params;
 
   useEffect(() => {
@@ -63,6 +65,7 @@ export function useActiveWindow(params: UseActiveWindowParams) {
       const sampleDate = new Date(payload.timestamp_ms);
       const timestamp = sampleDate.toISOString();
       setCaptureError?.(null);
+      onSuccessfulCapture?.(payload.timestamp_ms);
 
       setActiveWindowSamples((current) => {
         const sample: ActiveWindowSample = {
@@ -95,5 +98,5 @@ export function useActiveWindow(params: UseActiveWindowParams) {
       cancelled = true;
       unlisten?.();
     };
-  }, [captureAcceptAfterMsRef, captureAcceptingRef, isDemoMode, setActiveWindowSamples, setCaptureError]);
+  }, [captureAcceptAfterMsRef, captureAcceptingRef, isDemoMode, onSuccessfulCapture, setActiveWindowSamples, setCaptureError]);
 }

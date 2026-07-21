@@ -70,7 +70,7 @@ test("Settings matches Desktop sidebar hierarchy on wide and narrow layouts", ()
   assert.match(
     shellSource,
     /className="web-sidebar-footer-actions"[\s\S]*?<MacAppLink[\s\S]*?<WeekformMark[\s\S]*?<\/MacAppLink>[\s\S]*?className=\{active\s*===\s*["']settings["']/,
-    "the icon-only Desktop handoff must sit immediately left of the Settings footer control",
+    "the icon-only Download link must sit immediately left of the Settings footer control",
   );
 
   assert.match(

@@ -559,32 +559,32 @@ In Individual mode, the Today and Week surfaces include a user-initiated
 `weekform://` scheme, so this action never creates a browser-owned “Open
 Weekform.app?” confirmation. Instead, an authenticated server action calls the
 fixed `request_desktop_start_tracking` RPC. The server selects only a recently
-active, unrevoked Mac registered to the signed-in account and either reports
-that tracking is already active or creates one short-lived `start_tracking`
-command. A running Desktop app acknowledges that command, resumes its existing
-native collector, and opens the Desktop-only compact view. A stopped, stale, or
-outdated Mac receives no command; Web reports that the user must open Weekform
-from Applications or the menu bar. An account with no registered Mac is routed
-to the authenticated Download page.
+reporting, unrevoked Mac registered to the signed-in account. It reports a
+recent confirmation only when that Mac has completed and durably journaled a
+fresh native capture sample; being merely unpaused is not sufficient. Otherwise
+the server creates one short-lived `start_tracking` command. A running Desktop
+app accepts that command, resumes its existing native collector, and opens the
+Desktop-only compact view, but does not acknowledge and remove the command until
+a fresh capture succeeds. A stopped, stale, outdated, permission-blocked, or
+errored Mac cannot produce the confirmed notice. Web instead reports a pending
+request or directs the user to open Weekform from Applications or the menu bar.
+An account with no registered Mac is routed to the authenticated Download page.
 
 The command channel carries no account token, activity sample, app/window title,
 or workload evidence into the browser. Its rows contain only user, device,
 random action, fixed action, and creation/expiration identifiers and are removed
-after acknowledgement. The tracking heartbeat publishes only an enabled/paused
-boolean and server receipt time. Weekform Web cannot launch a quit Mac app,
-start collection itself, or render a compact workspace view.
+after acknowledgement. The tracking heartbeat publishes only a boolean for
+recent successful capture confirmation and its server receipt time. Weekform
+Web cannot launch a quit Mac app, start collection itself, or render a compact
+workspace view.
 
-The Web sidebar also includes a separate, explicitly labeled **Open current page
-in Weekform Desktop** icon. On macOS, activating that icon invokes the registered
-`weekform://` scheme, so the browser may display its own confirmation before it
-opens Weekform. The URL carries only the fixed `weekform.dev` source label, the
-large-window mode, and one allowlisted Weekform screen identifier; it does not
-carry an account token, team identifier, activity, workload evidence, or page
-content. Desktop validates the mode and screen against a static allowlist before
-showing the window. Individual routes map to their matching native screen, while
-Manager and member Team routes map to the native Team workspace. This explicit
-navigation handoff is independent of the prompt-free Start Tracking command and
-cannot start, resume, or pause native collection.
+The Web sidebar includes a Weekform-mark link beside Settings. It is a normal
+link to the authenticated Download page, as are all other Web Mac links. No Web
+control invokes the registered `weekform://` scheme, so navigating weekform.dev
+cannot create a browser-owned “Open Weekform.app?” confirmation. The packaged
+Mac app may retain its registered scheme for non-Web operating-system links;
+that native capability carries no account token, team identifier, activity,
+workload evidence, or page content from Weekform Web.
 
 ## Individual Web Ask (weekform.dev, server-side AI)
 

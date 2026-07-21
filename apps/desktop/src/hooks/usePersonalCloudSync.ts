@@ -37,6 +37,7 @@ import {
   reviewCommandClaimIsRecoverable,
   shouldFlushPersonalQueue,
 } from "../services/personalSync";
+import { isCaptureTrackingConfirmed } from "../services/captureTrackingStatus";
 import type { CloudAccountController } from "./useCloudAccount";
 import {
   createConnectorResetBoundary,
@@ -70,7 +71,9 @@ export function usePersonalCloudSync(input: {
   addCorrection: (correction: Omit<UserCorrection, "correction_id" | "timestamp">) => void;
   persistLatestLocalState: () => Promise<void>;
   onStartTracking: () => Promise<boolean>;
-  trackingActive: boolean;
+  trackingEnabled: boolean;
+  captureError: string | null;
+  lastSuccessfulCaptureAtMs: number | null;
 }): PersonalCloudSyncController {
   const {
     account,
@@ -80,7 +83,9 @@ export function usePersonalCloudSync(input: {
     addCorrection,
     persistLatestLocalState,
     onStartTracking,
-    trackingActive,
+    trackingEnabled,
+    captureError,
+    lastSuccessfulCaptureAtMs,
   } = input;
   const [syncBusy, setSyncBusy] = useState(false);
   const [lastNotice, setLastNotice] = useState<string | null>(null);
@@ -99,8 +104,18 @@ export function usePersonalCloudSync(input: {
   const operationBoundary = operationBoundaryRef.current;
   const accountRef = useRef(account);
   accountRef.current = account;
-  const trackingActiveRef = useRef(trackingActive);
-  trackingActiveRef.current = trackingActive;
+  const trackingEnabledRef = useRef(trackingEnabled);
+  trackingEnabledRef.current = trackingEnabled;
+  const captureErrorRef = useRef(captureError);
+  captureErrorRef.current = captureError;
+  const lastSuccessfulCaptureAtMsRef = useRef(lastSuccessfulCaptureAtMs);
+  lastSuccessfulCaptureAtMsRef.current = lastSuccessfulCaptureAtMs;
+  const currentTrackingConfirmed = useCallback((nowMs: number) => isCaptureTrackingConfirmed({
+    trackingEnabled: trackingEnabledRef.current,
+    captureError: captureErrorRef.current,
+    lastSuccessfulCaptureAtMs: lastSuccessfulCaptureAtMsRef.current,
+    nowMs,
+  }), []);
   const enabled = account.personalReplicaPolicy.enabled
     && account.personalReplicaPolicy.consentedAt !== null
     && account.account !== null
@@ -150,11 +165,11 @@ export function usePersonalCloudSync(input: {
       session,
       current.personalSyncState.deviceId,
       current.personalSyncState.deviceName,
-      trackingActiveRef.current,
+      currentTrackingConfirmed(Date.now()),
     );
     if (!result.ok) return result;
     return { ok: true as const, env, session };
-  }, []);
+  }, [currentTrackingConfirmed]);
 
   const syncNow = useCallback(async (materializeCurrentReplica = true): Promise<boolean> => {
     const operation = beginOperation();
@@ -405,20 +420,21 @@ export function usePersonalCloudSync(input: {
       if (!operation.isCurrent() || !env || !session) return;
 
       const now = Date.now();
+      const trackingConfirmed = currentTrackingConfirmed(now);
       if (desktopActionHeartbeatDeviceId.current !== current.personalSyncState.deviceId
-        || desktopActionHeartbeatTrackingActive.current !== trackingActiveRef.current
+        || desktopActionHeartbeatTrackingActive.current !== trackingConfirmed
         || now - desktopActionHeartbeatAt.current >= 15_000) {
         const registered = await registerWeekformDeviceV3(
           env,
           session,
           current.personalSyncState.deviceId,
           current.personalSyncState.deviceName,
-          trackingActiveRef.current,
+          trackingConfirmed,
         );
         if (!operation.isCurrent() || !registered.ok) return;
         desktopActionHeartbeatAt.current = now;
         desktopActionHeartbeatDeviceId.current = current.personalSyncState.deviceId;
-        desktopActionHeartbeatTrackingActive.current = trackingActiveRef.current;
+        desktopActionHeartbeatTrackingActive.current = trackingConfirmed;
       }
 
       const actions = await fetchPendingDesktopActions(
@@ -435,6 +451,7 @@ export function usePersonalCloudSync(input: {
           if (!operation.isCurrent() || !applied) return;
           handledDesktopActionIds.current.add(action.actionId);
         }
+        if (!currentTrackingConfirmed(Date.now())) return;
         const acknowledged = await acknowledgeDesktopAction(
           env,
           session,
@@ -448,7 +465,7 @@ export function usePersonalCloudSync(input: {
       desktopActionInFlight.current = false;
       operation.finish();
     }
-  }, [beginOperation, desktopActionsEnabled, onStartTracking]);
+  }, [beginOperation, currentTrackingConfirmed, desktopActionsEnabled, onStartTracking]);
 
   const finishCommand = useCallback(async (
     command: ReviewCommandV1,

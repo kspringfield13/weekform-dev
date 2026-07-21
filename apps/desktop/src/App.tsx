@@ -529,6 +529,7 @@ export function App() {
   // Lingering Settings status line for the last usage-CSV import (the toast expires).
   const [lastUsageImportSummary, setLastUsageImportSummary] = useState<string | null>(null);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  const [lastSuccessfulCaptureAtMs, setLastSuccessfulCaptureAtMs] = useState<number | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // Seed synchronously from localStorage so a dark-preference user's first paint
   // isn't light; the async store read below hydrates the authoritative value.
@@ -875,6 +876,7 @@ export function App() {
     isDemoMode,
     setActiveWindowSamples,
     setCaptureError,
+    onSuccessfulCapture: setLastSuccessfulCaptureAtMs,
   });
 
   const derived = useDerived({
@@ -949,7 +951,7 @@ export function App() {
       return false;
     }
     setWindowMode("compact");
-    pushToast({ tone: "success", message: "Tracking started from Weekform Web" });
+    pushToast({ tone: "info", message: "Start request received from Weekform Web. Waiting for capture confirmation." });
     return true;
   }, [isTauriRuntime, pushToast, requestCapturePaused]);
   const personalCloud = usePersonalCloudSync({
@@ -960,7 +962,9 @@ export function App() {
     addCorrection,
     persistLatestLocalState: appPersistence.flushLatest,
     onStartTracking: handleDesktopStartTracking,
-    trackingActive: !paused,
+    trackingEnabled: !paused,
+    captureError,
+    lastSuccessfulCaptureAtMs,
   });
   const cloud: CloudController = useMemo(
     () => ({ account: cloudAccount, sync: cloudSync, personal: personalCloud }),

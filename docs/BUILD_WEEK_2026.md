@@ -305,9 +305,10 @@ the alignment QA.
   with single-instance native handling that restores, activates, and focuses
   the requested window. Download/Get Mac acquisition buttons do not invoke that
   scheme and remain normal links to the authenticated download page; Start
-  Tracking uses the authenticated Desktop command channel. The later explicit
-  Weekform-mark sidebar button is the sole Web control designed to invoke the
-  scheme and may therefore show a browser-owned “Open Weekform.app?” dialog. A
+  Tracking uses the authenticated Desktop command channel. A later explicit
+  Weekform-mark sidebar button briefly invoked the scheme, but user verification
+  rejected the resulting browser-owned “Open Weekform.app?” dialog. The current
+  Web contract routes that mark and every other Mac link to Download. A
   fail-closed publisher now encodes the
   signed universal build, Apple notarization, stapling, Gatekeeper, immutable
   private upload, hosted-byte checksum, proof-env, and production deployment
@@ -325,9 +326,10 @@ the alignment QA.
   while testing the stopped-app boundary. User verification showed that the
   scheme's unavoidable browser confirmation made Start Tracking feel broken.
   The final UX contract therefore uses the authenticated queue: a recently
-  active, unrevoked Mac can report already-active state or receive one expiring
-  start command; a stopped or stale Mac gets honest inline guidance to open the
-  app. That tracking action cannot launch a quit app, never invokes
+  active, unrevoked Mac can report a recent successful-capture confirmation or
+  receive one expiring start command; a stopped or stale Mac gets honest inline
+  guidance to open the app. That tracking action cannot launch a quit app and
+  never invokes
   `weekform://`, and receives no raw activity, account token, or native
   permission.
 - **July 21 trusted Mac release and acquisition correction:** Apple accepted the
@@ -1080,10 +1082,11 @@ This task is supporting evidence for the public presentation only. It does not r
   data remains a separate account-scoped verification surface.
 
 - **July 21 tracking-state correction:** a fresh Desktop heartbeat now publishes
-  only whether local tracking is enabled or paused for compatibility with the
-  authenticated running-app queue. The user-facing Start Tracking action uses
-  that queue and treats a stale heartbeat as an inline offline state instead of
-  invoking the registered Desktop handler. The
+  only whether a fresh native capture was successfully journaled for
+  compatibility with the authenticated running-app queue. The user-facing Start
+  Tracking action uses that queue, acknowledges a request only after capture
+  confirmation, and treats a stale heartbeat as an inline offline state instead
+  of invoking the registered Desktop handler. The
   shared authenticated Web toolbar also wraps its workspace title instead of
   truncating it, so the full heading remains visible across routes and zoom.
   Production migration `202607210002` is applied. Apple accepted the refreshed
@@ -1093,6 +1096,17 @@ This task is supporting evidence for the public presentation only. It does not r
   Candidate and canonical authenticated downloads reproduced those exact bytes
   before and after promotion of deployment
   `dpl_7r5xtmnDFMrhU8XKcbiqDUBCMb2N`.
+
+- **July 21 Web protocol-prompt removal:** user verification found the
+  bottom-left Weekform mark could still trigger a browser-owned native-app
+  confirmation. The Web launcher boundary is now ordinary navigation only:
+  every Mac CTA and the borderless 2× footer mark target the authenticated
+  Download page, while the prompt-free Start Tracking command remains a
+  separate running-app control. The same correction made its green status
+  evidence-based: an enabled preference, capture error, missing sample, stale
+  sample, or older active Mac can no longer produce a confirmed-capture notice.
+  This entry describes the local candidate until deployment is independently
+  verified.
 
 - **July 21 integrated calendar and local Web demo:** Codex upgraded the Team
   calendar from a sparse row timeline into a responsive evidence calendar and

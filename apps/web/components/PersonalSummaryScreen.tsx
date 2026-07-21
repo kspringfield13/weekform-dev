@@ -1,4 +1,4 @@
-import { MacAppLink, WEEKFORM_OPEN_URL } from "@/components/MacAppLink";
+import { MacAppLink } from "@/components/MacAppLink";
 import type { PersonalReplicaView } from "@/lib/personalReplica";
 import { buildPersonalSummaryReadout } from "@/lib/personalSummaryPresentation";
 import styles from "./PersonalWeekIntelligence.module.css";
@@ -107,10 +107,9 @@ export function PersonalSummaryScreen({
             </div>
             <div className={styles.summaryActions}>
               <MacAppLink
-                openUrl={WEEKFORM_OPEN_URL}
                 className={`button button-secondary ${styles.summaryHandoff}`}
               >
-                <span>Continue on Mac</span>
+                <span>Get Weekform for Mac</span>
                 <ArrowUpRightIcon />
               </MacAppLink>
             </div>

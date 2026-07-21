@@ -84,26 +84,31 @@ test("personal operations quiesce at a shared operation boundary before reset ca
   assert.match(resume, /operation\.finish\(\)/);
 });
 
-test("prompt-free desktop actions share the reset fence and acknowledge only after local application", () => {
+test("prompt-free desktop actions acknowledge only after a fresh successful capture", () => {
   const refresh = between("const refreshDesktopActions", "const finishCommand");
   assert.match(refresh, /const operation = beginOperation\(\)/);
   assert.match(refresh, /registerWeekformDeviceV3/);
-  assert.match(refresh, /trackingActiveRef\.current/);
+  assert.match(refresh, /trackingConfirmed/);
   assert.match(refresh, /fetchPendingDesktopActions/);
   const applyAt = refresh.indexOf("await onStartTracking()");
+  const confirmAt = refresh.indexOf("currentTrackingConfirmed(Date.now())", applyAt);
   const acknowledgeAt = refresh.indexOf("await acknowledgeDesktopAction", applyAt);
-  assert.ok(applyAt >= 0 && acknowledgeAt > applyAt, "the Mac must apply the explicit action before deleting its cloud control");
+  assert.ok(
+    applyAt >= 0 && confirmAt > applyAt && acknowledgeAt > confirmAt,
+    "the Mac must accept the request and confirm a successful capture before deleting its cloud control",
+  );
   assert.match(refresh, /if \(!operation\.isCurrent\(\) \|\| !applied\) return/);
   assert.match(refresh, /operation\.finish\(\)/);
   assert.match(source, /setInterval\(\(\) => \{ void refreshDesktopActions\(\); \}, 2_000\)/);
 });
 
-test("desktop heartbeat publishes only the current tracking-enabled boolean", () => {
-  assert.match(source, /trackingActive:\s*boolean/);
-  assert.match(source, /trackingActiveRef\.current\s*=\s*trackingActive/);
+test("desktop heartbeat publishes a confirmed state rather than the unpaused preference", () => {
+  assert.match(source, /lastSuccessfulCaptureAtMs:\s*number \| null/);
+  assert.match(source, /captureError:\s*string \| null/);
+  assert.match(source, /isCaptureTrackingConfirmed/);
   const ensureDevice = between("const ensureDevice", "const syncNow");
   assert.match(ensureDevice, /registerWeekformDeviceV3/);
-  assert.match(ensureDevice, /trackingActiveRef\.current/);
+  assert.match(ensureDevice, /currentTrackingConfirmed\(Date\.now\(\)\)/);
 });
 
 test("replica upload is fenced behind a strict durable queue and source-clock write", () => {
