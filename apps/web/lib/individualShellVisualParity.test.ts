@@ -61,9 +61,9 @@ test("collapsing the sidebar also collapses the toolbar sidebar column", () => {
   );
 });
 
-test("the Web toolbar leads with the review purpose and ends with the standard product lockup", () => {
-  assert.match(shellSource, /Your week, ready to review/);
-  assert.match(shellSource, /Private evidence stays on your Mac/);
+test("the Web toolbar names the active workspace and ends with the standard product lockup", () => {
+  assert.match(shellSource, /Your week, ready to take shape/);
+  assert.match(shellSource, /Your team, ready to lead/);
   assert.match(
     shellSource,
     /className="web-toolbar-actions"[\s\S]*className="web-toolbar-product"[\s\S]*<strong>Weekform<\/strong>[\s\S]*<WebEditionLabel/,

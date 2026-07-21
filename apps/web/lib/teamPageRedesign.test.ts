@@ -61,6 +61,11 @@ test("Web Team uses the Desktop Team screen header, evidence, and decision geome
     /\.team-workspace-view\s*\{[\s\S]*?gap:\s*22px/,
     "the Teams page must own spacing between its top-level sections",
   );
+  assert.match(
+    styles,
+    /\.team-workspace-view\s*>\s*\.team-screen-header[\s\S]*?\.team-workspace-view\s*>\s*\.team-evidence-rail\.team-status-rail[\s\S]*?margin-bottom:\s*0/,
+    "legacy child margins must not stack on top of the Teams section gap",
+  );
 });
 
 test("member cards render the manager-authorized member email", () => {
