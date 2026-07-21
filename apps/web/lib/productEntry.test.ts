@@ -21,6 +21,7 @@ test("entry copy keeps browser and native capabilities distinct", () => {
   assert.ok(web?.capabilities.includes("shared workload snapshots"));
   assert.ok(web?.limitations.includes("does not capture Mac activity"));
   assert.ok(web?.limitations.includes("approval on your Mac"));
+  assert.equal(web?.action, "Open Web App");
   assert.ok(mac?.capabilities.includes("local activity capture"));
   assert.ok(mac?.limitations.includes("macOS"));
 });

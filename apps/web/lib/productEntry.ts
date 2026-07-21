@@ -21,7 +21,7 @@ export const PRODUCT_ENTRIES: readonly ProductEntry[] = [
       "Authenticated access to your private review-safe workspace, shared workload snapshots, teams, decisions, and Manager Access.",
     limitations:
       "The web workspace does not capture Mac activity or access native permissions; review changes require approval on your Mac.",
-    action: "Open in Web",
+    action: "Open Web App",
   },
   {
     id: "mac",
