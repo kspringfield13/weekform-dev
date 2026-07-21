@@ -655,6 +655,10 @@ test("pause and reset close the renderer capture gate before native work can fin
     app.indexOf("async function resetLocalData"),
     app.indexOf("function importCalendarFile"),
   );
+  const desktopStartTracking = app.slice(
+    app.indexOf("const handleDesktopStartTracking"),
+    app.indexOf("const personalCloud"),
+  );
 
   assert.match(app, /useActiveWindow\(\{\s*captureAcceptingRef,/);
   assert.match(hook, /captureAcceptingRef:\s*React\.MutableRefObject<boolean>/);
@@ -663,7 +667,10 @@ test("pause and reset close the renderer capture gate before native work can fin
   assert.match(hook, /shouldAcceptCaptureTimestamp\(/);
   assert.match(app, /if \(!canChangeCapturePaused\(resetInProgressRef\.current, nextPaused\)\) return false/);
   assert.match(app, /requestCapturePaused\(!pausedRef\.current\)/);
-  assert.match(app, /if \(!requestCapturePaused\(false\)\) return/);
+  assert.match(
+    desktopStartTracking,
+    /if \(!isTauriRuntime \|\| !requestCapturePaused\(false\)\) return false/,
+  );
   assert.equal((app.match(/setPaused=\{requestCapturePaused\}/g) ?? []).length, 2);
   assert.match(app, /onEnableTracking=\{\(\) => \{\s*requestCapturePaused\(false\)/);
   assert.ok(
