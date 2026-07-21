@@ -287,9 +287,11 @@ the alignment QA.
   unnotarized and unstapled; Gatekeeper rejected it and macOS launched it through
   App Translocation. The beta's production download configuration was removed
   rather than asking users to bypass macOS security. The authenticated download
-  page now offers a clearly separate, Apple-independent two-command source
-  install while the official release remains fail-closed: users shallow-clone
-  the public repository, then run its included `start.sh`. The launcher
+  page is now a minimal Desktop/Web choice followed by one Apple-independent
+  two-command source install; release status, feature grids, tips, and repeated
+  download notes no longer compete with the action. While the official release
+  remains fail-closed, users shallow-clone the public repository, then run its
+  included `start.sh`. The launcher
   delegates to the reviewed installer, builds on the user's Mac, and never
   claims to be the notarized DMG. Web Inspector traced
   the packaged white window to Tauri's

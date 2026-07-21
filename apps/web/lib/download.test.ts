@@ -208,22 +208,24 @@ test("RELEASE_INFO carries non-empty version, date, and macOS requirement copy",
   assert.ok(RELEASE_INFO.tips.length >= 3);
 });
 
-test("download page keeps unavailable releases out of disabled-button limbo", () => {
+test("download page keeps the Mac choice minimal and actionable", () => {
   const source = readFileSync(
     new URL("../app/download/page.tsx", import.meta.url),
     "utf8",
   );
 
   assert.match(source, /getReleasePresentation/);
-  assert.match(source, /releasePresentation\.kind === "available"/);
-  assert.match(source, /releasePresentation\.action\.label/);
-  assert.match(source, /releasePresentation\.filename/);
-  assert.match(source, /RELEASE_INFO\.releaseNotes/);
-  assert.match(source, /RELEASE_INFO\.features/);
-  assert.match(source, /RELEASE_INFO\.tips/);
-  assert.match(source, /Open the DMG/);
-  assert.match(source, /Verified Mac install/);
-  assert.match(source, /releasePresentation\.kind === "available"[\s\S]*download-install-strip/);
+  assert.match(source, /officialReleasePresentation\.kind === "available"/);
+  assert.match(source, /download-page-minimal/);
+  assert.match(source, /download-hero-minimal/);
+  assert.match(source, /download-source-install/);
+  assert.match(source, /download-command-list/);
+  assert.doesNotMatch(source, /ExampleWeek|download-product-preview/);
+  assert.doesNotMatch(source, /RELEASE_INFO\.(?:releaseNotes|features|tips)/);
+  assert.doesNotMatch(
+    source,
+    /release-notes|download-release-grid|download-detail-grid|download-trust-panel|download-release-disclosure|download-release-meta/,
+  );
   assert.doesNotMatch(source, /Expect a Gatekeeper warning|unsigned preview/i);
   assert.doesNotMatch(
     source,
@@ -237,14 +239,16 @@ test("pending Mac release offers Weekform Desktop beside Web", () => {
     "utf8",
   );
 
-  assert.match(source, /href="#source-install"/);
-  assert.match(source, /<span>Weekform Desktop<\/span>/);
+  assert.match(
+    source,
+    /fallbackHref=\{releasePresentation\.kind === "pending"[\s\S]*\? "#source-install"/,
+  );
+  assert.match(source, /\? "Weekform Desktop"/);
   assert.doesNotMatch(source, /GitHub ZIP|Install from source/i);
   assert.match(source, /git clone --depth 1/);
   assert.match(source, /cd weekform-dev && bash start\.sh/);
-  assert.match(source, /builds\s+Weekform locally/i);
   assert.match(source, /className="button button-secondary download-web-action"/);
-  assert.match(source, /releasePresentation\.action\.label/);
+  assert.match(source, /Open Web App/);
   assert.doesNotMatch(source, /archive\/refs\/heads\/main\.zip/);
   assert.doesNotMatch(source, /source install[\s\S]{0,180}(notarized|stapled)/i);
 
@@ -254,7 +258,7 @@ test("pending Mac release offers Weekform Desktop beside Web", () => {
   );
   assert.match(
     styles,
-    /\.download-source-note\s*\{[\s\S]*?color:\s*var\(--text-muted\);[\s\S]*?font-size:\s*12px;/,
+    /\.download-page-minimal\s*\{[\s\S]*?max-width:\s*760px;/,
   );
 });
 
