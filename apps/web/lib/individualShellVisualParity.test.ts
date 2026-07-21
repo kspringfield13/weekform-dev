@@ -52,6 +52,28 @@ test("the authenticated sidebar uses a compact standard product lockup", () => {
   assert.match(navItem, /border-radius:\s*var\(--radius\)\s*;/);
 });
 
+test("the authenticated sidebar uses the same navigation glyphs as the Mac app", () => {
+  for (const [destination, component] of [
+    ["today", "CalendarCheck"],
+    ["week", "BarChart3"],
+    ["agent", "AgentMark"],
+    ["history", "History"],
+    ["manager", "Waypoints"],
+  ]) {
+    assert.match(
+      shellSource,
+      new RegExp(`${destination}:\\s*${component}`),
+      `${destination} should use the Mac ${component} glyph`,
+    );
+  }
+
+  assert.match(
+    shellSource,
+    /M2\.5 12c1\.6-4\.8 3\.15-4\.8 4\.75 0s3\.15 4\.8 4\.75 0 3\.15-4\.8 4\.75 0 3\.15 4\.8 4\.75 0/,
+    "the Web Agent mark should use the same continuous signal wave as the Mac app",
+  );
+});
+
 test("collapsing the sidebar also collapses the toolbar sidebar column", () => {
   const toolbar = rule(".web-individual-app.sidebar-collapsed .web-app-toolbar");
 
@@ -62,8 +84,16 @@ test("collapsing the sidebar also collapses the toolbar sidebar column", () => {
 });
 
 test("the Web toolbar names the active workspace and ends with the standard product lockup", () => {
-  assert.match(shellSource, /Your week, ready to take shape/);
+  assert.match(shellSource, /RotatingIndividualToolbarSlogan/);
   assert.match(shellSource, /Your team, ready to lead/);
+  assert.doesNotMatch(shellSource, /API-connected · no workload cache/);
+  for (const retainedStatus of [
+    "Synthetic local demo · read-only",
+    "Manager · synced summaries",
+    "Team member · your data only",
+  ]) {
+    assert.match(shellSource, new RegExp(retainedStatus.replace("·", "\\·")));
+  }
   assert.match(
     shellSource,
     /className="web-toolbar-actions"[\s\S]*className="web-toolbar-product"[\s\S]*<strong>Weekform<\/strong>[\s\S]*<WebEditionLabel/,
@@ -74,8 +104,40 @@ test("the Web toolbar names the active workspace and ends with the standard prod
   assert.match(product, /font-family:\s*"Geist Variable"/);
 
   const title = rule(".web-toolbar-title strong");
-  assert.doesNotMatch(title, /overflow:\s*hidden|text-overflow:\s*ellipsis/);
-  assert.match(title, /white-space:\s*normal\s*;/);
+  assert.match(title, /overflow:\s*hidden\s*;/);
+  assert.match(title, /text-overflow:\s*ellipsis\s*;/);
+  assert.match(title, /white-space:\s*nowrap\s*;/);
+
+  assert.match(
+    stylesSource,
+    /\.web-app-toolbar\.is-statusless\s*,\s*\.web-individual-app\.sidebar-collapsed\s+\.web-app-toolbar\.is-statusless\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto\s+auto\s*;/s,
+    "the removed Individual status column must become usable slogan width",
+  );
+});
+
+test("the Individual toolbar rotates quietly and respects reduced-motion preference", () => {
+  assert.match(shellSource, /INDIVIDUAL_TOOLBAR_SLOGANS/);
+  assert.match(shellSource, /useState\(0\)/);
+  assert.match(shellSource, /matchMedia\(["']\(prefers-reduced-motion:\s*reduce\)["']\)/);
+  assert.match(shellSource, /window\.setInterval/);
+  assert.match(shellSource, /window\.clearInterval/);
+  assert.doesNotMatch(shellSource, /aria-live/);
+
+  assert.match(
+    stylesSource,
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.web-toolbar-slogan\s*\{[^}]*animation:\s*none\s*;/,
+  );
+});
+
+test("Start Tracking and the workspace switch share equal top and side gutters", () => {
+  const actionRow = rule(".web-workspace-mode-row");
+
+  assert.match(actionRow, /padding:\s*14px\s+14px\s+0\s*;/);
+  assert.doesNotMatch(actionRow, /clamp\(/);
+  assert.match(
+    stylesSource,
+    /@media\s*\(max-width:\s*520px\)[\s\S]*?\.web-workspace-mode-row\s*\{[^}]*padding:\s*10px\s+10px\s+0\s*;/,
+  );
 });
 
 test("context tabs and page content use the current Desktop strip and content frame", () => {

@@ -1,7 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { LogOut, Mail, ShieldCheck, UsersRound, Waypoints } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  Lock,
+  LogOut,
+  Mail,
+  ShieldCheck,
+  UserPlus,
+  UsersRound,
+  Waypoints,
+} from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -314,6 +324,141 @@ function ForecastStat({
           : `Track record: ${metric.hitCount} of ${metric.scoredCount} past forecast${metric.scoredCount === 1 ? "" : "s"} landed inside the stated range.`}
       </span>
     </div>
+  );
+}
+
+/**
+ * Empty/partial state for the manager Team capacity view. Shown when too few
+ * members share current data for an honest verdict (below the scenario
+ * minimum). Instead of rendering the absorption presets and forecast as
+ * repeated "insufficient shared data" fallbacks, it leads with the one move
+ * that changes the screen — invite teammates or share your own week — shows a
+ * reachable unlock threshold, and previews what will appear without inventing
+ * a single number. The data-honesty language lives in the disclosure.
+ */
+function TeamCapacityActivation({
+  teamId,
+  memberCount,
+  currentSharedCount,
+  viewerSharing,
+}: {
+  teamId: string;
+  memberCount: number;
+  currentSharedCount: number;
+  viewerSharing: boolean;
+}) {
+  const neededToUnlock = Math.max(
+    MIN_SCENARIO_SHARED_COUNT,
+    Math.ceil(memberCount * MIN_SCENARIO_SHARED_RATIO),
+  );
+  const soloTeam = memberCount <= 1;
+  const headline = soloTeam
+    ? "Your team is just you for now"
+    : `${currentSharedCount} of ${memberCount} members are sharing`;
+  const meterSlots = Array.from({ length: neededToUnlock }, (_, index) => ({
+    id: `unlock-slot-${index}`,
+    filled: index < currentSharedCount,
+  }));
+  return (
+    <section
+      className="panel team-activation-panel"
+      aria-labelledby="team-activation-title"
+    >
+      <span className="team-section-kicker team-activation-kicker">
+        Getting started
+      </span>
+      <h2 id="team-activation-title">{headline}</h2>
+      <p className="team-activation-lede">
+        Capacity verdicts and forecasts appear once teammates join and approve a
+        weekly summary. Weekform won&apos;t estimate a team from one
+        person&apos;s data — missing capacity stays unknown, never zero.
+      </p>
+
+      <div className="team-activation-meter">
+        <div className="team-activation-meter-row">
+          <span className="team-activation-count">
+            <strong>{currentSharedCount}</strong> of{" "}
+            <strong>{memberCount}</strong>{" "}
+            {memberCount === 1 ? "member" : "members"} sharing
+          </span>
+          <span className="team-activation-target">
+            Verdicts unlock at {neededToUnlock} sharing members
+          </span>
+        </div>
+        <div
+          className="team-activation-track"
+          role="img"
+          aria-label={`${currentSharedCount} of ${neededToUnlock} members needed are sharing a current snapshot`}
+        >
+          {meterSlots.map((slot) => (
+            <span key={slot.id} className={slot.filled ? "is-on" : ""} />
+          ))}
+        </div>
+      </div>
+
+      <div className="team-activation-actions">
+        <Link
+          href={`/teams/${teamId}?screen=setup`}
+          className="button button-primary"
+        >
+          <UserPlus aria-hidden="true" />
+          Invite teammates
+        </Link>
+        {viewerSharing ? null : (
+          <MacAppLink className="button button-secondary">
+            Share your own week
+          </MacAppLink>
+        )}
+      </div>
+
+      <p className="team-activation-preview-label">What appears here</p>
+      <div className="team-activation-ghost-grid">
+        <div className="team-activation-ghost">
+          <span className="team-activation-lock" aria-hidden="true">
+            <Lock />
+          </span>
+          <span className="team-activation-ghost-kicker">
+            Absorption verdict
+          </span>
+          <p>
+            Whether +{SCENARIO_ASK_PRESETS_PCT[0]}% or +
+            {SCENARIO_ASK_PRESETS_PCT[1]}% more planned load fits the median of
+            members&apos; shared headroom.
+          </p>
+        </div>
+        <div className="team-activation-ghost">
+          <span className="team-activation-lock" aria-hidden="true">
+            <Lock />
+          </span>
+          <span className="team-activation-ghost-kicker">Next-week forecast</span>
+          <p>
+            Median capacity, reactive load, meetings, and fragmentation for next
+            week, each with the range recent weeks spanned.
+          </p>
+        </div>
+      </div>
+      <p className="team-activation-unlock-note">
+        <Check aria-hidden="true" />
+        These fill in with real medians and ranges as members share — never
+        estimated from partial data.
+      </p>
+
+      <details className="team-activation-calc">
+        <summary>
+          <ChevronRight aria-hidden="true" className="team-activation-chev" />
+          How Weekform calculates this
+        </summary>
+        <p>
+          Verdicts compare an added planned load to the{" "}
+          <strong>median</strong> of members&apos; shared current headroom —
+          never a sum, rank, or score — and speak only for the members counted
+          in the denominator. Forecasts take the median of up to six recent
+          weekly team medians with their range, never a per-member prediction.
+          Members who are stale or not sharing are excluded, not counted as
+          zero. Every threshold is a prototype heuristic, not a benchmark.
+        </p>
+      </details>
+    </section>
   );
 }
 
@@ -736,6 +881,26 @@ async function ManagerView({
     : null;
   const openActionsCount = actions.filter((action) => action.status === "open").length;
 
+  // Coverage gate shared by the planning and forecast panels: below the
+  // scenario minimum, an absorption verdict would just re-expose one person's
+  // data as a "team" answer. The verdict of any preset reflects only coverage
+  // (not the ask), so a single probe tells us whether to show the activation
+  // empty state instead of the analytics panels.
+  const scenarioProbe =
+    snapshotsError || rosterError
+      ? null
+      : assessAbsorption(
+          roster.length,
+          snapshots,
+          { additionalLoadPct: SCENARIO_ASK_PRESETS_PCT[0] },
+          nowIso,
+        );
+  const capacityBelowMinimum =
+    scenarioProbe !== null &&
+    scenarioProbe.verdict === "insufficient-shared-data";
+  const viewerSharingCurrent =
+    ownSnapshotFreshness === "fresh" || ownSnapshotFreshness === "aging";
+
   return (
     <div className="team-manager-workspace team-screen">
       <section data-web-view="today" className="team-workspace-view" aria-labelledby="team-today-title">
@@ -1054,45 +1219,53 @@ async function ManagerView({
         <p>Test what fits against shared headroom, with unknown and stale signals kept explicit.</p>
       </header>
       <div className="team-decision-grid">
-      <section className="panel team-planning-panel" aria-labelledby="scenario-title">
-        <h2 id="scenario-title">Planning scenario</h2>
-        <p>
-          &quot;What can the team absorb?&quot; — each preset asks whether that
-          much additional planned load fits within the headroom members chose
-          to share. Verdicts compare the ask to the median of shared current
-          headroom (never a sum, rank, or score) and refuse to answer when too
-          few members share fresh data.
-        </p>
-        {snapshotsError || rosterError ? (
+      {snapshotsError || rosterError ? (
+        <section className="panel team-planning-panel" aria-labelledby="scenario-title">
+          <h2 id="scenario-title">Planning scenario</h2>
           <div className="form-alert" role="alert">
             Planning scenarios need both the member list and shared snapshots.
             Reload the page to try again.
           </div>
-        ) : (
-          <>
-            <div className="stat-grid">
-              {SCENARIO_ASK_PRESETS_PCT.map((askPct) => (
-                <ScenarioStat
-                  key={askPct}
-                  assessment={assessAbsorption(
-                    roster.length,
-                    snapshots,
-                    { additionalLoadPct: askPct },
-                    nowIso,
-                  )}
-                />
-              ))}
-            </div>
-            <p style={{ marginTop: 16 }}>
-              All thresholds here are labeled prototype heuristics, not
-              benchmarks. Members who are stale or not sharing are excluded
-              from every number — their capacity is unknown, not zero, and the
-              verdict only ever speaks for the members counted in its
-              denominator.
-            </p>
-          </>
-        )}
-      </section>
+        </section>
+      ) : capacityBelowMinimum ? (
+        <TeamCapacityActivation
+          teamId={teamId}
+          memberCount={roster.length}
+          currentSharedCount={scenarioProbe?.currentSharedCount ?? 0}
+          viewerSharing={viewerSharingCurrent}
+        />
+      ) : (
+        <section className="panel team-planning-panel" aria-labelledby="scenario-title">
+          <h2 id="scenario-title">Planning scenario</h2>
+          <p>
+            &quot;What can the team absorb?&quot; — each preset asks whether that
+            much additional planned load fits within the headroom members chose
+            to share. Verdicts compare the ask to the median of shared current
+            headroom (never a sum, rank, or score) and refuse to answer when too
+            few members share fresh data.
+          </p>
+          <div className="stat-grid">
+            {SCENARIO_ASK_PRESETS_PCT.map((askPct) => (
+              <ScenarioStat
+                key={askPct}
+                assessment={assessAbsorption(
+                  roster.length,
+                  snapshots,
+                  { additionalLoadPct: askPct },
+                  nowIso,
+                )}
+              />
+            ))}
+          </div>
+          <p style={{ marginTop: 16 }}>
+            All thresholds here are labeled prototype heuristics, not
+            benchmarks. Members who are stale or not sharing are excluded
+            from every number — their capacity is unknown, not zero, and the
+            verdict only ever speaks for the members counted in its
+            denominator.
+          </p>
+        </section>
+      )}
 
       </div>
       </section>
@@ -1162,6 +1335,7 @@ async function ManagerView({
 
       </section>
 
+      {capacityBelowMinimum ? null : (
       <section data-web-view="week" className="team-workspace-view team-workspace-view-continuation">
       <section className="panel team-forecast-panel" aria-labelledby="forecast-title">
         <h2 id="forecast-title">Next-week forecast</h2>
@@ -1234,6 +1408,7 @@ async function ManagerView({
       </section>
 
       </section>
+      )}
 
       <section data-web-view="agent" className="team-workspace-view" aria-labelledby="team-agent-title">
       <header className="team-workspace-view-header team-workspace-agent-header">

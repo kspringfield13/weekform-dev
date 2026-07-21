@@ -48,6 +48,24 @@ test("Today exposes the Desktop pending-review badge and accessible count", () =
   );
 });
 
+test("Today keeps its label and description stacked when the review badge follows", () => {
+  assert.match(
+    shellSource,
+    /<span className=["']nav-item-copy["']>\s*<strong>\{destination\.label\}<\/strong>\s*<small>\{destination\.description\}<\/small>/,
+    "the visible destination copy needs an explicit layout hook that is independent of child order",
+  );
+  assert.match(
+    stylesSource,
+    /\.web-individual-app\s+\.nav-item\s*>\s*\.nav-item-copy\s*\{[^}]*display:\s*grid\s*;[^}]*gap:\s*2px\s*;[^}]*min-width:\s*0\s*;/s,
+    "the Today title and description must remain a two-row stack when its badge is present",
+  );
+  assert.doesNotMatch(
+    stylesSource,
+    /\.web-individual-app\s+\.nav-item\s*>\s*span:last-child/,
+    "nav copy layout cannot depend on being the last child because Today appends review-count content",
+  );
+});
+
 test("History retains the Desktop destination description", () => {
   assert.match(
     shellSource,
@@ -63,13 +81,13 @@ test("Settings matches Desktop sidebar hierarchy on wide and narrow layouts", ()
   );
   assert.match(
     shellSource,
-    /className=\{active\s*===\s*["']settings["']\s*\?\s*["']settings-button is-active["']\s*:\s*["']settings-button["']\}/,
+    /className=\{!teamWorkspace\s*&&\s*active\s*===\s*["']settings["']\s*\?\s*["']settings-button is-active["']\s*:\s*["']settings-button["']\}/,
     "wide Web layouts must expose Settings through the Desktop footer control",
   );
   assert.match(shellSource, /navigate\([^)]*settings/i);
   assert.match(
     shellSource,
-    /className="web-sidebar-footer-actions"[\s\S]*?<MacAppLink[\s\S]*?<WeekformMark[\s\S]*?<\/MacAppLink>[\s\S]*?className=\{active\s*===\s*["']settings["']/,
+    /className="web-sidebar-footer-actions"[\s\S]*?<MacAppLink[\s\S]*?<WeekformMark[\s\S]*?<\/MacAppLink>[\s\S]*?className=\{!teamWorkspace\s*&&\s*active\s*===\s*["']settings["']/,
     "the icon-only Desktop handoff must sit immediately left of the Settings footer control",
   );
 

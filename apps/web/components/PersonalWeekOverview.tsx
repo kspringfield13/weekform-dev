@@ -14,6 +14,7 @@ import {
   ratioScorePercent,
   safePercent,
 } from "@/lib/personalWeekPresentation";
+import { CapacitySignalGraphic } from "./capacity/CapacitySignalGraphic";
 
 function pct(value: number): string {
   return `${Math.round(displayPercent(value))}%`;
@@ -187,12 +188,10 @@ export function PersonalWeekOverview({
             </>
           )}
         </div>
-        <div className="personal-week-signal" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-          <i />
-        </div>
+        <CapacitySignalGraphic
+          available={available}
+          committed={displayCapacity.committedUtilizationPct}
+        />
       </section>
 
       <section className="personal-week-metrics week-dashboard-metrics" aria-label="Capacity summary">

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import type { KeyboardEvent, ReactNode } from "react";
+import { BarChart3, CalendarCheck, History, Settings, Waypoints } from "lucide-react";
+import type { KeyboardEvent, ReactNode, SVGProps } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { WeekformMark } from "@/components/WeekformMark";
@@ -19,6 +20,11 @@ import {
 } from "@/lib/individualWorkspaceRoute";
 import { desktopPageHandoffUrl } from "@/lib/desktopPageHandoff";
 import { resolveMobileNavigationFocusAction } from "@/lib/mobileNavigationFocus";
+import {
+  INDIVIDUAL_TOOLBAR_SLOGANS,
+  TOOLBAR_SLOGAN_INTERVAL_MS,
+  nextToolbarSloganIndex,
+} from "@/lib/toolbarSlogans";
 
 const DESTINATIONS: Array<{
   id: IndividualDestination;
@@ -91,16 +97,35 @@ function formatActiveWeekLabel(weekId: string): string {
   return `Week ${Number(match[2])}, ${match[1]}`;
 }
 
+function AgentMark({ size = 18, ...props }: SVGProps<SVGSVGElement> & { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      {...props}
+    >
+      <path d="M2.5 12c1.6-4.8 3.15-4.8 4.75 0s3.15 4.8 4.75 0 3.15-4.8 4.75 0 3.15 4.8 4.75 0" />
+    </svg>
+  );
+}
+
+const NAV_ICONS = {
+  today: CalendarCheck,
+  week: BarChart3,
+  agent: AgentMark,
+  history: History,
+  settings: Settings,
+  manager: Waypoints,
+} as const;
+
 function NavIcon({ id }: { id: IndividualDestination | "manager" }) {
-  const paths: Record<typeof id, ReactNode> = {
-    today: <><path d="M5 4v3M19 4v3M4 9h16" /><path d="m9 16 2 2 4-5" /><rect x="3" y="5" width="18" height="16" rx="2" /></>,
-    week: <><path d="M4 19V9M10 19V5M16 19v-7M22 19V3" /><path d="M2 19h22" /></>,
-    agent: <><path d="M12 3 9.8 9.8 3 12l6.8 2.2L12 21l2.2-6.8L21 12l-6.8-2.2Z" /></>,
-    history: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5M12 7v5l3 2" /></>,
-    settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></>,
-    manager: <><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3 2.4-5 6-5s6 2 6 5M16 6h5M18.5 3.5v5" /></>,
-  };
-  return <svg className="web-nav-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[id]}</svg>;
+  const Icon = NAV_ICONS[id];
+  return <Icon className="web-nav-glyph" size={18} aria-hidden="true" />;
 }
 
 function StartTrackingIcon() {
@@ -122,6 +147,23 @@ function ManagerWindowIcon() {
       <path d="M12 14v6" />
     </svg>
   );
+}
+
+function RotatingIndividualToolbarSlogan() {
+  const [sloganIndex, setSloganIndex] = useState(0);
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const interval = window.setInterval(() => {
+      setSloganIndex((currentIndex) => nextToolbarSloganIndex(currentIndex));
+    }, TOOLBAR_SLOGAN_INTERVAL_MS);
+
+    return () => window.clearInterval(interval);
+  }, []);
+
+  const slogan = INDIVIDUAL_TOOLBAR_SLOGANS[sloganIndex] ?? INDIVIDUAL_TOOLBAR_SLOGANS[0];
+  return <strong className="web-toolbar-slogan" key={slogan}>{slogan}</strong>;
 }
 
 export function IndividualWorkspaceShell({
@@ -172,6 +214,13 @@ export function IndividualWorkspaceShell({
   const memberTeamWorkspace = workspaceMode === "team";
   const teamWorkspace = managerWorkspace || memberTeamWorkspace;
   const teamModeLabel = teamRole === "member" ? "Team" : "Manager mode";
+  const toolbarStateLabel = demoReadOnly
+    ? "Synthetic local demo · read-only"
+    : managerWorkspace
+      ? "Manager · synced summaries"
+      : memberTeamWorkspace
+        ? "Team member · your data only"
+        : null;
   const settingsHref = workspaceHref(
     managerWorkspace ? teamHref : individualHrefBase,
     { destination: "settings", subview: "settings" },
@@ -341,16 +390,22 @@ export function IndividualWorkspaceShell({
       data-workspace-mode={workspaceMode}
     >
       <header
-        className="web-app-toolbar"
+        className={`web-app-toolbar${toolbarStateLabel ? "" : " is-statusless"}`}
         inert={mobileNavigationOpen ? true : undefined}
         aria-hidden={mobileNavigationOpen ? true : undefined}
       >
         <div className="web-toolbar-title">
-          <strong>{managerWorkspace ? "Your team, ready to lead" : memberTeamWorkspace ? "Your team connection" : "Your week, ready to take shape"}</strong>
+          {managerWorkspace
+            ? <strong>Your team, ready to lead</strong>
+            : memberTeamWorkspace
+              ? <strong>Your team connection</strong>
+              : <RotatingIndividualToolbarSlogan />}
         </div>
-        <div className="web-toolbar-state" role="status">
-          {managerWorkspace ? <ManagerWindowIcon /> : <i aria-hidden="true" />} {demoReadOnly ? "Synthetic local demo · read-only" : managerWorkspace ? "Manager · synced summaries" : memberTeamWorkspace ? "Team member · your data only" : "API-connected · no workload cache"}
-        </div>
+        {toolbarStateLabel ? (
+          <div className="web-toolbar-state" role="status">
+            {managerWorkspace ? <ManagerWindowIcon /> : <i aria-hidden="true" />} {toolbarStateLabel}
+          </div>
+        ) : null}
         <div className="web-toolbar-actions">
           <div
             className="web-toolbar-display-controls"
@@ -401,16 +456,16 @@ export function IndividualWorkspaceShell({
         <nav className="nav-list" aria-label="Primary navigation">
           {DESTINATIONS.map((destination) => (
             <button
-              className={`nav-item${destination.id === "settings" ? " nav-item-settings" : ""}${active === destination.id ? " is-active" : ""}`}
+              className={`nav-item${destination.id === "settings" ? " nav-item-settings" : ""}${!teamWorkspace && active === destination.id ? " is-active" : ""}`}
               key={destination.id}
               onClick={() => navigate(destination)}
               type="button"
               aria-keyshortcuts={destination.shortcutKey}
               title={`${destination.label} shortcut (⌘${destination.shortcutKey.at(-1)})`}
-              aria-current={active === destination.id ? "page" : undefined}
+              aria-current={!teamWorkspace && active === destination.id ? "page" : undefined}
             >
               <NavIcon id={destination.id} />
-              <span>
+              <span className="nav-item-copy">
                 <strong>{destination.label}</strong>
                 <small>{destination.description}</small>
               </span>
@@ -433,7 +488,7 @@ export function IndividualWorkspaceShell({
             onClick={closeMobileNavigation}
           >
             <NavIcon id="manager" />
-            <span>
+            <span className="nav-item-copy">
               <strong>Team</strong>
               <small>{teamRole === "member" ? "Membership and sharing" : "Workload and coordination"}</small>
             </span>
@@ -462,9 +517,9 @@ export function IndividualWorkspaceShell({
             <WeekformMark className="web-open-desktop-mark" />
           </MacAppLink>
           <button
-            className={active === "settings" ? "settings-button is-active" : "settings-button"}
+            className={!teamWorkspace && active === "settings" ? "settings-button is-active" : "settings-button"}
             type="button"
-            aria-current={active === "settings" ? "page" : undefined}
+            aria-current={!teamWorkspace && active === "settings" ? "page" : undefined}
             onClick={() => navigate(SETTINGS_DESTINATION)}
           >
             <NavIcon id="settings" />

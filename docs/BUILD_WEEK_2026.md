@@ -1159,6 +1159,18 @@ The Week dashboard simplification is recorded in a separate in-period task:
 - **Date:** July 18, 2026
 - **Outcome:** Codex rebuilt the weekly-capacity content below the breadcrumb around clearer labels, stronger visual hierarchy, and a simpler container layout while preserving the existing capacity data, app context, and Weekform palette. The model breakdown, personal baselines, delivery-risk inputs, and privacy-safe interruption evidence remain available in a collapsed explanation layer. Follow-ups aligned the two primary panels, added reduced-motion-aware chart entrances and keyboard-accessible detail, and replaced the pastoral hero artwork with a lazy-loaded Three.js capacity signal. Its segmented surface uses the live committed-load and reliable-capacity values, updates with the app theme, pauses offscreen or while hidden, respects reduced motion, and retains a polished static fallback when WebGL is unavailable.
 - **Human design direction:** Kyle supplied the visual reference, limited the redesign to the Week dashboard below “Weekly capacity,” required reuse of the app’s existing data and context, and prioritized immediate comprehension over the prior dense presentation. His follow-up direction called for equal-height panels, restrained chart motion, detail available to both pointer and keyboard users, and a higher-quality animated hero graphic with a modern technical character.
+- **July 21 Web parity:** Kyle requested the same capacity-linked signal in the
+  authenticated Web Week dashboard. Codex ported the Mac ribbon, segmented
+  committed/available/protected coloring, low-frequency headroom scan, light
+  and dark palettes, lazy loading, static SVG fallback, reduced-motion guard,
+  offscreen/visibility pauses, context-loss recovery, and disposal lifecycle
+  into the existing top-right hero slot. A red-first Web parity contract now
+  covers the data binding and fallback/lifecycle behavior. The full Web static
+  suite passes 627/627; Web typecheck, the optimized Next.js build, and the
+  authoritative root build pass. The synthetic local Web demo reached the
+  Three.js `ready` state with one canvas and a clean console in dark and light
+  themes at 1280×800; at 900×800 the graphic yielded to the Mac-matched compact
+  hero layout. No raw activity or new network data flow was added.
 
 ### Forecast trajectory chart refresh
 

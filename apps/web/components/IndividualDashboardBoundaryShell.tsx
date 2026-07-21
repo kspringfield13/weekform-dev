@@ -43,7 +43,7 @@ export function IndividualDashboardBoundaryShell({ children }: { children: React
           {DESTINATIONS.map((destination) => (
             <div className="nav-item" key={destination.label}>
               <span className="dashboard-boundary-nav-glyph" />
-              <span><strong>{destination.label}</strong><small>{destination.description}</small></span>
+              <span className="nav-item-copy"><strong>{destination.label}</strong><small>{destination.description}</small></span>
             </div>
           ))}
         </div>

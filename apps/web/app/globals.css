@@ -2912,15 +2912,22 @@ button.text-link {
    Every value here is derived from the positive-allowlist replica; no raw
    activity, evidence, project, or stakeholder detail is represented. */
 .personal-week-overview {
-  --week-committed: var(--signal-blue);
+  --week-blue: #2563eb;
+  --week-green: #16a34a;
+  --week-committed: var(--week-blue);
   --week-planned: var(--decision);
   --week-reactive: var(--signal-orange);
-  --week-available: var(--signal-green);
+  --week-available: var(--week-green);
   display: grid;
   gap: 14px;
   width: min(100%, 1200px);
   max-width: 1200px;
   margin-bottom: 18px;
+}
+
+:root[data-theme="dark"] .personal-week-overview {
+  --week-blue: #60a5fa;
+  --week-green: #4ade80;
 }
 
 .personal-week-eyebrow {
@@ -2953,6 +2960,20 @@ button.text-link {
   background:
     radial-gradient(circle at 78% 10%, color-mix(in srgb, var(--signal-green) 10%, transparent), transparent 36%),
     linear-gradient(135deg, var(--surface), color-mix(in srgb, var(--signal-green) 4%, var(--surface)));
+}
+
+.personal-week-hero::after {
+  position: absolute;
+  z-index: 0;
+  inset: 0 0 0 auto;
+  width: min(38%, 380px);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--week-green) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--week-green) 7%, transparent) 1px, transparent 1px);
+  background-size: 24px 24px;
+  content: "";
+  mask-image: linear-gradient(90deg, transparent, rgb(0 0 0 / 76%));
+  pointer-events: none;
 }
 
 .personal-week-gauge {
@@ -3026,29 +3047,102 @@ button.text-link {
   line-height: 1.55;
 }
 
-.personal-week-signal {
+.capacity-signal-graphic {
   position: relative;
-  display: grid;
-  gap: 18px;
-  opacity: 0.55;
+  z-index: 1;
+  align-self: center;
+  width: 100%;
+  min-width: 0;
+  height: 154px;
+  overflow: hidden;
+  contain: layout paint size;
+  pointer-events: none;
 }
 
-.personal-week-signal span {
-  display: block;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--signal-green), transparent);
-  transform: skewY(-8deg);
-}
-
-.personal-week-signal span:nth-child(2) { width: 78%; margin-left: 13%; }
-.personal-week-signal span:nth-child(3) { width: 54%; margin-left: 30%; }
-.personal-week-signal i {
+.capacity-signal-canvas,
+.capacity-signal-fallback {
   position: absolute;
-  inset: 50% 18% auto;
-  height: 6px;
-  border-radius: 999px;
-  background: var(--signal-green);
-  box-shadow: 0 0 24px color-mix(in srgb, var(--signal-green) 55%, transparent);
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.capacity-signal-canvas {
+  z-index: 1;
+  opacity: 0;
+  outline: none;
+  transition: opacity 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.capacity-signal-fallback {
+  z-index: 0;
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+.capacity-signal-graphic.is-ready .capacity-signal-canvas {
+  opacity: 1;
+}
+
+.capacity-signal-graphic.is-ready .capacity-signal-fallback {
+  opacity: 0;
+}
+
+.capacity-signal-stop-committed {
+  stop-color: var(--week-blue);
+}
+
+.capacity-signal-stop-available {
+  stop-color: var(--week-green);
+}
+
+.capacity-signal-stop-protected {
+  stop-color: color-mix(in srgb, var(--text-subtle) 28%, var(--surface));
+}
+
+.capacity-signal-grid {
+  fill: none;
+  stroke: color-mix(in srgb, var(--week-green) 10%, var(--border));
+  stroke-width: 0.75;
+}
+
+.capacity-signal-field {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.capacity-signal-field-glow {
+  stroke-width: 22;
+  opacity: 0.17;
+}
+
+.capacity-signal-field-line {
+  stroke-width: 3;
+  opacity: 0.9;
+}
+
+.capacity-signal-field-rail {
+  stroke: color-mix(in srgb, var(--text-muted) 34%, transparent);
+  stroke-width: 1;
+}
+
+.capacity-signal-nodes {
+  fill: var(--week-green);
+  opacity: 0.6;
+}
+
+:root[data-theme="dark"] .capacity-signal-grid {
+  stroke: color-mix(in srgb, var(--week-green) 10%, var(--border));
+}
+
+:root[data-theme="dark"] .capacity-signal-field-glow {
+  opacity: 0.24;
+}
+
+:root[data-theme="dark"] .capacity-signal-field-rail {
+  stroke: color-mix(in srgb, var(--text-muted) 46%, transparent);
 }
 
 .personal-week-metrics {
@@ -3179,7 +3273,7 @@ button.text-link {
 
 @media (max-width: 970px) {
   .personal-week-hero { grid-template-columns: 154px minmax(0, 1fr); }
-  .personal-week-signal { display: none; }
+  .capacity-signal-graphic { display: none; }
 }
 
 @media (max-width: 920px) {
@@ -3198,6 +3292,14 @@ button.text-link {
   .personal-week-categories li { grid-template-columns: minmax(115px, 1.3fr) minmax(52px, 1fr) 38px 30px; gap: 7px; }
   .personal-week-explainability-body > header { display: grid; }
   .personal-week-explainability-body dl { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capacity-signal-canvas,
+  .capacity-signal-fallback {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .manager-entry {
@@ -5888,8 +5990,238 @@ button.web-team-gantt-cell {
 }
 
 .team-planning-panel,
+.team-activation-panel,
 .team-invites-panel {
   grid-column: 1 / -1;
+}
+
+/* Team capacity — activation empty state (solo/partial team, below the
+   scenario minimum). Leads with the next action instead of repeating the
+   "insufficient shared data" fallback across panels. */
+.team-activation-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.team-activation-kicker {
+  color: var(--signal-green);
+}
+
+.team-activation-panel > h2 {
+  font-size: 20px;
+  letter-spacing: -0.015em;
+  margin: 6px 0 8px;
+  max-width: 24ch;
+  text-wrap: balance;
+}
+
+.team-activation-lede {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin: 0 0 20px;
+  max-width: 56ch;
+  line-height: 1.55;
+}
+
+.team-activation-meter {
+  margin-bottom: 22px;
+}
+
+.team-activation-meter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.team-activation-count {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.team-activation-count strong {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.team-activation-target {
+  font-size: 12px;
+  color: var(--text-subtle);
+}
+
+.team-activation-track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 4px;
+  height: 6px;
+}
+
+.team-activation-track span {
+  display: block;
+  border-radius: 999px;
+  background: var(--surface-muted);
+}
+
+.team-activation-track span.is-on {
+  background: var(--signal-green);
+}
+
+.team-activation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.team-activation-actions .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-activation-actions .button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.team-activation-preview-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.team-activation-preview-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.team-activation-ghost-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.team-activation-ghost {
+  position: relative;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: 16px;
+  background: var(--surface-muted);
+}
+
+.team-activation-ghost-kicker {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.team-activation-ghost p {
+  font-size: 12px;
+  color: var(--text-subtle);
+  margin: 8px 0 0;
+  line-height: 1.5;
+}
+
+.team-activation-lock {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-subtle);
+}
+
+.team-activation-lock svg {
+  width: 13px;
+  height: 13px;
+}
+
+.team-activation-unlock-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-subtle);
+  margin: 14px 0 0;
+  line-height: 1.5;
+}
+
+.team-activation-unlock-note svg {
+  width: 14px;
+  height: 14px;
+  color: var(--signal-green);
+  flex: none;
+  margin-top: 1px;
+}
+
+.team-activation-calc {
+  margin-top: 20px;
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+}
+
+.team-activation-calc summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+}
+
+.team-activation-calc summary::-webkit-details-marker {
+  display: none;
+}
+
+.team-activation-chev {
+  width: 14px;
+  height: 14px;
+  color: var(--text-subtle);
+  transition: transform 150ms ease;
+}
+
+.team-activation-calc[open] .team-activation-chev {
+  transform: rotate(90deg);
+}
+
+.team-activation-calc p {
+  font-size: 12px;
+  color: var(--text-subtle);
+  line-height: 1.6;
+  margin: 12px 0 0;
+  max-width: 64ch;
+}
+
+@media (max-width: 620px) {
+  .team-activation-ghost-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .team-activation-chev {
+    transition: none;
+  }
 }
 
 .team-decision-grid .stat-grid {
@@ -6358,6 +6690,11 @@ button.web-team-gantt-cell {
   grid-template-columns: 0 minmax(180px, 1fr) auto auto;
 }
 
+.web-app-toolbar.is-statusless,
+.web-individual-app.sidebar-collapsed .web-app-toolbar.is-statusless {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
 .web-toolbar-title,
 .web-toolbar-title strong,
 .web-toolbar-title span {
@@ -6374,14 +6711,23 @@ button.web-team-gantt-cell {
 .web-toolbar-title { padding-inline: 16px; }
 .web-toolbar-title strong {
   display: block;
-  overflow: visible;
+  overflow: hidden;
   color: var(--text);
   font-size: 14px;
   line-height: 1.15;
-  text-overflow: clip;
-  white-space: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .web-toolbar-title span { margin-top: 3px; color: var(--text-subtle); font-size: 11px; }
+
+.web-toolbar-slogan {
+  animation: web-toolbar-slogan-enter 180ms ease-out both;
+}
+
+@keyframes web-toolbar-slogan-enter {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .web-toolbar-state {
   display: inline-flex;
@@ -6627,7 +6973,7 @@ button.web-team-gantt-cell {
 }
 
 .web-individual-app .nav-item.nav-item-settings { display: none; }
-.web-individual-app .nav-item > span:last-child { display: grid; gap: 2px; min-width: 0; }
+.web-individual-app .nav-item > .nav-item-copy { display: grid; gap: 2px; min-width: 0; }
 .web-individual-app .nav-item strong { color: inherit; font-size: 13px; font-weight: 500; }
 .web-individual-app .nav-item small { overflow: hidden; color: var(--text-subtle); font-size: 11px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .web-individual-app .nav-item > b {
@@ -6736,6 +7082,12 @@ button.web-team-gantt-cell {
   cursor: pointer;
 }
 
+.web-sidebar-toggle > span {
+  display: block;
+  line-height: 1;
+  transform: translateY(-1px);
+}
+
 .web-individual-app.sidebar-collapsed .web-sidebar-toggle { left: 14px; }
 
 .web-individual-app > .main-panel {
@@ -6755,7 +7107,7 @@ button.web-team-gantt-cell {
   align-items: center;
   gap: 10px;
   justify-content: flex-end;
-  padding: 14px clamp(24px, 4vw, 64px) 0;
+  padding: 14px 14px 0;
   pointer-events: none;
 }
 
@@ -8507,6 +8859,7 @@ button.web-team-gantt-cell {
   .web-individual-app > .sidebar,
   .web-sidebar-toggle { transition-duration: 0.01ms !important; }
   .dashboard-boundary-loading .skeleton { animation: none; }
+  .web-toolbar-slogan { animation: none; }
 }
 
 @media (max-width: 820px) {
@@ -8652,7 +9005,7 @@ button.web-team-gantt-cell {
   .web-individual-app .workspace-shell { padding-inline: 12px; }
   .web-workspace-mode-row {
     flex-wrap: wrap;
-    padding: 10px 12px 0;
+    padding: 10px 10px 0;
   }
   .web-start-tracking-action {
     min-height: 40px;

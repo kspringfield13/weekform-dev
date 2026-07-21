@@ -45,6 +45,39 @@ test("the side panel exposes Team for any membership and hides it without one", 
   assert.doesNotMatch(shellSource, /href=\{activeTeamHref\}[\s\S]*?<strong>Team<\/strong>/);
 });
 
+test("Team is the only selected sidebar destination on member and manager workspace routes", () => {
+  assert.match(
+    shellSource,
+    /const\s+teamWorkspace\s*=\s*managerWorkspace\s*\|\|\s*memberTeamWorkspace/,
+    "member and manager Team routes must share the same sidebar-selection guard",
+  );
+  assert.match(
+    shellSource,
+    /\$\{!teamWorkspace\s*&&\s*active\s*===\s*destination\.id\s*\?\s*["'] is-active["']\s*:\s*["']["']\}/,
+    "regular destinations, including Week, must not retain selected styling on Team routes",
+  );
+  assert.match(
+    shellSource,
+    /aria-current=\{!teamWorkspace\s*&&\s*active\s*===\s*destination\.id\s*\?\s*["']page["']\s*:\s*undefined\}/,
+    "regular destinations must not announce themselves as current pages on Team routes",
+  );
+  assert.match(
+    shellSource,
+    /className=\{!teamWorkspace\s*&&\s*active\s*===\s*["']settings["']\s*\?\s*["']settings-button is-active["']\s*:\s*["']settings-button["']\}/,
+    "Settings must not retain selected styling on Team routes",
+  );
+  assert.match(
+    shellSource,
+    /aria-current=\{!teamWorkspace\s*&&\s*active\s*===\s*["']settings["']\s*\?\s*["']page["']\s*:\s*undefined\}/,
+    "Settings must not announce itself as the current page on Team routes",
+  );
+  assert.match(
+    shellSource,
+    /className=\{`nav-item team-access-entry\$\{teamWorkspace\s*\?\s*["'] is-active["']\s*:\s*["']["']\}`\}[\s\S]*?aria-current=\{teamWorkspace\s*\?\s*["']page["']\s*:\s*undefined\}/,
+    "Team must remain the selected and current sidebar destination",
+  );
+});
+
 test("the Individual and Manager switch remains visible above every workspace page", () => {
   assert.match(shellSource, /<main[\s\S]*?<WorkspaceModeToggle[\s\S]*?\{children\}/);
   assert.match(shellSource, /workspaceMode\?:\s*"individual"\s*\|\s*"manager"\s*\|\s*"team"/);
