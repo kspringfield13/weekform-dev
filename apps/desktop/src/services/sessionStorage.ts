@@ -10,7 +10,10 @@
 // helpers, so every adapter — localStorage, Tauri Store, or Keychain
 // bridge — gets identical corrupt-envelope and thrown-error behavior for free.
 //
-// Native Tauri builds use three Rust commands backed by macOS Security.framework.
+// Native Tauri builds use three Rust commands backed by macOS Security.framework,
+// routed session-aware: only envelopes that carry a signed-in session live in the
+// Keychain; signed-out envelopes stay in the plain store so users who never sign
+// in never trigger a macOS Keychain prompt (see the split adapter below).
 // Browser/demo builds have no bridge and retain the documented fallback. Tests may
 // inject `__WEEKFORM_KEYCHAIN__`; production native code does not depend on it.
 
@@ -264,6 +267,75 @@ export const keychainSessionStorageAdapter = createSerializedSessionStorageAdapt
 );
 
 // ---------------------------------------------------------------------------
+// Session-aware split adapter — Keychain only while a session actually exists.
+// ---------------------------------------------------------------------------
+
+/**
+ * Routes the envelope by whether it carries a session: signed-in envelopes
+ * (token material) live in the Keychain; signed-out envelopes (policy and
+ * bookkeeping only) live in the plain store. Each write removes the envelope
+ * from the other backend so reads have one source of truth.
+ *
+ * Why: macOS answers the first Keychain access from a differently-signed
+ * build with a password prompt. Users who never sign in to Weekform Web
+ * should never trigger that prompt, so their envelope must stay out of the
+ * Keychain entirely. Reads try the plain store first — a hit there never
+ * touches the Keychain — and fall through to the Keychain otherwise (signed-in
+ * users, and envelopes written by builds that kept everything in the Keychain).
+ */
+export function createSessionAwareSplitAdapter(
+  keychain: SessionStorageAdapter,
+  fallback: SessionStorageAdapter
+): SessionStorageAdapter {
+  return {
+    async read(): Promise<unknown> {
+      const local = await fallback.read();
+      if (local !== null && local !== undefined) return local;
+      return keychain.read();
+    },
+    async write(state: PersistedCloudStateV1): Promise<void> {
+      if (state.session) {
+        await keychain.write(state);
+        await fallback.delete();
+      } else {
+        await fallback.write(state);
+        // A failed cleanup throws so strict writers know stale token material
+        // may remain; the signed-out envelope itself is already durable, and
+        // every later signed-out write retries this deletion.
+        await keychain.delete();
+      }
+    },
+    async delete(): Promise<void> {
+      let failure: unknown = null;
+      try {
+        await keychain.delete();
+      } catch (error) {
+        failure = error;
+      }
+      try {
+        await fallback.delete();
+      } catch (error) {
+        failure ??= error;
+      }
+      if (failure) throw failure;
+    }
+  };
+}
+
+/**
+ * Production split adapter. Composed from the PRIMARY adapters with one shared
+ * revocation guard on the outside: wrapping each backend separately would let
+ * the cross-backend cleanup inside `write` set the revocation marker right
+ * after a successful write and tombstone the fresh envelope.
+ */
+const splitSessionStorageAdapter = createSerializedSessionStorageAdapter(
+  createRevocationGuardedAdapter(
+    createSessionAwareSplitAdapter(primaryKeychainSessionStorageAdapter, primarySessionStorageAdapter),
+    browserRevocationMarker
+  )
+);
+
+// ---------------------------------------------------------------------------
 // Adapter selection — capability check with an unconditional fallback.
 // ---------------------------------------------------------------------------
 
@@ -275,13 +347,13 @@ export interface AdapterResolution {
 }
 
 /**
- * Keychain adapter iff the capability probe passes; the default (Tauri/localStorage)
- * adapter otherwise. The probe result is consulted per call — a bridge appearing or
- * vanishing mid-session changes the very next operation, never a cached stale choice.
+ * Session-aware split adapter iff the capability probe passes; the default
+ * (Tauri/localStorage) adapter otherwise. The probe result is consulted per
+ * call — a bridge appearing or vanishing mid-session changes the very next
+ * operation, never a cached stale choice.
  */
 export function resolveSessionStorageAdapter(overrides: AdapterResolution = {}): SessionStorageAdapter {
   const available = overrides.keychainAvailable ?? keychainAvailable;
-  const keychain = overrides.keychain ?? keychainSessionStorageAdapter;
   const fallback = overrides.fallback ?? defaultSessionStorageAdapter;
   let probe = false;
   try {
@@ -289,7 +361,16 @@ export function resolveSessionStorageAdapter(overrides: AdapterResolution = {}):
   } catch {
     probe = false; // a broken probe must never strand session access
   }
-  return probe ? keychain : fallback;
+  if (!probe) return fallback;
+  if (overrides.keychain || overrides.fallback) {
+    // Injected adapters arrive pre-wrapped (tests own their guarding), so the
+    // split composition is applied bare.
+    return createSessionAwareSplitAdapter(
+      overrides.keychain ?? keychainSessionStorageAdapter,
+      fallback
+    );
+  }
+  return splitSessionStorageAdapter;
 }
 
 // ---------------------------------------------------------------------------

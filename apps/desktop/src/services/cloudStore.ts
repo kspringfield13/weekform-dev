@@ -8,9 +8,11 @@
 // data" calls `clearPersistedCloudState()` so no upload path survives a reset.
 //
 // The storage backend sits behind `SessionStorageAdapter` (sessionStorage.ts,
-// roadmap A4): native Tauri builds route the session envelope through macOS
-// Keychain commands; browser/demo builds retain the documented localStorage
-// fallback. The same three functions preserve one caller contract.
+// roadmap A4): native Tauri builds route envelopes that carry a signed-in
+// session through macOS Keychain commands and signed-out envelopes through the
+// plain Store (so never-signed-in users never trigger a Keychain prompt);
+// browser/demo builds retain the documented localStorage fallback. The same
+// three functions preserve one caller contract.
 
 import type { PersistedCloudStateV1 } from "./cloudPolicy";
 import {

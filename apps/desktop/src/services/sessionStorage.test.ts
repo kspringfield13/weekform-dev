@@ -252,7 +252,7 @@ test("a throwing capability probe falls back instead of stranding session access
   assert.equal(selected, fallback);
 });
 
-test("capability present (faked) → keychain adapter is used exclusively; tokens never touch the fallback", async () => {
+test("capability present (faked) → signed-in envelopes live in the keychain; token material never reaches the fallback", async () => {
   const keychain = makeFakeAdapter();
   const fallback = makeFakeAdapter();
   const options = { keychainAvailable: () => true, keychain, fallback };
@@ -264,18 +264,61 @@ test("capability present (faked) → keychain adapter is used exclusively; token
 
   assert.equal(keychain.writes, 1);
   assert.equal(keychain.reads, 1);
-  // The fallback saw ZERO traffic — no write, no read, no stored token material.
+  // The fallback was only probed (miss) and cleaned — no write, no stored token material.
   assert.equal(fallback.writes, 0);
-  assert.equal(fallback.reads, 0);
   assert.equal(fallback.stored, null);
   assert.equal(JSON.stringify(fallback.stored ?? {}).includes("at-adapter-contract"), false);
+});
+
+test("capability present (faked) → a signed-out envelope stays in the fallback and never writes the keychain", async () => {
+  const keychain = makeFakeAdapter();
+  const fallback = makeFakeAdapter();
+  const options = { keychainAvailable: () => true, keychain, fallback };
+  const state = createDefaultCloudState();
+
+  await writeCloudStateThrough(resolveSessionStorageAdapter(options), state);
+  assert.equal(fallback.writes, 1);
+  assert.equal(keychain.writes, 0);
+  assert.equal(keychain.deletes, 1, "signed-out writes clear any keychain remnant");
+
+  const read = await readCloudStateThrough(resolveSessionStorageAdapter(options));
+  assert.deepEqual(read, state);
+  // The fallback hit satisfied the read — the keychain was never consulted.
+  assert.equal(keychain.reads, 0);
+});
+
+test("signing out moves the envelope out of the keychain; signing in moves it back", async () => {
+  const keychain = makeFakeAdapter();
+  const fallback = makeFakeAdapter();
+  const options = { keychainAvailable: () => true, keychain, fallback };
+
+  await writeCloudStateThrough(resolveSessionStorageAdapter(options), makeSignedInState());
+  assert.notEqual(keychain.stored, null);
+
+  const signedOut = createDefaultCloudState();
+  await writeCloudStateThrough(resolveSessionStorageAdapter(options), signedOut);
+  assert.equal(keychain.stored, null, "sign-out removes token material from the keychain");
+  assert.deepEqual(await readCloudStateThrough(resolveSessionStorageAdapter(options)), signedOut);
+
+  await writeCloudStateThrough(resolveSessionStorageAdapter(options), makeSignedInState());
+  assert.notEqual(keychain.stored, null);
+  assert.equal(fallback.stored, null, "sign-in removes the plain-store envelope");
+});
+
+test("a keychain-only envelope (older build) is still read when the fallback is empty", async () => {
+  const state = makeSignedInState();
+  const keychain = makeFakeAdapter(JSON.parse(JSON.stringify(state)) as unknown);
+  const fallback = makeFakeAdapter();
+  const options = { keychainAvailable: () => true, keychain, fallback };
+
+  assert.deepEqual(await readCloudStateThrough(resolveSessionStorageAdapter(options)), state);
 });
 
 // ---------------------------------------------------------------------------
 // Delete / disconnect clears via the ACTIVE adapter
 // ---------------------------------------------------------------------------
 
-test("delete clears via the active adapter and a later read is null", async () => {
+test("delete clears both backends and a later read is null", async () => {
   const keychain = makeFakeAdapter();
   const fallback = makeFakeAdapter();
   const options = { keychainAvailable: () => true, keychain, fallback };
@@ -283,9 +326,10 @@ test("delete clears via the active adapter and a later read is null", async () =
   await writeCloudStateThrough(resolveSessionStorageAdapter(options), makeSignedInState());
   await deleteCloudStateThrough(resolveSessionStorageAdapter(options));
 
-  assert.equal(keychain.deletes, 1);
   assert.equal(keychain.stored, null);
-  assert.equal(fallback.deletes, 0);
+  assert.equal(fallback.stored, null);
+  assert.ok(keychain.deletes >= 1);
+  assert.ok(fallback.deletes >= 1);
   assert.equal(await readCloudStateThrough(resolveSessionStorageAdapter(options)), null);
 });
 
