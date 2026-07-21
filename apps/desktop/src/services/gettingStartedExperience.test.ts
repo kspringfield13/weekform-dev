@@ -33,7 +33,7 @@ test("retention is a direct, accessible choice and distinguishes raw from review
 
 test("AI recommends ChatGPT and keeps Platform API-key setup in a secondary disclosure", () => {
   assert.match(modalSource, /Recommended connection/);
-  assert.match(modalSource, /Connect ChatGPT \/ Codex/);
+  assert.match(modalSource, /Connect Codex/);
   assert.match(modalSource, /No Platform API key or separate\s+key setup/);
   assert.match(modalSource, /<details className="getting-started-api-disclosure">/);
   assert.match(modalSource, /Use a Platform API key instead/);
