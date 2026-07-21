@@ -60,7 +60,7 @@ test("manager Team pages preserve the five Desktop destinations with team-wide c
     );
   }
   for (const heading of [
-    "Today across",
+    "Team workload intelligence",
     "Team capacity",
     "Team briefing",
     "Team history",
@@ -68,6 +68,25 @@ test("manager Team pages preserve the five Desktop destinations with team-wide c
   ]) {
     assert.match(teamPageSource, new RegExp(heading));
   }
+});
+
+test("the Web manager landing view follows the Desktop Team decision contract", () => {
+  for (const copy of [
+    "Team workload intelligence",
+    "Decision now",
+    "You are included in the team data",
+    "latest team sync",
+  ]) {
+    assert.match(teamPageSource, new RegExp(copy));
+  }
+  assert.match(teamPageSource, /reviewCoveragePct/);
+  assert.match(teamPageSource, /medianReviewCoverage/);
+  assert.match(teamPageSource, /summary\.lastUpdatedAt/);
+  assert.match(
+    teamPageSource,
+    /Decision now[\s\S]*?<TeamGantt[\s\S]*?Team roster/,
+    "the real-snapshot Gantt must follow the decision surface before the detailed roster",
+  );
 });
 
 test("members get a generalized Team workspace without manager-only data", () => {

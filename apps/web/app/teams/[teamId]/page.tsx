@@ -27,6 +27,8 @@ import {
 import {
   LOW_HEADROOM_THRESHOLD_PCT,
   approvedSnapshotProvenance,
+  median,
+  reviewCoveragePct,
   summarizeTeamWorkload,
   type MetricSummary,
 } from "@/lib/workload";
@@ -68,6 +70,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
 import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
+import { MacAppLink } from "@/components/MacAppLink";
 import { IndividualWorkspaceShell } from "@/components/IndividualWorkspaceShell";
 import { signOut } from "@/app/auth/actions";
 import { resolveWebWindowSurface } from "@/lib/webCompactWindow";
@@ -678,18 +681,124 @@ async function ManagerView({
     (latest, point) => point.weekId > latest ? point.weekId : latest,
     currentIsoWeekId(),
   );
+  const medianReviewCoverage = median(
+    snapshots.flatMap((snapshot) => {
+      const coverage = reviewCoveragePct(
+        snapshot.reviewedBlocks,
+        snapshot.eligibleBlocks,
+      );
+      return coverage === null ? [] : [coverage];
+    }),
+  );
+  const ownSnapshot = snapshotByUser.get(viewerId) ?? null;
+  const ownSnapshotFreshness = ownSnapshot
+    ? snapshotFreshness(ownSnapshot, nowIso)
+    : null;
+  const openActionsCount = actions.filter((action) => action.status === "open").length;
 
   return (
     <div className="team-manager-workspace">
       <section data-web-view="today" className="team-workspace-view" aria-labelledby="team-today-title">
         <header className="team-workspace-view-header">
-          <span className="team-section-kicker">Manager view · approved signals</span>
-          <h1 id="team-today-title">Today across {teamName}</h1>
-          <p>See the current team pulse and who has chosen to share, without ranking people.</p>
+          <span className="team-section-kicker">Team workload intelligence</span>
+          <h1 id="team-today-title">{teamName} workload</h1>
+          <p>Coordinate commitments from member-approved summaries without ranking people.</p>
         </header>
 
+      <div className="team-status-rail team-desktop-evidence-rail" aria-label="Team evidence coverage">
+        <div>
+          <span>Active roster</span>
+          <strong>{rosterError ? "—" : roster.length}</strong>
+          <small>RLS-scoped members</small>
+        </div>
+        <div>
+          <span>Sharing now</span>
+          <strong>{snapshotsError ? "—" : summary.sharingCount}</strong>
+          <small>approved snapshots</small>
+        </div>
+        <div>
+          <span>Coverage</span>
+          <strong>
+            {rosterError || snapshotsError || roster.length === 0
+              ? "—"
+              : `${Math.round((summary.sharingCount / roster.length) * 100)}%`}
+          </strong>
+          <small>unknown stays unknown</small>
+        </div>
+        <div>
+          <span>Freshness</span>
+          <strong>{formatDateTime(summary.lastUpdatedAt)}</strong>
+          <small>latest team sync</small>
+        </div>
+      </div>
+
+      <div className="team-decision-grid team-desktop-decision-grid">
+        <section className="panel team-member-signal" aria-labelledby="team-decision-now-title">
+          <span className="team-section-kicker">Decision now</span>
+          <h2 id="team-decision-now-title">
+            {snapshotsError || rosterError
+              ? "Team evidence could not be loaded"
+              : summary.lowHeadroom.count > 0
+                ? "Review pressure before accepting more work"
+                : "No fresh signal currently needs escalation"}
+          </h2>
+          <p>
+            {snapshotsError || rosterError
+              ? "Current team evidence could not be loaded, so Weekform is not presenting a reassuring fallback."
+              : summary.lowHeadroom.count > 0
+                ? `${summary.lowHeadroom.count} fresh approved ${summary.lowHeadroom.count === 1 ? "signal crosses" : "signals cross"} the low-headroom coordination threshold. ${summary.lowHeadroom.excludedStaleCount} stale ${summary.lowHeadroom.excludedStaleCount === 1 ? "snapshot is" : "snapshots are"} excluded.`
+                : `${summary.sharingCount} of ${roster.length} members have an approved summary available. Missing and stale evidence is never treated as capacity.`}
+          </p>
+          <div className="team-desktop-decision-metrics">
+            <div>
+              <span>Median reliable capacity</span>
+              <strong>{capacity.value}</strong>
+            </div>
+            <div>
+              <span>Median review coverage</span>
+              <strong>{medianReviewCoverage === null ? "Not shared" : `${Math.round(medianReviewCoverage)}%`}</strong>
+            </div>
+            <div>
+              <span>Open coordination actions</span>
+              <strong>{actionsError ? "—" : openActionsCount}</strong>
+            </div>
+          </div>
+          <div className="team-card-actions">
+            <Link href={`/teams/${teamId}/briefing`} className="button button-primary">
+              Open team briefing
+            </Link>
+            <Link href={`/teams/${teamId}?screen=week`} className="button button-secondary">
+              Test what fits
+            </Link>
+          </div>
+        </section>
+
+        <aside className="panel team-member-boundary" aria-labelledby="team-self-boundary-title">
+          <span className="team-section-kicker">Trust boundary</span>
+          <h2 id="team-self-boundary-title">You are included in the team data</h2>
+          <p>
+            Your manager account is part of the active roster just like every other member.
+            {ownSnapshot
+              ? ownSnapshotFreshness === "fresh" || ownSnapshotFreshness === "aging"
+                ? ` Your approved week ${ownSnapshot.weekId} snapshot is included in the current team evidence.`
+                : ` Your approved week ${ownSnapshot.weekId} snapshot is visible but excluded from current aggregates because it is stale.`
+              : " You have not approved a snapshot for this team yet, so your workload stays unknown rather than becoming zero."}
+          </p>
+          <ul className="team-member-boundary-list">
+            <li><ShieldCheck aria-hidden="true" /> Member-controlled sharing.</li>
+            <li><ShieldCheck aria-hidden="true" /> Medians and ranges, never rankings.</li>
+            <li><ShieldCheck aria-hidden="true" /> Raw activity, notes, screenshots, and window titles stay unavailable.</li>
+          </ul>
+          {!ownSnapshot ? (
+            <MacAppLink className="button button-secondary team-open-desktop-action">
+              Open Weekform Desktop to review sharing
+            </MacAppLink>
+          ) : null}
+        </aside>
+      </div>
+
       <section
-        className="panel team-overview-panel"
+        className="panel team-overview-panel team-detail-panel"
         id="overview"
         aria-labelledby="workload-title"
       >
@@ -702,44 +811,8 @@ async function ManagerView({
               signals stay unknown and never become zero.
             </p>
           </div>
-          <Link
-            href={`/teams/${teamId}/briefing`}
-            className="button button-secondary team-briefing-link"
-          >
-            Generate briefing
-          </Link>
         </div>
 
-        <div className="team-status-rail" aria-label="Team sharing status">
-          <div>
-            <span>Active roster</span>
-            <strong>{rosterError ? "—" : roster.length}</strong>
-            <small>members</small>
-          </div>
-          <div>
-            <span>Sharing now</span>
-            <strong>{snapshotsError ? "—" : summary.sharingCount}</strong>
-            <small>approved snapshots</small>
-          </div>
-          <div>
-            <span>Coverage</span>
-            <strong>
-              {rosterError || snapshotsError || roster.length === 0
-                ? "—"
-                : `${Math.round((summary.sharingCount / roster.length) * 100)}%`}
-            </strong>
-            <small>of roster</small>
-          </div>
-          <div>
-            <span>Open actions</span>
-            <strong>
-              {actionsError
-                ? "—"
-                : actions.filter((action) => action.status === "open").length}
-            </strong>
-            <small>to revisit</small>
-          </div>
-        </div>
         {snapshotsError ? (
           <div className="form-alert" role="alert">
             Shared snapshots could not be loaded right now. Reload the page to

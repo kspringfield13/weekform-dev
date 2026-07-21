@@ -5676,6 +5676,10 @@ button.web-team-gantt-cell {
   .team-member-grid {
     grid-template-columns: 1fr;
   }
+
+  .team-desktop-decision-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -5716,6 +5720,10 @@ button.web-team-gantt-cell {
 
   .team-status-rail {
     margin-inline: -20px;
+  }
+
+  .team-desktop-evidence-rail {
+    margin-inline: 0;
   }
 
   .team-decision-grid,
@@ -5760,6 +5768,10 @@ button.web-team-gantt-cell {
 
 @media (max-width: 460px) {
   .team-status-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .team-desktop-decision-metrics {
     grid-template-columns: 1fr;
   }
 
@@ -6454,9 +6466,95 @@ button.web-team-gantt-cell {
   margin-bottom: 18px;
 }
 
+.team-manager-workspace {
+  width: min(100%, 1180px);
+  margin: 0 auto;
+}
+
 .team-workspace-view {
   gap: 22px;
   padding-top: clamp(22px, 4vw, 48px);
+}
+
+.team-desktop-evidence-rail {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.team-desktop-evidence-rail > div {
+  grid-template-columns: 1fr;
+  gap: 4px;
+  padding: 14px 16px;
+}
+
+.team-desktop-evidence-rail strong {
+  grid-row: auto;
+  grid-column: auto;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.team-desktop-decision-grid {
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, .8fr);
+  gap: 14px;
+}
+
+.team-desktop-decision-grid > .panel {
+  padding: 20px;
+}
+
+.team-desktop-decision-grid p {
+  margin: 9px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.team-desktop-decision-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 18px 0;
+}
+
+.team-desktop-decision-metrics > div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--background-subtle);
+}
+
+.team-desktop-decision-metrics span {
+  color: var(--text-subtle);
+  font-size: 10px;
+}
+
+.team-desktop-decision-metrics strong {
+  color: var(--text);
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 18px;
+  font-weight: 550;
+}
+
+.team-card-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.team-open-desktop-action {
+  margin-top: 18px;
+}
+
+.team-detail-panel {
+  margin-top: 0;
 }
 
 .web-manager-app[data-active-view="today"] [data-web-view="today"],
