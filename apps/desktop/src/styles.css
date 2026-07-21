@@ -8086,11 +8086,8 @@ html[data-runtime="tauri"] .is-compact-widget .app-toolbar {
   user-select: none;
 }
 
-.brand::after {
-  position: absolute;
-  right: 8px;
-  bottom: 0;
-  left: 8px;
+.brand::after,
+.sidebar-team-section::before {
   height: 1px;
   background: linear-gradient(
     90deg,
@@ -8103,6 +8100,25 @@ html[data-runtime="tauri"] .is-compact-widget .app-toolbar {
   box-shadow: 0 1px 5px color-mix(in srgb, var(--text) 6%, transparent);
   content: "";
   pointer-events: none;
+}
+
+.brand::after {
+  position: absolute;
+  right: 8px;
+  bottom: 0;
+  left: 8px;
+}
+
+.sidebar-team-section {
+  position: relative;
+  width: 100%;
+}
+
+.sidebar-team-section::before {
+  position: absolute;
+  top: -8px;
+  right: 8px;
+  left: 8px;
 }
 
 .brand-mark {
@@ -10242,6 +10258,14 @@ html[data-theme="dark"] .risk-track span[data-severity="high"] { background: #fb
   .side-metric,
   .pause-button,
   .settings-button {
+    display: none;
+  }
+
+  .sidebar-team-section {
+    display: contents;
+  }
+
+  .sidebar-team-section::before {
     display: none;
   }
 
@@ -16513,6 +16537,14 @@ html[data-theme="dark"] .page-context-navigation .context-navigation button.is-a
   html[data-runtime="web"] .app:not(.is-compact-widget) .sidebar-intelligence,
   html[data-runtime="web"] .app:not(.is-compact-widget) .sidebar-demo-card,
   html[data-runtime="web"] .app:not(.is-compact-widget) .settings-button {
+    display: none;
+  }
+
+  html[data-runtime="web"] .app:not(.is-compact-widget) .sidebar-team-section {
+    display: contents;
+  }
+
+  html[data-runtime="web"] .app:not(.is-compact-widget) .sidebar-team-section::before {
     display: none;
   }
 

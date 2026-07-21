@@ -14,6 +14,10 @@ const appShell = readFileSync(
   new URL("../components/shell/AppShell.tsx", import.meta.url),
   "utf8",
 );
+const appStyles = readFileSync(
+  new URL("../styles.css", import.meta.url),
+  "utf8",
+);
 const screenRouter = readFileSync(
   new URL("../components/shell/ScreenRouter.tsx", import.meta.url),
   "utf8",
@@ -42,6 +46,21 @@ test("Desktop Team is a membership-gated first-class destination", () => {
   assert.match(appShell, /<strong>Team<\/strong>/);
   assert.doesNotMatch(appShell, /<strong>Manager Access<\/strong>/);
   assert.match(screenRouter, /active === "team"[\s\S]*?<TeamScreen/);
+});
+
+test("Desktop Team is separated from personal History navigation", () => {
+  assert.match(
+    appShell,
+    /\{teamAvailable\s*&&\s*\(\s*<div className="sidebar-team-section">[\s\S]*?<strong>Team<\/strong>/,
+  );
+  assert.match(
+    appStyles,
+    /\.brand::after,\s*\.sidebar-team-section::before\s*\{[\s\S]*?linear-gradient\([\s\S]*?var\(--border-strong\)[\s\S]*?\}/,
+  );
+  assert.match(
+    appStyles,
+    /\.sidebar-team-section::before\s*\{[^}]*position:\s*absolute;[^}]*top:\s*-8px;[^}]*right:\s*8px;[^}]*left:\s*8px;/s,
+  );
 });
 
 test("Desktop Team exposes a real-data workload Gantt for members and managers", () => {

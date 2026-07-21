@@ -152,18 +152,20 @@ export function AppShell({
           })}
         </nav>
         {teamAvailable && (
-          <button
-            className={`nav-item manager-access-entry${active === "team" ? " is-active" : ""}`}
-            onClick={() => setActive("team")}
-            aria-current={active === "team" ? "page" : undefined}
-            type="button"
-          >
-            <Waypoints size={18} aria-hidden />
-            <span>
-              <strong>Team</strong>
-              <small>{teamRole === "member" ? "Membership and sharing" : "Workload and coordination"}</small>
-            </span>
-          </button>
+          <div className="sidebar-team-section">
+            <button
+              className={`nav-item manager-access-entry${active === "team" ? " is-active" : ""}`}
+              onClick={() => setActive("team")}
+              aria-current={active === "team" ? "page" : undefined}
+              type="button"
+            >
+              <Waypoints size={18} aria-hidden />
+              <span>
+                <strong>Team</strong>
+                <small>{teamRole === "member" ? "Membership and sharing" : "Workload and coordination"}</small>
+              </span>
+            </button>
+          </div>
         )}
         {demoMode && (
           <div className="sidebar-demo-card" role="status">
