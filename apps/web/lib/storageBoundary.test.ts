@@ -11,6 +11,9 @@ const ALLOWED_PREFERENCE_STORAGE = new Set([
   "components/ThemeToggle.tsx",
   "components/WebWorkspaceIntro.tsx",
 ]);
+const ALLOWED_SESSION_PREFERENCE_STORAGE = new Set([
+  "components/WorkspaceModeToggle.tsx",
+]);
 
 function productionSources(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -36,6 +39,12 @@ test("production web source has no browser workload persistence", () => {
         violations.push(`${relativePath} uses localStorage outside the appearance and onboarding preferences`);
       }
       for (const pattern of forbidden) {
+        if (
+          pattern.source.includes("sessionStorage")
+          && ALLOWED_SESSION_PREFERENCE_STORAGE.has(relativePath)
+        ) {
+          continue;
+        }
         if (pattern.test(source)) {
           violations.push(`${relativePath} matches ${pattern}`);
         }
@@ -60,6 +69,14 @@ test("production web source has no browser workload persistence", () => {
   assert.match(themeToggle, /localStorage\.getItem\(WEB_THEME_STORAGE_KEY\)/);
   assert.match(themeToggle, /localStorage\.setItem\(WEB_THEME_STORAGE_KEY, targetTheme\)/);
   assert.doesNotMatch(layout + themeToggle, /JSON\.stringify/);
+
+  const workspaceModeToggle = readFileSync(
+    path.join(WEB_ROOT, "components/WorkspaceModeToggle.tsx"),
+    "utf8",
+  );
+  assert.match(workspaceModeToggle, /window\.sessionStorage/);
+  assert.match(workspaceModeToggle, /writeWorkspaceModePreference/);
+  assert.doesNotMatch(workspaceModeToggle, /JSON\.stringify|payload|snapshot|replica/i);
 });
 
 test("client components can use only the ephemeral Realtime client, never server workload modules", () => {

@@ -26,6 +26,10 @@ const modeToggleSource = readFileSync(
   new URL("../components/WorkspaceModeToggle.tsx", import.meta.url),
   "utf8",
 );
+const globalStylesSource = readFileSync(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 const teamGanttSource = readFileSync(
   new URL("../app/teams/[teamId]/TeamGantt.tsx", import.meta.url),
   "utf8",
@@ -48,6 +52,12 @@ test("the Individual and Manager switch remains visible above every workspace pa
   assert.match(teamPageSource, /workspaceMode="team"/);
   assert.match(shellSource, /teamRole\s*===\s*"member"\s*\?\s*"Team"\s*:\s*"Manager mode"/);
   assert.match(modeToggleSource, /Waypoints/);
+  assert.match(modeToggleSource, /sessionStorage/);
+  assert.match(modeToggleSource, /rememberWorkspaceMode/);
+  assert.doesNotMatch(
+    globalStylesSource,
+    /data-workspace-mode=["']manager["'][^{]*\.web-workspace-mode-row\s*,[\s\S]*?display:\s*none/,
+  );
   assert.doesNotMatch(modeToggleSource, />●●?</);
 });
 

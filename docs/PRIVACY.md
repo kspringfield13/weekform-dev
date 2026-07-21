@@ -545,23 +545,24 @@ client `observed_at` and `source_updated_at` remain provenance and cannot win
 latest ordering through clock skew.
 
 In Individual mode, the Today and Week surfaces include a user-initiated
-**Start Tracking** control. That explicit operational click invokes the
-registered `weekform://` macOS handler with the fixed `start-tracking` and
-`compact` parameters. The browser may show its own confirmation before opening
-Weekform. The packaged app validates the owned URL shape, resumes the existing
-native collector, and opens the Desktop-only compact top-right window. If the
-Desktop session is signed out, the app opens its Account settings instead of
-starting tracking. If macOS does not hand the URL to an installed app, Web falls
-back to the authenticated Download page after the launch window.
+**Start Tracking** control. The browser does not invoke the registered
+`weekform://` scheme, so this action never creates a browser-owned “Open
+Weekform.app?” confirmation. Instead, an authenticated server action calls the
+fixed `request_desktop_start_tracking` RPC. The server selects only a recently
+active, unrevoked Mac registered to the signed-in account and either reports
+that tracking is already active or creates one short-lived `start_tracking`
+command. A running Desktop app acknowledges that command, resumes its existing
+native collector, and opens the Desktop-only compact view. A stopped, stale, or
+outdated Mac receives no command; Web reports that the user must open Weekform
+from Applications or the menu bar. An account with no registered Mac is routed
+to the authenticated Download page.
 
-The scheme carries no account token, activity sample, app/window title, or
-workload evidence. The browser does not start collection and does not receive
-Mac activity. Existing privacy-minimized Desktop heartbeat and short-lived
-`desktop_actions` support remains in place for compatibility with Web versions
-that used the earlier running-app queue; those rows contain only user, device,
+The command channel carries no account token, activity sample, app/window title,
+or workload evidence into the browser. Its rows contain only user, device,
 random action, fixed action, and creation/expiration identifiers and are removed
-after acknowledgement. Weekform Web has no compact popup or compact workspace
-view.
+after acknowledgement. The tracking heartbeat publishes only an enabled/paused
+boolean and server receipt time. Weekform Web cannot launch a quit Mac app,
+start collection itself, or render a compact workspace view.
 
 ## Individual Web Ask (weekform.dev, server-side AI)
 

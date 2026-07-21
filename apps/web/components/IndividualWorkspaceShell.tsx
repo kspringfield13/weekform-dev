@@ -5,7 +5,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { WeekformMark } from "@/components/WeekformMark";
-import { MacAppLink } from "@/components/MacAppLink";
+import { DesktopStartTrackingButton } from "@/components/DesktopStartTrackingButton";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { WebEditionLabel } from "@/components/WebEditionLabel";
 import { WorkspaceModeToggle } from "@/components/WorkspaceModeToggle";
@@ -31,8 +31,6 @@ const DESTINATIONS: Array<{
   { id: "settings", label: "Settings", description: "Account and sharing", shortcutKey: "Meta+9" },
 ];
 const SETTINGS_DESTINATION = DESTINATIONS[4]!;
-const WEEKFORM_START_TRACKING_URL =
-  "weekform://open?source=weekform.dev&action=start-tracking&view=compact";
 
 const DEFAULT_SUBVIEW: Record<IndividualDestination, IndividualSubview> = {
   today: "today",
@@ -482,16 +480,10 @@ export function IndividualWorkspaceShell({
       >
         <div className="web-workspace-mode-row">
           {!teamWorkspace && (active === "today" || active === "week") ? (
-            <MacAppLink
-              attemptAppOpen
-              openUrl={WEEKFORM_START_TRACKING_URL}
-              fallbackHref="/download"
-              className="button button-primary web-start-tracking-action"
-              title="Open compact Weekform Desktop and start local tracking"
-            >
+            <DesktopStartTrackingButton>
               <StartTrackingIcon />
               Start Tracking
-            </MacAppLink>
+            </DesktopStartTrackingButton>
           ) : null}
           <WorkspaceModeToggle
             individualHref={individualHref}

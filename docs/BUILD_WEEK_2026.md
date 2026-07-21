@@ -303,10 +303,10 @@ the alignment QA.
   menu-bar reopen passes each moved the native window count from zero to one.
   The package retains the registered `weekform://` scheme,
   with single-instance native handling that restores, activates, and focuses
-  the requested window. Download/Get Mac acquisition buttons remain normal,
-  prompt-free links to the authenticated download page; they do not trigger a
-  browser-owned “Open Weekform.app?” dialog. The explicit Start Tracking action
-  is the sole Web control that invokes the scheme. A fail-closed publisher now encodes the
+  the requested window. Web controls no longer invoke that scheme: Download/Get
+  Mac acquisition buttons remain normal links to the authenticated download
+  page, and Start Tracking uses the authenticated Desktop command channel. No
+  Web control triggers a browser-owned “Open Weekform.app?” dialog. A fail-closed publisher now encodes the
   signed universal build, Apple notarization, stapling, Gatekeeper, immutable
   private upload, hosted-byte checksum, proof-env, and production deployment
   sequence. A local Keychain notarization profile was available for the July 20
@@ -318,17 +318,15 @@ the alignment QA.
   269 desktop service tests, 570 Web tests, the root build, optimized Web build,
   shell syntax check, and both dependency audits passed before deployment.
 - **July 20–21 Web-to-Mac tracking handoff:** Individual Today and every Week
-  view share one Start Tracking action. An intermediate implementation replaced
-  the original custom-scheme attempt with a fixed, 90-second authenticated queue
-  for a recently active Mac. Live verification showed that this could not meet
-  the action's launch promise: a quit or stale-heartbeat app produced offline
-  guidance instead of opening. The final correction restored the explicit
-  `weekform://` operational handoff. It launches or focuses the packaged app,
-  resumes local tracking in Desktop compact view when its account is signed in,
-  routes a signed-out app to Account settings, and falls back to Download when
-  no installed handler accepts the URL. The browser-owned confirmation is an
-  honest macOS/Chrome boundary. No raw activity, account token, or native
-  permission moves through the URL or into the browser.
+  view share one Start Tracking action. The implementation moved between a
+  fixed, 90-second authenticated queue and a registered custom-scheme launch
+  while testing the stopped-app boundary. User verification showed that the
+  scheme's unavoidable browser confirmation made Start Tracking feel broken.
+  The final UX contract therefore uses the authenticated queue: a recently
+  active, unrevoked Mac can report already-active state or receive one expiring
+  start command; a stopped or stale Mac gets honest inline guidance to open the
+  app. The browser cannot launch a quit app, never invokes `weekform://`, and
+  receives no raw activity, account token, or native permission.
 - **July 21 trusted Mac release and acquisition correction:** Apple accepted the
   universal `Weekform_0.1.0_universal.dmg`; the final bytes are Developer ID
   signed, notarized, stapled, Gatekeeper-accepted, checksum-bound, and privately
@@ -337,9 +335,9 @@ the alignment QA.
   hiding the source-build fallback whenever that trusted package is available.
   Desktop-registration state no longer changes any acquisition CTA into an app
   launch: header, hero, product-choice, closing, Team fallback, and download-page
-  controls all navigate normally. **Start Tracking** is intentionally separate:
-  it invokes the installed app because launching local tracking is the requested
-  operation. The correction was reproduced
+  controls all navigate normally. **Start Tracking** uses the same prompt-free
+  Web boundary and contacts a recently active signed-in Desktop through its
+  short-lived authenticated command queue. The correction was reproduced
   red-first; 603/603 Web tests, 432 local RLS assertions, 82 Rust tests, release
   script tests, root and optimized Web builds, and both zero-vulnerability
   audits passed. Production deployment
@@ -1054,9 +1052,10 @@ This task is supporting evidence for the public presentation only. It does not r
 - **Date:** July 20–21, 2026
 - **Outcome:** Codex corrected the public Mac acquisition path so Download for
   Mac always follows the authenticated latest-download page instead of invoking
-  the `weekform://` scheme. The explicit Start Tracking action now invokes that
-  installed-app scheme so a quit or background Desktop app can launch or focus;
-  the browser may present its own confirmation. The Web-only Compact button, popup/handoff renderer, alternate URL
+  the `weekform://` scheme. Start Tracking also remains prompt-free: it contacts
+  a recently active signed-in Desktop through the existing short-lived command
+  queue and reports an inline offline state when the Mac must be opened manually.
+  The Web-only Compact button, popup/handoff renderer, alternate URL
   modes, and dedicated styles were removed; compact view remains only in the
   native Desktop app. The authenticated Web Team route now
   uses the Desktop Team screen's compact header, role and workspace controls,
@@ -1079,9 +1078,9 @@ This task is supporting evidence for the public presentation only. It does not r
 
 - **July 21 tracking-state correction:** a fresh Desktop heartbeat now publishes
   only whether local tracking is enabled or paused for compatibility with the
-  earlier running-app queue. The user-facing Start Tracking action no longer
-  treats a stale heartbeat as a launch failure; it uses the registered Desktop
-  handler directly. The
+  authenticated running-app queue. The user-facing Start Tracking action uses
+  that queue and treats a stale heartbeat as an inline offline state instead of
+  invoking the registered Desktop handler. The
   shared authenticated Web toolbar also wraps its workspace title instead of
   truncating it, so the full heading remains visible across routes and zoom.
   Production migration `202607210002` is applied. Apple accepted the refreshed

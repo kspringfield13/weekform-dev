@@ -7,6 +7,7 @@ import {
   reviewConfirmBatchInput,
   reviewCommandInput,
 } from "@/lib/personalReplica";
+import type { DesktopStartTrackingState } from "@/lib/desktopActions";
 import { createClient } from "@/lib/supabase/server";
 
 function text(formData: FormData, key: string): string {
@@ -21,6 +22,48 @@ function workspaceNotice(
 ): string {
   const settingsQuery = settingsTab ? `&settings_tab=${settingsTab}` : "";
   return `/app?screen=${screen}${settingsQuery}&notice=${encodeURIComponent(message)}`;
+}
+
+/**
+ * Uses the account-scoped Desktop command channel instead of invoking a custom
+ * URL scheme. The server selects only a recent, unrevoked device and the fixed
+ * command expires quickly; the browser receives no local activity evidence.
+ */
+export async function queueDesktopStartTracking(
+  _previousState: DesktopStartTrackingState,
+  _formData: FormData,
+): Promise<DesktopStartTrackingState> {
+  const supabase = await createClient();
+  if (!supabase) return { status: "error", message: "Weekform Cloud is not configured." };
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { status: "error", message: "Sign in again to contact Weekform Desktop." };
+
+  const { data: result, error } = await supabase.rpc("request_desktop_start_tracking");
+  if (error) {
+    return { status: "error", message: "Weekform Desktop could not be contacted. Try again." };
+  }
+  if (result === "no_device") redirect("/download");
+  if (result === "already_tracking") {
+    return {
+      status: "already-tracking",
+      message: "Tracking is already active in Weekform Desktop.",
+    };
+  }
+  if (result === "offline") {
+    return {
+      status: "unavailable",
+      message: "Desktop is offline. Open Weekform from the menu bar or Applications, then try again.",
+    };
+  }
+  if (result !== "queued") {
+    return { status: "error", message: "Weekform Desktop returned an unknown status. Try again." };
+  }
+
+  return {
+    status: "queued",
+    message: "Request sent. Tracking will resume in Desktop compact view.",
+  };
 }
 
 export async function queuePersonalReviewCommand(formData: FormData): Promise<void> {
