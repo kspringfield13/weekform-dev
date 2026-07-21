@@ -27,12 +27,14 @@ export function CalendarSourcesPanel({
   importError,
   lastSummary,
   onImport,
+  disabled = false,
 }: {
   events: CalendarEvent[];
   controller: CalendarSourcesController;
   importError: string | null;
   lastSummary: string | null;
   onImport: (provider: CalendarProviderId, file: File, range: CalendarRangeInput) => void;
+  disabled?: boolean;
 }) {
   const [range, setRange] = useState<CalendarRangeInput>(initialRange);
   const rangeResult = useMemo(() => {
@@ -58,15 +60,15 @@ export function CalendarSourcesPanel({
           <h3 id="calendar-sources-title">Calendars</h3>
           <p>Connect for automatic metadata sync while Weekform is open, or import a local `.ics` file. Every source feeds the same reviewable workload model.</p>
         </div>
-        <div className="calendar-range" aria-label="Calendar date range">
+        <div className="calendar-range" role="group" aria-label="Calendar date range">
           <label>
             <span>From</span>
-            <input type="date" value={range.start_date} onChange={(event) => updateRange("start_date", event.target.value)} />
+            <input type="date" value={range.start_date} disabled={disabled} onChange={(event) => updateRange("start_date", event.target.value)} />
           </label>
           <span className="calendar-range-arrow" aria-hidden>→</span>
           <label>
             <span>Through</span>
-            <input type="date" value={range.end_date} onChange={(event) => updateRange("end_date", event.target.value)} />
+            <input type="date" value={range.end_date} disabled={disabled} onChange={(event) => updateRange("end_date", event.target.value)} />
           </label>
         </div>
       </div>
@@ -111,13 +113,13 @@ export function CalendarSourcesPanel({
                     <button
                       className="settings-control"
                       type="button"
-                      disabled={!normalizedRange || busy}
+                      disabled={disabled || !normalizedRange || busy}
                       onClick={() => normalizedRange && void controller.sync(provider.id, normalizedRange).catch(() => undefined)}
                     >
                       {busy ? <LoaderCircle className="spin" size={15} aria-hidden /> : <RefreshCw size={15} aria-hidden />}
                       <span>{activity.phase === "syncing" ? "Syncing…" : "Sync range"}</span>
                     </button>
-                    <button className="icon-button" type="button" title={`Disconnect ${provider.label}`} aria-label={`Disconnect ${provider.label}`} onClick={() => void controller.disconnect(provider.id).catch(() => undefined)}>
+                    <button className="icon-button" type="button" disabled={disabled} title={`Disconnect ${provider.label}`} aria-label={`Disconnect ${provider.label}`} onClick={() => void controller.disconnect(provider.id).catch(() => undefined)}>
                       <Unplug size={15} aria-hidden />
                     </button>
                   </>
@@ -125,7 +127,7 @@ export function CalendarSourcesPanel({
                   <button
                     className="settings-control"
                     type="button"
-                    disabled={!status?.available || !normalizedRange || busy}
+                    disabled={disabled || !status?.available || !normalizedRange || busy}
                     title={!status?.available ? status?.detail : undefined}
                     onClick={() => normalizedRange && void controller.connect(provider.id, normalizedRange).catch(() => undefined)}
                   >
@@ -139,7 +141,7 @@ export function CalendarSourcesPanel({
                   <input
                     accept=".ics,text/calendar"
                     type="file"
-                    disabled={!normalizedRange}
+                    disabled={disabled || !normalizedRange}
                     onChange={(event) => {
                       const file = event.target.files?.[0];
                       if (file && normalizedRange) onImport(provider.id, file, range);

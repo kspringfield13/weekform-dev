@@ -308,9 +308,9 @@ the alignment QA.
   browser-owned “Open Weekform.app?” dialog. A fail-closed publisher now encodes the
   signed universal build, Apple notarization, stapling, Gatekeeper, immutable
   private upload, hosted-byte checksum, proof-env, and production deployment
-  sequence. A local Keychain notarization profile is now available, but the two
-  Apple submissions checked on July 20 still reported `In Progress`; therefore
-  no official artifact or trusted-download claim has been published yet.
+  sequence. A local Keychain notarization profile was available for the July 20
+  checks, when the two inspected Apple submissions still reported `In Progress`;
+  therefore no official artifact or trusted-download claim was published.
   The source route was tightened without a downloaded ZIP, `curl | bash`, or a
   quarantine bypass, and the installer repairs only the unidentified ad-hoc
   signature shape produced by a local build. Focused red-first regressions,
@@ -915,6 +915,92 @@ The hackathon-readiness and provenance task is supplemental evidence:
 - **Task title:** `Prepare Weekform for Build Week`
 - **Started:** July 18, 2026 at 11:56:26 AM EDT (15:56:26Z)
 - **Model:** `gpt-5.6-sol`
+
+### Comprehensive full-stack audit and release-candidate hardening
+
+- **Dates:** July 20–21, 2026 (EDT)
+- **Outcome:** a Codex-led, tests-first audit followed local state, native
+  capture, credentials, Web requests/authentication, Supabase aggregate and
+  replica contracts, accessibility, integrations, and Mac distribution through
+  their real ownership seams. The candidate now closes the React persistence
+  lane before Reset, drains native capture at Pause, preregisters every
+  binding-addressed AI credential before Keychain write, bounds streaming Web
+  request bodies and makes every affected response non-cacheable, pins absolute
+  auth/invite destinations to trusted origins, reserves a valid first-render
+  snapshot UUID, and adds a non-enumerating password-recovery flow. Settings at
+  390 pixels, AI-unavailable affordances, browser URL history, form
+  descriptions, and scoped live regions were also repaired within the existing
+  Weekform design system.
+- **Database contract:** local migrations `202607200009` and
+  `202607200010` independently validate manager-visible allocation JSON and bind
+  a personal-replica batch id to its exact device, fingerprint, and payload
+  digest. A first clean rebuild exposed and fixed one synthetic seed label that
+  no longer matched the canonical taxonomy. The linked production migration
+  ledger still ends at `202607200008`; neither migration nor the local password
+  recovery implementation is claimed as deployed.
+- **July 21 lifecycle follow-through:** Codex extended the tests-first repair at
+  the state-change seams rather than adding a new product surface. A legacy
+  personal-replica receipt without a digest now fails closed and can only
+  durably rekey the unchanged queued payload on that exact server error.
+  Unicode project-label capping now matches PostgreSQL code-point semantics.
+  Reset now fences startup hydration/migrations, local import/full backup,
+  cloud-account authorization, aggregate and personal sync/review work,
+  Calendar/Chat connectors, API/Codex connections, and every AI/Agent start;
+  native reset cancellation releases pending Calendar, Chat, and cloud OAuth
+  callbacks while bounded connector HTTP prevents indefinite waits. Codex
+  cleanup always attempts path-derived Keychain deletion even when its isolated
+  directories are absent, with remote logout kept best effort. Browser history
+  now waits for persisted-screen hydration, and the Web Personal Agent's
+  settled-answer announcement uses request identity rather than answer text.
+- **Release-script follow-through:** the local Mac release path now validates an
+  unaliased candidate and its authenticated artifact checksum before promotion,
+  compares the canonical production deployment immediately before the swap,
+  and rolls back only if the failed candidate still owns production. No
+  deployment, promotion, rollback, migration application, production package
+  replacement, or notarization result is claimed by this source change.
+- **Final current-tree verification:** after the lifecycle and capture-resume
+  follow-through, `npm run verify:release` passed with inference **35/35**,
+  desktop services **329/329**, desktop UI **40/40**, integrations **38/38**,
+  simulator **22/22**, Web **602/602**, release scripts **17/17**, local pgTAP
+  **432/432**, and Rust **82/82**. The root and optimized Web builds, Web
+  typecheck, both package audits (zero vulnerabilities), direct Cargo check,
+  diff check, and release-script Zsh syntax check pass. No lint result is
+  claimed because the repository has no lint script. This is source, local
+  database, and build evidence only; no deployment, migration application,
+  package replacement, provider exercise, or new notarization result is claimed.
+  An isolated current-source `desktop:release:mac` build also produced a
+  hardened-runtime, Developer ID-signed universal app/DMG with both `x86_64`
+  and `arm64` slices; strict signatures and disk-image integrity passed. The
+  candidate remained unsubmitted, unstapled, and Gatekeeper-rejected as
+  unnotarized, and it did not overwrite the preserved submission artifact.
+- **Synthetic golden-path proof:** browser verification reviewed two synthetic
+  blocks, changed one mode from Blocked to Deep work, observed reliable capacity
+  respond from 24% to 28%, and found both correction and verification audit
+  evidence with no browser errors. The Agent's unavailable state was honest;
+  no actual model answer or approval-gated Agent action was exercised, and this
+  browser run is not native capture, Keychain, permission, or packaging proof.
+- **Live and distribution boundary:** at 2026-07-21 05:03Z, the existing
+  weekform.dev root returned `200` with the expected security headers and the
+  signed-out artifact route returned `401` with `no-store`; `/forgot-password`
+  returned `404`, confirming that the recovery candidate was not live. The
+  preserved submitted DMG and separate current-source candidate are Developer
+  ID signed, but Apple notarization submission
+  `acae5cd9-8668-48fa-a411-01b626cd79ea` was `In Progress` at the last readable
+  checkpoint. The final local profile check could not authenticate; neither DMG
+  had a staple and Gatekeeper rejected both as `Unnotarized Developer ID`. Their
+  checksums differ, so any ticket for the preserved artifact cannot notarize the
+  current-source candidate.
+  No accepted ticket, clean-Mac install/reopen, immutable private upload, or
+  hosted-byte proof is claimed. Live connector transfers,
+  current authenticated multi-device/RLS flows, self-service account deletion,
+  and CI enforcement also remain open.
+- **Release posture:** the complete findings, capability matrix, proof
+  boundaries, and ordered closure plan are recorded in
+  [`docs/PRODUCTION_READINESS_AUDIT_2026-07-20.md`](PRODUCTION_READINESS_AUDIT_2026-07-20.md).
+  The final current source candidate is locally green with the counts above.
+  The combined Mac/Web/cloud
+  release recommendation remains **Do not ship** until the external and
+  deployed blockers above are closed.
 
 ### README product presentation
 

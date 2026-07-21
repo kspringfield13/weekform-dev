@@ -16,8 +16,8 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, ChildStdin, Command, Stdio},
     sync::{
-        atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver},
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        mpsc::{self, Receiver, RecvTimeoutError},
         Arc, Mutex,
     },
     thread,
@@ -77,6 +77,74 @@ static VISUAL_CONTEXT_AI_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static AGENT_CHAT_AI_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static AI_COMPLETE_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
+struct CodexLifecycle {
+    epoch: AtomicU64,
+    resets_in_progress: AtomicU64,
+    owner: Mutex<()>,
+}
+
+impl CodexLifecycle {
+    const fn new() -> Self {
+        Self {
+            epoch: AtomicU64::new(1),
+            resets_in_progress: AtomicU64::new(0),
+            owner: Mutex::new(()),
+        }
+    }
+
+    fn begin_operation(&self) -> Result<u64, String> {
+        if self.resets_in_progress.load(Ordering::Acquire) > 0 {
+            return Err(
+                "Codex is being disconnected. Try again after Reset Local Data finishes."
+                    .to_string(),
+            );
+        }
+        let token = self.epoch.load(Ordering::Acquire);
+        if self.resets_in_progress.load(Ordering::Acquire) > 0
+            || self.epoch.load(Ordering::Acquire) != token
+        {
+            return Err(
+                "Codex is being disconnected. Try again after Reset Local Data finishes."
+                    .to_string(),
+            );
+        }
+        Ok(token)
+    }
+
+    fn is_current(&self, token: u64) -> bool {
+        self.resets_in_progress.load(Ordering::Acquire) == 0
+            && self.epoch.load(Ordering::Acquire) == token
+    }
+
+    fn start_reset(&self) {
+        self.resets_in_progress.fetch_add(1, Ordering::AcqRel);
+        self.epoch.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn finish_reset(&self) {
+        let mut current = self.resets_in_progress.load(Ordering::Acquire);
+        while current > 0 {
+            match self.resets_in_progress.compare_exchange_weak(
+                current,
+                current - 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(updated) => current = updated,
+            }
+        }
+    }
+
+    fn lock_owner(&self) -> Result<std::sync::MutexGuard<'_, ()>, String> {
+        self.owner
+            .lock()
+            .map_err(|_| "The Codex lifecycle lock was unavailable.".to_string())
+    }
+}
+
+static CODEX_LIFECYCLE: CodexLifecycle = CodexLifecycle::new();
+
 struct AiOperationGuard {
     flag: &'static AtomicBool,
 }
@@ -115,6 +183,34 @@ impl CaptureJournalOwner {
         })?;
         operation()
     }
+}
+
+fn commit_capture_if_active(
+    owner: &CaptureJournalOwner,
+    paused: &AtomicBool,
+    commit: impl FnOnce() -> Result<(), String>,
+) -> Result<bool, String> {
+    owner.with_operation(|| {
+        // Sampling happens outside the journal lock. Recheck here so a pause or
+        // reset that won the lock cannot be followed by a late journal append or
+        // event emission from a sample that started earlier.
+        if paused.load(Ordering::SeqCst) {
+            return Ok(false);
+        }
+        commit()?;
+        Ok(true)
+    })
+}
+
+fn set_capture_paused_locked(
+    owner: &CaptureJournalOwner,
+    paused: &AtomicBool,
+    next_paused: bool,
+) -> Result<(), String> {
+    owner.with_operation(|| {
+        paused.store(next_paused, Ordering::SeqCst);
+        Ok(())
+    })
 }
 
 static CAPTURE_JOURNAL_OWNER: CaptureJournalOwner = CaptureJournalOwner {
@@ -1043,13 +1139,14 @@ fn append_capture_journal_payloads_locked(
     durable_append_capture_journal_bytes(path, encoded.as_bytes(), None)
 }
 
-fn append_capture_journal(app: &AppHandle, payload: &ActiveWindowPayload) -> Result<(), String> {
-    CAPTURE_JOURNAL_OWNER.with_operation(|| {
-        let path = capture_journal_path(app)?;
-        let key = capture_journal_key_for_write_locked(&path)?;
-        recover_capture_journal_tail_locked(&path, &key)?;
-        append_capture_journal_payloads_locked(&path, std::slice::from_ref(payload), &key)
-    })
+fn append_capture_journal_locked(
+    app: &AppHandle,
+    payload: &ActiveWindowPayload,
+) -> Result<(), String> {
+    let path = capture_journal_path(app)?;
+    let key = capture_journal_key_for_write_locked(&path)?;
+    recover_capture_journal_tail_locked(&path, &key)?;
+    append_capture_journal_payloads_locked(&path, std::slice::from_ref(payload), &key)
 }
 
 fn read_capture_journal_tail_lines<R: Read + Seek>(
@@ -2023,6 +2120,78 @@ mod capture_journal_tests {
         second.join().expect("second operation joins");
     }
 
+    #[test]
+    fn sampled_capture_is_dropped_when_pause_wins_before_commit() {
+        let owner = Arc::new(CaptureJournalOwner::default());
+        let paused = Arc::new(AtomicBool::new(false));
+        let committed = Arc::new(AtomicBool::new(false));
+        let (sampled_tx, sampled_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+
+        let capture_owner = owner.clone();
+        let capture_paused = paused.clone();
+        let capture_committed = committed.clone();
+        let capture = thread::spawn(move || {
+            sampled_tx.send(()).expect("reports sampled capture");
+            release_rx.recv().expect("releases sampled capture");
+            commit_capture_if_active(&capture_owner, &capture_paused, || {
+                capture_committed.store(true, Ordering::SeqCst);
+                Ok(())
+            })
+            .expect("evaluates capture commit")
+        });
+
+        sampled_rx.recv().expect("capture sampled before pause");
+        set_capture_paused_locked(&owner, &paused, true).expect("pauses and drains capture");
+        release_tx.send(()).expect("releases sampled capture");
+
+        assert!(!capture.join().expect("capture thread joins"));
+        assert!(!committed.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn pause_waits_for_an_active_capture_commit_to_finish() {
+        let owner = Arc::new(CaptureJournalOwner::default());
+        let paused = Arc::new(AtomicBool::new(false));
+        let (commit_entered_tx, commit_entered_rx) = mpsc::channel();
+        let (release_commit_tx, release_commit_rx) = mpsc::channel();
+        let (pause_finished_tx, pause_finished_rx) = mpsc::channel();
+
+        let capture_owner = owner.clone();
+        let capture_paused = paused.clone();
+        let capture = thread::spawn(move || {
+            commit_capture_if_active(&capture_owner, &capture_paused, || {
+                commit_entered_tx.send(()).expect("reports commit entry");
+                release_commit_rx.recv().expect("releases commit");
+                Ok(())
+            })
+            .expect("commits active capture")
+        });
+        commit_entered_rx.recv().expect("capture commit entered");
+
+        let pause_owner = owner.clone();
+        let pause_state = paused.clone();
+        let pause = thread::spawn(move || {
+            set_capture_paused_locked(&pause_owner, &pause_state, true)
+                .expect("pauses after draining commit");
+            pause_finished_tx
+                .send(())
+                .expect("reports pause completion");
+        });
+
+        assert!(pause_finished_rx
+            .recv_timeout(Duration::from_millis(50))
+            .is_err());
+        release_commit_tx.send(()).expect("releases capture commit");
+        pause_finished_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("pause completes after commit");
+
+        assert!(capture.join().expect("capture thread joins"));
+        pause.join().expect("pause thread joins");
+        assert!(paused.load(Ordering::SeqCst));
+    }
+
     fn temp_journal_path(label: &str) -> (PathBuf, PathBuf) {
         let mut random = [0_u8; 8];
         OsRng.fill_bytes(&mut random);
@@ -2341,16 +2510,21 @@ fn start_activity_capture(app: AppHandle, paused: Arc<AtomicBool>) {
     thread::spawn(move || loop {
         if !paused.load(Ordering::SeqCst) {
             let mut payload = sample_active_window();
-            if payload.capture_error.is_none() && payload.app_name.is_some() {
-                if let Err(error) = append_capture_journal(&app, &payload) {
-                    // Fail closed: a sensitive sample is not emitted into JS when its
-                    // encrypted native journal write did not complete.
-                    payload.app_name = None;
-                    payload.window_title = None;
-                    payload.capture_error = Some(error);
+            let _ = commit_capture_if_active(&CAPTURE_JOURNAL_OWNER, &paused, || {
+                if payload.capture_error.is_none() && payload.app_name.is_some() {
+                    if let Err(error) = append_capture_journal_locked(&app, &payload) {
+                        // Fail closed: a sensitive sample is not emitted into JS when its
+                        // encrypted native journal write did not complete.
+                        payload.app_name = None;
+                        payload.window_title = None;
+                        payload.capture_error = Some(error);
+                    }
                 }
-            }
-            let _ = app.emit("clear-capacity:active-window-sample", payload);
+                // Emission stays inside the same lifecycle lock. Once a pause command
+                // returns, every earlier commit and emission has drained.
+                let _ = app.emit("clear-capacity:active-window-sample", &payload);
+                Ok(())
+            });
         }
 
         thread::sleep(Duration::from_secs(5));
@@ -2391,8 +2565,11 @@ fn set_tray_tooltip(tray: State<'_, TrayHandle>, tooltip: String) {
 }
 
 #[tauri::command]
-fn set_activity_capture_paused(activity_state: State<'_, ActivityCaptureState>, paused: bool) {
-    activity_state.paused.store(paused, Ordering::SeqCst);
+fn set_activity_capture_paused(
+    activity_state: State<'_, ActivityCaptureState>,
+    paused: bool,
+) -> Result<(), String> {
+    set_capture_paused_locked(&CAPTURE_JOURNAL_OWNER, &activity_state.paused, paused)
 }
 
 #[tauri::command]
@@ -2504,13 +2681,58 @@ fn find_codex_binary() -> Result<PathBuf, String> {
     )
 }
 
-fn codex_data_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
+fn codex_data_path_locations(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
     let app_data = app
         .path()
         .app_data_dir()
         .map_err(|error| format!("Could not resolve Weekform's local data folder: {error}"))?;
     let codex_home = app_data.join("codex-app-server");
     let workspace = app_data.join("codex-workspace");
+    Ok((codex_home, workspace))
+}
+
+const CODEX_KEYCHAIN_SERVICE: &str = "Codex Auth";
+
+#[derive(Debug, PartialEq, Eq)]
+struct CodexDisconnectPlan {
+    attempt_app_server_logout: bool,
+    // Codex keys CLI auth by a digest of CODEX_HOME, outside the directory.
+    // Directory absence can therefore never prove credential absence.
+    delete_keyring_credential: bool,
+}
+
+fn codex_disconnect_plan(codex_home: &Path, workspace: &Path) -> CodexDisconnectPlan {
+    CodexDisconnectPlan {
+        attempt_app_server_logout: codex_home.exists() || workspace.exists(),
+        delete_keyring_credential: true,
+    }
+}
+
+/** Keep this algorithm aligned with OpenAI Codex's `compute_store_key`. */
+fn codex_keyring_account(codex_home: &Path) -> String {
+    use sha2::{Digest, Sha256};
+
+    let canonical = codex_home
+        .canonicalize()
+        .unwrap_or_else(|_| codex_home.to_path_buf());
+    let digest = Sha256::digest(canonical.to_string_lossy().as_bytes());
+    let hex = format!("{digest:x}");
+    format!("cli|{}", &hex[..16])
+}
+
+fn delete_codex_keyring_credential(codex_home: &Path) -> Result<(), String> {
+    let account = codex_keyring_account(codex_home);
+    match delete_generic_password(CODEX_KEYCHAIN_SERVICE, &account) {
+        Ok(()) => Ok(()),
+        Err(error) if error.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(()),
+        Err(error) => Err(format!(
+            "Could not remove the isolated Codex credential from macOS Keychain: {error}"
+        )),
+    }
+}
+
+fn codex_data_paths(app: &AppHandle) -> Result<(PathBuf, PathBuf), String> {
+    let (codex_home, workspace) = codex_data_path_locations(app)?;
     fs::create_dir_all(&codex_home)
         .map_err(|error| format!("Could not prepare Codex credentials storage: {error}"))?;
     fs::create_dir_all(&workspace)
@@ -2675,19 +2897,23 @@ impl CodexAppServer {
         }
     }
 
-    fn next_message(&mut self, timeout: Duration) -> Result<Value, String> {
+    fn poll_next_message(&mut self, timeout: Duration) -> Result<Option<Value>, String> {
         if !self.pending.is_empty() {
-            return Ok(self.pending.remove(0));
+            return Ok(Some(self.pending.remove(0)));
         }
         let deadline = std::time::Instant::now() + timeout;
         loop {
             let remaining = deadline.saturating_duration_since(std::time::Instant::now());
             if remaining.is_zero() {
-                return Err("Codex app-server did not complete the operation in time.".to_string());
+                return Ok(None);
             }
-            let message = self.messages.recv_timeout(remaining).map_err(|_| {
-                "Codex app-server did not complete the operation in time.".to_string()
-            })?;
+            let message = match self.messages.recv_timeout(remaining) {
+                Ok(message) => message,
+                Err(RecvTimeoutError::Timeout) => return Ok(None),
+                Err(RecvTimeoutError::Disconnected) => {
+                    return Err("Codex app-server stopped unexpectedly.".to_string())
+                }
+            };
             if message.get("id").is_some() && message.get("method").is_some() {
                 if let Some(request_id) = message.get("id").cloned() {
                     self.write_value(&json!({
@@ -2697,7 +2923,7 @@ impl CodexAppServer {
                 }
                 continue;
             }
-            return Ok(message);
+            return Ok(Some(message));
         }
     }
 }
@@ -2799,6 +3025,7 @@ fn codex_model_catalog(server: &mut CodexAppServer) -> Result<Value, String> {
 
 fn complete_with_codex_app_server(
     app: &AppHandle,
+    lifecycle_token: u64,
     preferred_model: Option<&str>,
     instructions: &str,
     prompt: &str,
@@ -2848,11 +3075,17 @@ fn complete_with_codex_app_server(
     let mut output_text: Option<String> = None;
 
     loop {
+        if !CODEX_LIFECYCLE.is_current(lifecycle_token) {
+            return Err("Codex generation was cancelled by Reset Local Data.".to_string());
+        }
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {
             return Err("Codex generation timed out.".to_string());
         }
-        let message = server.next_message(remaining)?;
+        let Some(message) = server.poll_next_message(remaining.min(Duration::from_millis(250)))?
+        else {
+            continue;
+        };
         match message.get("method").and_then(Value::as_str) {
             Some("item/completed")
                 if message.pointer("/params/turnId").and_then(Value::as_str)
@@ -2900,9 +3133,17 @@ async fn complete_with_codex_async(
     response_format: Value,
     image_data_url: Option<String>,
 ) -> Result<(String, String), String> {
+    let lifecycle_token = CODEX_LIFECYCLE.begin_operation()?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _owner = CODEX_LIFECYCLE.lock_owner()?;
+        if !CODEX_LIFECYCLE.is_current(lifecycle_token) {
+            return Err(
+                "Codex generation was cancelled because its connection was reset.".to_string(),
+            );
+        }
         complete_with_codex_app_server(
             &app,
+            lifecycle_token,
             preferred_model.as_deref(),
             &instructions,
             &prompt,
@@ -2924,8 +3165,13 @@ struct CodexPlanConnectResult {
 
 #[tauri::command]
 async fn connect_codex_via_chatgpt(app: AppHandle) -> Result<CodexPlanConnectResult, String> {
-    let (codex_home, workspace) = codex_data_paths(&app)?;
+    let lifecycle_token = CODEX_LIFECYCLE.begin_operation()?;
     tauri::async_runtime::spawn_blocking(move || {
+        let _owner = CODEX_LIFECYCLE.lock_owner()?;
+        if !CODEX_LIFECYCLE.is_current(lifecycle_token) {
+            return Err("ChatGPT/Codex sign-in was cancelled by Reset Local Data.".to_string());
+        }
+        let (codex_home, workspace) = codex_data_paths(&app)?;
         let mut server = CodexAppServer::start(&codex_home, &workspace)?;
         let mut account = codex_account(&mut server, false)?;
         if account.get("account").is_none() || account.get("account") == Some(&Value::Null) {
@@ -2953,11 +3199,20 @@ async fn connect_codex_via_chatgpt(app: AppHandle) -> Result<CodexPlanConnectRes
 
             let deadline = std::time::Instant::now() + CODEX_LOGIN_TIMEOUT;
             loop {
+                if !CODEX_LIFECYCLE.is_current(lifecycle_token) {
+                    return Err(
+                        "ChatGPT/Codex sign-in was cancelled by Reset Local Data.".to_string()
+                    );
+                }
                 let remaining = deadline.saturating_duration_since(std::time::Instant::now());
                 if remaining.is_zero() {
                     return Err("Timed out waiting for ChatGPT sign-in.".to_string());
                 }
-                let message = server.next_message(remaining)?;
+                let Some(message) =
+                    server.poll_next_message(remaining.min(Duration::from_millis(250)))?
+                else {
+                    continue;
+                };
                 if message.get("method").and_then(Value::as_str) != Some("account/login/completed")
                     || message.pointer("/params/loginId").and_then(Value::as_str)
                         != Some(login_id.as_str())
@@ -3003,26 +3258,58 @@ async fn connect_codex_via_chatgpt(app: AppHandle) -> Result<CodexPlanConnectRes
 
 #[tauri::command]
 async fn disconnect_codex(app: AppHandle) -> Result<(), String> {
-    let (codex_home, workspace) = codex_data_paths(&app)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        {
-            let mut server = CodexAppServer::start(&codex_home, &workspace)?;
-            server.request("account/logout", json!({}), CODEX_APP_SERVER_TIMEOUT)?;
-        }
-        if codex_home.exists() {
-            fs::remove_dir_all(&codex_home).map_err(|error| {
-                format!("Codex signed out, but its local cache could not be cleared: {error}")
-            })?;
-        }
-        if workspace.exists() {
-            fs::remove_dir_all(&workspace).map_err(|error| {
-                format!("Codex signed out, but its private workspace could not be cleared: {error}")
-            })?;
-        }
-        Ok(())
-    })
-    .await
-    .map_err(|error| format!("Codex sign-out stopped unexpectedly: {error}"))?
+    CODEX_LIFECYCLE.start_reset();
+    let result = async {
+        let (codex_home_location, workspace_location) = codex_data_path_locations(&app)?;
+        let plan = codex_disconnect_plan(&codex_home_location, &workspace_location);
+        tauri::async_runtime::spawn_blocking(move || {
+            // Wait for any sign-in, refresh, connection test, or generation that
+            // crossed the boundary before Reset. Cleanup then runs last, so none
+            // of those operations can recreate the path-derived Keychain item.
+            let _owner = CODEX_LIFECYCLE.lock_owner()?;
+            if plan.attempt_app_server_logout {
+                // Recreate a missing partner directory only when one owned path proves
+                // setup began. Remote logout is best effort; the local Keychain delete
+                // below remains the authoritative Reset completion boundary.
+                fs::create_dir_all(&codex_home_location).map_err(|error| {
+                    format!("Could not prepare Codex credential cleanup: {error}")
+                })?;
+                fs::create_dir_all(&workspace_location).map_err(|error| {
+                    format!("Could not prepare Codex workspace cleanup: {error}")
+                })?;
+                if let Ok(mut server) =
+                    CodexAppServer::start(&codex_home_location, &workspace_location)
+                {
+                    let _ = server.request("account/logout", json!({}), CODEX_APP_SERVER_TIMEOUT);
+                }
+            }
+
+            // Never infer Keychain absence from filesystem absence. This idempotent,
+            // path-derived deletion removes a credential left by a crash, partial
+            // uninstall, manual App Support cleanup, or failed remote logout.
+            if plan.delete_keyring_credential {
+                delete_codex_keyring_credential(&codex_home_location)?;
+            }
+            if codex_home_location.exists() {
+                fs::remove_dir_all(&codex_home_location).map_err(|error| {
+                    format!("Codex signed out, but its local cache could not be cleared: {error}")
+                })?;
+            }
+            if workspace_location.exists() {
+                fs::remove_dir_all(&workspace_location).map_err(|error| {
+                    format!(
+                        "Codex signed out, but its private workspace could not be cleared: {error}"
+                    )
+                })?;
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|error| format!("Codex sign-out stopped unexpectedly: {error}"))?
+    }
+    .await;
+    CODEX_LIFECYCLE.finish_reset();
+    result
 }
 
 fn random_urlsafe(byte_len: usize) -> String {
@@ -3059,6 +3346,27 @@ fn oauth_html_response(stream: &mut std::net::TcpStream, status: u16, message: &
 const CLOUD_OAUTH_PORT: u16 = 49321;
 const CLOUD_OAUTH_CALLBACK_PATH: &str = "/cloud-auth/callback";
 const CLOUD_OAUTH_TIMEOUT_SECS: u64 = 300;
+
+static CLOUD_OAUTH_CALLBACK_GENERATION: AtomicU64 = AtomicU64::new(1);
+
+fn current_cloud_oauth_callback_generation() -> u64 {
+    CLOUD_OAUTH_CALLBACK_GENERATION.load(Ordering::Acquire)
+}
+
+fn cloud_oauth_callback_is_current(generation: u64) -> bool {
+    current_cloud_oauth_callback_generation() == generation
+}
+
+fn cancel_pending_cloud_oauth_callback() {
+    CLOUD_OAUTH_CALLBACK_GENERATION.fetch_add(1, Ordering::AcqRel);
+}
+
+#[tauri::command]
+fn cancel_pending_oauth_callbacks_for_reset() {
+    calendar_sources::cancel_pending_oauth_callback();
+    chat_sources::cancel_pending_oauth_callback();
+    cancel_pending_cloud_oauth_callback();
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -3142,6 +3450,7 @@ fn parse_cloud_oauth_callback(target: &str, expected_state: &str) -> Result<Stri
 fn wait_for_cloud_oauth_callback(
     listener: std::net::TcpListener,
     expected_state: &str,
+    callback_generation: u64,
 ) -> Result<String, String> {
     use std::io::Read;
     listener
@@ -3150,6 +3459,9 @@ fn wait_for_cloud_oauth_callback(
     let deadline = std::time::Instant::now() + Duration::from_secs(CLOUD_OAUTH_TIMEOUT_SECS);
 
     loop {
+        if !cloud_oauth_callback_is_current(callback_generation) {
+            return Err("Weekform Web sign-in was cancelled by Reset Local Data.".to_string());
+        }
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let _ = stream.set_nonblocking(false);
@@ -3205,6 +3517,9 @@ fn wait_for_cloud_oauth_callback(
 async fn start_cloud_oauth(request: CloudOAuthRequest) -> Result<CloudOAuthCallback, String> {
     use sha2::{Digest, Sha256};
 
+    // Capture before opening the browser. Reset advances the generation and the
+    // hook account epoch suppresses the resulting stale UI/account completion.
+    let callback_generation = current_cloud_oauth_callback_generation();
     let verifier = random_urlsafe(64);
     let challenge = general_purpose::URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let state = random_urlsafe(32);
@@ -3226,7 +3541,7 @@ async fn start_cloud_oauth(request: CloudOAuthRequest) -> Result<CloudOAuthCallb
 
     let expected_state = state.clone();
     let auth_code = tauri::async_runtime::spawn_blocking(move || {
-        wait_for_cloud_oauth_callback(listener, &expected_state)
+        wait_for_cloud_oauth_callback(listener, &expected_state, callback_generation)
     })
     .await
     .map_err(|error| format!("The Weekform Web sign-in listener failed: {error}"))??;
@@ -3328,8 +3643,15 @@ async fn test_ai_connection(
         .ok_or_else(|| "Enter a model before testing the connection.".to_string())?;
     if uses_codex_app_server(Some(config)) {
         let preferred_model = model.to_string();
-        let (codex_home, workspace) = codex_data_paths(&app)?;
+        let lifecycle_token = CODEX_LIFECYCLE.begin_operation()?;
         let selected_model = tauri::async_runtime::spawn_blocking(move || {
+            let _owner = CODEX_LIFECYCLE.lock_owner()?;
+            if !CODEX_LIFECYCLE.is_current(lifecycle_token) {
+                return Err(
+                    "The Codex connection test was cancelled by Reset Local Data.".to_string(),
+                );
+            }
+            let (codex_home, workspace) = codex_data_paths(&app)?;
             let mut server = CodexAppServer::start(&codex_home, &workspace)?;
             let account = codex_account(&mut server, true)?;
             if account.pointer("/account/type").and_then(Value::as_str) != Some("chatgpt") {
@@ -4482,7 +4804,36 @@ mod keychain_account_tests {
 
 #[cfg(test)]
 mod cloud_oauth_tests {
-    use super::{build_cloud_oauth_authorize_url, parse_cloud_oauth_callback};
+    use super::{
+        build_cloud_oauth_authorize_url, cancel_pending_cloud_oauth_callback,
+        current_cloud_oauth_callback_generation, parse_cloud_oauth_callback,
+        wait_for_cloud_oauth_callback,
+    };
+    use std::{net::TcpListener, sync::mpsc, thread, time::Duration};
+
+    #[test]
+    fn reset_generation_releases_pending_cloud_callback_wait() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind synthetic callback");
+        let generation = current_cloud_oauth_callback_generation();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        thread::spawn(move || {
+            finished_tx
+                .send(wait_for_cloud_oauth_callback(
+                    listener,
+                    "synthetic-state",
+                    generation,
+                ))
+                .expect("report callback result");
+        });
+
+        thread::sleep(Duration::from_millis(20));
+        cancel_pending_cloud_oauth_callback();
+        let error = finished_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("callback wait exits promptly")
+            .expect_err("reset cancels callback wait");
+        assert!(error.contains("cancelled by Reset Local Data"));
+    }
 
     #[test]
     fn authorize_url_is_scoped_to_supported_providers_and_pkce() {
@@ -4531,10 +4882,74 @@ mod cloud_oauth_tests {
 #[cfg(test)]
 mod codex_app_server_tests {
     use super::{
-        codex_output_schema, codex_thread_start_params, codex_turn_start_params, select_codex_model,
+        codex_disconnect_plan, codex_keyring_account, codex_output_schema,
+        codex_thread_start_params, codex_turn_start_params, select_codex_model, CodexLifecycle,
     };
     use serde_json::json;
     use std::path::Path;
+    use std::sync::{mpsc, Arc};
+    use std::thread;
+    use std::time::Duration;
+
+    #[test]
+    fn absent_codex_directories_still_require_path_derived_keyring_cleanup() {
+        let home = Path::new("/definitely/missing/weekform-codex-home");
+        let plan = codex_disconnect_plan(
+            home,
+            Path::new("/definitely/missing/weekform-codex-workspace"),
+        );
+        assert!(!plan.attempt_app_server_logout);
+        assert!(plan.delete_keyring_credential);
+        assert_eq!(codex_keyring_account(home), "cli|d372c6867efa4222");
+
+        let started_plan =
+            codex_disconnect_plan(Path::new("/tmp"), Path::new("/definitely/missing"));
+        assert!(started_plan.attempt_app_server_logout);
+        assert!(started_plan.delete_keyring_credential);
+    }
+
+    #[test]
+    fn codex_reset_invalidates_started_work_and_rejects_new_work_until_cleanup_finishes() {
+        let lifecycle = CodexLifecycle::new();
+        let started = lifecycle.begin_operation().expect("operation before reset");
+        assert!(lifecycle.is_current(started));
+
+        lifecycle.start_reset();
+        assert!(!lifecycle.is_current(started));
+        assert!(lifecycle.begin_operation().is_err());
+
+        lifecycle.finish_reset();
+        let resumed = lifecycle
+            .begin_operation()
+            .expect("explicit operation after reset");
+        assert!(lifecycle.is_current(resumed));
+    }
+
+    #[test]
+    fn codex_cleanup_waits_for_the_pre_reset_credential_owner() {
+        let lifecycle = Arc::new(CodexLifecycle::new());
+        let started = lifecycle.begin_operation().expect("operation before reset");
+        let operation_owner = lifecycle.lock_owner().expect("operation owns credentials");
+        assert!(lifecycle.is_current(started));
+
+        lifecycle.start_reset();
+        let cleanup_lifecycle = Arc::clone(&lifecycle);
+        let (cleanup_tx, cleanup_rx) = mpsc::channel();
+        let cleanup = thread::spawn(move || {
+            let _cleanup_owner = cleanup_lifecycle
+                .lock_owner()
+                .expect("cleanup owns credentials after operation");
+            cleanup_tx.send(()).expect("cleanup reports ownership");
+        });
+
+        assert!(cleanup_rx.recv_timeout(Duration::from_millis(20)).is_err());
+        drop(operation_owner);
+        cleanup_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("cleanup runs after the operation releases credentials");
+        cleanup.join().expect("cleanup thread finishes");
+        lifecycle.finish_reset();
+    }
 
     #[test]
     fn extracts_only_responses_json_schemas_for_codex_turns() {
@@ -4667,6 +5082,7 @@ pub fn run() {
             get_env_ai_key_status,
             connect_codex_via_chatgpt,
             disconnect_codex,
+            cancel_pending_oauth_callbacks_for_reset,
             start_cloud_oauth,
             calendar_sources::calendar_source_statuses,
             calendar_sources::connect_calendar_source,

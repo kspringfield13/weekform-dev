@@ -72,10 +72,12 @@ test("outbox resumption applies locally before application and terminal acknowle
   assert.doesNotMatch(resume, /setBlocks\(/);
 });
 
-test("personal operations quiesce at an epoch boundary before reset can clear persistence", () => {
+test("personal operations quiesce at a shared operation boundary before reset can clear persistence", () => {
+  assert.match(source, /createConnectorResetBoundary\(\)/);
+  assert.match(source, /const beginOperation\s*=\s*useCallback\(\(\) => operationBoundary\.begin\(\)/);
   assert.match(source, /const quiesceForReset\s*=\s*useCallback/);
-  assert.match(source, /operationEpochRef\.current \+= 1/);
-  assert.match(source, /await Promise\.allSettled\(\[\.\.\.activeOperationCompletionsRef\.current\]\)/);
+  assert.match(source, /\(\) => operationBoundary\.quiesce\(\)/);
+  assert.match(source, /const resumeAfterReset\s*=\s*useCallback[\s\S]*?operationBoundary\.reopen\(\)/);
   const resume = between("const resumeReviewApplications", "// Flush as soon");
   assert.match(resume, /await claimReviewCommandV2[\s\S]*?if \(!operation\.isCurrent\(\)\) return/);
   assert.match(resume, /await persistLatestLocalState\(\)[\s\S]*?if \(!operation\.isCurrent\(\)\) return/);
@@ -91,6 +93,21 @@ test("replica upload is fenced behind a strict durable queue and source-clock wr
     materializeAt >= 0 && barrierAt > materializeAt && uploadAt > barrierAt,
     "manual sync must durably materialize the current replica before the persistence barrier and upload",
   );
+});
+
+test("an unverifiable legacy receipt is rekeyed durably before its unchanged payload can retry", () => {
+  const sync = between("const syncNow", "const refreshCommands");
+  const uploadAt = sync.indexOf("await syncPersonalReplicaBatch");
+  const legacyAt = sync.indexOf("LEGACY_PERSONAL_REPLICA_BATCH_ERROR", uploadAt);
+  const rekeyAt = sync.indexOf("rekeyLegacyReplicaBatch", legacyAt);
+  const durableAt = sync.indexOf("await currentAccount.setPersonalSyncStateDurably", rekeyAt);
+  const recoveryReturnAt = sync.indexOf("return false", durableAt);
+  assert.ok(
+    uploadAt >= 0 && legacyAt > uploadAt && rekeyAt > legacyAt
+      && durableAt > rekeyAt && recoveryReturnAt > durableAt,
+    "legacy recovery must persist a fresh retry key and stop before another upload",
+  );
+  assert.match(sync.slice(rekeyAt, recoveryReturnAt), /current\.queue/);
 });
 
 test("manual replica sync exposes a terminal success notice only after a server receipt", () => {

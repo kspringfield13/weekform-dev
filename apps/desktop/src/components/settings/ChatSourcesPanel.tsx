@@ -78,10 +78,12 @@ export function ChatSourcesPanel({
   controller,
   legacyImportError,
   onImportLegacy,
+  disabled = false,
 }: {
   controller: ChatSourcesController;
   legacyImportError?: string | null;
   onImportLegacy?: (file: File) => void;
+  disabled?: boolean;
 }) {
   const { range, rangeError, rangeInput } = controller;
   const rangeFeedbackId = "chat-range-feedback";
@@ -158,7 +160,7 @@ export function ChatSourcesPanel({
           <h3 id="chat-sources-title">Chat</h3>
           <p>Connect your own chat accounts to turn directed requests and observed chat actions into reviewable workload evidence—not message-volume scoring.</p>
         </div>
-        <div className="calendar-range" aria-label="Chat transfer date range">
+        <div className="calendar-range" role="group" aria-label="Chat transfer date range">
           <label htmlFor="chat-range-start">
             <span>From</span>
             <input
@@ -473,6 +475,7 @@ export function ChatSourcesPanel({
             <input
               accept=".json,application/json"
               type="file"
+              disabled={disabled}
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 if (file) onImportLegacy(file);

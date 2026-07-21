@@ -25,15 +25,21 @@ import {
   applyReviewCommandToCurrentBlocks,
   enqueueReviewCommandApplication,
   enqueueReplicaBatchWithClock,
+  LEGACY_PERSONAL_REPLICA_BATCH_ERROR,
   markReviewCommandApplicationAttempt,
   markReviewCommandApplicationPhase,
   markReplicaBatchAttempt,
   nextReviewCommandApplication,
   removeReviewCommandApplication,
+  rekeyLegacyReplicaBatch,
   reviewCommandClaimIsRecoverable,
   shouldFlushPersonalQueue,
 } from "../services/personalSync";
 import type { CloudAccountController } from "./useCloudAccount";
+import {
+  createConnectorResetBoundary,
+  type ConnectorResetBoundary,
+} from "./connectorResetBoundary";
 
 export interface PersonalCloudSyncController {
   enabled: boolean;
@@ -48,6 +54,8 @@ export interface PersonalCloudSyncController {
   rejectCommand: (commandId: string) => Promise<boolean>;
   /** Invalidate new work and await every active network/persistence edge before Reset. */
   quiesceForReset: () => Promise<void>;
+  /** Reopen only after Reset installs its cleared state. */
+  resumeAfterReset: () => void;
 }
 
 export function usePersonalCloudSync(input: {
@@ -73,9 +81,11 @@ export function usePersonalCloudSync(input: {
   const [pendingCommands, setPendingCommands] = useState<ReviewCommandV1[]>([]);
   const inFlight = useRef(false);
   const commandInFlight = useRef(false);
-  const operationEpochRef = useRef(0);
-  const quiescingRef = useRef(false);
-  const activeOperationCompletionsRef = useRef(new Set<Promise<void>>());
+  const operationBoundaryRef = useRef<ConnectorResetBoundary | null>(null);
+  if (operationBoundaryRef.current === null) {
+    operationBoundaryRef.current = createConnectorResetBoundary();
+  }
+  const operationBoundary = operationBoundaryRef.current;
   const accountRef = useRef(account);
   accountRef.current = account;
   const enabled = account.personalReplicaPolicy.enabled
@@ -83,36 +93,16 @@ export function usePersonalCloudSync(input: {
     && account.account !== null
     && !account.isDemoMode;
 
-  const beginOperation = useCallback(() => {
-    if (quiescingRef.current) return null;
-    const epoch = operationEpochRef.current;
-    let resolve!: () => void;
-    const completion = new Promise<void>((next) => { resolve = next; });
-    activeOperationCompletionsRef.current.add(completion);
-    let finished = false;
-    return {
-      epoch,
-      isCurrent: () => !quiescingRef.current && operationEpochRef.current === epoch,
-      finish: () => {
-        if (finished) return;
-        finished = true;
-        activeOperationCompletionsRef.current.delete(completion);
-        resolve();
-      },
-    };
-  }, []);
+  const beginOperation = useCallback(() => operationBoundary.begin(), [operationBoundary]);
 
-  const quiesceForReset = useCallback(async (): Promise<void> => {
-    quiescingRef.current = true;
-    operationEpochRef.current += 1;
-    await Promise.allSettled([...activeOperationCompletionsRef.current]);
-  }, []);
-
-  // Reset leaves the account disabled. Reopen the operation lane only after
-  // that disabled state has rendered, so a later explicit reconnect can work.
-  useEffect(() => {
-    if (!enabled) quiescingRef.current = false;
-  }, [enabled]);
+  const quiesceForReset = useCallback(
+    () => operationBoundary.quiesce(),
+    [operationBoundary],
+  );
+  const resumeAfterReset = useCallback(
+    () => operationBoundary.reopen(),
+    [operationBoundary],
+  );
 
   const replicas = useMemo(() => buildPersonalWorkloadReplicas({
     currentSnapshot: snapshot,
@@ -212,6 +202,52 @@ export function usePersonalCloudSync(input: {
         if (!operation.isCurrent()) return false;
         if (!result.ok) {
           setLastNotice(null);
+          const replacementBatchId = result.message === LEGACY_PERSONAL_REPLICA_BATCH_ERROR
+            ? crypto.randomUUID()
+            : null;
+          const recoveredQueue = replacementBatchId === null ? null : rekeyLegacyReplicaBatch(
+            queue,
+            item.batchId,
+            result.message,
+            () => replacementBatchId,
+          );
+          if (recoveredQueue !== null && replacementBatchId !== null) {
+            const rekeyedBatchId = replacementBatchId;
+            try {
+              let didRekey = false;
+              const recoveredState = await currentAccount.setPersonalSyncStateDurably((current) => {
+                const currentQueue = rekeyLegacyReplicaBatch(
+                  current.queue,
+                  item.batchId,
+                  result.message,
+                  () => rekeyedBatchId,
+                );
+                if (currentQueue === null) return current;
+                didRekey = true;
+                return {
+                  ...current,
+                  queue: currentQueue,
+                  lastError: null,
+                  lastAttemptAt: attemptedAt,
+                };
+              });
+              if (!operation.isCurrent()) return false;
+              if (!didRekey) return false;
+              queue = recoveredState.queue;
+              setLastNotice("Prepared an older Web sync batch for a safe retry.");
+              currentAccount.emitAudit(
+                "personal_sync_failure",
+                "Rotated an unverifiable legacy Web sync receipt before retrying its unchanged queued payload",
+                { legacy_batch_rekeyed: true, queued_batches: queue.length },
+              );
+            } catch {
+              currentAccount.setPersonalSyncState((current) => ({
+                ...current,
+                lastError: "Weekform could not save the legacy Web sync recovery. Keep Weekform open and try again.",
+              }));
+            }
+            return false;
+          }
           queue = markReplicaBatchAttempt(queue, item.batchId, result.message);
           currentAccount.setPersonalSyncState((current) => ({
             ...current,
@@ -798,5 +834,6 @@ export function usePersonalCloudSync(input: {
     approveCommand,
     rejectCommand,
     quiesceForReset,
-  }), [account.personalSyncState, approveCommand, enabled, lastNotice, pendingCommands, quiesceForReset, refreshCommands, rejectCommand, syncBusy, syncNow]);
+    resumeAfterReset,
+  }), [account.personalSyncState, approveCommand, enabled, lastNotice, pendingCommands, quiesceForReset, refreshCommands, rejectCommand, resumeAfterReset, syncBusy, syncNow]);
 }

@@ -9,11 +9,14 @@
 
 import type { WeeklyCapacitySnapshot, WorkBlock } from "../../domain/src/models";
 import { workCategories, workModes } from "../../domain/src/taxonomy";
-import type {
-  CloudMetricPolicy,
-  CloudSharePolicyV1,
-  SharedAllocationEntry,
-  SharedWorkloadSnapshotV1
+import {
+  MAX_SHARED_PROJECT_NAME_LENGTH,
+  MAX_SHARED_PROJECTS,
+  sharedProjectNameCodePointLength,
+  type CloudMetricPolicy,
+  type CloudSharePolicyV1,
+  type SharedAllocationEntry,
+  type SharedWorkloadSnapshotV1
 } from "../../domain/src/cloud";
 import { normalizeWeekId } from "./capacity";
 
@@ -227,7 +230,14 @@ function buildProjectAllocation(
 ): SharedAllocationEntry[] {
   const allowed = new Set<string>();
   for (const name of Array.isArray(allowedProjectNames) ? allowedProjectNames : []) {
-    if (typeof name === "string" && name.trim().length > 0) allowed.add(name.trim());
+    if (typeof name !== "string") continue;
+    const trimmed = name.trim();
+    const codePointLength = sharedProjectNameCodePointLength(trimmed);
+    if (codePointLength === null
+      || codePointLength === 0
+      || codePointLength > MAX_SHARED_PROJECT_NAME_LENGTH) continue;
+    allowed.add(trimmed);
+    if (allowed.size === MAX_SHARED_PROJECTS) break;
   }
   if (allowed.size === 0) return [];
   const totals = new Map<string, number>();

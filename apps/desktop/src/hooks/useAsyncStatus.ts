@@ -16,6 +16,40 @@ export function createAsyncOperationEpoch() {
   };
 }
 
+export type AsyncOperationEpoch = ReturnType<typeof createAsyncOperationEpoch>;
+
+export function createAsyncOperationGate() {
+  const epoch = createAsyncOperationEpoch();
+  let closed = false;
+  return {
+    begin(): number | null {
+      return closed ? null : epoch.start();
+    },
+    close(): void {
+      closed = true;
+      epoch.invalidate();
+    },
+    open(): void {
+      epoch.invalidate();
+      closed = false;
+    },
+    isCurrent(token: number): boolean {
+      return !closed && epoch.isCurrent(token);
+    },
+  };
+}
+
+export type AsyncOperationGate = ReturnType<typeof createAsyncOperationGate>;
+
+export type ResetInProgressRef = { readonly current: boolean };
+
+export const RESET_IN_PROGRESS_AI_MESSAGE =
+  "AI generation is unavailable while local data is resetting.";
+
+export function isResetInProgress(resetInProgressRef: ResetInProgressRef): boolean {
+  return resetInProgressRef.current;
+}
+
 export function useAsyncStatus<T extends string>(idleValue: T) {
   type Status = T | "error";
   const [status, setStatus] = useState<Status>(idleValue);

@@ -13,14 +13,16 @@ const webReviewModelSource = readFileSync(
 
 const desktopOrder = [...desktopReviewModelSource.matchAll(/\bitem\(\s*"([a-z_]+)"/g)]
   .map((match) => match[1])
-  .filter((id) => (
-    ["work_blocks", "sensitive_captures", "forecast_accuracy", "narrative"].includes(id)
+  .filter((id): id is string => (
+    id !== undefined
+    && ["work_blocks", "sensitive_captures", "forecast_accuracy", "narrative"].includes(id)
   ));
 const webOrder = [...new Set(
   [...webReviewModelSource.matchAll(/\bid:\s*"([a-z_]+)"/g)]
     .map((match) => match[1])
-    .filter((id) => (
-      ["work_blocks", "sensitive_captures", "forecast_accuracy", "narrative", "completion"].includes(id)
+    .filter((id): id is string => (
+      id !== undefined
+      && ["work_blocks", "sensitive_captures", "forecast_accuracy", "narrative", "completion"].includes(id)
     )),
 )];
 

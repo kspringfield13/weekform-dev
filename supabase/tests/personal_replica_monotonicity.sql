@@ -5,7 +5,7 @@ begin;
 set local role postgres;
 set local search_path = public, extensions;
 create extension if not exists pgtap;
-select plan(17);
+select plan(23);
 
 create or replace function pg_temp.synthetic_personal_replica(
   p_source_updated_at text,
@@ -82,6 +82,99 @@ select lives_ok(
   'the second Mac can register'
 );
 
+select throws_ok(
+  $$
+    select * from public.sync_personal_replica_batch(
+      '7b000000-0000-4000-8000-000000000001',
+      '7c000000-0000-4000-8000-000000000009',
+      '9999999999999999',
+      jsonb_set(
+        pg_temp.synthetic_personal_replica(
+          '2026-07-20T14:00:00Z', '2026-07-20T14:00:01Z', '9999999999999999'
+        ),
+        '{blocks,0,blockId}',
+        to_jsonb(repeat('x', 1048576))
+      )
+    )
+  $$,
+  'P0001', 'personal replica payload exceeds maximum bytes',
+  'the authenticated RPC rejects an oversized payload before hashing or iterating blocks'
+);
+
+set local role postgres;
+delete from public.personal_workload_replicas
+where user_id = '7a000000-0000-4000-8000-000000000001';
+delete from public.personal_replica_batches
+where user_id = '7a000000-0000-4000-8000-000000000001';
+set local role authenticated;
+set local "request.jwt.claim.sub" = '7a000000-0000-4000-8000-000000000001';
+
+select throws_ok(
+  $$
+    select * from public.sync_personal_replica_batch(
+      '7b000000-0000-4000-8000-000000000001',
+      '7c000000-0000-4000-8000-000000000010',
+      '1010101010101010',
+      (
+        select jsonb_set(
+          source.payload,
+          '{blocks}',
+          (
+            select jsonb_agg(source.payload -> 'blocks' -> 0 order by block_number)
+            from generate_series(1, 1001) block_number
+          )
+        )
+        from (
+          select pg_temp.synthetic_personal_replica(
+            '2026-07-20T14:00:00Z', '2026-07-20T14:00:01Z', '1010101010101010'
+          ) as payload
+        ) source
+      )
+    )
+  $$,
+  'P0001', 'personal replica exceeds maximum block count',
+  'the authenticated RPC rejects too many blocks before hashing or iterating them'
+);
+
+set local role postgres;
+delete from public.personal_workload_replicas
+where user_id = '7a000000-0000-4000-8000-000000000001';
+delete from public.personal_replica_batches
+where user_id = '7a000000-0000-4000-8000-000000000001';
+insert into public.personal_replica_batches(
+  user_id, batch_id, device_id, fingerprint, payload_digest
+) values (
+  '7a000000-0000-4000-8000-000000000001',
+  '7c000000-0000-4000-8000-000000000011',
+  '7b000000-0000-4000-8000-000000000001',
+  '1111111111111111',
+  null
+);
+set local role authenticated;
+set local "request.jwt.claim.sub" = '7a000000-0000-4000-8000-000000000001';
+
+select throws_ok(
+  $$
+    select * from public.sync_personal_replica_batch(
+      '7b000000-0000-4000-8000-000000000001',
+      '7c000000-0000-4000-8000-000000000011',
+      '1111111111111111',
+      pg_temp.synthetic_personal_replica(
+        '2026-07-20T14:00:00Z', '2026-07-20T14:00:01Z', '1111111111111111'
+      )
+    )
+  $$,
+  'P0001', 'legacy personal replica batch id requires a new batch id',
+  'a legacy receipt without a digest fails closed instead of acknowledging unverifiable content'
+);
+
+set local role postgres;
+delete from public.personal_replica_batches
+where user_id = '7a000000-0000-4000-8000-000000000001'
+  and batch_id = '7c000000-0000-4000-8000-000000000011';
+set local role authenticated;
+set local "request.jwt.claim.sub" = '7a000000-0000-4000-8000-000000000001';
+
 select lives_ok(
   $$
     select * from public.sync_personal_replica_batch(
@@ -94,6 +187,50 @@ select lives_ok(
     )
   $$,
   'the first device can create a replica'
+);
+
+select lives_ok(
+  $$
+    select * from public.sync_personal_replica_batch(
+      '7b000000-0000-4000-8000-000000000001',
+      '7c000000-0000-4000-8000-000000000001',
+      '1111111111111111',
+      pg_temp.synthetic_personal_replica(
+        '2026-07-20T15:00:00Z', '2026-07-20T15:00:01Z', 'aaaaaaaaaaaaaaaa'
+      )
+    )
+  $$,
+  'an exact same-batch replay is idempotent'
+);
+
+select throws_ok(
+  $$
+    select * from public.sync_personal_replica_batch(
+      '7b000000-0000-4000-8000-000000000001',
+      '7c000000-0000-4000-8000-000000000001',
+      '9999999999999999',
+      pg_temp.synthetic_personal_replica(
+        '2026-07-20T15:00:00Z', '2026-07-20T15:00:01Z', 'aaaaaaaaaaaaaaaa'
+      )
+    )
+  $$,
+  'P0001', 'conflicting personal replica batch id',
+  'a batch id cannot acknowledge a different fingerprint'
+);
+
+select throws_ok(
+  $$
+    select * from public.sync_personal_replica_batch(
+      '7b000000-0000-4000-8000-000000000001',
+      '7c000000-0000-4000-8000-000000000001',
+      '1111111111111111',
+      pg_temp.synthetic_personal_replica(
+        '2026-07-20T15:00:00Z', '2026-07-20T15:00:01Z', 'aaaaaaaaaaaaaaaa', 71
+      )
+    )
+  $$,
+  'P0001', 'conflicting personal replica batch id',
+  'a batch id cannot acknowledge divergent payload content under the same fingerprint'
 );
 
 select lives_ok(

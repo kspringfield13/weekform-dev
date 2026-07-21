@@ -404,6 +404,32 @@ export function markReplicaBatchAttempt(
     : item);
 }
 
+export const LEGACY_PERSONAL_REPLICA_BATCH_ERROR =
+  "legacy personal replica batch id requires a new batch id";
+
+const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Migration 010 cannot prove the payload behind a pre-digest server receipt.
+ * Only that exact compatibility response may rotate the retry key; all content,
+ * consent, and source-clock fields remain byte-for-byte the queued values.
+ */
+export function rekeyLegacyReplicaBatch(
+  queue: PersonalReplicaSyncQueueItemV1[],
+  batchId: string,
+  error: string,
+  makeId: () => string = () => crypto.randomUUID(),
+): PersonalReplicaSyncQueueItemV1[] | null {
+  if (error !== LEGACY_PERSONAL_REPLICA_BATCH_ERROR) return null;
+  const index = queue.findIndex((item) => item.batchId === batchId);
+  if (index < 0) return null;
+  const replacementId = makeId();
+  if (!UUID_V4_PATTERN.test(replacementId) || replacementId === batchId) return null;
+  return queue.map((item, itemIndex) => itemIndex === index
+    ? { ...item, batchId: replacementId, attempts: 0, lastError: null }
+    : item);
+}
+
 export function shouldFlushPersonalQueue(enabled: boolean, queuedBatches: number): boolean {
   return enabled && Number.isSafeInteger(queuedBatches) && queuedBatches > 0;
 }

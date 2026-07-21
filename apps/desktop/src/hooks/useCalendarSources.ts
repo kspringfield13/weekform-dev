@@ -6,6 +6,10 @@ import type {
   CalendarRange,
   CalendarTransferMode,
 } from "../../../../packages/integrations/src/calendar/calendarSync";
+import {
+  createConnectorResetBoundary,
+  type ConnectorResetBoundary,
+} from "./connectorResetBoundary";
 
 export interface CalendarConnectionStatus {
   provider: CalendarProviderId;
@@ -27,6 +31,9 @@ export interface CalendarSourcesController {
   connect: (provider: CalendarProviderId, range: CalendarRange) => Promise<void>;
   sync: (provider: CalendarProviderId, range: CalendarRange) => Promise<void>;
   disconnect: (provider: CalendarProviderId) => Promise<void>;
+  quiesceForReset: () => Promise<void>;
+  clearNativeStateForReset: () => Promise<boolean>;
+  resumeAfterReset: () => void;
 }
 
 const EMPTY_ACTIVITY: CalendarProviderActivity = {
@@ -86,6 +93,15 @@ export function useCalendarSources(input: {
   activityRef.current = activity;
   const onEventsRef = useRef(input.onEvents);
   onEventsRef.current = input.onEvents;
+  const calendarOperationBoundaryRef = useRef<ConnectorResetBoundary | null>(null);
+  if (calendarOperationBoundaryRef.current === null) {
+    calendarOperationBoundaryRef.current = createConnectorResetBoundary();
+  }
+  const calendarOperationBoundary = calendarOperationBoundaryRef.current;
+  const quiesceForReset = useCallback(
+    () => calendarOperationBoundary.quiesce(),
+    [calendarOperationBoundary],
+  );
 
   const setProviderActivity = useCallback((provider: CalendarProviderId, update: Partial<CalendarProviderActivity>) => {
     setActivity((current) => ({
@@ -95,23 +111,35 @@ export function useCalendarSources(input: {
   }, []);
 
   const refreshStatuses = useCallback(async () => {
-    if (!input.enabled) {
-      setStatuses([
-        { provider: "outlook", available: false, connected: false, detail: "Live sync is available in the macOS app." },
-        { provider: "google", available: false, connected: false, detail: "Live sync is available in the macOS app." },
-        { provider: "apple", available: false, connected: false, detail: "Live sync is available in the macOS app." },
-      ]);
-      return;
+    const operation = calendarOperationBoundary.begin();
+    if (!operation) return;
+    try {
+      if (!input.enabled) {
+        setStatuses([
+          { provider: "outlook", available: false, connected: false, detail: "Live sync is available in the macOS app." },
+          { provider: "google", available: false, connected: false, detail: "Live sync is available in the macOS app." },
+          { provider: "apple", available: false, connected: false, detail: "Live sync is available in the macOS app." },
+        ]);
+        return;
+      }
+      const next = await invoke<CalendarConnectionStatus[]>("calendar_source_statuses");
+      if (!operation.isCurrent()) return;
+      setStatuses(next);
+    } catch (error) {
+      if (!operation.isCurrent()) return;
+      throw error;
+    } finally {
+      operation.finish();
     }
-    const next = await invoke<CalendarConnectionStatus[]>("calendar_source_statuses");
-    setStatuses(next);
-  }, [input.enabled]);
+  }, [calendarOperationBoundary, input.enabled]);
 
   const applyNativeEvents = useCallback(async (
     command: "connect_calendar_source" | "sync_calendar_source",
     provider: CalendarProviderId,
     range: CalendarRange,
   ) => {
+    const operation = calendarOperationBoundary.begin();
+    if (!operation) return;
     setProviderActivity(provider, {
       phase: command === "connect_calendar_source" ? "connecting" : "syncing",
       message: null,
@@ -120,6 +148,7 @@ export function useCalendarSources(input: {
       const events = await invoke<CalendarEvent[]>(command, {
         request: { provider, start: range.start, endExclusive: range.end_exclusive },
       });
+      if (!operation.isCurrent()) return;
       onEventsRef.current(provider, range, "live_sync", events);
       if (command === "connect_calendar_source") input.onConnectionEvent(provider, "connect", true);
       setProviderActivity(provider, {
@@ -127,14 +156,20 @@ export function useCalendarSources(input: {
         message: null,
         last_synced_at: new Date().toISOString(),
       });
-      if (command === "connect_calendar_source") await refreshStatuses();
+      if (command === "connect_calendar_source") {
+        await refreshStatuses();
+        if (!operation.isCurrent()) return;
+      }
     } catch (error) {
+      if (!operation.isCurrent()) return;
       const message = error instanceof Error ? error.message : String(error);
       setProviderActivity(provider, { phase: "error", message });
       input.onConnectionEvent(provider, command === "connect_calendar_source" ? "connect" : "sync", false);
       throw error;
+    } finally {
+      operation.finish();
     }
-  }, [refreshStatuses, setProviderActivity]);
+  }, [calendarOperationBoundary, input, refreshStatuses, setProviderActivity]);
 
   const connect = useCallback((provider: CalendarProviderId, range: CalendarRange) => (
     applyNativeEvents("connect_calendar_source", provider, range)
@@ -145,18 +180,45 @@ export function useCalendarSources(input: {
   ), [applyNativeEvents]);
 
   const disconnect = useCallback(async (provider: CalendarProviderId) => {
+    const operation = calendarOperationBoundary.begin();
+    if (!operation) return;
     try {
       await invoke("disconnect_calendar_source", { provider });
+      if (!operation.isCurrent()) return;
       input.onDisconnected(provider);
       setProviderActivity(provider, { phase: "idle", message: null, last_synced_at: null });
       await refreshStatuses();
+      if (!operation.isCurrent()) return;
     } catch (error) {
+      if (!operation.isCurrent()) return;
       const message = error instanceof Error ? error.message : String(error);
       setProviderActivity(provider, { phase: "error", message });
       input.onConnectionEvent(provider, "disconnect", false);
       throw error;
+    } finally {
+      operation.finish();
     }
-  }, [input, refreshStatuses, setProviderActivity]);
+  }, [calendarOperationBoundary, input, refreshStatuses, setProviderActivity]);
+
+  const clearNativeStateForReset = useCallback(async (): Promise<boolean> => {
+    await calendarOperationBoundary.quiesce();
+    if (!input.enabled) return true;
+    const results = await Promise.all(
+      (["outlook", "google", "apple"] as CalendarProviderId[]).map((provider) => (
+        invoke("disconnect_calendar_source", { provider })
+          .then(() => true)
+          .catch(() => false)
+      )),
+    );
+    return results.every(Boolean);
+  }, [calendarOperationBoundary, input.enabled]);
+
+  const resumeAfterReset = useCallback(() => {
+    calendarOperationBoundary.reopen();
+    setStatuses([]);
+    setActivity(INITIAL_ACTIVITY);
+    queueMicrotask(() => void refreshStatuses().catch(() => undefined));
+  }, [calendarOperationBoundary, refreshStatuses]);
 
   useEffect(() => {
     void refreshStatuses().catch(() => undefined);
@@ -188,5 +250,15 @@ export function useCalendarSources(input: {
     };
   }, [connectedKey, input.enabled, sync]);
 
-  return { statuses, activity, refreshStatuses, connect, sync, disconnect };
+  return {
+    statuses,
+    activity,
+    refreshStatuses,
+    connect,
+    sync,
+    disconnect,
+    quiesceForReset,
+    clearNativeStateForReset,
+    resumeAfterReset,
+  };
 }

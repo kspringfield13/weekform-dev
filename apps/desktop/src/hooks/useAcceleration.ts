@@ -4,7 +4,7 @@ import type {
   AuditEvent,
   WorkBlock,
 } from "../../../../packages/domain/src/models";
-import { useAsyncStatus } from "./useAsyncStatus";
+import { isResetInProgress, useAsyncStatus, type ResetInProgressRef } from "./useAsyncStatus";
 import { aiCompleteJson, jsonSchemaFormat } from "../services/aiComplete";
 import { buildAccelerationPrompt, ACCELERATION_PROMPT_VERSION } from "../services/accelerationPrompt";
 import {
@@ -20,6 +20,7 @@ import type { PersistedAccelerationRecord } from "../services/localStore";
 
 interface UseAccelerationParams {
   isDemoMode: boolean;
+  resetInProgressRef: ResetInProgressRef;
   signals: AccelerationSignal[];
   blocks: WorkBlock[];
   currentWeekId: string;
@@ -42,6 +43,7 @@ interface UseAccelerationParams {
  */
 export function useAcceleration({
   isDemoMode,
+  resetInProgressRef,
   signals,
   blocks,
   currentWeekId,
@@ -54,6 +56,7 @@ export function useAcceleration({
     useAsyncStatus<"idle" | "generating">("idle");
 
   async function generateAccelerationPlays() {
+    if (isResetInProgress(resetInProgressRef)) return;
     if (isDemoMode) return;
     if (accelerationStatus === "generating") return;
 

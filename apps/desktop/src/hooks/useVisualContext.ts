@@ -7,7 +7,7 @@ import type {
   WorkMode,
   AIConfig,
 } from "../../../../packages/domain/src/models";
-import { useAsyncStatus } from "./useAsyncStatus";
+import { isResetInProgress, useAsyncStatus, type ResetInProgressRef } from "./useAsyncStatus";
 import { buildVisualContextPrompt, VISUAL_CONTEXT_PROMPT_VERSION } from "../services/visualContextPrompt";
 import { createAuditEvent } from "../lib/audit";
 import { aiAuditSource, generationProviderUnsupportedMessage, providerSupportsGeneration } from "../services/aiProviders";
@@ -36,6 +36,7 @@ interface NativeVisualContextResponse {
 
 interface UseVisualContextParams {
   isDemoMode: boolean;
+  resetInProgressRef: ResetInProgressRef;
   aiConfig: AIConfig | null;
   setVisualContextInsights: React.Dispatch<React.SetStateAction<VisualContextInsight[]>>;
   setAuditEvents: React.Dispatch<React.SetStateAction<AuditEvent[]>>;
@@ -43,6 +44,7 @@ interface UseVisualContextParams {
 
 export function useVisualContext({
   isDemoMode,
+  resetInProgressRef,
   aiConfig,
   setVisualContextInsights,
   setAuditEvents,
@@ -51,6 +53,7 @@ export function useVisualContext({
     useAsyncStatus<"idle" | "capturing">("idle");
 
   async function captureVisualContext(session: ActivitySession, captureCountToday: number) {
+    if (isResetInProgress(resetInProgressRef)) return;
     if (isDemoMode) return;
 
     const provider = aiConfig?.provider ?? "openai";

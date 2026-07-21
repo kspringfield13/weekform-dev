@@ -16,6 +16,7 @@ import {
   webexExchangeIdempotencyKey,
   type WebexTokenProjection,
 } from "../../../../../lib/webexTokenBroker";
+import { readBoundedRequestText } from "../../../../../lib/boundedRequestText";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,7 +42,7 @@ function brokerReadiness() {
 }
 
 function response(
-  body: Record<string, unknown>,
+  body: unknown,
   status: number,
   extraHeaders: Record<string, string> = {},
 ): NextResponse {
@@ -60,9 +61,12 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     return response({ error: "Send the Webex exchange as JSON." }, 415);
   }
-  const announcedLength = Number(request.headers.get("content-length") ?? 0);
-  if (Number.isFinite(announcedLength) && announcedLength > MAX_REQUEST_BYTES) {
+  const bounded = await readBoundedRequestText(request, MAX_REQUEST_BYTES);
+  if (bounded.status === "too_large") {
     return response({ error: "The Webex exchange request is too large." }, 413);
+  }
+  if (bounded.status === "invalid") {
+    return response({ error: "The Webex exchange request is invalid." }, 400);
   }
   const readiness = brokerReadiness();
   if (!readiness.ready) {
@@ -74,13 +78,9 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
   const { config, control } = readiness;
 
-  const raw = await request.text();
-  if (new TextEncoder().encode(raw).byteLength > MAX_REQUEST_BYTES) {
-    return response({ error: "The Webex exchange request is too large." }, 413);
-  }
   let payload: unknown;
   try {
-    payload = JSON.parse(raw);
+    payload = JSON.parse(bounded.text);
   } catch {
     return response({ error: "The Webex exchange request is invalid." }, 400);
   }
@@ -162,6 +162,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     }, 503);
   }
   return projected
-    ? NextResponse.json(projected, { headers: NO_STORE_HEADERS })
+    ? response(projected, 200)
     : response({ error: publicError }, 502);
 }

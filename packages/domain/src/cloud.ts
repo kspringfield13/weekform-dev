@@ -13,6 +13,30 @@
 // the mismatch is a feature: it makes an accidental object spread from a local model a type error
 // instead of a silent leak.
 
+export const MAX_SHARED_PROJECTS = 50;
+export const MAX_SHARED_PROJECT_NAME_LENGTH = 200;
+
+/**
+ * Return the Unicode-code-point length used by PostgreSQL `char_length`, or
+ * `null` when the string contains an unpaired UTF-16 surrogate that cannot be
+ * represented as valid PostgreSQL JSON text.
+ */
+export function sharedProjectNameCodePointLength(value: string): number | null {
+  const codePoints = Array.from(value);
+  return codePoints.some((character) => {
+    const codePoint = character.codePointAt(0);
+    return codePoint !== undefined && codePoint >= 0xd800 && codePoint <= 0xdfff;
+  }) ? null : codePoints.length;
+}
+
+/** Trim and cap a project label without ever splitting an astral character. */
+export function truncateSharedProjectName(value: string): string | null {
+  const trimmed = value.trim();
+  if (sharedProjectNameCodePointLength(trimmed) === null) return null;
+  const truncated = Array.from(trimmed).slice(0, MAX_SHARED_PROJECT_NAME_LENGTH).join("");
+  return truncated.length > 0 ? truncated : null;
+}
+
 /** How much structure the member reveals. Each level strictly adds to the previous one. */
 export type CloudShareLevel = "summary" | "categories" | "projects";
 

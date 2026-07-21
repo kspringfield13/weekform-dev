@@ -138,7 +138,7 @@ export function ForecastAgentPanel({
           </div>
         </div>
       )}
-      {error && <InlineError message={error} onRetry={onGenerate} />}
+      {error && <InlineError message={error} onRetry={aiAvailable ? onGenerate : undefined} />}
       {status === "generating" && !forecast ? (
         <div className="forecast-skeleton" role="status">
           <span className="sr-only">Generating forecast…</span>

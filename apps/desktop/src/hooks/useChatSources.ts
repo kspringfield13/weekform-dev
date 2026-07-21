@@ -10,6 +10,11 @@ import {
   type ChatRangeInput,
   type NormalizedChatRange,
 } from "../../../../packages/integrations/src/chat/chatSync";
+import {
+  createConnectorResetBoundary,
+  type ConnectorOperation,
+  type ConnectorResetBoundary,
+} from "./connectorResetBoundary";
 
 export interface ChatConnectionStatus {
   provider: ChatProviderId;
@@ -117,6 +122,9 @@ export interface ChatSourcesController {
   connect: (provider: ChatProviderId) => Promise<void>;
   sync: (provider: ChatProviderId) => Promise<void>;
   disconnect: (provider: ChatProviderId) => Promise<void>;
+  quiesceForReset: () => Promise<void>;
+  clearNativeStateForReset: () => Promise<boolean>;
+  resumeAfterReset: () => void;
 }
 
 type ConnectionAction = "configure" | "connect" | "sync" | "disconnect";
@@ -772,6 +780,15 @@ export function useChatSources(input: {
     google_chat: 0,
     webex: 0,
   });
+  const chatOperationBoundaryRef = useRef<ConnectorResetBoundary | null>(null);
+  if (chatOperationBoundaryRef.current === null) {
+    chatOperationBoundaryRef.current = createConnectorResetBoundary();
+  }
+  const chatOperationBoundary = chatOperationBoundaryRef.current;
+  const quiesceForReset = useCallback(
+    () => chatOperationBoundary.quiesce(),
+    [chatOperationBoundary],
+  );
 
   const rangeResult = useMemo(() => {
     try {
@@ -795,29 +812,36 @@ export function useChatSources(input: {
   }, []);
 
   const refreshStatuses = useCallback(async () => {
+    const operation = chatOperationBoundary.begin();
+    if (!operation) return;
     setRefreshingStatuses(true);
     setStatusError(null);
-    if (!input.enabled) {
-      setStatuses(unavailableStatuses(
-        "Live chat connections are available only in the macOS app; web and demo modes do not sync chat data.",
-      ));
-      setRefreshingStatuses(false);
-      return;
-    }
     try {
+      if (!input.enabled) {
+        setStatuses(unavailableStatuses(
+          "Live chat connections are available only in the macOS app; web and demo modes do not sync chat data.",
+        ));
+        return;
+      }
       const result = await invoke<unknown>("chat_source_statuses");
+      if (!operation.isCurrent()) return;
       setStatuses(normalizeChatStatuses(result));
     } catch (error) {
+      if (!operation.isCurrent()) return;
       const message = safeNativeError(error, "status");
       setStatuses((current) => degradeChatStatusesAfterRefreshFailure(current, message));
       setStatusError(message);
       throw error;
     } finally {
-      setRefreshingStatuses(false);
+      if (operation.isCurrent()) setRefreshingStatuses(false);
+      operation.finish();
     }
-  }, [input.enabled]);
+  }, [chatOperationBoundary, input.enabled]);
 
-  const transfer = useCallback(async (provider: ChatProviderId) => {
+  const transferWithOperation = useCallback(async (
+    provider: ChatProviderId,
+    operation: ConnectorOperation,
+  ): Promise<Exclude<ChatSyncOperationalState, "blocked">> => {
     const range = rangeResult.range;
     if (!range) throw new Error(rangeResult.error ?? "Choose a valid chat transfer range.");
     const remainingWaitSeconds = Math.ceil(
@@ -836,6 +860,7 @@ export function useChatSources(input: {
       const nativeResult = await invoke<unknown>("sync_chat_source", {
         request: { provider, start: range.start, endExclusive: range.end_exclusive },
       });
+      if (!operation.isCurrent()) return "in_progress";
       const page = normalizeSyncResponse(nativeResult, provider, range);
       retryUntilRef.current[provider] = page.receipt.retry_after_seconds === null
         ? 0
@@ -871,6 +896,7 @@ export function useChatSources(input: {
       }
       return operationalState;
     } catch (error) {
+      if (!operation.isCurrent()) return "in_progress";
       if (error instanceof Error && error.message === "CHAT_SYNC_BLOCKED_RECEIPT") {
         throw error;
       }
@@ -883,12 +909,28 @@ export function useChatSources(input: {
     }
   }, [rangeResult, setProviderActivity]);
 
+  const transfer = useCallback(async (provider: ChatProviderId) => {
+    const operation = chatOperationBoundary.begin();
+    if (!operation) return;
+    try {
+      await transferWithOperation(provider, operation);
+    } finally {
+      operation.finish();
+    }
+  }, [chatOperationBoundary, transferWithOperation]);
+
   const connect = useCallback(async (provider: ChatProviderId) => {
+    const operation = chatOperationBoundary.begin();
+    if (!operation) return;
     setProviderActivity(provider, { phase: "authorizing", message: null, receipt: null });
     try {
       await authorizeThenSyncChatSource({
-        authorize: () => invoke<void>("connect_chat_source", { provider }),
+        authorize: async () => {
+          await invoke<void>("connect_chat_source", { provider });
+          if (!operation.isCurrent()) throw new Error("CONNECTOR_RESET_INTERRUPTED");
+        },
         onAuthorized: () => {
+          if (!operation.isCurrent()) return;
           callbacksRef.current.onConnectionEvent?.(provider, "connect", true);
           setStatuses((current) => current.map((status) => (
             status.provider === provider
@@ -906,9 +948,11 @@ export function useChatSources(input: {
           // cannot retroactively make the connection or its audit fail.
           void refreshStatuses().catch(() => undefined);
         },
-        initialSync: () => transfer(provider),
+        initialSync: () => transferWithOperation(provider, operation),
       });
+      if (!operation.isCurrent()) return;
     } catch (error) {
+      if (!operation.isCurrent()) return;
       setProviderActivity(provider, {
         phase: "error",
         message: safeNativeError(error, "connect"),
@@ -918,46 +962,64 @@ export function useChatSources(input: {
       // Refresh the display independently, while retaining the failed action.
       void refreshStatuses().catch(() => undefined);
       throw error;
+    } finally {
+      operation.finish();
     }
-  }, [refreshStatuses, setProviderActivity, transfer]);
+  }, [chatOperationBoundary, refreshStatuses, setProviderActivity, transferWithOperation]);
 
   const configureProvider = useCallback(async (
     configuration: ChatProviderConfiguration,
   ): Promise<ChatConnectionStatus | null> => {
+    const operation = chatOperationBoundary.begin();
+    if (!operation) return null;
     try {
-      await invoke<void>("configure_chat_provider", { request: configuration });
-      callbacksRef.current.onConnectionEvent?.(configuration.provider, "configure", true);
-    } catch (error) {
-      callbacksRef.current.onConnectionEvent?.(configuration.provider, "configure", false);
-      throw error;
-    }
+      try {
+        await invoke<void>("configure_chat_provider", { request: configuration });
+        if (!operation.isCurrent()) return null;
+        callbacksRef.current.onConnectionEvent?.(configuration.provider, "configure", true);
+      } catch (error) {
+        if (!operation.isCurrent()) return null;
+        callbacksRef.current.onConnectionEvent?.(configuration.provider, "configure", false);
+        throw error;
+      }
 
-    // Configuration is already durably saved. Readiness is a secondary check:
-    // Webex can truthfully remain locked behind the broker security review.
-    try {
-      const result = await invoke<unknown>("chat_source_statuses");
-      const refreshed = normalizeChatStatuses(result);
-      setStatuses(refreshed);
-      setStatusError(null);
-      return refreshed.find((status) => status.provider === configuration.provider) ?? null;
-    } catch (error) {
-      const message = safeNativeError(error, "status");
-      setStatuses((current) => degradeChatStatusesAfterRefreshFailure(current, message));
-      setStatusError(message);
-      return null;
+      // Configuration is already durably saved. Readiness is a secondary check:
+      // Webex can truthfully remain locked behind the broker security review.
+      try {
+        const result = await invoke<unknown>("chat_source_statuses");
+        if (!operation.isCurrent()) return null;
+        const refreshed = normalizeChatStatuses(result);
+        setStatuses(refreshed);
+        setStatusError(null);
+        return refreshed.find((status) => status.provider === configuration.provider) ?? null;
+      } catch (error) {
+        if (!operation.isCurrent()) return null;
+        const message = safeNativeError(error, "status");
+        setStatuses((current) => degradeChatStatusesAfterRefreshFailure(current, message));
+        setStatusError(message);
+        return null;
+      }
+    } finally {
+      operation.finish();
     }
-  }, []);
+  }, [chatOperationBoundary]);
 
   const sync = useCallback(async (provider: ChatProviderId): Promise<void> => {
     await transfer(provider);
   }, [transfer]);
 
   const disconnect = useCallback(async (provider: ChatProviderId) => {
+    const operation = chatOperationBoundary.begin();
+    if (!operation) return;
     setProviderActivity(provider, { phase: "disconnecting", message: null });
     try {
       await disconnectThenRefreshChatSource({
-        disconnect: () => invoke("disconnect_chat_source", { provider }),
+        disconnect: async () => {
+          await invoke("disconnect_chat_source", { provider });
+          if (!operation.isCurrent()) throw new Error("CONNECTOR_RESET_INTERRUPTED");
+        },
         onDisconnected: () => {
+          if (!operation.isCurrent()) return;
           runAccumulatorsRef.current[provider] = null;
           retryUntilRef.current[provider] = 0;
           setStatuses((current) => markChatStatusDisconnected(current, provider));
@@ -972,15 +1034,38 @@ export function useChatSources(input: {
         },
         refresh: refreshStatuses,
       });
+      if (!operation.isCurrent()) return;
     } catch (error) {
+      if (!operation.isCurrent()) return;
       setProviderActivity(provider, {
         phase: "error",
         message: safeNativeError(error, "disconnect"),
       });
       callbacksRef.current.onConnectionEvent?.(provider, "disconnect", false);
       throw error;
+    } finally {
+      operation.finish();
     }
-  }, [refreshStatuses, setProviderActivity]);
+  }, [chatOperationBoundary, refreshStatuses, setProviderActivity]);
+
+  const clearNativeStateForReset = useCallback(async (): Promise<boolean> => {
+    await chatOperationBoundary.quiesce();
+    if (!input.enabled) return true;
+    return invoke("clear_chat_source_storage")
+      .then(() => true)
+      .catch(() => false);
+  }, [chatOperationBoundary, input.enabled]);
+
+  const resumeAfterReset = useCallback(() => {
+    chatOperationBoundary.reopen();
+    runAccumulatorsRef.current = { slack: null, google_chat: null, webex: null };
+    retryUntilRef.current = { slack: 0, google_chat: 0, webex: 0 };
+    setStatuses(unavailableStatuses("Checking native connector availability…"));
+    setActivity(initialActivity());
+    setStatusError(null);
+    setRefreshingStatuses(false);
+    queueMicrotask(() => void refreshStatuses().catch(() => undefined));
+  }, [chatOperationBoundary, refreshStatuses]);
 
   const updateRange = useCallback((field: keyof ChatRangeInput, value: string) => {
     setRangeInput((current) => ({ ...current, [field]: value }));
@@ -1004,5 +1089,8 @@ export function useChatSources(input: {
     connect,
     sync,
     disconnect,
+    quiesceForReset,
+    clearNativeStateForReset,
+    resumeAfterReset,
   };
 }

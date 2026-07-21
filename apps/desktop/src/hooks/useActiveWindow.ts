@@ -1,15 +1,24 @@
 import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import type { ActiveWindowSample } from "../../../../packages/domain/src/models";
+import { shouldAcceptCaptureTimestamp } from "../services/captureDeliveryGuard";
 
 interface UseActiveWindowParams {
   isDemoMode: boolean;
+  captureAcceptingRef: React.MutableRefObject<boolean>;
+  captureAcceptAfterMsRef: React.MutableRefObject<number>;
   setActiveWindowSamples: React.Dispatch<React.SetStateAction<ActiveWindowSample[]>>;
   setCaptureError?: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 export function useActiveWindow(params: UseActiveWindowParams) {
-  const { isDemoMode, setActiveWindowSamples, setCaptureError } = params;
+  const {
+    captureAcceptingRef,
+    captureAcceptAfterMsRef,
+    isDemoMode,
+    setActiveWindowSamples,
+    setCaptureError,
+  } = params;
 
   useEffect(() => {
     if (isDemoMode) return;
@@ -18,6 +27,13 @@ export function useActiveWindow(params: UseActiveWindowParams) {
 
     void listen<any>("clear-capacity:active-window-sample", (event) => {
       const payload = event.payload;
+
+      // Tauri event delivery is queued onto the Webview. A sample emitted before
+      // the native pause barrier can therefore arrive after pause/reset has
+      // completed. The renderer gate is closed synchronously before either
+      // operation awaits native work, so those late deliveries cannot repopulate
+      // private in-memory activity.
+      if (!captureAcceptingRef.current) return;
 
       if (payload.capture_error) {
         setCaptureError?.(String(payload.capture_error).slice(0, 240));
@@ -37,10 +53,14 @@ export function useActiveWindow(params: UseActiveWindowParams) {
       // one validated timestamp. Individual samples are deliberately not copied
       // into the unencrypted audit Store; capture policy/pause events remain the
       // inspectable audit boundary and raw rows stay in the encrypted journal.
+      if (!shouldAcceptCaptureTimestamp(
+        {
+          accepting: captureAcceptingRef.current,
+          acceptAfterMs: captureAcceptAfterMsRef.current,
+        },
+        payload.timestamp_ms,
+      )) return;
       const sampleDate = new Date(payload.timestamp_ms);
-      if (!Number.isFinite(sampleDate.getTime())) {
-        return;
-      }
       const timestamp = sampleDate.toISOString();
       setCaptureError?.(null);
 
@@ -75,5 +95,5 @@ export function useActiveWindow(params: UseActiveWindowParams) {
       cancelled = true;
       unlisten?.();
     };
-  }, [isDemoMode, setActiveWindowSamples, setCaptureError]);
+  }, [captureAcceptAfterMsRef, captureAcceptingRef, isDemoMode, setActiveWindowSamples, setCaptureError]);
 }

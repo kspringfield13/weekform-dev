@@ -211,6 +211,43 @@ test("projects output includes only allowed names from verified blocks", () => {
   assert.equal(JSON.stringify(snapshot).includes(SENTINEL_SECRET_PROJECT), false);
 });
 
+test("project output cannot exceed the server's fifty-entry payload bound", () => {
+  const projectNames = Array.from({ length: 55 }, (_, index) => `Allowed project ${index + 1}`);
+  const blocks = projectNames.map((projectName, index) =>
+    makeBlock({
+      work_block_id: `wb-project-${index + 1}`,
+      project_name: projectName,
+      estimated_capacity_pct: 1,
+      user_verified: true
+    })
+  );
+  const result = buildOrFail(
+    makePolicy({ shareLevel: "projects", allowedProjectNames: projectNames }),
+    blocks
+  );
+
+  assert.equal(result.snapshot.projectAllocation?.length, 50);
+  assert.equal(
+    result.snapshot.projectAllocation?.some((entry) => entry.label === "Allowed project 51"),
+    false
+  );
+});
+
+test("project output accepts the server's two-hundred-code-point astral boundary", () => {
+  const boundaryName = `${"a".repeat(199)}😀`;
+  const result = buildOrFail(
+    makePolicy({ shareLevel: "projects", allowedProjectNames: [boundaryName] }),
+    [makeBlock({
+      work_block_id: "wb-project-astral-boundary",
+      project_name: boundaryName,
+      estimated_capacity_pct: 7,
+      user_verified: true,
+    })],
+  );
+
+  assert.deepEqual(result.snapshot.projectAllocation, [{ label: boundaryName, value: 7 }]);
+});
+
 // Cases 4–6: sensitive sentinels can never appear in the serialized payload, at the widest level.
 test("window-title, evidence, and note sentinels never appear in serialized output", () => {
   const result = buildOrFail(

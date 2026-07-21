@@ -1210,6 +1210,45 @@ h3 {
   background: var(--surface-elevated);
 }
 
+.ai-connection-notice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  background: var(--surface-elevated);
+}
+
+.ai-connection-notice > svg {
+  color: var(--text-subtle);
+}
+
+.ai-connection-notice > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ai-connection-notice strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.ai-connection-notice span {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.ai-connection-notice .secondary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+}
+
 .header-actions {
   display: flex;
   align-items: flex-start;
@@ -14017,6 +14056,14 @@ html[data-theme="dark"] .settings-tabs button.is-active {
   padding-bottom: 32px;
 }
 
+.cloud-account-reset-boundary {
+  min-inline-size: 0;
+  width: 100%;
+  margin: 0;
+  padding-inline: 0;
+  border: 0;
+}
+
 .account-sharing-heading {
   align-items: start;
   margin: 0;
@@ -17884,4 +17931,29 @@ html[data-theme="dark"] .capacity-signal-field-glow {
 @media (max-width: 520px) {
   .startup-recovery { padding: 18px; }
   .startup-recovery-card { padding: 24px; }
+}
+
+/* Narrow Settings date-range contract */
+@media (max-width: 420px) {
+  .calendar-range {
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .calendar-range label {
+    min-width: 0;
+  }
+
+  .calendar-range input {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .calendar-range > .icon-button {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
 }

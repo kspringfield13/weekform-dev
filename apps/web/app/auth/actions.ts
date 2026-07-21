@@ -14,12 +14,25 @@ import {
   buildOAuthCallbackUrl,
   parseOAuthProvider,
 } from "@/lib/oauthAuth";
+import {
+  normalizePasswordResetEmail,
+  validateReplacementPassword,
+} from "@/lib/passwordRecovery";
+import { resolveTrustedWebOrigin } from "@/lib/teamInviteOrigin";
 
 const NOT_CONFIGURED =
   "This deployment has no Supabase project configured yet, so accounts are unavailable. See apps/web/README.md.";
 
 function encodeMessage(message: string): string {
   return encodeURIComponent(message);
+}
+
+async function trustedRequestOrigin(): Promise<string> {
+  return resolveTrustedWebOrigin(await headers(), {
+    nodeEnv: process.env.NODE_ENV,
+    vercelEnv: process.env.VERCEL_ENV,
+    vercelUrl: process.env.VERCEL_URL,
+  });
 }
 
 export async function login(formData: FormData): Promise<void> {
@@ -41,7 +54,7 @@ export async function login(formData: FormData): Promise<void> {
 
   if (error) {
     redirect(
-      `/login?error=${encodeMessage(error.message)}&next=${encodeURIComponent(next)}`,
+      `/login?error=${encodeMessage("The email or password was not accepted.")}&next=${encodeURIComponent(next)}`,
     );
   }
 
@@ -66,16 +79,9 @@ export async function loginWithMagicLink(formData: FormData): Promise<void> {
     );
   }
 
-  const requestOrigin = (await headers()).get("origin");
-  if (!requestOrigin) {
-    redirect(
-      `/login?error=${encodeMessage("We could not start secure sign-in. Please try again.")}&next=${encodeURIComponent(next)}`,
-    );
-  }
-
   let redirectTo: string;
   try {
-    redirectTo = buildEmailCallbackUrl(requestOrigin, next);
+    redirectTo = buildEmailCallbackUrl(await trustedRequestOrigin(), next);
   } catch {
     redirect(
       `/login?error=${encodeMessage("We could not start secure sign-in. Please try again.")}&next=${encodeURIComponent(next)}`,
@@ -92,7 +98,7 @@ export async function loginWithMagicLink(formData: FormData): Promise<void> {
 
   if (error) {
     redirect(
-      `/login?error=${encodeMessage(error.message)}&next=${encodeURIComponent(next)}`,
+      `/login?error=${encodeMessage("The sign-in email could not be sent. Try again shortly.")}&next=${encodeURIComponent(next)}`,
     );
   }
 
@@ -118,16 +124,9 @@ export async function loginWithOAuth(formData: FormData): Promise<void> {
     );
   }
 
-  const requestOrigin = (await headers()).get("origin");
-  if (!requestOrigin) {
-    redirect(
-      `/login?error=${encodeMessage("We could not start secure sign-in. Please try again.")}&next=${encodeURIComponent(next)}`,
-    );
-  }
-
   let redirectTo: string;
   try {
-    redirectTo = buildOAuthCallbackUrl(requestOrigin, next);
+    redirectTo = buildOAuthCallbackUrl(await trustedRequestOrigin(), next);
   } catch {
     redirect(
       `/login?error=${encodeMessage("We could not start secure sign-in. Please try again.")}&next=${encodeURIComponent(next)}`,
@@ -141,7 +140,7 @@ export async function loginWithOAuth(formData: FormData): Promise<void> {
 
   if (error || !data.url) {
     redirect(
-      `/login?error=${encodeMessage(error?.message ?? "The sign-in provider did not return a redirect URL.")}&next=${encodeURIComponent(next)}`,
+      `/login?error=${encodeMessage("The sign-in provider could not be opened. Try again shortly.")}&next=${encodeURIComponent(next)}`,
     );
   }
 
@@ -179,7 +178,7 @@ export async function signup(formData: FormData): Promise<void> {
 
   if (error) {
     redirect(
-      `/signup?error=${encodeMessage(error.message)}&next=${encodeURIComponent(next)}`,
+      `/signup?error=${encodeMessage("The account could not be created. Try signing in or use another email.")}&next=${encodeURIComponent(next)}`,
     );
   }
 
@@ -194,6 +193,55 @@ export async function signup(formData: FormData): Promise<void> {
 
   revalidatePath("/", "layout");
   redirect(next);
+}
+
+export async function requestPasswordReset(formData: FormData): Promise<void> {
+  const supabase = await createClient();
+  if (!supabase) {
+    redirect(`/forgot-password?error=${encodeMessage(NOT_CONFIGURED)}`);
+  }
+  const email = normalizePasswordResetEmail(formData.get("email"));
+  if (!email) {
+    redirect(`/forgot-password?error=${encodeMessage("Enter your account email.")}`);
+  }
+
+  const callback = new URL("/auth/callback", await trustedRequestOrigin());
+  callback.searchParams.set("next", "/reset-password");
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: callback.toString(),
+  });
+  if (error) {
+    redirect(`/forgot-password?error=${encodeMessage("A reset email could not be sent. Try again shortly.")}`);
+  }
+
+  // Deliberately identical whether or not an account exists.
+  redirect(`/forgot-password?notice=${encodeMessage("If that email belongs to an account, a password-reset link is on its way.")}`);
+}
+
+export async function updatePassword(formData: FormData): Promise<void> {
+  const supabase = await createClient();
+  if (!supabase) {
+    redirect(`/reset-password?error=${encodeMessage(NOT_CONFIGURED)}`);
+  }
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    redirect(`/forgot-password?error=${encodeMessage("That reset session expired. Request a new link.")}`);
+  }
+  const validation = validateReplacementPassword(
+    formData.get("password"),
+    formData.get("password_confirmation"),
+  );
+  if (!validation.ok) {
+    redirect(`/reset-password?error=${encodeMessage(validation.message)}`);
+  }
+
+  const { error } = await supabase.auth.updateUser({ password: validation.password });
+  if (error) {
+    redirect(`/reset-password?error=${encodeMessage("Your password could not be updated. Request a new link and try again.")}`);
+  }
+  await supabase.auth.signOut();
+  revalidatePath("/", "layout");
+  redirect(`/login?notice=${encodeMessage("Password updated. Sign in with your new password.")}`);
 }
 
 export async function signOut(): Promise<void> {

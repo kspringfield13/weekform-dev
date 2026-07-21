@@ -9,6 +9,7 @@ use std::{
     env,
     io::{Read, Write},
     net::TcpListener,
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
@@ -23,6 +24,20 @@ const OAUTH_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_RANGE_DAYS: i64 = 90;
 const MAX_SURFACES_PER_SYNC: usize = 12;
 const MAX_MESSAGE_PAGES_PER_SURFACE: usize = 3;
+
+static OAUTH_CALLBACK_GENERATION: AtomicU64 = AtomicU64::new(1);
+
+fn current_oauth_callback_generation() -> u64 {
+    OAUTH_CALLBACK_GENERATION.load(Ordering::Acquire)
+}
+
+fn oauth_callback_is_current(generation: u64) -> bool {
+    current_oauth_callback_generation() == generation
+}
+
+pub(crate) fn cancel_pending_oauth_callback() {
+    OAUTH_CALLBACK_GENERATION.fetch_add(1, Ordering::AcqRel);
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -1331,12 +1346,16 @@ fn wait_for_callback(
     listener: TcpListener,
     expected_state: &str,
     expected_path: &str,
+    callback_generation: u64,
 ) -> Result<Zeroizing<String>, String> {
     listener
         .set_nonblocking(true)
         .map_err(|_| "Could not prepare chat sign-in.".to_string())?;
     let deadline = Instant::now() + OAUTH_TIMEOUT;
     loop {
+        if !oauth_callback_is_current(callback_generation) {
+            return Err("Chat sign-in was cancelled by Reset Local Data.".to_string());
+        }
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
@@ -1496,6 +1515,10 @@ fn provider_authorization_parameters(provider: ChatProvider) -> (&'static str, &
 }
 
 async fn connect_oauth(provider: ChatProvider) -> Result<(), String> {
+    // Reset only cancels the loopback callback wait. If authorization already
+    // returned, the renderer operation barrier continues to own the provider
+    // exchange and waits for it before connector credentials are cleared.
+    let callback_generation = current_oauth_callback_generation();
     let config = provider_config(provider)?;
     let (listener, redirect_uri) = callback_listener(provider, &config)?;
     let verifier = Zeroizing::new(random_urlsafe(64));
@@ -1531,7 +1554,12 @@ async fn connect_oauth(provider: ChatProvider) -> Result<(), String> {
         .map_err(|_| "Could not open the browser for chat sign-in.".to_string())?;
     let state_for_wait = state.clone();
     let code = tauri::async_runtime::spawn_blocking(move || {
-        wait_for_callback(listener, &state_for_wait, "/chat-auth/callback")
+        wait_for_callback(
+            listener,
+            &state_for_wait,
+            "/chat-auth/callback",
+            callback_generation,
+        )
     })
     .await
     .map_err(|_| "The chat sign-in listener stopped unexpectedly.".to_string())??;
@@ -2875,21 +2903,48 @@ fn chat_reset_key_order() -> [&'static str; 10] {
 #[cfg(test)]
 mod tests {
     use super::{
-        authoritative_receipt_coverage, callback_decision, chat_reset_key_order,
-        collection_authority_coverage, disconnect_key_order, exclusive_provider_lower_bound,
-        keyed_digest, normalize_google_chat_client_id, normalize_google_messages,
-        normalize_slack_client_id, normalize_slack_messages, normalize_webex_client_id,
-        normalize_webex_messages, participant_bucket, project_google_messages,
-        project_slack_messages_with_count, project_webex_messages,
-        provider_authorization_parameters, provider_readiness, receipt_semantics,
-        retain_requested_events, slack_desktop_callback_uri, slack_history_next_cursor,
-        slack_rate_limit_model_eligible, take_secret_value, validate_provider_config,
-        validate_redirect_uri, webex_page_reached_start, CallbackDecision, ChatConnectionStatus,
-        ChatProvider, ChatRangeRequest, ChatReadinessCode, ProviderFetch, StoredChatCursor,
-        StoredChatToken, SyncCoverage,
+        authoritative_receipt_coverage, callback_decision, cancel_pending_oauth_callback,
+        chat_reset_key_order, collection_authority_coverage, current_oauth_callback_generation,
+        disconnect_key_order, exclusive_provider_lower_bound, keyed_digest,
+        normalize_google_chat_client_id, normalize_google_messages, normalize_slack_client_id,
+        normalize_slack_messages, normalize_webex_client_id, normalize_webex_messages,
+        participant_bucket, project_google_messages, project_slack_messages_with_count,
+        project_webex_messages, provider_authorization_parameters, provider_readiness,
+        receipt_semantics, retain_requested_events, slack_desktop_callback_uri,
+        slack_history_next_cursor, slack_rate_limit_model_eligible, take_secret_value,
+        validate_provider_config, validate_redirect_uri, wait_for_callback,
+        webex_page_reached_start, CallbackDecision, ChatConnectionStatus, ChatProvider,
+        ChatRangeRequest, ChatReadinessCode, ProviderFetch, StoredChatCursor, StoredChatToken,
+        SyncCoverage,
     };
     use serde_json::json;
+    use std::{net::TcpListener, sync::mpsc, thread, time::Duration};
     use time::{format_description::well_known::Rfc3339, OffsetDateTime};
+
+    #[test]
+    fn reset_generation_releases_pending_chat_callback_wait() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind synthetic callback");
+        let generation = current_oauth_callback_generation();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        thread::spawn(move || {
+            finished_tx
+                .send(wait_for_callback(
+                    listener,
+                    "synthetic-state",
+                    "/chat-auth/callback",
+                    generation,
+                ))
+                .expect("report callback result");
+        });
+
+        thread::sleep(Duration::from_millis(20));
+        cancel_pending_oauth_callback();
+        let error = finished_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("callback wait exits promptly")
+            .expect_err("reset cancels callback wait");
+        assert!(error.contains("cancelled by Reset Local Data"));
+    }
 
     #[test]
     fn provider_contract_accepts_only_slack_google_chat_and_webex() {

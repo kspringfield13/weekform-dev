@@ -3,6 +3,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safeNextPath";
+import { resolveTrustedWebOrigin } from "@/lib/teamInviteOrigin";
 
 /**
  * Auth callback for Supabase links.
@@ -11,10 +12,15 @@ import { safeNextPath } from "@/lib/safeNextPath";
  * - PKCE / OAuth style callbacks (`?code=...`) via exchangeCodeForSession
  * - Email confirmation links (`?token_hash=...&type=...`) via verifyOtp
  *
- * On failure, forwards a human-readable reason to /auth/error.
+ * On failure, forwards a generic recovery-safe reason to /auth/error.
  */
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
+  const origin = resolveTrustedWebOrigin(request.headers, {
+    nodeEnv: process.env.NODE_ENV,
+    vercelEnv: process.env.VERCEL_ENV,
+    vercelUrl: process.env.VERCEL_URL,
+  });
   const code = searchParams.get("code");
   const tokenHash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
@@ -37,7 +43,7 @@ export async function GET(request: Request) {
       return NextResponse.redirect(`${origin}${next}`);
     }
     return NextResponse.redirect(
-      `${origin}/auth/error?reason=${encodeURIComponent(error.message)}`,
+      `${origin}/auth/error?reason=${encodeURIComponent("That sign-in link could not be verified. Request a new link and try again.")}`,
     );
   }
 
@@ -50,7 +56,7 @@ export async function GET(request: Request) {
       return NextResponse.redirect(`${origin}${next}`);
     }
     return NextResponse.redirect(
-      `${origin}/auth/error?reason=${encodeURIComponent(error.message)}`,
+      `${origin}/auth/error?reason=${encodeURIComponent("That sign-in link could not be verified. Request a new link and try again.")}`,
     );
   }
 

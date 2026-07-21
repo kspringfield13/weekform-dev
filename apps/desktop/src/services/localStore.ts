@@ -46,6 +46,7 @@ const AI_CREDENTIAL_BINDING_PATTERN =
 
 let currentAISecretBinding: string | null = null;
 let lastAISecretFingerprint: string | null | undefined;
+let knownAISecretBindings = new Set<string>();
 
 export type AppTheme = "light" | "dark";
 
@@ -374,6 +375,50 @@ export function aiProviderKeychainAccount(binding: string): string {
   return `${AI_PROVIDER_KEYCHAIN_ACCOUNT_PREFIX}${normalizedBinding}`;
 }
 
+/**
+ * Parse the non-secret registry of every binding-addressed credential this
+ * installation may still own. Superseded bindings remain registered even after
+ * best-effort retirement so Reset can retry deletion if that retirement failed.
+ */
+export function collectAIProviderCredentialBindings(
+  value: unknown,
+  ...additionalBindings: Array<string | null | undefined>
+): string[] {
+  const result: string[] = [];
+  const candidates = Array.isArray(value) ? value : [];
+  for (const candidate of [...candidates, ...additionalBindings]) {
+    const binding = parseAICredentialBinding(candidate);
+    if (binding && !result.includes(binding)) result.push(binding);
+  }
+  return result;
+}
+
+/**
+ * Add a proposed Keychain account to the durable reset registry without
+ * changing the Store generation that still owns the active credential. This
+ * preregistration is intentionally limited to one non-secret field: until the
+ * new Keychain entry and pointer commit succeed, the previous provider/model
+ * metadata and credential binding must remain an internally consistent unit.
+ */
+export function appendAIProviderCredentialBindingToStoreState(
+  previousStoreState: unknown,
+  binding: string,
+): Record<string, unknown> {
+  const normalizedBinding = parseAICredentialBinding(binding);
+  if (!normalizedBinding) {
+    throw new Error("The AI provider credential binding is invalid.");
+  }
+  const previous = isRecord(previousStoreState) ? previousStoreState : {};
+  return {
+    ...previous,
+    aiCredentialBindings: collectAIProviderCredentialBindings(
+      previous.aiCredentialBindings,
+      parseAICredentialBinding(previous.aiCredentialBinding),
+      normalizedBinding,
+    ),
+  };
+}
+
 export interface AIProviderCredentialKeychain {
   get(account: string): Promise<string | null>;
   set(account: string, value: string): Promise<void>;
@@ -384,6 +429,35 @@ export interface RollbackCapableStore {
   set(key: string, value: unknown): Promise<unknown>;
   delete(key: string): Promise<unknown>;
   save(): Promise<unknown>;
+}
+
+export async function clearOwnedAIProviderCredentials(
+  keychain: AIProviderCredentialKeychain,
+  bindings: unknown,
+): Promise<void> {
+  const accounts = new Set<string>([AI_PROVIDER_LEGACY_KEYCHAIN_ACCOUNT]);
+  for (const binding of collectAIProviderCredentialBindings(bindings)) {
+    accounts.add(aiProviderKeychainAccount(binding));
+  }
+  const failures: unknown[] = [];
+  for (const account of accounts) {
+    try {
+      await keychain.delete(account);
+      const remaining = await keychain.get(account);
+      if (remaining !== null) {
+        throw new Error(`A Weekform AI provider credential remains in macOS Keychain (${account}).`);
+      }
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  if (failures.length > 0) {
+    const error = new Error(
+      `Weekform could not verify removal of every owned AI provider credential (${failures.length} failed operation${failures.length === 1 ? "" : "s"}).`,
+    );
+    Object.assign(error, { failures });
+    throw error;
+  }
 }
 
 /**
@@ -429,6 +503,8 @@ type AIProviderCredentialRotationInput = {
   apiKey: string;
   previousBinding: string | null;
   keychain: AIProviderCredentialKeychain;
+  /** Durably register a proposed account before any secret is written to it. */
+  registerBinding?: (binding: string) => Promise<void>;
   commitBinding: (binding: string | null) => Promise<void>;
   createBinding?: () => string;
   cleanupLegacySingleton?: boolean;
@@ -486,6 +562,7 @@ export async function commitAIProviderCredentialRotation(
   if (!binding || binding === previousBinding) {
     throw new Error("Weekform could not allocate a unique AI credential binding.");
   }
+  await input.registerBinding?.(binding);
   const account = aiProviderKeychainAccount(binding);
   await input.keychain.set(account, encodeAIProviderSecretEnvelope(apiKey, binding));
 
@@ -585,6 +662,7 @@ async function hydrateAIProviderSecret(
   config: AIConfig | null,
   persistedBinding: unknown,
   commitMigratedBinding?: (binding: string | null) => Promise<void>,
+  registerMigratedBinding?: (binding: string) => Promise<void>,
 ): Promise<{
   config: AIConfig | null;
   credentialBinding: string | null;
@@ -616,6 +694,7 @@ async function hydrateAIProviderSecret(
       apiKey: legacySecret,
       previousBinding: parseAICredentialBinding(persistedBinding),
       keychain: nativeAIProviderKeychain,
+      registerBinding: registerMigratedBinding,
       commitBinding: commitMigratedBinding,
       cleanupLegacySingleton: true,
     });
@@ -660,6 +739,7 @@ async function hydrateAIProviderSecret(
           apiKey: legacySingletonSecret,
           previousBinding: null,
           keychain: nativeAIProviderKeychain,
+          registerBinding: registerMigratedBinding,
           commitBinding: commitMigratedBinding,
           cleanupLegacySingleton: true,
         });
@@ -1371,6 +1451,12 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
       if (!isRecord(parsed) || parsed.version !== 1 || !Array.isArray(parsed.blocks)) {
         throw new Error("Saved Weekform browser state could not be validated.");
       }
+      knownAISecretBindings = new Set(
+        collectAIProviderCredentialBindings(
+          parsed.aiCredentialBindings,
+          parseAICredentialBinding(parsed.aiCredentialBinding),
+        ),
+      );
       const parsedAIConfig = parseAIConfig(parsed.aiConfig);
       const hydratedAIConfig = await hydrateAIProviderSecret(
         parsedAIConfig,
@@ -1388,6 +1474,7 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
             ...parsed,
             aiConfig: sanitizeAIConfigForPersistence(parsedAIConfig),
             aiCredentialBinding: null,
+            aiCredentialBindings: [],
           }),
         );
       }
@@ -1443,22 +1530,48 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
     throw new Error("Saved Weekform Store state could not be validated.");
   }
 
+  knownAISecretBindings = new Set(
+    collectAIProviderCredentialBindings(
+      parsed.aiCredentialBindings,
+      parseAICredentialBinding(parsed.aiCredentialBinding),
+    ),
+  );
+
   const parsedAIConfig = parseAIConfig(parsed.aiConfig);
+  const persistedCredentialBinding = parseAICredentialBinding(parsed.aiCredentialBinding);
+  let migrationRollbackState: unknown = parsed;
   const hydratedAIConfig = await hydrateAIProviderSecret(
     parsedAIConfig,
     parsed.aiCredentialBinding,
     (binding) => commitStoreValueWithRollback(
       store,
       STATE_KEY,
-      parsed,
+      migrationRollbackState,
       {
         ...parsed,
         aiConfig: sanitizeAIConfigForPersistence(parsedAIConfig),
         aiCredentialBinding: binding,
+        aiCredentialBindings: collectAIProviderCredentialBindings(
+          parsed.aiCredentialBindings,
+          persistedCredentialBinding,
+          binding,
+        ),
       },
     ),
+    async (binding) => {
+      knownAISecretBindings.add(binding);
+      const registeredState = appendAIProviderCredentialBindingToStoreState(parsed, binding);
+      await commitStoreValueWithRollback(
+        store,
+        STATE_KEY,
+        parsed,
+        registeredState,
+      );
+      migrationRollbackState = registeredState;
+    },
   );
   currentAISecretBinding = hydratedAIConfig.credentialBinding;
+  if (currentAISecretBinding) knownAISecretBindings.add(currentAISecretBinding);
   lastAISecretFingerprint = hydratedAIConfig.config?.connectionMode === "api_key"
     && hydratedAIConfig.config.apiKey.trim()
     ? `${hydratedAIConfig.config.provider}:${hydratedAIConfig.config.baseUrl ?? ""}:${hydratedAIConfig.config.apiKey}`
@@ -1525,16 +1638,26 @@ async function persistStateSnapshot(state: PersistedAppState): Promise<void> {
       ...state,
       aiConfig: sanitizeAIConfigForPersistence(state.aiConfig),
       aiCredentialBinding: null,
+      aiCredentialBindings: [],
     }));
     currentAISecretBinding = null;
     lastAISecretFingerprint = secretFingerprint;
     return;
   }
 
-  const buildSafeState = (binding: string | null) => ({
+  const buildSafeState = (
+    binding: string | null,
+    additionalBindings: string[] = [],
+  ) => ({
     ...state,
     aiConfig: sanitizeAIConfigForPersistence(state.aiConfig),
     aiCredentialBinding: binding,
+    aiCredentialBindings: collectAIProviderCredentialBindings(
+      [...knownAISecretBindings],
+      currentAISecretBinding,
+      binding,
+      ...additionalBindings,
+    ),
     // Raw active-window samples are durably owned by the encrypted native
     // journal, never duplicated into the general unencrypted Tauri Store.
     activeWindowSamples: [],
@@ -1542,19 +1665,42 @@ async function persistStateSnapshot(state: PersistedAppState): Promise<void> {
 
   if (secretFingerprint !== lastAISecretFingerprint) {
     const previousStoreState = await store.get<unknown>(STATE_KEY);
+    let rollbackStoreState = previousStoreState;
     const nextBinding = await commitAIProviderCredentialRotation({
       apiKey: secretFingerprint ? state.aiConfig?.apiKey ?? "" : "",
       previousBinding: currentAISecretBinding,
       keychain: nativeAIProviderKeychain,
       cleanupLegacySingleton: true,
+      registerBinding: async (binding) => {
+        // Persist the non-secret account UUID before the Keychain write. A crash
+        // or failed rollback can then be recovered by Reset after relaunch. Do
+        // not combine the incoming provider metadata with the prior pointer:
+        // preregistration only extends the old Store generation's registry.
+        knownAISecretBindings.add(binding);
+        const registrationBase = isRecord(previousStoreState)
+          ? previousStoreState
+          : buildSafeState(currentAISecretBinding);
+        const registeredState = appendAIProviderCredentialBindingToStoreState(
+          registrationBase,
+          binding,
+        );
+        await commitStoreValueWithRollback(
+          store,
+          STATE_KEY,
+          previousStoreState,
+          registeredState,
+        );
+        rollbackStoreState = registeredState;
+      },
       commitBinding: (binding) => commitStoreValueWithRollback(
         store,
         STATE_KEY,
-        previousStoreState,
+        rollbackStoreState,
         buildSafeState(binding),
       ),
     });
     currentAISecretBinding = nextBinding;
+    if (nextBinding) knownAISecretBindings.add(nextBinding);
     lastAISecretFingerprint = secretFingerprint;
     return;
   }
@@ -1575,52 +1721,65 @@ export function writePersistedState(state: PersistedAppState): Promise<void> {
 
 async function clearPersistedBackingState(): Promise<void> {
   const failures: unknown[] = [];
-  let bindingToClear = currentAISecretBinding;
+  let store: Store | null = null;
+  let storedState: unknown;
+  let bindingsToClear = collectAIProviderCredentialBindings(
+    [...knownAISecretBindings],
+    currentAISecretBinding,
+  );
+
+  // Resolve the durable registry before deleting anything. If Keychain cleanup
+  // fails, leave the Store registry in place so a retry after relaunch can still
+  // enumerate every Weekform-owned account.
   try {
-    const store = await getStore();
-    if (!store) {
-      window.localStorage.removeItem(STORAGE_KEY);
-      if (window.localStorage.getItem(STORAGE_KEY) !== null) {
-        throw new Error("Browser storage still contains Weekform app state after reset.");
-      }
-    } else {
-      const existing = await store.get<unknown>(STATE_KEY);
-      if (isRecord(existing)) {
-        bindingToClear = parseAICredentialBinding(existing.aiCredentialBinding)
-          ?? bindingToClear;
-      }
-      await store.delete(STATE_KEY);
-      await store.save();
-      const remaining = await store.get<unknown>(STATE_KEY);
-      if (remaining !== null && remaining !== undefined) {
-        throw new Error("Tauri Store still contains Weekform app state after reset.");
+    store = await getStore();
+    if (store) {
+      storedState = await store.get<unknown>(STATE_KEY);
+      if (isRecord(storedState)) {
+        bindingsToClear = collectAIProviderCredentialBindings(
+          bindingsToClear,
+          ...collectAIProviderCredentialBindings(storedState.aiCredentialBindings),
+          parseAICredentialBinding(storedState.aiCredentialBinding),
+        );
       }
     }
   } catch (error) {
     failures.push(error);
   }
 
-  if (isTauriRuntime()) {
-    const accounts = new Set<string>([AI_PROVIDER_LEGACY_KEYCHAIN_ACCOUNT]);
-    if (bindingToClear) accounts.add(aiProviderKeychainAccount(bindingToClear));
-    for (const account of accounts) {
-      try {
-        await nativeAIProviderKeychain.delete(account);
-        const remainingSecret = await nativeAIProviderKeychain.get(account);
-        if (remainingSecret !== null) {
-          throw new Error("An AI provider credential remains in macOS Keychain after reset.");
+  if (failures.length === 0 && isTauriRuntime()) {
+    try {
+      await clearOwnedAIProviderCredentials(nativeAIProviderKeychain, bindingsToClear);
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+
+  if (failures.length === 0) {
+    try {
+      if (!store) {
+        window.localStorage.removeItem(STORAGE_KEY);
+        if (window.localStorage.getItem(STORAGE_KEY) !== null) {
+          throw new Error("Browser storage still contains Weekform app state after reset.");
         }
-      } catch (error) {
-        failures.push(error);
+      } else {
+        await store.delete(STATE_KEY);
+        await store.save();
+        const remaining = await store.get<unknown>(STATE_KEY);
+        if (remaining !== null && remaining !== undefined) {
+          throw new Error("Tauri Store still contains Weekform app state after reset.");
+        }
       }
+    } catch (error) {
+      failures.push(error);
     }
   }
 
   lastAISecretFingerprint = undefined;
   if (failures.length > 0) {
-    // Keep the last known binding in memory so a same-process retry can still
-    // address and remove it even when the Store pointer was already deleted.
-    currentAISecretBinding = bindingToClear;
+    // Keep the full non-secret registry in memory; if Keychain cleanup failed,
+    // the Store copy also remains durable for a retry after relaunch.
+    knownAISecretBindings = new Set(bindingsToClear);
     const error = new Error(
       `Weekform could not verify that all persisted app state was cleared (${failures.length} failed operation${failures.length === 1 ? "" : "s"}).`,
     );
@@ -1628,6 +1787,7 @@ async function clearPersistedBackingState(): Promise<void> {
     throw error;
   }
   currentAISecretBinding = null;
+  knownAISecretBindings.clear();
 }
 
 export function clearPersistedState(): Promise<void> {

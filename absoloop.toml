@@ -2,10 +2,10 @@
 default_profile = "edit"
 
 [gates]
-required = ["build", "rust", "audit"]
+required = ["tests", "build", "rust", "audit"]
 
 [gates.commands]
-tests = "npm run verify:wave3"
+tests = "npm run test:release:app"
 build = "npm run build"
 rust = "cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml"
 audit = "npm run audit:check"

@@ -12,15 +12,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WeeklyCapacitySnapshot, WorkBlock } from "../../../../packages/domain/src/models";
-import {
-  buildSharedWorkloadSnapshot,
-  type SharedSnapshotBuildResult
-} from "../../../../packages/inference/src/sharedSnapshot";
+import type { SharedSnapshotBuildResult } from "../../../../packages/inference/src/sharedSnapshot";
 import {
   applyTeamSharePolicy,
-  resolveClientSnapshotId,
   sharedSnapshotToRow
 } from "../services/cloudPolicy";
+import {
+  buildReservedSharedSnapshot,
+  runAfterDurableSharedSnapshotReservation,
+} from "../services/sharedSnapshotReservation";
 import {
   deleteMySnapshotsForTeam,
   getCloudEnv,
@@ -50,6 +50,66 @@ import {
 import type { CloudAccountController } from "./useCloudAccount";
 import type { PersonalCloudSyncController } from "./usePersonalCloudSync";
 
+export interface CloudSyncOperation {
+  isCurrent: () => boolean;
+  finish: () => void;
+}
+
+export interface CloudSyncOperationBarrier {
+  begin: () => CloudSyncOperation | null;
+  /** Close synchronously, invalidate active operations, then await their async edges. */
+  quiesce: () => Promise<void>;
+  reopen: () => void;
+}
+
+/**
+ * Aggregate sharing has several async boundaries (reservation persistence,
+ * session refresh, policy refresh, reconciliation, and upload/delete). Reset
+ * closes this lane before its first await, invalidates every captured epoch,
+ * and waits until all already-started boundaries have settled.
+ */
+export function createCloudSyncOperationBarrier(): CloudSyncOperationBarrier {
+  let epoch = 0;
+  let quiescing = false;
+  const activeCompletions = new Set<Promise<void>>();
+
+  return {
+    begin: () => {
+      if (quiescing) return null;
+      const operationEpoch = epoch;
+      let resolveCompletion!: () => void;
+      const completion = new Promise<void>((resolve) => { resolveCompletion = resolve; });
+      activeCompletions.add(completion);
+      let finished = false;
+      return {
+        isCurrent: () => !quiescing && epoch === operationEpoch,
+        finish: () => {
+          if (finished) return;
+          finished = true;
+          activeCompletions.delete(completion);
+          resolveCompletion();
+        },
+      };
+    },
+    quiesce: async () => {
+      quiescing = true;
+      epoch += 1;
+      await Promise.allSettled([...activeCompletions]);
+    },
+    reopen: () => {
+      quiescing = false;
+    },
+  };
+}
+
+const RESET_INTERRUPTED_MESSAGE = "Aggregate sharing stopped because Reset Local Data started.";
+const RESET_INTERRUPTED_UPLOAD = { ok: false, message: RESET_INTERRUPTED_MESSAGE } as const;
+const RESET_INTERRUPTED_BOUNDARY = {
+  ok: false,
+  reason: "refresh_failed",
+  message: RESET_INTERRUPTED_MESSAGE,
+} as const;
+
 export interface CloudSyncController {
   /** The exact payload (or typed rejection) for the current policy + reviewed data. */
   buildResult: SharedSnapshotBuildResult;
@@ -60,6 +120,8 @@ export interface CloudSyncController {
   syncNow: () => Promise<boolean>;
   /** Delete every snapshot THIS user previously synced to the selected team. */
   deleteMySnapshots: () => Promise<boolean>;
+  /** Invalidate new work and await every aggregate network/persistence edge before Reset. */
+  quiesceForReset: () => Promise<void>;
 }
 
 export function useCloudSync({
@@ -79,9 +141,18 @@ export function useCloudSync({
    */
   onConsentReceipt: (receipt: ConsentReceiptV1) => void;
 }): CloudSyncController {
-  const { policy, pendingSnapshot, setPendingSnapshot, setSyncState, emitAudit } = account;
+  const { policy, pendingSnapshot, persistPendingSnapshot, setSyncState, emitAudit } = account;
   const [syncBusy, setSyncBusy] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const cloudOperationBarrierRef = useRef<CloudSyncOperationBarrier | null>(null);
+  if (cloudOperationBarrierRef.current === null) {
+    cloudOperationBarrierRef.current = createCloudSyncOperationBarrier();
+  }
+  const cloudOperationBarrier = cloudOperationBarrierRef.current;
+  const quiesceForReset = useCallback(
+    () => cloudOperationBarrier.quiesce(),
+    [cloudOperationBarrier],
+  );
   const remoteDeleteBlocked = isManualResyncRequired(account.syncState.lastError);
 
   // A6 clamp, applied BEFORE any payload is built: the effective allowlist is member
@@ -97,34 +168,33 @@ export function useCloudSync({
     return applyTeamSharePolicy(policy, teamPolicy);
   }, [account.teams, policy]);
 
-  // Build the payload from the shared builder ONLY. Two passes at most: the first
-  // derives the content fingerprint; when the reserved uuid for that fingerprint
-  // already exists, rebuild with it so preview === upload, id included.
-  const buildResult = useMemo<SharedSnapshotBuildResult>(() => {
-    const now = new Date().toISOString();
-    const base = buildSharedWorkloadSnapshot({ snapshot, workBlocks, policy: effectivePolicy, now });
-    if (!base.ok) return base;
-    if (pendingSnapshot && pendingSnapshot.fingerprint === base.fingerprint) {
-      return buildSharedWorkloadSnapshot({
+  // Build the payload from the shared builder ONLY. The UUID reservation is made
+  // synchronously, before the first committed preview can be uploaded; the effect
+  // below only makes that already-previewed reservation durable for relaunch/retry.
+  const reservedBuild = useMemo(
+    () =>
+      buildReservedSharedSnapshot({
         snapshot,
         workBlocks,
         policy: effectivePolicy,
-        now,
-        clientSnapshotId: pendingSnapshot.clientSnapshotId
-      });
-    }
-    return base;
-  }, [snapshot, workBlocks, effectivePolicy, pendingSnapshot]);
+        pendingSnapshot,
+        now: new Date().toISOString(),
+        generateId: () => crypto.randomUUID()
+      }),
+    [snapshot, workBlocks, effectivePolicy, pendingSnapshot]
+  );
+  const buildResult: SharedSnapshotBuildResult = reservedBuild.buildResult;
 
   // Reserve a stable uuid clientSnapshotId for the current content. Persisted, so a
   // failed attempt retried after a relaunch still reuses the same id (idempotent upsert).
   useEffect(() => {
-    if (!buildResult.ok) return;
-    if (pendingSnapshot && pendingSnapshot.fingerprint === buildResult.fingerprint) return;
-    setPendingSnapshot(
-      resolveClientSnapshotId(pendingSnapshot, buildResult.fingerprint, () => crypto.randomUUID())
-    );
-  }, [buildResult, pendingSnapshot, setPendingSnapshot]);
+    if (!reservedBuild.reservation || reservedBuild.reservation === pendingSnapshot) return;
+    const operation = cloudOperationBarrier.begin();
+    if (!operation) return;
+    void persistPendingSnapshot(reservedBuild.reservation)
+      .catch(() => undefined)
+      .finally(() => operation.finish());
+  }, [cloudOperationBarrier, pendingSnapshot, persistPendingSnapshot, reservedBuild.reservation]);
 
   const upToDate =
     buildResult.ok && account.syncState.lastSyncedFingerprint === buildResult.fingerprint;
@@ -132,11 +202,14 @@ export function useCloudSync({
   const syncNow = useCallback(async (): Promise<boolean> => {
     const env = getCloudEnv();
     if (!env || !buildResult.ok || syncBusy) return false;
+    const operation = cloudOperationBarrier.begin();
+    if (!operation) return false;
     const attemptedAt = new Date().toISOString();
     setSyncBusy(true);
     setSyncState((current) => ({ ...current, status: "syncing", lastAttemptAt: attemptedAt }));
     try {
       const session = await account.getFreshSession();
+      if (!operation.isCurrent()) return false;
       if (!session) {
         setSyncState((current) => ({
           ...current,
@@ -149,13 +222,38 @@ export function useCloudSync({
         return false;
       }
       const payload = buildResult.snapshot;
-      const guardedUpload = await runFreshGuardedUpload(
-        () => account.checkFreshUpload(session, effectivePolicy),
-        () => {
-          const row = sharedSnapshotToRow(payload, buildResult.fingerprint, session.userId);
-          return upsertWorkloadSnapshot(env, session, row);
-        }
-      );
+      const reservation = reservedBuild.reservation;
+      if (!reservation) return false;
+      const durableUpload = await runAfterDurableSharedSnapshotReservation({
+        reservation,
+        persistReservation: account.persistPendingSnapshot,
+        operation: () => runFreshGuardedUpload(
+          () => operation.isCurrent()
+            ? account.checkFreshUpload(session, effectivePolicy)
+            : Promise.resolve(RESET_INTERRUPTED_BOUNDARY),
+          () => {
+            if (!operation.isCurrent()) return Promise.resolve(RESET_INTERRUPTED_UPLOAD);
+            const row = sharedSnapshotToRow(payload, buildResult.fingerprint, session.userId);
+            return upsertWorkloadSnapshot(env, session, row);
+          }
+        )
+      });
+      if (!operation.isCurrent()) return false;
+      if (!durableUpload.ok) {
+        const message = "Sync stopped because Weekform could not durably reserve its retry-safe snapshot ID. No data was uploaded.";
+        setSyncState((current) => ({
+          ...current,
+          status: "error",
+          lastError: preserveManualResyncRequirement(current.lastError, message)
+        }));
+        emitAudit("sync_failure", message, {
+          team_id: policy.teamId,
+          failure_kind: "reservation_persistence",
+          request_body_sent: false
+        });
+        return false;
+      }
+      const guardedUpload = durableUpload.value;
       if (!guardedUpload.ok) {
         const freshBoundary = guardedUpload.boundary;
         setSyncState((current) => ({
@@ -218,17 +316,21 @@ export function useCloudSync({
       );
       return true;
     } finally {
-      setSyncBusy(false);
+      if (operation.isCurrent()) setSyncBusy(false);
+      operation.finish();
     }
-  }, [account, buildResult, effectivePolicy, emitAudit, onConsentReceipt, policy.teamId, setSyncState, syncBusy]);
+  }, [account, buildResult, cloudOperationBarrier, effectivePolicy, emitAudit, onConsentReceipt, policy.teamId, setSyncState, syncBusy]);
 
   const deleteMySnapshots = useCallback(async (): Promise<boolean> => {
     const env = getCloudEnv();
     const teamId = policy.teamId;
     if (!env || !teamId || deleteBusy) return false;
+    const operation = cloudOperationBarrier.begin();
+    if (!operation) return false;
     setDeleteBusy(true);
     try {
       const session = await account.getFreshSession();
+      if (!operation.isCurrent()) return false;
       if (!session) {
         setSyncState((current) => ({
           ...current,
@@ -238,6 +340,7 @@ export function useCloudSync({
         return false;
       }
       const result = await deleteMySnapshotsForTeam(env, session, teamId);
+      if (!operation.isCurrent()) return false;
       if (!result.ok) {
         setSyncState((current) => ({ ...current, status: "error", lastError: result.message }));
         return false;
@@ -259,9 +362,10 @@ export function useCloudSync({
       );
       return true;
     } finally {
-      setDeleteBusy(false);
+      if (operation.isCurrent()) setDeleteBusy(false);
+      operation.finish();
     }
-  }, [account, deleteBusy, emitAudit, policy.teamId, setSyncState]);
+  }, [account, cloudOperationBarrier, deleteBusy, emitAudit, policy.teamId, setSyncState]);
 
   // -------------------------------------------------------------------------
   // Bounded automatic sync (runbook Prompt 7).
@@ -275,6 +379,28 @@ export function useCloudSync({
   const [retryFailureCount, setRetryFailureCount] = useState(0);
   const [authBlocked, setAuthBlocked] = useState(false);
   const autoAttemptInFlightRef = useRef(false);
+  const resetDisabled =
+    account.account === null
+    && policy.enabled === false
+    && policy.autoSyncEnabled === false
+    && policy.teamId === null
+    && policy.consentedAt === null
+    && pendingSnapshot === null;
+
+  // Reset deliberately keeps this lane closed while old account/policy values
+  // are still rendered. A transition into the fully cleared state reopens it.
+  // When reset begins from an already-disabled state, the next explicit account
+  // transition reopens it instead; the dependency does not rerun mid-reset.
+  useEffect(() => {
+    cloudOperationBarrier.reopen();
+    if (!resetDisabled) return;
+    setSyncBusy(false);
+    setDeleteBusy(false);
+    autoAttemptInFlightRef.current = false;
+    setRetryFailureCount(0);
+    setAuthBlocked(false);
+  }, [cloudOperationBarrier, resetDisabled]);
+
   const currentFingerprint = buildResult.ok ? buildResult.fingerprint : null;
   const previousFingerprintRef = useRef<string | null>(currentFingerprint);
 
@@ -325,11 +451,14 @@ export function useCloudSync({
       buildResult.fingerprint,
       account.syncState.lastSyncedFingerprint
     );
+    const operation = cloudOperationBarrier.begin();
+    if (!operation) return;
     autoAttemptInFlightRef.current = true;
     const attemptedAt = new Date().toISOString();
     setSyncState((current) => ({ ...current, status: "syncing", lastAttemptAt: attemptedAt }));
     try {
       const session = await account.getFreshSession();
+      if (!operation.isCurrent()) return;
       if (!session) {
         setSyncState((current) => ({
           ...current,
@@ -340,6 +469,7 @@ export function useCloudSync({
       }
       if (!contentChanged) {
         const freshBoundary = await account.checkFreshUpload(session, effectivePolicy);
+        if (!operation.isCurrent()) return;
         if (!freshBoundary.ok) {
           const attemptNumber = retryFailureCount + 1;
           const retryDelayMs = nextRetryDelayMs(attemptNumber);
@@ -360,6 +490,7 @@ export function useCloudSync({
             ? workloadSnapshotExists(env, session, clientSnapshotId)
             : Promise.resolve({ ok: true as const, value: false })
         );
+        if (!operation.isCurrent()) return;
         if (!reconciliation.ok) {
           const attemptNumber = retryFailureCount + 1;
           const retryDelayMs = nextRetryDelayMs(attemptNumber);
@@ -396,13 +527,42 @@ export function useCloudSync({
         return;
       }
       const payload = buildResult.snapshot;
-      const guardedUpload = await runFreshGuardedUpload(
-        () => account.checkFreshUpload(session, effectivePolicy),
-        () => {
-          const row = sharedSnapshotToRow(payload, buildResult.fingerprint, session.userId);
-          return upsertWorkloadSnapshot(env, session, row);
-        }
-      );
+      const reservation = reservedBuild.reservation;
+      if (!reservation) return;
+      const durableUpload = await runAfterDurableSharedSnapshotReservation({
+        reservation,
+        persistReservation: account.persistPendingSnapshot,
+        operation: () => runFreshGuardedUpload(
+          () => operation.isCurrent()
+            ? account.checkFreshUpload(session, effectivePolicy)
+            : Promise.resolve(RESET_INTERRUPTED_BOUNDARY),
+          () => {
+            if (!operation.isCurrent()) return Promise.resolve(RESET_INTERRUPTED_UPLOAD);
+            const row = sharedSnapshotToRow(payload, buildResult.fingerprint, session.userId);
+            return upsertWorkloadSnapshot(env, session, row);
+          }
+        )
+      });
+      if (!operation.isCurrent()) return;
+      if (!durableUpload.ok) {
+        const attemptNumber = retryFailureCount + 1;
+        const message = "Auto-sync stopped because Weekform could not durably reserve its retry-safe snapshot ID. No data was uploaded.";
+        setRetryFailureCount(attemptNumber);
+        setSyncState((current) => ({
+          ...current,
+          status: "error",
+          lastError: describeSchedulerFailure("transient", message)
+        }));
+        emitAudit("sync_failure", message, {
+          team_id: policy.teamId,
+          trigger: "auto",
+          failure_kind: "reservation_persistence",
+          retry_attempt: attemptNumber,
+          request_body_sent: false
+        });
+        return;
+      }
+      const guardedUpload = durableUpload.value;
       if (!guardedUpload.ok) {
         const freshBoundary = guardedUpload.boundary;
         const attemptNumber = retryFailureCount + 1;
@@ -500,9 +660,10 @@ export function useCloudSync({
         })
       );
     } finally {
-      autoAttemptInFlightRef.current = false;
+      if (operation.isCurrent()) autoAttemptInFlightRef.current = false;
+      operation.finish();
     }
-  }, [account, buildResult, effectivePolicy, emitAudit, onConsentReceipt, policy.autoSyncEnabled, policy.enabled, policy.teamId, retryFailureCount, setSyncState]);
+  }, [account, buildResult, cloudOperationBarrier, effectivePolicy, emitAudit, onConsentReceipt, policy.autoSyncEnabled, policy.enabled, policy.teamId, retryFailureCount, setSyncState]);
 
   // Re-plan on every change that could affect eligibility or timing, and own the ONE
   // real timer for the whole controller. Any stop condition (sign-out, membership
@@ -562,8 +723,16 @@ export function useCloudSync({
   // Stable controller reference so App's `cloud` memo (and anything memoized
   // on it downstream) only invalidates when a constituent changes.
   return useMemo(
-    () => ({ buildResult, upToDate, syncBusy, deleteBusy, syncNow, deleteMySnapshots }),
-    [buildResult, upToDate, syncBusy, deleteBusy, syncNow, deleteMySnapshots]
+    () => ({
+      buildResult,
+      upToDate,
+      syncBusy,
+      deleteBusy,
+      syncNow,
+      deleteMySnapshots,
+      quiesceForReset,
+    }),
+    [buildResult, upToDate, syncBusy, deleteBusy, syncNow, deleteMySnapshots, quiesceForReset]
   );
 }
 

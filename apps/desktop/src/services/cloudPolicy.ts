@@ -11,14 +11,16 @@
 //   4. the field-by-field mapping from `SharedWorkloadSnapshotV1` to the
 //      `workload_snapshots` row — no object spread, so a local field can't leak.
 
-import type {
-  CloudMetricPolicy,
-  CloudShareLevel,
-  CloudSharePolicyV1,
-  CloudSyncState,
-  CloudSyncStatus,
-  SharedWorkloadSnapshotV1,
-  TeamSharePolicyV1
+import {
+  MAX_SHARED_PROJECTS,
+  truncateSharedProjectName,
+  type CloudMetricPolicy,
+  type CloudShareLevel,
+  type CloudSharePolicyV1,
+  type CloudSyncState,
+  type CloudSyncStatus,
+  type SharedWorkloadSnapshotV1,
+  type TeamSharePolicyV1
 } from "../../../../packages/domain/src/cloud";
 import type {
   PersonalReplicaPolicyV1,
@@ -125,9 +127,10 @@ export function parseCloudSharePolicy(value: unknown): CloudSharePolicyV1 {
   if (Array.isArray(value.allowedProjectNames)) {
     for (const name of value.allowedProjectNames) {
       if (typeof name !== "string") continue;
-      const trimmed = name.trim().slice(0, 200);
-      if (trimmed.length > 0 && !allowedProjectNames.includes(trimmed)) {
-        allowedProjectNames.push(trimmed);
+      const truncated = truncateSharedProjectName(name);
+      if (truncated !== null && !allowedProjectNames.includes(truncated)) {
+        allowedProjectNames.push(truncated);
+        if (allowedProjectNames.length === MAX_SHARED_PROJECTS) break;
       }
     }
   }

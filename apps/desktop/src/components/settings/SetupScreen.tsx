@@ -72,6 +72,7 @@ import { CalendarSourcesPanel } from "./CalendarSourcesPanel";
 import { EmailSourcePanel } from "./EmailSourcePanel";
 import type { ChatSourcesController } from "../../hooks/useChatSources";
 import { ChatSourcesPanel } from "./ChatSourcesPanel";
+import type { AsyncOperationGate } from "../../hooks/useAsyncStatus";
 
 // Retention windows (in days) offered for auto-expiring stored activity samples.
 const RETENTION_OPTIONS = [7, 14, 30, 90] as const;
@@ -144,6 +145,7 @@ export function SetupScreen({
   auditEvents,
   onResetLocalData,
   isResettingLocalData,
+  aiConnectionGate,
   onExportBackup,
   retentionDays,
   setRetentionDays,
@@ -188,6 +190,7 @@ export function SetupScreen({
   auditEvents: AuditEvent[];
   onResetLocalData: () => void;
   isResettingLocalData: boolean;
+  aiConnectionGate: AsyncOperationGate;
   onExportBackup: () => Promise<void>;
   retentionDays: number | null;
   setRetentionDays: (value: number | null) => void;
@@ -244,6 +247,14 @@ export function SetupScreen({
     }
   }, [aiConfig]);
 
+  useEffect(() => {
+    if (!isResettingLocalData) return;
+    setDraftConfig(createDefaultAIConfig());
+    setProviderStatus(null);
+    setIsTesting(false);
+    setIsConnectingCodex(false);
+  }, [isResettingLocalData]);
+
   const csvBucketCount = tokenUsageDays.filter((day) => day.source_type === "csv_import").length;
   const selectedPreset = getAIProviderPreset(draftConfig.provider);
   const modelSuggestions =
@@ -251,6 +262,7 @@ export function SetupScreen({
   const isDirty = !aiConfig || JSON.stringify(draftConfig) !== JSON.stringify(aiConfig);
 
   const updateDraftConfig = (patch: Partial<AIConfig>) => {
+    if (isResettingLocalData) return;
     const newConfig: AIConfig = { ...draftConfig, connectionMode: "api_key", ...patch };
     if (patch.provider) {
       const preset = getAIProviderPreset(patch.provider);
@@ -263,12 +275,14 @@ export function SetupScreen({
   };
 
   const restoreDefaults = () => {
+    if (isResettingLocalData) return;
     const defaults = createDefaultAIConfig(draftConfig.provider);
     setDraftConfig({ ...defaults, apiKey: draftConfig.apiKey });
     setProviderStatus({ tone: "info", message: `Restored the recommended ${selectedPreset.label} settings.` });
   };
 
   const saveAIConfig = () => {
+    if (isResettingLocalData) return;
     const config = {
       ...draftConfig,
       connectionMode: "api_key" as const,
@@ -290,6 +304,7 @@ export function SetupScreen({
   };
 
   const testConnection = async () => {
+    if (isResettingLocalData) return;
     const codexConnection = isCodexConnection(draftConfig);
     if (!codexConnection && (!draftConfig.apiKey.trim() || !draftConfig.baseUrl?.trim() || !draftConfig.model.trim())) {
       setProviderStatus({ tone: "error", message: "Enter an API key, base URL, and model before testing." });
@@ -303,6 +318,8 @@ export function SetupScreen({
       return;
     }
 
+    const connectionToken = aiConnectionGate.begin();
+    if (connectionToken === null) return;
     setIsTesting(true);
     setProviderStatus(null);
     const testedConfig: AIConfig = codexConnection
@@ -323,20 +340,23 @@ export function SetupScreen({
           }
         })
       );
+      if (!aiConnectionGate.isCurrent(connectionToken)) return;
       setDraftConfig(testedConfig);
       setAiConfig(testedConfig);
       setProviderStatus({ tone: "success", message: result.message });
     } catch (error) {
+      if (!aiConnectionGate.isCurrent(connectionToken)) return;
       setProviderStatus({
         tone: "error",
         message: error instanceof Error ? error.message : String(error)
       });
     } finally {
-      setIsTesting(false);
+      if (aiConnectionGate.isCurrent(connectionToken)) setIsTesting(false);
     }
   };
 
   const connectCodexPlan = async () => {
+    if (isResettingLocalData) return;
     if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
       setProviderStatus({
         tone: "error",
@@ -344,33 +364,42 @@ export function SetupScreen({
       });
       return;
     }
+    const connectionToken = aiConnectionGate.begin();
+    if (connectionToken === null) return;
     setIsConnectingCodex(true);
     setProviderStatus(null);
     try {
       const result = await invoke<{ model: string; planType: string; message: string }>(
         "connect_codex_via_chatgpt"
       );
+      if (!aiConnectionGate.isCurrent(connectionToken)) return;
       const config = createCodexAIConfig(result.model);
       setDraftConfig(config);
       setAiConfig(config);
       setProviderStatus({ tone: "success", message: result.message });
     } catch (error) {
+      if (!aiConnectionGate.isCurrent(connectionToken)) return;
       setProviderStatus({
         tone: "error",
         message: error instanceof Error ? error.message : String(error)
       });
     } finally {
-      setIsConnectingCodex(false);
+      if (aiConnectionGate.isCurrent(connectionToken)) setIsConnectingCodex(false);
     }
   };
 
   const switchToApiKey = async () => {
+    if (isResettingLocalData) return;
+    const connectionToken = aiConnectionGate.begin();
+    if (connectionToken === null) return;
     if (isCodexConnection(aiConfig) && "__TAURI_INTERNALS__" in window) {
       setIsConnectingCodex(true);
       setProviderStatus(null);
       try {
         await invoke("disconnect_codex");
+        if (!aiConnectionGate.isCurrent(connectionToken)) return;
       } catch (error) {
+        if (!aiConnectionGate.isCurrent(connectionToken)) return;
         setProviderStatus({
           tone: "error",
           message: `Could not clear the Weekform Codex sign-in: ${error instanceof Error ? error.message : String(error)}`
@@ -380,6 +409,7 @@ export function SetupScreen({
       }
       setIsConnectingCodex(false);
     }
+    if (!aiConnectionGate.isCurrent(connectionToken)) return;
     const config = createDefaultAIConfig("openai");
     setDraftConfig(config);
     setAiConfig(null);
@@ -571,6 +601,7 @@ export function SetupScreen({
         importError={importError}
         lastSummary={lastCalendarImportSummary}
         onImport={onImportCalendar}
+        disabled={isResettingLocalData}
       />
 
       <EmailSourcePanel />
@@ -579,6 +610,7 @@ export function SetupScreen({
         controller={chatSources}
         legacyImportError={chatImportError}
         onImportLegacy={onImportChatExport}
+        disabled={isResettingLocalData}
       />
 
       <section className="settings-row">
@@ -597,7 +629,7 @@ export function SetupScreen({
           className={visualContextEnabled ? "settings-control is-on" : "settings-control"}
           type="button"
           aria-pressed={visualContextEnabled}
-          disabled={!visualContextEnabled && !aiAvailable}
+          disabled={isResettingLocalData || (!visualContextEnabled && !aiAvailable)}
           title={!visualContextEnabled && !aiAvailable ? AI_UNAVAILABLE_HINT : undefined}
           onClick={() => setVisualContextEnabled(!visualContextEnabled)}
         >
@@ -686,6 +718,7 @@ export function SetupScreen({
           <input
             accept=".csv,text/csv"
             type="file"
+            disabled={isResettingLocalData}
             onChange={(event) => {
               const file = event.target.files?.[0];
               if (file) onImportUsageCsv(file);
@@ -767,11 +800,11 @@ export function SetupScreen({
                   <small>The available default comes from your ChatGPT workspace.</small>
                 </div>
                 <div className="ai-provider-actions">
-                  <button className="settings-control" type="button" onClick={testConnection} disabled={isTesting || isConnectingCodex} aria-busy={isTesting}>
+                  <button className="settings-control" type="button" onClick={testConnection} disabled={isTesting || isConnectingCodex || isResettingLocalData} aria-busy={isTesting}>
                     {isTesting ? <LoaderCircle className="spin" size={15} aria-hidden /> : <PlugZap size={15} aria-hidden />}
                     {isTesting ? "Testing…" : "Test Connection"}
                   </button>
-                  <button className="settings-control" type="button" onClick={() => void switchToApiKey()} disabled={isConnectingCodex}>
+                  <button className="settings-control" type="button" onClick={() => void switchToApiKey()} disabled={isConnectingCodex || isResettingLocalData}>
                     {isConnectingCodex ? <LoaderCircle className="spin" size={15} aria-hidden /> : <RotateCcw size={15} aria-hidden />}
                     Use an API key instead
                   </button>
@@ -782,7 +815,7 @@ export function SetupScreen({
               <div className="ai-field ai-codex-connect">
                 <strong>Already have a ChatGPT plan with Codex?</strong>
                 <small>Use your included Codex access without creating or pasting a Platform API key.</small>
-                <button className="settings-control" type="button" onClick={() => void connectCodexPlan()} disabled={isConnectingCodex} aria-busy={isConnectingCodex}>
+                <button className="settings-control" type="button" onClick={() => void connectCodexPlan()} disabled={isConnectingCodex || isResettingLocalData} aria-busy={isConnectingCodex}>
                   {isConnectingCodex ? <LoaderCircle className="spin" size={15} aria-hidden /> : <AgentMark />}
                   {isConnectingCodex ? "Finish signing in your browser…" : "Use ChatGPT/Codex plan"}
                 </button>
@@ -878,16 +911,16 @@ export function SetupScreen({
             </div>
 
             <div className="ai-provider-footer">
-              <button className="ai-text-button" type="button" onClick={restoreDefaults}>
+              <button className="ai-text-button" type="button" onClick={restoreDefaults} disabled={isResettingLocalData}>
                 <RotateCcw size={14} aria-hidden />
                 Restore recommended defaults
               </button>
               <div className="ai-provider-actions">
-                <button className="settings-control" type="button" onClick={testConnection} disabled={isTesting} aria-busy={isTesting}>
+                <button className="settings-control" type="button" onClick={testConnection} disabled={isTesting || isResettingLocalData} aria-busy={isTesting}>
                   {isTesting ? <LoaderCircle className="spin" size={15} aria-hidden /> : <PlugZap size={15} aria-hidden />}
                   {isTesting ? "Testing…" : "Test Connection"}
                 </button>
-                <button className="primary-action" type="button" onClick={saveAIConfig} disabled={!isDirty}>
+                <button className="primary-action" type="button" onClick={saveAIConfig} disabled={!isDirty || isResettingLocalData}>
                   <Save size={15} aria-hidden />
                   {isDirty ? "Save Settings" : "Saved"}
                 </button>
@@ -1131,7 +1164,7 @@ export function SetupScreen({
         <button
           className="settings-control"
           type="button"
-          disabled={isResettingLocalData}
+          disabled={isResettingLocalData || isExportingBackup}
           aria-busy={isResettingLocalData}
           onClick={() => setConfirmingReset(true)}
         >
@@ -1149,7 +1182,7 @@ export function SetupScreen({
         tabIndex={0}
         hidden={activeSettingsTab !== "account"}
       >
-      <CloudAccountPanel cloud={cloud} />
+      <CloudAccountPanel cloud={cloud} disabled={isResettingLocalData} />
       </div>
 
       {confirmingReset && (
@@ -1157,6 +1190,7 @@ export function SetupScreen({
           title="Reset all local data?"
           description="This permanently clears everything Weekform has stored on this device. It can't be undone."
           confirmLabel="Reset everything"
+          confirmDisabled={isExportingBackup || isResettingLocalData}
           onConfirm={() => {
             setConfirmingReset(false);
             onResetLocalData();

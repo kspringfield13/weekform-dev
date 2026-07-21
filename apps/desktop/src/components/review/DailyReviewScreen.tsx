@@ -182,6 +182,7 @@ export function DailyReviewScreen({
         blockTitles={blockTitles}
         status={reviewCopilotStatus}
         error={reviewCopilotError}
+        aiAvailable={aiAvailable}
         onGenerate={onGenerateReviewSuggestions}
         onApply={onApplyReviewSuggestion}
         onDismiss={onDismissReviewSuggestion}

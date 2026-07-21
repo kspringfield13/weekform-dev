@@ -14,6 +14,7 @@ readonly SIGNING_IDENTITY="Developer ID Application: Blerbz LLC (PC8SXU67D3)"
 readonly EXPECTED_TEAM_ID="PC8SXU67D3"
 readonly EXPECTED_BUNDLE_ID="com.clearcapacity.desktop"
 readonly EXPECTED_SUPABASE_PROJECT="fytospjjbcksmppmvupy"
+readonly EXPECTED_SUPABASE_ORIGIN="https://${EXPECTED_SUPABASE_PROJECT}.supabase.co"
 readonly EXPECTED_VERCEL_PROJECT="weekform"
 readonly ARTIFACT_FILENAME="Weekform_0.1.0_universal.dmg"
 readonly APP_PATH="$REPO_DIR/apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos/Weekform.app"
@@ -85,6 +86,33 @@ for required_env in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY SUPAB
   print -r -- "$PRODUCTION_ENV_LIST" | grep -Fq "$required_env" \
     || fail "required production environment variable '$required_env' is missing."
 done
+
+# The post-deploy proof signs in as a dedicated synthetic release account. Keep
+# these operator-only credentials out of Vercel and fail before building if the
+# local environment cannot perform the authenticated byte-for-byte smoke.
+if ! node -e '
+  const required = process.argv.slice(1);
+  const missing = required.filter((name) => !process.env[name]?.trim());
+  if (missing.length) {
+    process.stderr.write(`Missing local release-smoke environment: ${missing.join(", ")}\n`);
+    process.exit(1);
+  }
+' NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_ANON_KEY WEEKFORM_RELEASE_SMOKE_EMAIL WEEKFORM_RELEASE_SMOKE_PASSWORD VERCEL_AUTOMATION_BYPASS_SECRET; then
+  fail "the authenticated production download smoke is not configured."
+fi
+
+# Application code and production RLS/RPC contracts are one release. Machine-
+# readable equality catches both pending local migrations and remote-only drift.
+if ! LINKED_MIGRATIONS="$(npx supabase migration list --linked --output-format json)"; then
+  fail "the linked Supabase migration ledger could not be read."
+fi
+if ! print -r -- "$LINKED_MIGRATIONS" | node scripts/assert-linked-migrations.mjs; then
+  fail "the linked Supabase schema does not match this release."
+fi
+
+# Run the canonical TypeScript, Web, Rust, integration, pgTAP, build, and audit
+# gates before spending time on signing or creating release artifacts.
+npm run verify:release
 
 export APPLE_SIGNING_IDENTITY="$SIGNING_IDENTITY"
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}"
@@ -160,6 +188,18 @@ readonly REMOTE_ARTIFACT_SHA256="$(shasum -a 256 "$REMOTE_COPY_PATH" | awk '{pri
 [[ "$REMOTE_ARTIFACT_SHA256" == "$ARTIFACT_SHA256" ]] \
   || fail "the private hosted bytes do not match the verified stapled DMG."
 
+# Capture and validate the exact deployment currently serving the canonical
+# domain before changing production environment values. It is the only allowed
+# rollback target if the post-promotion canonical proof fails.
+readonly PREVIOUS_DEPLOYMENT_FILE="$VERIFY_DIR/vercel-previous.json"
+if ! npx vercel inspect https://weekform.dev --format json > "$PREVIOUS_DEPLOYMENT_FILE"; then
+  fail "the current Weekform production deployment could not be inspected."
+fi
+if ! PREVIOUS_PRODUCTION_ID="$(node scripts/validate-vercel-deployment.mjs previous-id < "$PREVIOUS_DEPLOYMENT_FILE")"; then
+  fail "the current Weekform production deployment could not be validated."
+fi
+readonly PREVIOUS_PRODUCTION_ID
+
 # These attestations are written only after the hosted bytes match the exact
 # notarized and stapled artifact. The website parser independently rechecks
 # the content-addressed path and complete proof before enabling the action.
@@ -171,8 +211,67 @@ set_production_env WEEKFORM_ARTIFACT_STAPLED true
 set_production_env WEEKFORM_ARTIFACT_SHA256 "$ARTIFACT_SHA256"
 set_production_env WEEKFORM_ARTIFACT_VERIFIED_AT "$VERIFIED_AT"
 
-npx vercel deploy --prod --yes
-curl --fail --silent --show-error --location --max-time 30 https://weekform.dev/ >/dev/null
+# Build against production configuration without assigning any domain. JSON
+# metadata is validated twice: first from deploy, then from a fresh inspection.
+readonly CANDIDATE_DEPLOYMENT_FILE="$VERIFY_DIR/vercel-candidate-deploy.json"
+if ! npx vercel deploy --prod --skip-domain --format json --yes > "$CANDIDATE_DEPLOYMENT_FILE"; then
+  fail "the production-target Web candidate did not deploy successfully."
+fi
+if ! CANDIDATE_ID="$(node scripts/validate-vercel-deployment.mjs candidate-id < "$CANDIDATE_DEPLOYMENT_FILE")"; then
+  fail "the production-target Web candidate metadata was invalid."
+fi
+if ! CANDIDATE_URL="$(node scripts/validate-vercel-deployment.mjs candidate-url < "$CANDIDATE_DEPLOYMENT_FILE")"; then
+  fail "the production-target Web candidate URL was invalid."
+fi
+readonly CANDIDATE_ID CANDIDATE_URL
+
+readonly CANDIDATE_INSPECTION_FILE="$VERIFY_DIR/vercel-candidate-inspect.json"
+if ! npx vercel inspect "$CANDIDATE_ID" --format json > "$CANDIDATE_INSPECTION_FILE"; then
+  fail "the production-target Web candidate could not be inspected."
+fi
+if ! node scripts/validate-vercel-deployment.mjs \
+  candidate-inspect "$CANDIDATE_ID" "$CANDIDATE_URL" < "$CANDIDATE_INSPECTION_FILE"; then
+  fail "the inspected Web candidate did not match the validated deployment."
+fi
+
+# Authentication, signed-target validation, bounded byte streaming, and the
+# exact notarized checksum must pass on the unaliased candidate first.
+node apps/web/scripts/verify-production-download.mjs \
+  "$ARTIFACT_SHA256" "$CANDIDATE_URL" candidate "$EXPECTED_SUPABASE_ORIGIN"
+
+# Promotion is compare-before-swap at the operator boundary: refuse to replace
+# a production deployment that changed while this candidate was being built
+# and smoked, and never use the stale captured ID as that release's rollback.
+readonly CURRENT_DEPLOYMENT_FILE="$VERIFY_DIR/vercel-current-before-promote.json"
+if ! npx vercel inspect https://weekform.dev --format json > "$CURRENT_DEPLOYMENT_FILE"; then
+  fail "the current Weekform production deployment could not be re-inspected before promotion."
+fi
+if ! node scripts/validate-vercel-deployment.mjs \
+  current-match "$PREVIOUS_PRODUCTION_ID" < "$CURRENT_DEPLOYMENT_FILE"; then
+  fail "Weekform production changed during this release; the candidate was not promoted."
+fi
+
+npx vercel promote "$CANDIDATE_ID" --yes
+
+# Re-run the proof against the literal canonical origin. If either the public
+# surface or authenticated bytes fail after promotion, restore the deployment
+# captured above and stop the release even when rollback itself succeeds.
+if ! curl --fail --silent --show-error --location --max-time 30 https://weekform.dev/ >/dev/null \
+  || ! node apps/web/scripts/verify-production-download.mjs \
+    "$ARTIFACT_SHA256" "https://weekform.dev" canonical "$EXPECTED_SUPABASE_ORIGIN"; then
+  readonly FAILED_CANONICAL_DEPLOYMENT_FILE="$VERIFY_DIR/vercel-current-before-rollback.json"
+  if ! npx vercel inspect https://weekform.dev --format json > "$FAILED_CANONICAL_DEPLOYMENT_FILE"; then
+    fail "the canonical proof failed and production could not be inspected; automatic rollback was skipped."
+  fi
+  if ! node scripts/validate-vercel-deployment.mjs \
+    current-match "$CANDIDATE_ID" < "$FAILED_CANONICAL_DEPLOYMENT_FILE"; then
+    fail "the canonical proof failed but production no longer belongs to this candidate; automatic rollback was skipped."
+  fi
+  if ! npx vercel rollback "$PREVIOUS_PRODUCTION_ID" --yes; then
+    fail "the canonical release proof failed and the previous deployment could not be restored automatically."
+  fi
+  fail "the canonical release proof failed after promotion; the previous deployment was restored."
+fi
 
 print -- "Weekform Mac release published successfully."
 print -- "Artifact: $REMOTE_ARTIFACT_URI"

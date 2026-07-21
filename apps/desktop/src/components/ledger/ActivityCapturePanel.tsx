@@ -5,6 +5,7 @@ import type {
   VisualContextInsight
 } from "../../../../../packages/domain/src/models";
 import { InlineError } from "../common/InlineError";
+import { AIConnectionNotice } from "../common/AIConnectionNotice";
 import { summarizeRecentSessions } from "../../lib/blocks";
 import { AI_UNAVAILABLE_HINT } from "../../lib/constants";
 import { formatCount, formatDurationMinutes } from "../../lib/format";
@@ -21,7 +22,8 @@ export function ActivityCapturePanel({
   unclassifiedSessionCount,
   paused,
   aiAvailable,
-  onClassifySessions
+  onClassifySessions,
+  onOpenAISettings,
 }: {
   activeWindowSamples: ActiveWindowSample[];
   activeWindowSessions: ActivitySession[];
@@ -35,6 +37,7 @@ export function ActivityCapturePanel({
   paused: boolean;
   aiAvailable: boolean;
   onClassifySessions: () => void;
+  onOpenAISettings: () => void;
 }) {
   const latestSample = activeWindowSamples[activeWindowSamples.length - 1];
   const latestSessionSummaries = summarizeRecentSessions(activeWindowSessions);
@@ -60,7 +63,8 @@ export function ActivityCapturePanel({
       : { tone: "active", label: "Capturing" };
 
   return (
-    <details className="activity-capture-panel">
+    <>
+      <details className="activity-capture-panel">
       <summary className="ledger-disclosure-summary">
         <div className="ledger-disclosure-main">
           <ChevronRight className="ledger-disclosure-caret" size={16} aria-hidden="true" />
@@ -77,7 +81,7 @@ export function ActivityCapturePanel({
             type="button"
             disabled={classificationStatus === "classifying" || unclassifiedSessionCount === 0 || !aiAvailable}
             title={classifyDisabledReason}
-            aria-label={classifyDisabledReason}
+            aria-describedby={!aiAvailable ? "classification-ai-unavailable" : undefined}
             aria-busy={classificationStatus === "classifying"}
             onClick={(e) => { e.stopPropagation(); onClassifySessions(); }}
           >
@@ -99,7 +103,12 @@ export function ActivityCapturePanel({
           Sending {formatCount(unclassifiedSessionCount)} ready session{unclassifiedSessionCount === 1 ? "" : "s"} to your AI provider…
         </p>
       )}
-      {classificationError && <InlineError message={classificationError} onRetry={onClassifySessions} />}
+      {classificationError && (
+        <InlineError
+          message={classificationError}
+          onRetry={aiAvailable ? onClassifySessions : undefined}
+        />
+      )}
       <div className="capture-grid">
         <div className="capture-stat">
           <span>Current app</span>
@@ -152,6 +161,13 @@ export function ActivityCapturePanel({
           ))}
         </div>
       )}
-    </details>
+      </details>
+      {!aiAvailable && (
+        <AIConnectionNotice
+          id="classification-ai-unavailable"
+          onOpenSettings={onOpenAISettings}
+        />
+      )}
+    </>
   );
 }

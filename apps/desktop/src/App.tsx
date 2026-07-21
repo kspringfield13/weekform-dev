@@ -25,6 +25,7 @@ import {
 } from "../../../packages/integrations/src/chat/chatSync";
 import { parseUsageCsv } from "../../../packages/integrations/src/usage/usageCsv";
 import { mergeTokenUsageDays } from "../../../packages/inference/src/aiUsage";
+import { canChangeCapturePaused } from "./services/captureDeliveryGuard";
 import type {
   AccelerationPlay,
   AccelerationSignal,
@@ -55,6 +56,10 @@ import {
 import type { AppTheme, GettingStartedStatus, PersistedAccelerationRecord, PersistedAccelerationSnapshot, PersistedAppState, PersistedForecastRecord, PersistedNarrativeRecord, PersistedSnapshotRecord } from "./services/localStore";
 import { createDemoState } from "./services/demoData";
 import { createDefaultAIConfig } from "./services/aiProviders";
+import {
+  browserScreenHistoryDecision,
+  browserScreenFromSearch,
+} from "./services/browserScreenNavigation";
 import {
   createCodexAIConfig,
   hasAIConnection,
@@ -88,6 +93,7 @@ import { useForecastAgent } from "./hooks/useForecastAgent";
 import { useAcceleration } from "./hooks/useAcceleration";
 import { useNarrativeGeneration } from "./hooks/useNarrativeGeneration";
 import { useVisualContext } from "./hooks/useVisualContext";
+import { createAsyncOperationEpoch, createAsyncOperationGate, type AsyncOperationGate } from "./hooks/useAsyncStatus";
 import { useProactiveAlerts } from "./hooks/useProactiveAlerts";
 import {
   DEFAULT_PROACTIVE_ALERT_SETTINGS,
@@ -101,6 +107,7 @@ import { useToasts } from "./hooks/useToasts";
 import { useCloudAccount } from "./hooks/useCloudAccount";
 import { useCloudSync, type CloudController } from "./hooks/useCloudSync";
 import { useCalendarSources } from "./hooks/useCalendarSources";
+import { createConnectorResetBoundary, type ConnectorResetBoundary } from "./hooks/connectorResetBoundary";
 import {
   chatSyncApplicationMode,
   chatSyncOperationalState,
@@ -189,11 +196,27 @@ export function App() {
   // snapshot (data-loss). Mirrors `themeHydrated`. A ref (not state) so flipping it never
   // re-renders and the write effect stays keyed off the persisted-data deps.
   const persistenceHydrated = useRef(false);
+  const startupHydrationEpochRef = useRef<ReturnType<typeof createAsyncOperationEpoch> | null>(null);
+  if (startupHydrationEpochRef.current === null) {
+    startupHydrationEpochRef.current = createAsyncOperationEpoch();
+  }
+  const startupHydrationBarrierRef = useRef<Promise<void>>(Promise.resolve());
+  const aiConnectionGateRef = useRef<AsyncOperationGate | null>(null);
+  if (aiConnectionGateRef.current === null) {
+    aiConnectionGateRef.current = createAsyncOperationGate();
+  }
+  const localDataOperationBoundaryRef = useRef<ConnectorResetBoundary | null>(null);
+  if (localDataOperationBoundaryRef.current === null) {
+    localDataOperationBoundaryRef.current = createConnectorResetBoundary();
+  }
+  const localImportReadersRef = useRef<Set<FileReader>>(new Set());
 
   // Async load persisted state (hydrates non-ledger state and forces re-eval)
   useEffect(() => {
     if (isDemoMode) return;
-    readPersistedState().then(async (data) => {
+    const hydrationToken = startupHydrationEpochRef.current!.start();
+    const hydration = readPersistedState().then(async (data) => {
+      if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
       // One-time compatibility migration: older builds kept raw samples in the
       // general Tauri Store. Move them into the encrypted native journal before
       // allowing the next persistence write to clear that legacy duplicate.
@@ -211,6 +234,7 @@ export function App() {
             }];
           }),
         });
+        if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
       }
       // The read/migration resolved, so it's now safe to persist regardless of
       // whether data was found.
@@ -219,12 +243,18 @@ export function App() {
         setPersistedSnapshot(data);
         // Hydrate chrome + other states
         setActive((current) => {
-          const requested = new URLSearchParams(window.location.search).get("screen") as Screen | null;
-          if ((isDemoMode || !isTauriRuntime) && requested && requested in screenLabels) return requested;
+          const requested = browserScreenFromSearch(window.location.search);
+          if ((isDemoMode || !isTauriRuntime) && requested) return requested;
           const loadedBlocks = removeSeededWorkBlocks(data.blocks ?? []);
           return loadedBlocks.some((block) => !block.user_verified) ? "daily" : current;
         });
-        setPaused(data.paused ?? true);
+        const hydratedPaused = data.paused ?? true;
+        captureAcceptingRef.current = !hydratedPaused;
+        captureAcceptAfterMsRef.current = hydratedPaused
+          ? Number.POSITIVE_INFINITY
+          : Date.now();
+        pausedRef.current = hydratedPaused;
+        setPaused(hydratedPaused);
         // Hydration installing the persisted paused state is not a user toggle —
         // keep the audit ref in step so the effect below doesn't emit a phantom row.
         lastAuditedPausedRef.current = data.paused ?? true;
@@ -262,6 +292,7 @@ export function App() {
         setUsageCsvRowHashes(data.usageCsvRowHashes ?? []);
         setConsentReceipts(data.consentReceipts ?? []);
       }
+      setBrowserScreenHistoryHydrated(true);
       if (isTauriRuntime) {
         const sessionCutoffMs = Date.now();
         const sessionSinceMs = sessionCutoffMs - 8 * 24 * 60 * 60 * 1000;
@@ -272,6 +303,7 @@ export function App() {
           window_title: string | null;
           capture_error: string | null;
         }>>("read_capture_journal", { limit: 2000 }).then((journal) => {
+          if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
           const recovered: ActiveWindowSample[] = journal.flatMap((entry) => {
             if (entry.capture_error || !entry.app_name || !Number.isFinite(entry.timestamp_ms)) return [];
             return [{
@@ -288,6 +320,7 @@ export function App() {
             return [...byId.values()].sort((left, right) => left.timestamp.localeCompare(right.timestamp)).slice(-2000);
           });
         }).catch((error) => {
+          if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
           setCaptureError(error instanceof Error ? error.message : "The encrypted capture journal could not be read.");
         });
         void invoke<ActivitySession[]>("read_capture_journal_sessions", {
@@ -295,8 +328,10 @@ export function App() {
           untilMs: sessionCutoffMs,
           maxSessions: 10_000,
         }).then((sessions) => {
+          if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
           setJournalSessionWindow({ cutoffMs: sessionCutoffMs, sessions });
         }).catch((error) => {
+          if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
           setCaptureError(
             error instanceof Error
               ? error.message
@@ -309,30 +344,47 @@ export function App() {
       // layout (first launch lands in welcome → walkthrough → setup; returning
       // users land on their dashboard). The menu-bar icon stays available
       // either way; closing the window returns the app to tray-only.
+      if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
       void invoke("present_main_window").catch(() => undefined);
     }).catch((error) => {
+      if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
       // Never reinterpret a read, Keychain, or legacy-journal migration failure
       // as an empty first launch: that would let a later save overwrite data we
       // failed to hydrate. Keep persistence gated and make recovery visible.
       const detail = error instanceof Error ? error.message : String(error);
       setCaptureError(`Saved Weekform data could not be loaded: ${detail}`);
+      setBrowserScreenHistoryHydrated(true);
       void invoke("present_main_window").catch(() => undefined);
     });
+    // readPersistedState can perform durable Store/Keychain migrations, and the
+    // callback can import a legacy sample set into the native journal. Reset
+    // waits this entire boundary before clearing any of those destinations.
+    startupHydrationBarrierRef.current = hydration;
+    return () => startupHydrationEpochRef.current?.invalidate();
   }, [isDemoMode, isTauriRuntime]);
 
   const initialBlocks = removeSeededWorkBlocks(persistedSnapshot?.blocks ?? []);
   const [active, setActive] = useState<Screen>(() => {
-    const requested = new URLSearchParams(window.location.search).get("screen") as Screen | null;
-    return (isDemoMode || !isTauriRuntime) && requested && requested in screenLabels
+    const requested = browserScreenFromSearch(window.location.search);
+    return (isDemoMode || !isTauriRuntime) && requested
       ? requested
       : initialBlocks.some((block) => !block.user_verified) ? "daily" : "weekly";
   });
+  const browserScreenHistoryReadyRef = useRef(false);
+  const browserHistoryRestoringRef = useRef(false);
+  const [browserScreenHistoryHydrated, setBrowserScreenHistoryHydrated] = useState(
+    isDemoMode || isTauriRuntime,
+  );
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>(() => (
     resolveSettingsTab(new URLSearchParams(window.location.search).get("settings"))
       ?? "data-sources"
   ));
   const [managerModeOpen, setManagerModeOpen] = useState(false);
   const [paused, setPaused] = useState(() => persistedSnapshot?.paused ?? true);
+  const captureAcceptingRef = useRef(!paused);
+  const captureAcceptAfterMsRef = useRef(paused ? Number.POSITIVE_INFINITY : Date.now());
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
   // Tracks the last `paused` value we've already emitted an audit event for, so
   // the audit effect below records only real user-driven transitions — never the
   // mount value or the value hydration/reset installs. Seeded at mount to the
@@ -469,6 +521,17 @@ export function App() {
   const [agentResetGeneration, setAgentResetGeneration] = useState(0);
   const [isResettingLocalData, setIsResettingLocalData] = useState(false);
   const resetInProgressRef = useRef(false);
+  const requestCapturePaused = useCallback((nextPaused: boolean): boolean => {
+    // Reset owns capture until durable deletion and its receipt finish. In
+    // particular, toolbar/menu/Web handoff resumes cannot reopen the native
+    // writer in the middle of clear_capture_journal.
+    if (!canChangeCapturePaused(resetInProgressRef.current, nextPaused)) return false;
+    captureAcceptingRef.current = !nextPaused;
+    captureAcceptAfterMsRef.current = nextPaused ? Number.POSITIVE_INFINITY : Date.now();
+    pausedRef.current = nextPaused;
+    setPaused(nextPaused);
+    return true;
+  }, []);
 
   // Transient app-level feedback (success/error/retry). Queue lives here so any
   // handler or effect can emit one; the visual stack is rendered once in AppShell.
@@ -787,6 +850,8 @@ export function App() {
   });
 
   useActiveWindow({
+    captureAcceptingRef,
+    captureAcceptAfterMsRef,
     isDemoMode,
     setActiveWindowSamples,
     setCaptureError,
@@ -1074,6 +1139,7 @@ export function App() {
   const { classificationStatus, classificationError, classifyActiveWindowSessions, resetClassification } =
     useClassification({
       isDemoMode,
+      resetInProgressRef,
       blocks,
       setBlocks,
       activeWindowSessions,
@@ -1089,6 +1155,7 @@ export function App() {
   const { reviewCopilotStatus, reviewCopilotError, generateReviewCopilotSuggestions, resetReviewCopilot } =
     useReviewCopilot({
       isDemoMode,
+      resetInProgressRef,
       blocks,
       setReviewSuggestions,
       snapshot,
@@ -1103,6 +1170,7 @@ export function App() {
 
   const { forecastStatus, forecastError, generateForecastAgent, resetForecast } = useForecastAgent({
     isDemoMode,
+    resetInProgressRef,
     blocks,
     setGeneratedForecast,
     setForecastHistory,
@@ -1121,6 +1189,7 @@ export function App() {
   const { accelerationStatus, accelerationError, generateAccelerationPlays, resetAcceleration } =
     useAcceleration({
       isDemoMode,
+      resetInProgressRef,
       signals: accelerationSignals,
       blocks,
       currentWeekId,
@@ -1161,6 +1230,7 @@ export function App() {
   const { narrativeGenerationStatus, narrativeGenerationError, regenerateNarrative, resetNarrative } =
     useNarrativeGeneration({
       isDemoMode,
+      resetInProgressRef,
       hasNarrativeEvidence,
       snapshot,
       blocks,
@@ -1180,6 +1250,7 @@ export function App() {
 
   const { visualContextStatus, visualContextError, captureVisualContext, resetVisualContext } = useVisualContext({
     isDemoMode,
+    resetInProgressRef,
     aiConfig,
     setVisualContextInsights,
     setAuditEvents,
@@ -1330,6 +1401,49 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
+    if (isTauriRuntime || !browserScreenHistoryHydrated) return;
+
+    function handleBrowserScreenPopState() {
+      const requested = browserScreenFromSearch(window.location.search);
+      if (!requested) return;
+      setActive((current) => {
+        if (current === requested) return current;
+        browserHistoryRestoringRef.current = true;
+        return requested;
+      });
+      setWindowMode("large");
+    }
+
+    window.addEventListener("popstate", handleBrowserScreenPopState);
+    return () => window.removeEventListener("popstate", handleBrowserScreenPopState);
+  }, [browserScreenHistoryHydrated, isTauriRuntime]);
+
+  useEffect(() => {
+    if (isTauriRuntime) return;
+
+    const decision = browserScreenHistoryDecision({
+      href: window.location.href,
+      active,
+      hydrated: browserScreenHistoryHydrated,
+      initialized: browserScreenHistoryReadyRef.current,
+      restoring: browserHistoryRestoringRef.current,
+    });
+    if (decision.kind === "wait" || decision.kind === "none") return;
+    if (decision.kind === "replace") {
+      browserScreenHistoryReadyRef.current = true;
+      if (decision.url !== window.location.href) {
+        window.history.replaceState(window.history.state, "", decision.url);
+      }
+      return;
+    }
+    if (decision.kind === "restore") {
+      browserHistoryRestoringRef.current = false;
+      return;
+    }
+    window.history.pushState(window.history.state, "", decision.url);
+  }, [active, browserScreenHistoryHydrated, isTauriRuntime]);
+
+  useEffect(() => {
     function navigateFromNative(event: Event) {
       const screen = (event as CustomEvent<Screen>).detail;
       if (screen in screenLabels) {
@@ -1339,7 +1453,7 @@ export function App() {
     }
 
     function togglePauseFromNative() {
-      setPaused((current: boolean) => !current);
+      requestCapturePaused(!pausedRef.current);
     }
 
     function openQuickViewFromNative() {
@@ -1361,7 +1475,7 @@ export function App() {
       window.removeEventListener("clear-capacity:quick-view", openQuickViewFromNative);
       window.removeEventListener("clear-capacity:large-view", openLargeViewFromNative);
     };
-  }, []);
+  }, [requestCapturePaused]);
 
   useEffect(() => {
     if (!isTauriRuntime || !cloudAccount.hydrated) return;
@@ -1377,7 +1491,7 @@ export function App() {
 
         const resolution = resolveWebTrackingHandoff(desktopSignedIn);
         if (resolution.startTracking) {
-          setPaused(false);
+          if (!requestCapturePaused(false)) return;
           setWindowMode(resolution.windowMode);
           pushToast({ tone: "success", message: "Tracking started in compact view" });
           return;
@@ -1400,7 +1514,7 @@ export function App() {
       active = false;
       window.removeEventListener("clear-capacity:web-handoff", handleWebHandoff);
     };
-  }, [cloudAccount.hydrated, desktopSignedIn, isTauriRuntime, pushToast]);
+  }, [cloudAccount.hydrated, desktopSignedIn, isTauriRuntime, pushToast, requestCapturePaused]);
 
   useEffect(() => {
     async function copyManagerSummaryFromNative() {
@@ -1565,7 +1679,12 @@ export function App() {
   }, [activeWindowSessions, isDemoMode]);
 
   useEffect(() => {
-    if (!hasNarrativeEvidence || lastNarrativeAutoRunDate === todayKey || narrativeGenerationStatus !== "idle") {
+    if (
+      resetInProgressRef.current ||
+      !hasNarrativeEvidence ||
+      lastNarrativeAutoRunDate === todayKey ||
+      narrativeGenerationStatus !== "idle"
+    ) {
       return;
     }
 
@@ -1576,6 +1695,7 @@ export function App() {
   useEffect(() => {
     const latestSession = activeWindowSessions[0];
     if (
+      resetInProgressRef.current ||
       !visualContextEnabled ||
       paused ||
       !latestSession ||
@@ -1865,9 +1985,16 @@ export function App() {
     if (!("__TAURI_INTERNALS__" in window)) {
       throw new Error("Using a ChatGPT/Codex plan needs the desktop app — paste an API key instead.");
     }
+    const connectionToken = aiConnectionGateRef.current!.begin();
+    if (connectionToken === null) {
+      throw new Error("ChatGPT/Codex sign-in is unavailable while Reset Local Data runs.");
+    }
     const result = await invoke<{ model: string; planType: string; message: string }>(
       "connect_codex_via_chatgpt"
     );
+    if (!aiConnectionGateRef.current!.isCurrent(connectionToken)) {
+      throw new Error("ChatGPT/Codex sign-in was cancelled by Reset Local Data.");
+    }
     setAiConfig(createCodexAIConfig(result.model));
     return result.message;
   }
@@ -1914,6 +2041,7 @@ export function App() {
   // privacy-consequential switch, so it must leave an audit trail like pause/resume
   // and retention. Individual captures are separately audited (`visual_context`).
   function changeVisualContextEnabled(value: boolean) {
+    if (resetInProgressRef.current) return;
     setVisualContextEnabled(value);
     if (isDemoMode) return;
     setAuditEvents((current) => [
@@ -2150,6 +2278,9 @@ export function App() {
   // dialog itself lists. Downloads always (harmless in demo); audits only for real data
   // (mirrors the retention/visual-context privacy handlers' demo guard).
   async function exportFullBackup() {
+    const operation = localDataOperationBoundaryRef.current!.begin();
+    if (!operation) return;
+    try {
     let agentSession;
     try {
       agentSession = readAgentSessionStorage();
@@ -2210,12 +2341,14 @@ export function App() {
           backup: prepareNativeFullBackup(backup),
           fileName,
         });
+        if (!operation.isCurrent()) return;
         exportedActivitySampleCount = result.journal_record_count;
         pushToast({
           tone: "success",
           message: `Backup saved to Downloads as ${result.file_name}. It contains plaintext activity evidence; store it securely.`,
         });
       } catch (error) {
+        if (!operation.isCurrent()) return;
         pushToast({
           tone: "error",
           message: error instanceof Error
@@ -2231,6 +2364,7 @@ export function App() {
         exportMimeType("json")
       );
     }
+    if (!operation.isCurrent()) return;
     if (isDemoMode) return;
     setAuditEvents((current) => [
       ...current,
@@ -2260,6 +2394,9 @@ export function App() {
         }
       })
     ].slice(-1000));
+    } finally {
+      operation.finish();
+    }
   }
 
   async function resetLocalData() {
@@ -2269,6 +2406,8 @@ export function App() {
     }
     if (resetInProgressRef.current) return;
     resetInProgressRef.current = true;
+    startupHydrationEpochRef.current!.invalidate();
+    aiConnectionGateRef.current!.close();
     setIsResettingLocalData(true);
     setAgentResetGeneration((current) => current + 1);
     const agentSessionStorageCleared = clearAgentSessionStorage();
@@ -2281,45 +2420,115 @@ export function App() {
     resetForecast();
     resetAcceleration();
     resetVisualContext();
+    const startupHydrationQuiescence = startupHydrationBarrierRef.current;
+    const localDataOperationQuiescence = localDataOperationBoundaryRef.current!.quiesce();
+    for (const reader of localImportReadersRef.current) {
+      if (reader.readyState === FileReader.LOADING) reader.abort();
+    }
+    localImportReadersRef.current.clear();
+    // Close the only React -> Store write lane synchronously, before any await can
+    // let a stale debounce callback run. The returned barrier also waits for a
+    // write that crossed the boundary just before suspension.
+    const persistenceSuspension = appPersistence.suspendForReset();
+    // Close both cloud lanes synchronously as part of the same reset boundary.
+    // Their promises wait for work already beyond a network/persistence edge;
+    // no credential or consent deletion begins until both have settled.
+    const personalSyncQuiescence = personalCloud.quiesceForReset();
+    const aggregateSyncQuiescence = cloudSync.quiesceForReset();
+    const cloudAccountQuiescence = cloudAccount.quiesceForReset();
+    const calendarConnectorQuiescence = calendarSources.quiesceForReset();
+    const chatConnectorQuiescence = chatSources.quiesceForReset();
+    // Start native callback cancellation immediately after the renderer lanes
+    // close. This releases pending 300-second loopback waits; connector barriers
+    // still await any callback that already advanced into provider token exchange.
+    const oauthCallbackCancellation = !isTauriRuntime
+      ? Promise.resolve(true)
+      : invoke("cancel_pending_oauth_callbacks_for_reset")
+        .then(() => true)
+        .catch(() => false);
     try {
       // Stop the native writer before touching its journal. The Rust journal lock
       // protects individual operations; this pause prevents a fresh post-clear
       // sample from recreating data while the rest of Reset is still running.
-      setPaused(true);
+      requestCapturePaused(true);
       lastAuditedPausedRef.current = true;
+    const oauthCallbacksCancelled = await oauthCallbackCancellation;
     const capturePaused = !isTauriRuntime || await invoke("set_activity_capture_paused", { paused: true })
       .then(() => true)
       .catch(() => false);
-    const persistedStateCleared = await clearPersistedState()
+    // Cloud session, sharing policy, sync bookkeeping, and reserved snapshot ids
+    // are wiped too. Both operation epochs were invalidated before the native
+    // pause await; now wait for every prior cloud edge before destructive clear.
+    const personalSyncQuiesced = await personalSyncQuiescence
       .then(() => true)
       .catch(() => false);
-    // Cloud session, sharing policy, sync bookkeeping, and the reserved snapshot id
-    // are wiped too — first quiesce every personal sync edge so no late receipt,
-    // queue write, or refreshed session can recreate state after deletion.
-    const personalSyncQuiesced = await personalCloud.quiesceForReset()
+    const aggregateSyncQuiesced = await aggregateSyncQuiescence
       .then(() => true)
       .catch(() => false);
-    const cloudCredentialsCleared = await cloudAccount.clearAll().catch(() => false);
+    const cloudAccountQuiesced = await cloudAccountQuiescence
+      .then(() => true)
+      .catch(() => false);
+    const calendarConnectorQuiesced = await calendarConnectorQuiescence
+      .then(() => true)
+      .catch(() => false);
+    const chatConnectorQuiesced = await chatConnectorQuiescence
+      .then(() => true)
+      .catch(() => false);
+    const startupHydrationQuiesced = await startupHydrationQuiescence
+      .then(() => true)
+      .catch(() => false);
+    const persistenceWritesQuiesced = await persistenceSuspension
+      .then(() => true)
+      .catch(() => false);
+    const localDataOperationsQuiesced = await localDataOperationQuiescence
+      .then(() => true)
+      .catch(() => false);
+    const resetWriteBoundariesQuiesced =
+      personalSyncQuiesced &&
+      aggregateSyncQuiesced &&
+      cloudAccountQuiesced &&
+      calendarConnectorQuiesced &&
+      chatConnectorQuiesced &&
+      startupHydrationQuiesced &&
+      localDataOperationsQuiesced &&
+      persistenceWritesQuiesced;
+    const persistedStateCleared = resetWriteBoundariesQuiesced
+      ? await clearPersistedState()
+        .then(() => true)
+        .catch(() => false)
+      : false;
+    // Reset may win the race with launch hydration. Once deletion is confirmed,
+    // let the cleared render and reset receipt establish the new persisted
+    // baseline; the startup token above can no longer commit its stale read.
+    if (persistedStateCleared) persistenceHydrated.current = true;
+    const cloudCredentialsCleared = resetWriteBoundariesQuiesced
+      ? await cloudAccount.clearAll().catch(() => false)
+      : false;
     const captureJournalCleared = !isTauriRuntime || (capturePaused && await invoke("clear_capture_journal")
       .then(() => true)
       .catch(() => false));
-    const calendarCredentialsCleared = !isTauriRuntime || (await Promise.all(
-      (["outlook", "google", "apple"] as CalendarProviderId[]).map((provider) => (
-        invoke("disconnect_calendar_source", { provider }).then(() => true).catch(() => false)
-      )),
-    )).every(Boolean);
+    const calendarCredentialsCleared =
+      !isTauriRuntime ||
+      (calendarConnectorQuiesced && await calendarSources.clearNativeStateForReset());
+    // Native cleanup is deliberately unconditional and idempotent: a crash can
+    // occur after Codex persists its Keychain session but before React saves the
+    // matching aiConfig, so frontend provider state is not proof of absence.
     const codexCredentialsCleared =
       !isTauriRuntime ||
-      !isCodexConnection(aiConfig) ||
       await invoke("disconnect_codex").then(() => true).catch(() => false);
-    const chatCredentialsCleared = !isTauriRuntime || await invoke("clear_chat_source_storage")
-      .then(() => true)
-      .catch(() => false);
+    const chatCredentialsCleared =
+      !isTauriRuntime ||
+      (chatConnectorQuiesced && await chatSources.clearNativeStateForReset());
     const aiCredentialsCleared = persistedStateCleared && codexCredentialsCleared;
     const allDurableDataCleared =
       persistedStateCleared &&
+      persistenceWritesQuiesced &&
       capturePaused &&
       personalSyncQuiesced &&
+      aggregateSyncQuiesced &&
+      calendarConnectorQuiesced &&
+      chatConnectorQuiesced &&
+      oauthCallbacksCancelled &&
       cloudCredentialsCleared &&
       captureJournalCleared &&
       calendarCredentialsCleared &&
@@ -2347,6 +2556,8 @@ export function App() {
           retention_days: null,
           persisted_state_cleared: persistedStateCleared,
           persisted_state_clear_requires_retry: !persistedStateCleared,
+          persistence_writes_quiesced_before_clear: persistenceWritesQuiesced,
+          persistence_write_quiesce_requires_retry: !persistenceWritesQuiesced,
           provider_api_key_cleared: persistedStateCleared,
           ai_credentials_cleared: aiCredentialsCleared,
           codex_credentials_cleared: codexCredentialsCleared,
@@ -2358,6 +2569,20 @@ export function App() {
           cloud_clear_requires_retry: !cloudCredentialsCleared,
           personal_sync_quiesced_before_clear: personalSyncQuiesced,
           personal_sync_quiesce_requires_retry: !personalSyncQuiesced,
+          aggregate_sync_quiesced_before_clear: aggregateSyncQuiesced,
+          aggregate_sync_quiesce_requires_retry: !aggregateSyncQuiesced,
+          cloud_account_quiesced_before_clear: cloudAccountQuiesced,
+          cloud_account_quiesce_requires_retry: !cloudAccountQuiesced,
+          calendar_connector_quiesced_before_clear: calendarConnectorQuiesced,
+          calendar_connector_quiesce_requires_retry: !calendarConnectorQuiesced,
+          chat_connector_quiesced_before_clear: chatConnectorQuiesced,
+          chat_connector_quiesce_requires_retry: !chatConnectorQuiesced,
+          oauth_callbacks_cancelled_before_quiescence: oauthCallbacksCancelled,
+          oauth_callback_cancellation_requires_retry: !oauthCallbacksCancelled,
+          startup_hydration_quiesced_before_clear: startupHydrationQuiesced,
+          startup_hydration_quiesce_requires_retry: !startupHydrationQuiesced,
+          local_data_operations_quiesced_before_clear: localDataOperationsQuiesced,
+          local_data_operations_quiesce_requires_retry: !localDataOperationsQuiesced,
           encrypted_capture_journal_cleared: captureJournalCleared,
           capture_journal_clear_requires_retry: !captureJournalCleared,
           calendar_credentials_cleared: calendarCredentialsCleared,
@@ -2424,8 +2649,60 @@ export function App() {
     // preserving the "reset leaves exactly one audit event" invariant.
     lastAuditedPausedRef.current = true;
     } finally {
+      // The state setters above are now queued for one cleared-state render. Reopen
+      // the lane so that render may persist the reset receipt; every pre-reset
+      // timer/snapshot was discarded by the suspension generation.
+      setBrowserScreenHistoryHydrated(true);
+      appPersistence.resumeAfterReset();
+      aiConnectionGateRef.current!.open();
+      localDataOperationBoundaryRef.current!.reopen();
       resetInProgressRef.current = false;
+      personalCloud.resumeAfterReset();
+      cloudAccount.resumeAfterReset();
+      calendarSources.resumeAfterReset();
+      chatSources.resumeAfterReset();
       setIsResettingLocalData(false);
+    }
+  }
+
+  function readResetFencedTextFile(
+    file: File,
+    onLoad: (content: string) => void,
+    onReadError: () => void,
+  ): boolean {
+    const operation = localDataOperationBoundaryRef.current!.begin();
+    if (!operation) return false;
+    const reader = new FileReader();
+    localImportReadersRef.current.add(reader);
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      localImportReadersRef.current.delete(reader);
+      operation.finish();
+    };
+    reader.onload = () => {
+      try {
+        if (operation.isCurrent()) onLoad(String(reader.result ?? ""));
+      } finally {
+        finish();
+      }
+    };
+    reader.onerror = () => {
+      try {
+        if (operation.isCurrent()) onReadError();
+      } finally {
+        finish();
+      }
+    };
+    reader.onabort = finish;
+    try {
+      reader.readAsText(file);
+      return true;
+    } catch {
+      if (operation.isCurrent()) onReadError();
+      finish();
+      return false;
     }
   }
 
@@ -2434,21 +2711,13 @@ export function App() {
     file: File,
     rangeInput: CalendarRangeInput,
   ) {
-    setImportError(null);
-    const reader = new FileReader();
-
     const failImport = (message: string) => {
       setImportError(message);
       pushToast({ tone: "error", message });
     };
 
-    reader.onerror = () => {
-      failImport(`Could not read that ${providerDescriptor(provider).label} export.`);
-    };
-
-    reader.onload = () => {
+    const started = readResetFencedTextFile(file, (content) => {
       try {
-        const content = String(reader.result ?? "");
         const range = normalizeCalendarRange(rangeInput);
         const importedEvents = createCalendarImport(provider, content, range);
 
@@ -2472,27 +2741,18 @@ export function App() {
       } catch (error) {
         failImport(error instanceof Error ? error.message : "The .ics file could not be parsed.");
       }
-    };
-
-    reader.readAsText(file);
+    }, () => failImport(`Could not read that ${providerDescriptor(provider).label} export.`));
+    if (started) setImportError(null);
   }
 
   function importWorkplaceChat(file: File) {
-    setChatImportError(null);
-    const reader = new FileReader();
-
     const failImport = (message: string) => {
       setChatImportError(message);
       pushToast({ tone: "error", message });
     };
 
-    reader.onerror = () => {
-      failImport("Could not read that chat export.");
-    };
-
-    reader.onload = () => {
+    const started = readResetFencedTextFile(file, (content) => {
       try {
-        const content = String(reader.result ?? "");
         // The legacy normalized-file path is content-free and derives each
         // episode's ISO week from its own timestamp. Pinning to the currently
         // viewed week would silently misfile historical transfers.
@@ -2586,28 +2846,19 @@ export function App() {
       } catch {
         failImport("That chat export could not be parsed.");
       }
-    };
-
-    reader.readAsText(file);
+    }, () => failImport("Could not read that chat export."));
+    if (started) setChatImportError(null);
   }
 
   function importUsageCsv(file: File) {
-    setUsageImportError(null);
-    const reader = new FileReader();
-
     const failImport = (message: string) => {
       setUsageImportError(message);
       pushToast({ tone: "error", message });
     };
 
-    reader.onerror = () => {
-      failImport("Could not read that usage CSV.");
-    };
-
-    reader.onload = () => {
+    const started = readResetFencedTextFile(file, (content) => {
       // parseUsageCsv never throws — a malformed file returns an empty result
       // whose `error` carries the reason, surfaced verbatim.
-      const content = String(reader.result ?? "");
       const result = parseUsageCsv(content, { knownRowHashes: new Set(usageCsvRowHashes) });
 
       if (result.error) {
@@ -2649,9 +2900,8 @@ export function App() {
             ? "Every row in that file was already imported — nothing new added"
             : `${result.imported} usage row${result.imported === 1 ? "" : "s"} imported${result.duplicates > 0 ? ` · ${result.duplicates} duplicate${result.duplicates === 1 ? "" : "s"} skipped` : ""}`,
       });
-    };
-
-    reader.readAsText(file);
+    }, () => failImport("Could not read that usage CSV."));
+    if (started) setUsageImportError(null);
   }
 
   function openScreenFromQuickView(screen: Screen) {
@@ -2778,7 +3028,7 @@ export function App() {
       reviewCount={reviewQueue.length}
       showFlaggedTab={visualContextEnabled || visualContextInsights.some((insight) => insight.sensitive_content_detected)}
       paused={paused}
-      setPaused={setPaused}
+      setPaused={requestCapturePaused}
       sidebarCollapsed={sidebarCollapsed}
       setSidebarCollapsed={setSidebarCollapsed}
       windowMode={windowMode}
@@ -2798,7 +3048,7 @@ export function App() {
         active={active}
         windowMode={windowMode}
         paused={paused}
-        setPaused={setPaused}
+        setPaused={requestCapturePaused}
         blocks={blocks}
         activeWindowSamples={activeWindowSamples}
         activeWindowSessions={activeWindowSessions}
@@ -2882,6 +3132,7 @@ export function App() {
         onResetConfirmationRequestHandled={() => setResetConfirmationRequestId(0)}
         onExportBackup={exportFullBackup}
         agentResetGeneration={agentResetGeneration}
+        aiConnectionGate={aiConnectionGateRef.current}
         reviewSuggestions={reviewSuggestions}
         reviewCopilotStatus={reviewCopilotStatus}
         reviewCopilotError={reviewCopilotError}
@@ -2931,7 +3182,9 @@ export function App() {
           aiConfigured={hasAIConnection(aiConfig, false)}
           usingCodexPlan={isCodexConnection(aiConfig)}
           envOpenAiKeyPresent={envOpenAiKeyPresent}
-          onEnableTracking={() => setPaused(false)}
+          onEnableTracking={() => {
+            requestCapturePaused(false);
+          }}
           onRetentionDaysChange={changeRetentionDays}
           onConnectOpenAiKey={connectOpenAiKeyFromWizard}
           onConnectViaCodexPlan={connectViaCodexPlanFromWizard}

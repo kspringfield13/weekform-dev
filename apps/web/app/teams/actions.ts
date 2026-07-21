@@ -20,6 +20,7 @@ import {
   type InviteActionState,
 } from "./inviteState";
 import { buildTeamSharePolicyRecord } from "@/lib/teamPolicy";
+import { resolveTeamInviteOrigin } from "@/lib/teamInviteOrigin";
 
 const NOT_CONFIGURED =
   "This deployment has no Supabase project configured yet, so teams are unavailable. See apps/web/README.md.";
@@ -31,19 +32,13 @@ function encodeMessage(message: string): string {
   return encodeURIComponent(message);
 }
 
-/** Origin of the current request, honoring reverse-proxy headers. */
+/** Pinned public, preview, or explicit development origin for invite links. */
 async function requestOrigin(): Promise<string> {
-  const headerList = await headers();
-  const host =
-    headerList.get("x-forwarded-host") ??
-    headerList.get("host") ??
-    "localhost:3000";
-  const proto =
-    headerList.get("x-forwarded-proto") ??
-    (host.startsWith("localhost") || host.startsWith("127.")
-      ? "http"
-      : "https");
-  return `${proto}://${host}`;
+  return resolveTeamInviteOrigin(await headers(), {
+    nodeEnv: process.env.NODE_ENV,
+    vercelEnv: process.env.VERCEL_ENV,
+    vercelUrl: process.env.VERCEL_URL,
+  });
 }
 
 /**

@@ -13,7 +13,7 @@ import type {
   WorkMode,
   AIConfig,
 } from "../../../../packages/domain/src/models";
-import { useAsyncStatus } from "./useAsyncStatus";
+import { isResetInProgress, useAsyncStatus, type ResetInProgressRef } from "./useAsyncStatus";
 import { buildReviewCopilotPrompt, REVIEW_COPILOT_PROMPT_VERSION } from "../services/reviewCopilotPrompt";
 import { createAuditEvent } from "../lib/audit";
 import { aiAuditSource, generationProviderUnsupportedMessage, providerSupportsGeneration } from "../services/aiProviders";
@@ -45,6 +45,7 @@ interface NativeReviewCopilotResponse {
 
 interface UseReviewCopilotParams {
   isDemoMode: boolean;
+  resetInProgressRef: ResetInProgressRef;
   blocks: WorkBlock[];
   setReviewSuggestions: React.Dispatch<React.SetStateAction<ReviewCopilotSuggestion[]>>;
   snapshot: WeeklyCapacitySnapshot;
@@ -59,6 +60,7 @@ interface UseReviewCopilotParams {
 
 export function useReviewCopilot({
   isDemoMode,
+  resetInProgressRef,
   blocks,
   setReviewSuggestions,
   snapshot,
@@ -74,6 +76,7 @@ export function useReviewCopilot({
     useAsyncStatus<"idle" | "generating">("idle");
 
   async function generateReviewCopilotSuggestions() {
+    if (isResetInProgress(resetInProgressRef)) return;
     if (isDemoMode) return;
     if (reviewCopilotStatus === "generating") return;
 

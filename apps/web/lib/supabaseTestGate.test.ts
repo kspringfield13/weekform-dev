@@ -13,13 +13,14 @@ test("static Web checks and executable Supabase RLS checks have separate named g
     "node --import tsx --test apps/web/lib/*.test.ts",
   );
   assert.equal(scripts["test:web"], "npm run test:web:static");
+  assert.equal(scripts["web:typecheck"], "npm --prefix apps/web run typecheck");
   assert.equal(
     scripts["test:supabase:rls"],
     "supabase test db --local supabase/tests",
   );
   assert.equal(
     scripts["verify:web:release"],
-    "npm run test:web:static && npm run test:supabase:rls && npm run web:build",
+    "npm run web:typecheck && npm run test:web:static && npm run test:supabase:rls && npm run web:build",
   );
 });
 

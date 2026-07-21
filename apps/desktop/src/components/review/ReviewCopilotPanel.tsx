@@ -30,6 +30,7 @@ export function ReviewCopilotPanel({
   blockTitles,
   status,
   error,
+  aiAvailable,
   onGenerate,
   onApply,
   onDismiss
@@ -38,6 +39,7 @@ export function ReviewCopilotPanel({
   blockTitles: Map<string, string>;
   status: "idle" | "generating" | "error";
   error: string | null;
+  aiAvailable: boolean;
   onGenerate: () => void;
   onApply: (suggestion: ReviewCopilotSuggestion) => void;
   onDismiss: (suggestionId: string) => void;
@@ -57,7 +59,7 @@ export function ReviewCopilotPanel({
         <strong>Suggested cleanup</strong>
         <span className="copilot-inline-sub">AI-proposed — you approve every change.</span>
       </div>
-      {error && <InlineError message={error} onRetry={onGenerate} />}
+      {error && <InlineError message={error} onRetry={aiAvailable ? onGenerate : undefined} />}
       {isGenerating && suggestions.length === 0 ? (
         <div className="copilot-skeleton" role="status">
           <span className="sr-only">Generating suggestions…</span>

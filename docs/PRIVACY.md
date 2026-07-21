@@ -27,6 +27,14 @@ to its prior length on an in-process error, and repair only the final
 uncommitted fragment; authenticated corruption before the final record fails
 closed instead of returning partial history.
 
+Sampling itself happens outside the journal lock, but committing the encrypted
+record and emitting the React event share the same lifecycle lock as Pause. If
+Pause wins first, the already-sampled value is dropped; if a commit has already
+entered, Pause waits for that commit and event to drain before it returns. Reset
+closes the React delivery guard synchronously and waits for this native pause
+barrier before clearing the journal, so a capture started before Reset cannot
+recreate or emit sensitive state after the pause boundary.
+
 The React UI keeps only the newest 2,000 raw samples as a responsive visible
 cache. That cap does not bound the workload model: startup separately scans the
 encrypted journal backward in 64 KiB chunks and reconstructs a bounded eight-day
@@ -52,6 +60,14 @@ unencrypted. Web and demo builds have no native collector or encrypted journal
 and retain the browser-local fallback for the desktop React demo only. Data
 remains on the local macOS user account until retention or reset removes it.
 
+Calendar, Chat, and usage file imports and the full-backup action share a
+Reset-owned local-operation fence. Reset closes that fence before deletion,
+aborts active browser `FileReader` imports, waits any import or native export
+that already crossed its commit boundary, and rejects its late UI/audit result.
+The fence reopens only after cleared state is installed. This lifecycle control
+does not encrypt the exported backup; the plaintext warning above still
+applies.
+
 That browser fallback describes the desktop React app when it is run in web/demo
 mode. It is not the `apps/web` account and team site described below.
 
@@ -69,7 +85,9 @@ configured with the corresponding public native-app client identifier
 system browser, a random loopback callback port, OAuth authorization code flow
 with PKCE, and read-only calendar scopes. Refresh tokens are stored only in
 macOS Keychain and are excluded from app state and exports. The native process
-requests bounded event pages and returns only event id/UID, title, start/end,
+uses a 10-second connection bound and 45-second total bound for token exchange,
+refresh, and provider event requests. It requests bounded event pages and
+returns only event id/UID, title, start/end,
 location, organizer display name when available, attendee count, and all-day
 status to the React layer. Event descriptions, meeting bodies/notes, attendee
 identities, attachments, and email bodies are neither normalized nor stored.
@@ -90,8 +108,12 @@ selected range. A live sync replaces that provider's events only inside the
 requested range, so provider-side deletions do not remain as current evidence;
 other providers and dates are untouched. Connect, sync, import, disconnect, and
 reset boundaries emit local audit records without storing credentials. Reset
-Local Data attempts to remove all three calendar connection records from
-Keychain in addition to clearing imported calendar events.
+Local Data first rejects new calendar work, invalidates a pending native
+loopback callback, and waits any authorization or sync that already advanced
+into provider exchange before it attempts to remove all three calendar
+connection records from Keychain and clear imported calendar events. A
+cancellation, quiescence, or Keychain failure remains visible and prevents a
+full-success Reset receipt.
 
 ## Chat Sources
 
@@ -229,7 +251,10 @@ Integrations](https://developer.webex.com/docs/integrations) require the
 registered integration's confidential secret at token exchange and refresh.
 The Mac sends only the authorization or refresh credential to the configured
 HTTPS Weekform broker; the broker adds the server-only secret, exchanges with
-Webex, allowlists the token response, and returns it with `no-store`. Chat
+Webex, allowlists the token response, and returns it with `no-store`. The broker
+streams at most 16 KiB of request text, cancels an over-limit body even when it
+is chunked or understates `Content-Length`, and marks success and every error
+response `no-store, max-age=0` with `Pragma: no-cache`. Chat
 messages and canonical Chat evidence never transit that broker or weekform.dev.
 Only the optional
 provider-free derived replica and separate approved aggregate snapshot can
@@ -283,8 +308,11 @@ provider's own account controls. Raw-evidence retention expires canonical Chat
 evidence and derived Chat raw events while leaving reviewable work blocks.
 Reset Local Data clears Chat evidence and work blocks and attempts to remove all
 Chat credentials, cursors, all saved public Chat connection details, and the
-hash salt; a failed durable cleanup is
-reported as requiring a retry. No admin or compliance token is supported.
+hash salt. It first rejects new connector work, invalidates a pending native
+loopback callback, and waits any authorization or transfer that already crossed
+into provider work. Native Chat provider requests have a 30-second total bound.
+A callback, quiescence, or durable cleanup failure is reported as requiring a
+retry. No admin or compliance token is supported.
 
 The connector contracts, projection tests, builds, and local UI can be verified
 without provider credentials. A live Slack, Google Chat, or Webex authorization
@@ -298,14 +326,23 @@ and retention limits.
 
 OpenAI is Weekform's default and recommended AI provider. AI is optional and supports two distinct connection boundaries:
 
-- **Provider API key.** A key can be configured in local Settings, or through `OPENAI_API_KEY` in the repository's ignored `.env` file during development. Credentials are never compiled into the Vite bundle. In the native app, each provider key is stored under a binding-addressed macOS Keychain account; only the credential binding plus provider, model, and endpoint preferences remain in the unencrypted Tauri Store. Rotation writes a new Keychain entry, commits the Store pointer, then retires the old entry; a Store failure removes the proposed entry and preserves the prior working credential. Legacy Store/singleton keys migrate through the same boundary and are erased from Store. Webview Keychain commands accept only the cloud-session account, legacy migration account, or a canonical Weekform credential-binding account; arbitrary account names are rejected before Security.framework. The desktop React browser preview has no Keychain and does not retain a typed key across reloads. Native classification, review, forecast, narrative, and visual-context requests are sent through the Tauri process. The conversational Agent may use its configured provider directly from the webview so its tools can access current in-memory workload state; in that path, the configured key is available to the running webview for the current process. These OpenAI Responses API requests set `store: false`.
-- **ChatGPT/Codex plan.** The native app starts OpenAI's Codex app-server and asks it to perform OpenAI-managed ChatGPT sign-in in the system browser. Weekform does not request a Platform API key and does not read, copy, return, log, export, or place OAuth tokens in React state. It uses a Weekform-owned `CODEX_HOME` and empty working directory rather than the user's normal Codex home or repository. macOS Keychain storage is required; if Codex falls back to a local `auth.json`, Weekform removes that file and rejects the connection. Reset Local Data and “Use an API key instead” ask that isolated app-server to sign out, then remove Weekform's Codex home and empty working directory.
+- **Provider API key.** A key can be configured in local Settings, or through `OPENAI_API_KEY` in the repository's ignored `.env` file during development. Credentials are never compiled into the Vite bundle. In the native app, each provider key is stored under a binding-addressed macOS Keychain account; only the credential binding plus provider, model, and endpoint preferences remain in the unencrypted Tauri Store. Before a new secret is written, its UUID binding is durably preregistered in a non-secret Store registry. Rotation then writes the new Keychain entry, commits the Store pointer, and retires the old entry; superseded bindings stay registered so Reset can retry a failed retirement. A Store failure removes the proposed entry and preserves the prior working credential, while a cleanup failure leaves the preregistered binding recoverable after relaunch. Reset resolves the durable registry before deleting Store state, deletes and readback-verifies every registered and legacy Weekform API-key account, and keeps the registry for retry if any Keychain operation fails. Legacy Store/singleton keys migrate through the same boundary and are erased from Store. Webview Keychain commands accept only the cloud-session account, legacy migration account, or a canonical Weekform credential-binding account; arbitrary account names are rejected before Security.framework. The desktop React browser preview has no Keychain and does not retain a typed key across reloads. Native classification, review, forecast, narrative, and visual-context requests are sent through the Tauri process. The conversational Agent may use its configured provider directly from the webview so its tools can access current in-memory workload state; in that path, the configured key is available to the running webview for the current process. These OpenAI Responses API requests set `store: false`.
+- **ChatGPT/Codex plan.** The native app starts OpenAI's Codex app-server and asks it to perform OpenAI-managed ChatGPT sign-in in the system browser. Weekform does not request a Platform API key and does not read, copy, return, log, export, or place OAuth tokens in React state. It uses a Weekform-owned `CODEX_HOME` and empty working directory rather than the user's normal Codex home or repository. macOS Keychain storage is required; if Codex falls back to a local `auth.json`, Weekform removes that file and rejects the connection. Reset Local Data invokes the isolated Codex disconnect path regardless of the current React provider metadata, because a crash can occur after native Keychain persistence but before that metadata is saved. Connect, generation, and disconnect share one native lifecycle owner: disconnect rejects new work, invalidates polling, and waits an operation that already owns the lifecycle before cleanup. If either Weekform-owned path exists, app-server logout is attempted but remains best effort. Regardless of whether either directory exists, cleanup always derives the Weekform-owned Keychain account from the isolated paths and attempts local credential deletion; that local deletion is the authoritative sign-out boundary. It then removes the isolated home and empty workspace. “Use an API key instead” uses the same cleanup boundary.
 
 The Codex-plan app-server is discovered from `WEEKFORM_CODEX_BINARY`, the ChatGPT desktop app bundle, or a local Codex CLI installation. Weekform disables Codex apps, plugins, hooks, skills, browsing, shell/file tools, computer use, multi-agent features, and workspace dependency discovery. Each generation uses a new read-only, approval-free, ephemeral thread in the empty Weekform working directory, with only the feature prompt, optional in-memory image, and output schema. “Ephemeral” prevents Weekform's Codex thread from being retained in the local Codex session history; OpenAI still processes the request under the signed-in ChatGPT workspace's plan, data controls, retention, and usage limits. This route does not use or claim the Responses API `store: false` option.
 
 When an AI feature runs, Weekform sends the prompt context required by that feature to the selected provider. Classification, review suggestions, and forecasts are user-triggered; weekly narrative generation can run automatically after workload evidence exists.
 
 Native provider HTTP clients use a 10-second connect bound, 50-second response-read bound, and 55-second total request bound, and each native AI feature permits only one in-flight operation per process. The frontend's 60-second deadline is deliberately longer, so the native request releases its feature guard before the UI can offer a retry. Reset invalidates every AI workflow epoch before deletion, preventing a late result from repopulating cleared state. There is not yet a user-addressable cancellation identifier for an individual native request.
+
+Reset also closes the frontend API-key/Codex connection gate before its first
+await. Classification, Review Copilot, Forecast, narrative, Acceleration, and
+Visual Context reject new entry while that boundary is closed, including
+automatic narrative/Visual Context starts. The conversational Agent is aborted;
+send, retry, direct action staging, and approval starts remain disabled and are
+checked again at function entry until Reset reopens. Provider-side work without
+a cooperative cancellation handle may still finish remotely, but its result
+cannot repopulate the cleared local workspace.
 
 Depending on the feature, prompt context can include:
 
@@ -339,7 +376,7 @@ Cloud sharing and the private Web replica are **off by default** and exist only 
 
 Desktop Google and GitHub sign-in opens the provider flow in the system browser and uses PKCE. While sign-in is active, Weekform listens only on `127.0.0.1:49321` for the exact `/cloud-auth/callback` path for up to five minutes; the Supabase project must allow that exact loopback redirect. The callback contains a short-lived, single-use authorization code and a random state value, not workload data or session tokens. The app verifies the state and exchanges the code together with the in-memory PKCE verifier, then keeps the resulting native session in macOS Keychain under the same boundary as password sign-in. Browser/demo mode does not start this native callback flow.
 
-The private Web workspace is a separate contract from team sharing. After the signed-in user explicitly enables it, the Mac registers a device id and uploads idempotent, cursor-receipted batches containing `PersonalWorkloadReplicaV1`. That allowlist contains only week ids, block ids, times, capacity percentage, category, work mode, planned status, confidence, reviewed/blocker flags, deterministic revisions, and derived capacity metrics. It cannot contain raw samples, sessions, app/window titles, evidence, notes, project or stakeholder names, calendar/chat details, screenshots, audit detail, AI outputs, or credentials. Offline batches remain in the local cloud envelope until a later successful sync; queue state and a persisted hybrid logical source clock are durably committed before an upload can begin. Across devices, the server accepts a strictly newer clock, rejects divergent stale/equal payloads and clocks more than five minutes in the future, and treats a byte-equivalent deterministic replica as an idempotent success even when its transient source time is older. This is deterministic last-writer-wins behavior, not a field-level merge; users should resolve a real conflict on the Mac that owns the intended current state and sync again.
+The private Web workspace is a separate contract from team sharing. After the signed-in user explicitly enables it, the Mac registers a device id and uploads idempotent, cursor-receipted batches containing `PersonalWorkloadReplicaV1`. That allowlist contains only week ids, block ids, times, capacity percentage, category, work mode, planned status, confidence, reviewed/blocker flags, deterministic revisions, and derived capacity metrics. It cannot contain raw samples, sessions, app/window titles, evidence, notes, project or stakeholder names, calendar/chat details, screenshots, audit detail, AI outputs, or credentials. Offline batches remain in the local cloud envelope until a later successful sync; queue state and a persisted hybrid logical source clock are durably committed before an upload can begin. Across devices, the server accepts a strictly newer clock, rejects divergent stale/equal payloads and clocks more than five minutes in the future, and treats a byte-equivalent deterministic replica as an idempotent success even when its transient source time is older. Each server batch is capped at 1 MiB and 1,000 blocks before canonical hashing or per-block validation. A retry key belongs to the authenticated user and the exact device, fingerprint, and SHA-256 digest of its canonical JSONB payload; an exact retry returns the original receipt, while a legacy receipt without a digest or any divergent reuse requires a new batch id. The server never accepts an unverifiable legacy `NULL` digest as idempotent. On only that exact legacy-receipt error, the desktop durably replaces the queued batch UUID while leaving the payload, content fingerprint, consent, device, and source clock unchanged, then waits for a later retry; unrelated failures cannot rotate the identity. These additional batch-identity checks are in migration `202607200010`; production does not receive them until that migration is applied. This remains deterministic last-writer-wins behavior, not a field-level merge; users should resolve a real conflict on the Mac that owns the intended current state and sync again.
 
 Web review actions use two isolated queues during the desktop rollout; they do not mutate the replica or desktop state. Released desktops remain on `review_commands` and its original direct completion RPC. Protocol-v2 desktops register their capability and poll both the immutable v1 backlog and `review_commands_v2`; every locally persisted retry item carries its queue protocol so a v1 row can never call a v2 lifecycle RPC. Web routes new work to v2 only when at least one active device exists, every active device advertises v2, and no v1 request remains pending. Otherwise it stays on v1. Registration and compatible routing share a per-user transaction lock, and a v1 re-registration fails visibly while v2 work is pending, preventing a downgrade from stranding an already-routed request. Pending v1 rows are never moved, copied, or rollout-deleted. Web reads both histories, while a private cross-protocol reservation allows at most one pending request for the same user, week, block, and revision.
 
@@ -351,7 +388,33 @@ To share anything, the user must, in order: sign in with the account created on 
 
 The shared payload can contain only: team and ISO week identifiers, timestamps, the share level, the selected capacity metrics, sanitized category/work-mode allocation, allowlisted project-name allocation from user-verified blocks, and review-coverage counts. It never contains raw activity samples, sessions, app names, window titles, evidence, notes, stakeholder names, calendar or chat details, screenshots, Visual Context insights, audit details, or AI keys.
 
+The database independently constrains new or updated aggregate rows rather than
+trusting the desktop constructor: category and work-mode entries must use their
+canonical taxonomy, each allocation item must contain exactly `label` and
+`value`, labels cannot repeat, values stay within `0..100`, and JSON byte/count
+limits apply. Project allocation is limited to 50 distinct labels of at most 200
+Unicode code points each. The desktop uses the same code-point rule as
+PostgreSQL `char_length`, caps without splitting an astral character, and
+rejects unpaired UTF-16 surrogates before construction. Context-switch and WIP scores stay within `0..1`; total
+allocated capacity intentionally permits overcommitment through `999` rather
+than silently clamping an overloaded week to 100. Migration `202607200009`
+enforces these rules for future writes without deleting or rewriting legacy
+rows and validates each legacy constraint only when existing data is already
+clean. The linked production database remains through migration
+`202607200008`, so this independent server enforcement is not yet a live claim.
+
 An optional hourly team-snapshot auto-sync preference is stored but off by default, and scheduled sync can only run while the app is open. The Supabase session (auth tokens) lives in macOS Keychain in native builds, is never written to `PersistedAppState`, and is excluded from every JSON export; the full backup includes only policy and sync bookkeeping. Users can delete their previously synced snapshots for the selected team from the cloud, and disconnecting (or "Reset all local data") clears the session, policy, replica queue, and sync state so no upload path remains. Every connect, policy change, sync success/failure, snapshot deletion, pause, and disconnect emits a local audit event.
+
+Reset closes the cloud-account authorization/session lane, aggregate sharing
+lane, personal-replica poll/sync lane, and durable review-command lane before
+credential or Store deletion. It invalidates the pending native cloud OAuth
+loopback wait, rejects new work, and waits active provider, Keychain, queue, and
+cloud-write edges. After cleared state is installed, the account and personal
+lanes reopen explicitly; aggregate scheduling can reopen only from the cleared
+account/policy state. A late sign-in, refresh, upload, poll, or review result
+cannot restore the old session or queue, and a barrier failure prevents a
+full-success Reset receipt. Cloud rows already received remain until the user
+deletes them through the corresponding cloud control.
 
 Immediately before either a manual or automatic upload, the desktop app
 re-fetches the selected membership and current team narrowing policy. A failed
@@ -428,11 +491,28 @@ email-delivery service solely to deliver the one-time sign-in link; the flow
 does not send Mac activity, workload evidence, replicas, snapshots, or team
 records to the email service.
 
+Password recovery uses the same Supabase Auth and configured email-delivery
+boundary. The request screen sends only the normalized account email and always
+shows the same success notice whether or not an account exists. The recovery
+link returns through the canonical Weekform callback into a short-lived signed-in
+reset session; Weekform validates that session, validates and confirms the new
+password, updates it through Supabase Auth, signs the session out, and asks the
+user to sign in again. Provider error text is replaced with generic recovery
+copy. The local candidate has not yet been deployed or exercised through live
+email delivery, so no production recovery-delivery claim is made.
+
 Google and GitHub sign-in use Supabase OAuth. Choosing one sends the account
 authorization request to that provider and returns through Supabase Auth; the
 provider and Supabase may process the account identity needed to authenticate
 the user. Weekform does not include Mac activity, workload evidence, replicas,
 snapshots, or team records in the OAuth request.
+
+Magic-link, password-recovery, OAuth, invite, and authentication callbacks do
+not construct absolute destinations from an arbitrary request host. Production
+uses `https://weekform.dev`; development permits loopback origins; an exact
+Vercel preview origin is accepted only for the matching preview environment.
+Unrecognized forwarded host/origin values do not become redirect or invite
+destinations.
 
 Raw Mac activity never reaches the website. Private derived replicas, approved workload snapshots, and
 explicit multi-user coordination records (accounts, teams, memberships,
@@ -491,7 +571,10 @@ invalid control configuration fails closed without sending the prompt.
 The Web Ask transcript and draft exist only in mounted React state. Weekform does
 not write questions or answers to Supabase, `localStorage`, `sessionStorage`,
 IndexedDB, cookies, or an application-managed cache; reloading the page clears
-them. The API response is marked `no-store`. Standard infrastructure and provider
+them. The API streams at most 2,048 bytes of request text and cancels an
+over-limit body even when it is chunked or understates `Content-Length`.
+Success, authentication, validation, provider, and control-error responses all
+use `no-store, max-age=0` with `Pragma: no-cache`. Standard infrastructure and provider
 processing boundaries still apply, so users should not type sensitive or
 regulated information into Web Ask.
 
@@ -528,22 +611,23 @@ id, action text, and optional allowlisted risk key, then derives the authenticat
 actor, id, open status, creation time, and null resolution time. Resolve/drop
 accepts only team id, action id, and a closed status and derives the resolution
 time; delete accepts only team id and action id. Every security-definer RPC
-reauthorizes the manager server-side. Static contract tests and an unapplied
-four-actor pgTAP specification pin these boundaries.
+reauthorizes the manager server-side. Static contract tests and the local
+four-actor pgTAP suite pin these boundaries.
 
 Weekform may compare the linked metric's team median across later approved weekly
 snapshots. It shows no result until two distinct later weeks share that metric,
 excludes dropped actions, and labels the readout as “What changed after”: a
 correlation, never evidence that the action caused the change or that any person
-contributed to it. The migration in this repository is a SQL-review artifact and
-has not been applied or verified against a live Supabase project here.
+contributed to it. The Manager Action migrations are within the linked
+production ledger through `202607200008`; this audit re-ran the local database
+contracts but did not re-exercise the live authenticated four-actor workflow.
 
 ## Controls
 
 - **Private mode / Pause Tracking** stops new active-window and visual-context capture.
 - **Visual Context** can be enabled or disabled independently.
 - **Exclude** removes a work block from the reviewed workload model.
-- **Reset Prototype Data** is single-flight. It invalidates AI and account epochs, aborts the conversational Agent, quiesces personal sync and its durable review outbox, pauses native capture, then clears and verifies the general Store state, Agent chat/draft browser storage, provider API key, encrypted capture journal and journal key, isolated Codex-plan sign-in when configured, Keychain cloud session, replica queue/policy, and team-sharing policy. If any durable deletion or quiescence step cannot be verified, the in-memory workspace is cleared but the UI and audit record require a retry instead of reporting complete success. Cloud rows already received remain until the user deletes them through the corresponding cloud control.
+- **Reset Prototype Data** is single-flight. Before its first deletion it closes the React persistence lane and pending debounce; invalidates startup hydration and its Store/Keychain migration plus legacy-journal import; closes the local file import/full-backup fence; rejects new AI/Agent and API/Codex connection starts; closes cloud-account, aggregate sharing, personal sync/review, Calendar, and Chat operation lanes; invalidates pending native OAuth callbacks; and pauses/drains native capture. It aborts active browser file readers and waits any hydration, persistence, import/export, provider, Keychain, queue, network, or capture operation that already crossed a protected edge. Only after those barriers does it clear and verify the general Store state, Agent chat/draft browser storage, every preregistered/legacy provider API-key account, encrypted capture journal and journal key, Calendar/Chat credentials and cursors, the isolated Codex-plan sign-in regardless of current React provider metadata, Keychain cloud session, replica queue/policy, and team-sharing policy. Codex app-server logout is best effort, but path-derived deletion of the Weekform-owned Keychain account is attempted even when its isolated directories are absent. Local, account, personal, Calendar, and Chat lanes reopen only after empty in-memory state is installed; aggregate scheduling reopens from that cleared account/policy state. If any durable deletion, callback cancellation, or quiescence step cannot be verified, the in-memory workspace is cleared but the UI and audit record require a retry instead of reporting complete success; a credential-cleanup failure preserves the non-secret binding registry so a later relaunch can retry. Cloud rows already received remain until the user deletes them through the corresponding cloud control.
 
 ## Not Collected
 
@@ -572,7 +656,25 @@ The Weekform portion of Live simulation uses the actual application components a
 
 Simulation JSON/CSV exports are prepared locally and repeat the synthetic provenance markers. An audit receipt records that an export was prepared; it does not claim the operating system completed the save. Archiving hides a run from the active simulation view without deleting it. Permanent run deletion cascades through generated members, artifacts, and week snapshots; a minimal deletion receipt remains without preserving the deleted payload. Personal backup/reset and simulation export/delete are separate controls and do not imply one another.
 
-The simulator migrations and RLS tests in this repository are review artifacts; they have not been applied to or verified against a live Supabase project here. Local Live simulation is available only in Vite development mode. Published synthetic demo credentials create a tab-scoped `sessionStorage` marker and grant no production or cloud access. The production desktop Manager Mode entry is separate from Simulation: it appears only while the cloud account is signed in with an active owner or manager membership and loads the RLS-scoped roster and approved snapshots described above. It never mixes simulator rows into real team totals. Local workspace-only monochrome theme, density, and motion preferences are stored separately in browser `localStorage`; they contain no workload data and can be reset from the workspace. The authenticated Next.js `/manager-access` route remains the production web entry for team briefings, approval-gated actions, and full team administration; legacy `/admin` only redirects there. Production Simulation execution remains unconnected until the migrations, Supabase environment, real user, explicit simulator grant, and live RLS proof are in place. Browser-development Generate span runs use a simulator-only IndexedDB database rather than personal Weekform state; local prototype storage remains unencrypted. Live simulation's embedded Weekform state is not written to that database.
+The simulator schema migrations are within the linked production ledger through
+`202607200008`, and their RLS contracts participate in the local pgTAP suite.
+This audit did not re-exercise a hosted simulator-admin grant or production
+Simulation execution, so schema presence is not a current end-to-end
+authorization claim. Local Live simulation is available only in Vite
+development mode. Published synthetic demo credentials create a tab-scoped
+`sessionStorage` marker and grant no production or cloud access. The production
+desktop Manager Mode entry is separate from Simulation: it appears only while
+the cloud account is signed in with an active owner or manager membership and
+loads the RLS-scoped roster and approved snapshots described above. It never
+mixes simulator rows into real team totals. Local workspace-only monochrome
+theme, density, and motion preferences are stored separately in browser
+`localStorage`; they contain no workload data and can be reset from the
+workspace. The authenticated Next.js `/manager-access` route remains the
+production web entry for team briefings, approval-gated actions, and full team
+administration; legacy `/admin` only redirects there. Browser-development
+Generate span runs use a simulator-only IndexedDB database rather than personal
+Weekform state; local prototype storage remains unencrypted. Live simulation's
+embedded Weekform state is not written to that database.
 
 Current modeling limitations also matter to privacy and interpretation: capacity still uses a fixed 40-hour denominator, PTO does not redefine that denominator, and some time-of-day inference uses the host machine timezone rather than the configured scenario timezone. Simulation results are prototype planning evidence, not observed facts or organizational benchmarks.
 

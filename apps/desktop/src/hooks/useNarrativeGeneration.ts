@@ -10,7 +10,12 @@ import type {
   WeeklyCapacitySnapshot,
   AIConfig,
 } from "../../../../packages/domain/src/models";
-import { useAsyncStatus } from "./useAsyncStatus";
+import {
+  isResetInProgress,
+  RESET_IN_PROGRESS_AI_MESSAGE,
+  useAsyncStatus,
+  type ResetInProgressRef,
+} from "./useAsyncStatus";
 import { buildWeeklyNarrativePrompt, NARRATIVE_PROMPT_VERSION } from "../services/narrativePrompt";
 import type { generateWeeklyNarrative } from "../../../../packages/inference/src/capacity";
 import { createAuditEvent } from "../lib/audit";
@@ -27,6 +32,7 @@ interface NativeNarrativeGenerationResponse {
 
 interface UseNarrativeGenerationParams {
   isDemoMode: boolean;
+  resetInProgressRef: ResetInProgressRef;
   hasNarrativeEvidence: boolean;
   snapshot: WeeklyCapacitySnapshot;
   blocks: WorkBlock[];
@@ -47,6 +53,7 @@ interface UseNarrativeGenerationParams {
 
 export function useNarrativeGeneration({
   isDemoMode,
+  resetInProgressRef,
   hasNarrativeEvidence,
   snapshot,
   blocks,
@@ -67,6 +74,9 @@ export function useNarrativeGeneration({
     useAsyncStatus<"idle" | "generating">("idle");
 
   async function regenerateNarrative(trigger: "auto" | "manual"): Promise<AppActionResult> {
+    if (isResetInProgress(resetInProgressRef)) {
+      return { ok: false, message: RESET_IN_PROGRESS_AI_MESSAGE };
+    }
     if (isDemoMode) return { ok: false, message: "Narrative generation is unavailable in demo mode." };
     if (!hasNarrativeEvidence) return { ok: false, message: "There is not enough reviewed evidence to generate a narrative yet." };
     if (narrativeGenerationStatus === "generating") return { ok: false, message: "A narrative is already being generated." };

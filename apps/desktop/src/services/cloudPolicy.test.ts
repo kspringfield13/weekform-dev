@@ -103,6 +103,30 @@ test("malformed shareLevel/teamId/allowlist fields degrade conservatively", () =
   assert.equal(parsed.consentedAt, null);
 });
 
+test("parseCloudSharePolicy bounds the explicit project allowlist to fifty names", () => {
+  const allowedProjectNames = Array.from({ length: 55 }, (_, index) => `Project ${index + 1}`);
+  const parsed = parseCloudSharePolicy({
+    ...createDefaultCloudSharePolicy(),
+    allowedProjectNames
+  });
+
+  assert.equal(parsed.allowedProjectNames.length, 50);
+  assert.equal(parsed.allowedProjectNames[0], "Project 1");
+  assert.equal(parsed.allowedProjectNames[49], "Project 50");
+});
+
+test("project-name capping counts Unicode code points and never splits an astral character", () => {
+  const boundaryName = `${"a".repeat(199)}😀trailing`;
+  const parsed = parseCloudSharePolicy({
+    ...createDefaultCloudSharePolicy(),
+    allowedProjectNames: [boundaryName],
+  });
+
+  assert.deepEqual(parsed.allowedProjectNames, [`${"a".repeat(199)}😀`]);
+  assert.equal(Array.from(parsed.allowedProjectNames[0]).length, 200);
+  assert.doesNotThrow(() => JSON.parse(JSON.stringify(parsed.allowedProjectNames)));
+});
+
 // ---------------------------------------------------------------------------
 // Sync-state parsing
 // ---------------------------------------------------------------------------

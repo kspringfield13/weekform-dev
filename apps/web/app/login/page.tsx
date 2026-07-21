@@ -211,6 +211,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                   >
                     Sign in
                   </FormSubmitButton>
+                  <Link href="/forgot-password" className="text-link auth-recovery-link">
+                    Forgot password?
+                  </Link>
                 </form>
               </div>
             </details>

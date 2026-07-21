@@ -10,11 +10,36 @@ use std::{
     ffi::{c_char, CStr},
     io::{Read, Write},
     net::TcpListener,
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 
 const KEYCHAIN_SERVICE: &str = "com.weekform.desktop";
 const OAUTH_TIMEOUT: Duration = Duration::from_secs(300);
+const CALENDAR_HTTP_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const CALENDAR_HTTP_TOTAL_TIMEOUT: Duration = Duration::from_secs(45);
+
+static OAUTH_CALLBACK_GENERATION: AtomicU64 = AtomicU64::new(1);
+
+fn current_oauth_callback_generation() -> u64 {
+    OAUTH_CALLBACK_GENERATION.load(Ordering::Acquire)
+}
+
+fn oauth_callback_is_current(generation: u64) -> bool {
+    current_oauth_callback_generation() == generation
+}
+
+pub(crate) fn cancel_pending_oauth_callback() {
+    OAUTH_CALLBACK_GENERATION.fetch_add(1, Ordering::AcqRel);
+}
+
+fn calendar_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(CALENDAR_HTTP_CONNECT_TIMEOUT)
+        .timeout(CALENDAR_HTTP_TOTAL_TIMEOUT)
+        .build()
+        .map_err(|error| format!("Could not prepare the calendar provider request: {error}"))
+}
 
 #[derive(Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -199,12 +224,19 @@ fn oauth_reply(stream: &mut std::net::TcpStream, message: &str) {
     let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
 }
 
-fn wait_for_callback(listener: TcpListener, expected_state: &str) -> Result<String, String> {
+fn wait_for_callback(
+    listener: TcpListener,
+    expected_state: &str,
+    callback_generation: u64,
+) -> Result<String, String> {
     listener
         .set_nonblocking(true)
         .map_err(|error| format!("Could not prepare calendar sign-in: {error}"))?;
     let deadline = Instant::now() + OAUTH_TIMEOUT;
     loop {
+        if !oauth_callback_is_current(callback_generation) {
+            return Err("Calendar sign-in was cancelled by Reset Local Data.".to_string());
+        }
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
@@ -267,6 +299,11 @@ fn wait_for_callback(listener: TcpListener, expected_state: &str) -> Result<Stri
 }
 
 async fn connect_oauth(provider: CalendarProvider) -> Result<(), String> {
+    // Capture at native command entry. Reset advances this generation before it
+    // waits for the React operation barrier, so only the loopback wait exits;
+    // a callback that already returned still completes its token exchange and
+    // remains owned by the renderer barrier before credentials are deleted.
+    let callback_generation = current_oauth_callback_generation();
     let client_id = configured_env(match provider {
         CalendarProvider::Google => "GOOGLE_CALENDAR_CLIENT_ID",
         CalendarProvider::Outlook => "MICROSOFT_CALENDAR_CLIENT_ID",
@@ -327,10 +364,11 @@ async fn connect_oauth(provider: CalendarProvider) -> Result<(), String> {
     tauri_plugin_opener::open_url(authorize_url.as_str(), None::<&str>)
         .map_err(|error| format!("Could not open the browser for calendar sign-in: {error}"))?;
     let state_for_wait = state.clone();
-    let code =
-        tauri::async_runtime::spawn_blocking(move || wait_for_callback(listener, &state_for_wait))
-            .await
-            .map_err(|error| format!("Calendar sign-in listener failed: {error}"))??;
+    let code = tauri::async_runtime::spawn_blocking(move || {
+        wait_for_callback(listener, &state_for_wait, callback_generation)
+    })
+    .await
+    .map_err(|error| format!("Calendar sign-in listener failed: {error}"))??;
     let mut token_form = vec![
         ("client_id", client_id.as_str()),
         ("code", code.as_str()),
@@ -341,7 +379,7 @@ async fn connect_oauth(provider: CalendarProvider) -> Result<(), String> {
     if provider == CalendarProvider::Outlook {
         token_form.push(("scope", scope));
     }
-    let response = reqwest::Client::new()
+    let response = calendar_http_client()?
         .post(token_endpoint)
         .form(&token_form)
         .send()
@@ -396,7 +434,7 @@ async fn refresh_access_token(provider: CalendarProvider) -> Result<String, Stri
     if let Some(scope) = scope {
         form.push(("scope", scope));
     }
-    let response = reqwest::Client::new()
+    let response = calendar_http_client()?
         .post(endpoint)
         .form(&form)
         .send()
@@ -583,7 +621,7 @@ async fn fetch_google(
     token: &str,
     request: &CalendarRangeRequest,
 ) -> Result<Vec<NativeCalendarEvent>, String> {
-    let client = reqwest::Client::new();
+    let client = calendar_http_client()?;
     let mut page_token: Option<String> = None;
     let mut events = Vec::new();
     loop {
@@ -631,7 +669,7 @@ async fn fetch_outlook(
     token: &str,
     request: &CalendarRangeRequest,
 ) -> Result<Vec<NativeCalendarEvent>, String> {
-    let client = reqwest::Client::new();
+    let client = calendar_http_client()?;
     let mut url = reqwest::Url::parse("https://graph.microsoft.com/v1.0/me/calendarView").unwrap();
     url.query_pairs_mut()
         .append_pair("startDateTime", &request.start)
@@ -824,8 +862,32 @@ pub fn disconnect_calendar_source(provider: CalendarProvider) -> Result<(), Stri
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_google, normalize_outlook, CalendarProvider, CalendarRangeRequest};
+    use super::{
+        cancel_pending_oauth_callback, current_oauth_callback_generation, normalize_google,
+        normalize_outlook, wait_for_callback, CalendarProvider, CalendarRangeRequest,
+    };
     use serde_json::json;
+    use std::{net::TcpListener, sync::mpsc, thread, time::Duration};
+
+    #[test]
+    fn reset_generation_releases_pending_calendar_callback_wait() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind synthetic callback");
+        let generation = current_oauth_callback_generation();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        thread::spawn(move || {
+            finished_tx
+                .send(wait_for_callback(listener, "synthetic-state", generation))
+                .expect("report callback result");
+        });
+
+        thread::sleep(Duration::from_millis(20));
+        cancel_pending_oauth_callback();
+        let error = finished_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("callback wait exits promptly")
+            .expect_err("reset cancels callback wait");
+        assert!(error.contains("cancelled by Reset Local Data"));
+    }
 
     #[test]
     fn google_normalization_keeps_only_allowlisted_calendar_metadata() {

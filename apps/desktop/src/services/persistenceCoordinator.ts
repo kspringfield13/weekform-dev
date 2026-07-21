@@ -15,12 +15,16 @@ type PendingWrite<T> = {
  * every superseded caller resolves when the newest snapshot is durable. Clear
  * establishes a generation boundary, waits for the active writer, discards any
  * queued pre-clear snapshot, and only then runs the caller's verified deletion.
+ * Suspension closes the lane across a longer multi-store reset and reopens it
+ * only when the caller has replaced its in-memory state.
  */
 export function createPersistenceCoordinator<T>(writer: (value: T) => Promise<void>) {
   let generation = 0;
   let pending: PendingWrite<T> | null = null;
   let draining: Promise<void> | null = null;
   let clearInFlight: Promise<void> | null = null;
+  let suspended = false;
+  let suspensionInFlight: Promise<void> | null = null;
 
   const settle = (batch: PendingWrite<T>, error?: unknown) => {
     for (const waiter of batch.waiters) {
@@ -30,7 +34,7 @@ export function createPersistenceCoordinator<T>(writer: (value: T) => Promise<vo
   };
 
   const drain = async () => {
-    while (pending && clearInFlight === null) {
+    while (pending && clearInFlight === null && !suspended) {
       const batch = pending;
       pending = null;
       if (batch.generation !== generation) {
@@ -47,7 +51,7 @@ export function createPersistenceCoordinator<T>(writer: (value: T) => Promise<vo
   };
 
   const kick = () => {
-    if (draining || clearInFlight || !pending) return;
+    if (draining || clearInFlight || suspended || !pending) return;
     draining = drain().finally(() => {
       draining = null;
       kick();
@@ -57,10 +61,10 @@ export function createPersistenceCoordinator<T>(writer: (value: T) => Promise<vo
   return {
     schedule(value: T): Promise<void> {
       return new Promise<void>((resolve, reject) => {
-        // A render produced while reset/sign-out is deleting durable state is
-        // part of that transition, not a fresh post-clear snapshot. Resolving
-        // without queuing prevents it from recreating the just-deleted state.
-        if (clearInFlight) {
+        // A render produced while reset/sign-out owns the write lane is part of
+        // that transition, not a fresh post-clear snapshot. Resolving without
+        // queuing prevents it from recreating the just-deleted state.
+        if (clearInFlight || suspended) {
           resolve();
           return;
         }
@@ -76,6 +80,34 @@ export function createPersistenceCoordinator<T>(writer: (value: T) => Promise<vo
         }
         kick();
       });
+    },
+
+    suspend(): Promise<void> {
+      if (suspensionInFlight) return suspensionInFlight;
+
+      // Close the write lane synchronously so a debounce callback or explicit
+      // flush that runs later in this reset cannot acquire a fresh generation.
+      suspended = true;
+      generation += 1;
+      if (pending) {
+        settle(pending);
+        pending = null;
+      }
+
+      // A writer that crossed the boundary before suspension is allowed to
+      // finish; the destructive clear will run only after this promise settles.
+      suspensionInFlight = draining
+        ? draining.then(() => undefined)
+        : Promise.resolve();
+      return suspensionInFlight;
+    },
+
+    resume(): void {
+      if (!suspended) return;
+      suspended = false;
+      suspensionInFlight = null;
+      generation += 1;
+      kick();
     },
 
     clear(clearer: () => Promise<void>): Promise<void> {

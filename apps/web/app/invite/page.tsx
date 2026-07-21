@@ -85,9 +85,10 @@ export default async function InvitePage({ searchParams }: InvitePageProps) {
                     spellCheck={false}
                     placeholder="https://…/invite?token=…"
                     required
+                    aria-describedby="invite-token-hint"
                     disabled={!configured}
                   />
-                  <span className="field-hint">
+                  <span className="field-hint" id="invite-token-hint">
                     Paste the full link (or just its token) that a team
                     manager shared with you.
                   </span>

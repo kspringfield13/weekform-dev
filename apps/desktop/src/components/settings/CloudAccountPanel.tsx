@@ -21,7 +21,12 @@ import {
   Trash2,
   Users
 } from "lucide-react";
-import type { CloudMetricPolicy, CloudShareLevel } from "../../../../../packages/domain/src/cloud";
+import {
+  MAX_SHARED_PROJECTS,
+  truncateSharedProjectName,
+  type CloudMetricPolicy,
+  type CloudShareLevel
+} from "../../../../../packages/domain/src/cloud";
 import { CLOUD_METRIC_KEYS, CLOUD_METRIC_LABELS } from "../../services/cloudPolicy";
 import type { CloudController } from "../../hooks/useCloudSync";
 import { formatAuditTime } from "../../lib/format";
@@ -128,7 +133,13 @@ function sharedSnapshotFreshness(lastSuccessAt: string | null, hasSyncedSnapshot
   return "Stale — older than 7 days";
 }
 
-export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
+export function CloudAccountPanel({
+  cloud,
+  disabled = false,
+}: {
+  cloud: CloudController;
+  disabled?: boolean;
+}) {
   const { account: ctrl, sync } = cloud;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -174,13 +185,13 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
 
   const handleSignIn = async (event: FormEvent) => {
     event.preventDefault();
-    if (ctrl.isDemoMode || ctrl.authBusy) return;
+    if (disabled || ctrl.isDemoMode || ctrl.authBusy) return;
     const succeeded = await ctrl.signIn(email, password);
     if (succeeded) setPassword("");
   };
 
   const handleOAuthSignIn = async (provider: "google" | "github") => {
-    if (ctrl.isDemoMode || ctrl.authBusy) return;
+    if (disabled || ctrl.isDemoMode || ctrl.authBusy) return;
     setActiveOAuthProvider(provider);
     try {
       await ctrl.signInWithOAuth(provider);
@@ -190,16 +201,22 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
   };
 
   const commitProjectNames = () => {
+    if (disabled) return;
     if (projectNamesDraft === null) return;
-    const names = projectNamesDraft
-      .split("\n")
-      .map((name) => name.trim())
-      .filter((name) => name.length > 0);
+    const names = Array.from(
+      new Set(
+        projectNamesDraft
+          .split("\n")
+          .map((name) => truncateSharedProjectName(name))
+          .filter((name): name is string => name !== null)
+      )
+    ).slice(0, MAX_SHARED_PROJECTS);
     ctrl.updatePolicy({ allowedProjectNames: names });
     setProjectNamesDraft(null);
   };
 
   const startSync = () => {
+    if (disabled) return;
     if (!sync.buildResult.ok) return;
     if (ctrl.syncState.lastSuccessAt === null) {
       setConfirmingFirstSync(true);
@@ -209,7 +226,11 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
   };
 
   return (
-    <div className="account-sharing-page">
+    <fieldset
+      className="account-sharing-page cloud-account-reset-boundary"
+      disabled={disabled}
+      aria-busy={disabled}
+    >
       <AccountSharingHeading />
 
       {!signedIn && (
@@ -538,7 +559,7 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
                   <div>
                     <h3>Allowed project names</h3>
                     <p>
-                      One exact project name per line. Project allocation is built only from work
+                      One exact project name per line, up to {MAX_SHARED_PROJECTS}. Project allocation is built only from work
                       blocks you verified whose project name matches this list verbatim — any other
                       name never appears, not even grouped.
                     </p>
@@ -570,7 +591,7 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
                     )}
                   </div>
                   <div className="settings-row-status">
-                    <strong>{policy.allowedProjectNames.length} allowed</strong>
+                    <strong>{policy.allowedProjectNames.length} of {MAX_SHARED_PROJECTS} allowed</strong>
                     <span>Empty list shares no project names</span>
                   </div>
                 </section>
@@ -762,6 +783,6 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
           onCancel={() => setConfirmingDisconnect(false)}
         />
       )}
-    </div>
+    </fieldset>
   );
 }

@@ -8,6 +8,7 @@ import {
   resolveWebexBrokerReadiness,
   webexExchangeIdempotencyKey,
   type WebexBrokerConfig,
+  type WebexBrokerControlConfig,
 } from "./webexTokenBroker";
 
 const config: WebexBrokerConfig = {
@@ -15,7 +16,7 @@ const config: WebexBrokerConfig = {
   clientSecret: "SERVER_ONLY_SYNTHETIC_SECRET",
   redirectUri: "http://127.0.0.1:49323/chat-auth/callback",
 };
-const control = {
+const control: WebexBrokerControlConfig = {
   serverClaim: "synthetic-control-claim-that-is-long-enough",
   ipHashSecret: "i".repeat(32),
   trustedIpHeader: "x-forwarded-for",

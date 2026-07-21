@@ -466,7 +466,7 @@ export function AccelerationScreen({
           </div>
         )}
       </div>
-      {generateError && <InlineError message={generateError} onRetry={onGenerateSkills} />}
+      {generateError && <InlineError message={generateError} onRetry={aiConfigured ? onGenerateSkills : undefined} />}
       <AccelerationTrackRecord
         entries={realizedSavings}
         summary={realizedSavingsSummary}

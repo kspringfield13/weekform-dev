@@ -97,13 +97,14 @@ export function ManagerActionsPanel({
             rows={3}
             maxLength={500}
             required
+            aria-describedby="manager-action-text-hint"
             placeholder="For example: Move Thursday status updates async and protect the shared focus block."
           />
-          <span className="field-hint">Required · 500 characters maximum</span>
+          <span className="field-hint" id="manager-action-text-hint">Required · 500 characters maximum</span>
         </div>
         <div className="field">
           <label htmlFor="manager-action-risk">Briefing risk signal</label>
-          <select id="manager-action-risk" name="risk_flag_key" defaultValue="">
+          <select id="manager-action-risk" name="risk_flag_key" defaultValue="" aria-describedby="manager-action-risk-hint">
             <option value="">No linked risk signal</option>
             {riskOptions.map((option) => (
               <option key={option.key} value={option.key}>
@@ -111,7 +112,7 @@ export function ManagerActionsPanel({
               </option>
             ))}
           </select>
-          <span className="field-hint">
+          <span className="field-hint" id="manager-action-risk-hint">
             Only deterministic, team-level briefing signals are available here.
           </span>
         </div>

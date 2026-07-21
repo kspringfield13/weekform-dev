@@ -4,6 +4,7 @@ import { FormEvent, KeyboardEvent, useState } from "react";
 
 import type { PersonalWorkloadReplicaV1 } from "../../../packages/domain/src/personalCloud";
 import { MacAppLink } from "@/components/MacAppLink";
+import { reduceAgentAnnouncement, type AgentAnnouncement } from "@/lib/agentAnnouncement";
 import styles from "./PersonalAgentWorkspace.module.css";
 
 function pct(value: number | undefined): string {
@@ -115,6 +116,8 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
   const [error, setError] = useState<string | null>(null);
   const [failedQuestion, setFailedQuestion] = useState<string | null>(null);
   const [copiedTurnIndex, setCopiedTurnIndex] = useState<number | null>(null);
+  const [latestAgentAnnouncement, setLatestAgentAnnouncement] =
+    useState<AgentAnnouncement | null>(null);
 
   async function ask(nextQuestion: string, requestId = crypto.randomUUID()) {
     const cleanQuestion = nextQuestion.trim();
@@ -143,6 +146,11 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
         return;
       }
       setTurns((current) => [...current, { ...payload, question: cleanQuestion }].slice(-24));
+      setLatestAgentAnnouncement((current) => reduceAgentAnnouncement(current, {
+        type: "answer_settled",
+        requestId,
+        answer: payload.answer,
+      }));
       setQuestion("");
     } catch {
       setError("Weekform Agent could not reach the server. Check your connection and try again.");
@@ -170,6 +178,9 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
     setError(null);
     setFailedQuestion(null);
     setCopiedTurnIndex(null);
+    setLatestAgentAnnouncement((current) => reduceAgentAnnouncement(current, {
+      type: "conversation_cleared",
+    }));
   }
 
   async function copyResponse(turn: ConversationTurn, index: number) {
@@ -252,7 +263,7 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
           </div>
         </section> : null}
 
-        <div className={`personal-agent-chat-shell ${turns.length === 0 && !isSending ? styles.emptyChat : styles.hasConversation}`} aria-live="polite">
+        <div className={`personal-agent-chat-shell ${turns.length === 0 && !isSending ? styles.emptyChat : styles.hasConversation}`}>
           {!hasSignal ? <div className="personal-agent-boundary" role="status">
             <span className="personal-agent-boundary-mark"><AgentSignalMark size={18} /></span>
             <div>
@@ -329,6 +340,11 @@ export function PersonalAgentWorkspace({ replica }: { replica: PersonalWorkloadR
               <div><span>3</span>Preparing a grounded answer</div>
             </div>
           </div> : null}
+        </div>
+        <div className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+          {latestAgentAnnouncement ? (
+            <span key={latestAgentAnnouncement.requestId}>{latestAgentAnnouncement.answer}</span>
+          ) : null}
         </div>
 
         {error ? <div className={styles.error} role="alert">

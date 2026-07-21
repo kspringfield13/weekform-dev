@@ -17,6 +17,7 @@ export function ConfirmDialog({
   confirmLabel,
   cancelLabel = "Cancel",
   tone = "danger",
+  confirmDisabled = false,
   onConfirm,
   onCancel,
   children,
@@ -26,6 +27,7 @@ export function ConfirmDialog({
   confirmLabel: string;
   cancelLabel?: string;
   tone?: "danger" | "default";
+  confirmDisabled?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
   /** Optional extra content rendered between the description and the action row. */
@@ -94,6 +96,7 @@ export function ConfirmDialog({
             type="button"
             className={tone === "danger" ? "primary-action dialog-confirm-danger" : "primary-action"}
             onClick={onConfirm}
+            disabled={confirmDisabled}
           >
             {confirmLabel}
           </button>

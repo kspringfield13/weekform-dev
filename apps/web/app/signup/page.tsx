@@ -55,9 +55,10 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
                   name="display_name"
                   type="text"
                   autoComplete="name"
+                  aria-describedby="display-name-hint"
                   disabled={!configured}
                 />
-                <span className="field-hint">
+                <span className="field-hint" id="display-name-hint">
                   Shown to teammates if you later join a team. Optional.
                 </span>
               </div>
@@ -81,9 +82,10 @@ export default async function SignupPage({ searchParams }: SignupPageProps) {
                   autoComplete="new-password"
                   minLength={8}
                   required
+                  aria-describedby="password-hint"
                   disabled={!configured}
                 />
-                <span className="field-hint">At least 8 characters.</span>
+                <span className="field-hint" id="password-hint">At least 8 characters.</span>
               </div>
               <FormSubmitButton
                 className="button button-primary button-block"

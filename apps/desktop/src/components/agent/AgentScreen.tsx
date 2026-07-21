@@ -44,6 +44,7 @@ import {
 } from "../../services/agentSessionStorage";
 import { ConfirmDialog } from "../common/ConfirmDialog";
 import { AgentMark } from "../common/AgentMark";
+import { AIConnectionNotice } from "../common/AIConnectionNotice";
 import type { tool as AiToolFn } from "ai";
 
 const AgentMarkdown = lazy(() => import("./AgentMarkdown"));
@@ -139,12 +140,15 @@ interface AgentScreenProps {
   aiAvailable: boolean;
   hasNarrativeEvidence: boolean;
   onOpenScreen: (screen: Screen) => void;
+  onOpenAISettings: () => void;
   onClassifySessions: () => Promise<AppActionResult>;
   onGenerateForecast: () => Promise<AppActionResult>;
   onGenerateNarrative: () => Promise<AppActionResult>;
   pushToast: PushToast;
   /** Increments only after Reset Local Data is confirmed. */
   resetGeneration: number;
+  /** Disables every Agent generation and approval start while Reset is visible. */
+  isResettingLocalData: boolean;
 }
 
 function AgentThinkingText() {
@@ -236,11 +240,13 @@ export function AgentScreen({
   aiAvailable,
   hasNarrativeEvidence,
   onOpenScreen,
+  onOpenAISettings,
   onClassifySessions,
   onGenerateForecast,
   onGenerateNarrative,
   pushToast,
   resetGeneration,
+  isResettingLocalData,
 }: AgentScreenProps) {
   const [messages, setMessages] = useState<AgentChatMessage[]>(() => {
     try {
@@ -278,6 +284,7 @@ export function AgentScreen({
   const abortControllerRef = useRef<AbortController | null>(null);
   const pendingActionRef = useRef<PendingAgentAction | null>(null);
   const agentOperationEpochRef = useRef(0);
+  const aiActionsDisabled = !aiAvailable || isResettingLocalData;
 
   const topProjects = useMemo(() => {
     const totals = new Map<string, number>();
@@ -394,6 +401,13 @@ export function AgentScreen({
   }
 
   function requestAgentAction(kind: AgentActionKind, reason?: string): Record<string, unknown> {
+    if (isResettingLocalData) {
+      return {
+        status: "unavailable",
+        action: kind,
+        message: "Local data is resetting. Wait for Reset Local Data to finish before preparing an AI action.",
+      };
+    }
     const existing = pendingActionRef.current;
     if (existing && (existing.status === "awaiting" || existing.status === "running")) {
       return {
@@ -702,7 +716,7 @@ ${latestUserQuestion}`;
   // Appends a user turn, then runs the assistant turn over the new history.
   // Used by both typed input and suggested question chips.
   async function sendMessage(messageText: string) {
-    if (!messageText.trim() || isSending) return;
+    if (!messageText.trim() || isSending || aiActionsDisabled) return;
 
     const trimmedMessage = messageText.trim();
     const userMsg: AgentChatMessage = {
@@ -749,6 +763,7 @@ ${latestUserQuestion}`;
   // Uses streamText for live typewriter-like responses (Eve style). An AbortController is
   // threaded into streamText so the Stop button can halt mid-stream and keep partial text.
   async function runAssistantTurn(history: AgentChatMessage[]) {
+    if (aiActionsDisabled) return;
     setIsSending(true);
     setIsStreaming(false);
     setStreamingMessageId(null);
@@ -1029,13 +1044,13 @@ ${latestUserQuestion}`;
   }
 
   function handleSuggested(question: string) {
-    if (isSending || !aiAvailable) return;
+    if (isSending || aiActionsDisabled) return;
     void sendMessage(question);
   }
 
   async function approvePendingAction() {
     const action = pendingActionRef.current;
-    if (!action || action.status === "running") return;
+    if (!action || action.status === "running" || aiActionsDisabled) return;
 
     const runningAction = { ...action, status: "running" as const, resultMessage: undefined };
     commitPendingAction(runningAction);
@@ -1086,7 +1101,7 @@ ${latestUserQuestion}`;
   // Re-run the assistant turn for an interrupted reply by replaying the history up to
   // (and including) the user turn that triggered it — dropping the failed reply first.
   function retryMessage(assistantId: string) {
-    if (isSending) return;
+    if (isSending || aiActionsDisabled) return;
     const index = messages.findIndex((m) => m.id === assistantId);
     if (index === -1) return;
     const history = messages.slice(0, index);
@@ -1191,8 +1206,8 @@ ${latestUserQuestion}`;
           </p>
           {hasSignal ? (
             <div className="briefing-actions">
-              <button type="button" disabled={!aiAvailable} title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT} onClick={() => handleSuggested("Explain why my reliable capacity is at its current level.")}>Explain forecast <ArrowRight size={14} aria-hidden /></button>
-              <button type="button" disabled={!aiAvailable} title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT} onClick={() => handleSuggested("Help me plan my week around my current reliable capacity.")}>Plan my week <ArrowRight size={14} aria-hidden /></button>
+              <button type="button" disabled={aiActionsDisabled} title={!aiAvailable ? AI_UNAVAILABLE_HINT : undefined} aria-describedby={!aiAvailable ? "agent-ai-unavailable" : undefined} onClick={() => handleSuggested("Explain why my reliable capacity is at its current level.")}>Explain forecast <ArrowRight size={14} aria-hidden /></button>
+              <button type="button" disabled={aiActionsDisabled} title={!aiAvailable ? AI_UNAVAILABLE_HINT : undefined} aria-describedby={!aiAvailable ? "agent-ai-unavailable" : undefined} onClick={() => handleSuggested("Help me plan my week around my current reliable capacity.")}>Plan my week <ArrowRight size={14} aria-hidden /></button>
             </div>
           ) : hasRawSessions && (
             <div className="briefing-actions">
@@ -1200,6 +1215,13 @@ ${latestUserQuestion}`;
             </div>
           )}
         </section>
+
+        {!aiAvailable && (
+          <AIConnectionNotice
+            id="agent-ai-unavailable"
+            onOpenSettings={onOpenAISettings}
+          />
+        )}
 
         {messages.length === 0 && !isSending && (
           <section className="agent-starters" aria-label="Suggested agent actions">
@@ -1210,7 +1232,7 @@ ${latestUserQuestion}`;
               {starterActions.map((action) => {
                 const Icon = action.icon;
                 return (
-                  <button key={action.title} type="button" disabled={!aiAvailable} title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT} onClick={() => handleSuggested(action.prompt)}>
+                  <button key={action.title} type="button" disabled={aiActionsDisabled} title={!aiAvailable ? AI_UNAVAILABLE_HINT : undefined} aria-describedby={!aiAvailable ? "agent-ai-unavailable" : undefined} onClick={() => handleSuggested(action.prompt)}>
                     <span className={`starter-icon starter-icon--${action.iconClass}`}>
                       <Icon size={17} strokeWidth={1.9} aria-hidden />
                     </span>
@@ -1314,7 +1336,8 @@ ${latestUserQuestion}`;
                         type="button"
                         className="agent-retry-button"
                         onClick={() => retryMessage(m.id)}
-                        disabled={isSending}
+                        disabled={isSending || aiActionsDisabled}
+                        aria-describedby={!aiAvailable ? "agent-ai-unavailable" : undefined}
                       >
                         <RotateCcw size={13} aria-hidden /> Retry
                       </button>
@@ -1333,8 +1356,9 @@ ${latestUserQuestion}`;
                             key={question}
                             type="button"
                             className="agent-followup-chip"
-                            disabled={!aiAvailable}
-                            title={aiAvailable ? undefined : AI_UNAVAILABLE_HINT}
+                            disabled={aiActionsDisabled}
+                            title={!aiAvailable ? AI_UNAVAILABLE_HINT : undefined}
+                            aria-describedby={!aiAvailable ? "agent-ai-unavailable" : undefined}
                             onClick={() => handleSuggested(question)}
                           >
                             {question} <ArrowRight size={12} aria-hidden />
@@ -1375,7 +1399,7 @@ ${latestUserQuestion}`;
                       className="agent-action-confirm"
                       type="button"
                       onClick={() => void approvePendingAction()}
-                      disabled={isSending}
+                      disabled={isSending || aiActionsDisabled}
                     >
                       {pendingActionCopy.confirmLabel}
                     </button>
@@ -1401,7 +1425,7 @@ ${latestUserQuestion}`;
                 )}
                 {pendingAction.status === "failed" && (
                   <>
-                    <button className="agent-action-confirm" type="button" onClick={() => void approvePendingAction()}>
+                    <button className="agent-action-confirm" type="button" onClick={() => void approvePendingAction()} disabled={aiActionsDisabled}>
                       Try again
                     </button>
                     <button type="button" onClick={cancelPendingAction}>Dismiss</button>
@@ -1440,11 +1464,12 @@ ${latestUserQuestion}`;
             ref={inputRef}
             className="agent-input"
             aria-label="Ask about your capacity, focus, or what to do next"
-            placeholder={inputPlaceholder}
+            aria-describedby={!aiAvailable ? "agent-ai-unavailable" : undefined}
+            placeholder={isResettingLocalData ? "Resetting local data…" : aiAvailable ? inputPlaceholder : "Connect AI in Settings to ask Weekform Agent"}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isSending}
+            disabled={isSending || aiActionsDisabled}
             rows={1}
           />
           {isStreaming ? (
@@ -1462,9 +1487,10 @@ ${latestUserQuestion}`;
               type="button"
               className="agent-send"
               onClick={handleSend}
-              disabled={!input.trim() || isSending || !aiAvailable}
+              disabled={!input.trim() || isSending || aiActionsDisabled}
               title={aiAvailable ? "Send" : AI_UNAVAILABLE_HINT}
               aria-label="Send message"
+              aria-describedby={!aiAvailable ? "agent-ai-unavailable" : undefined}
             >
               {isSending ? <AgentMark size={16} animated aria-hidden /> : <Send size={16} aria-hidden />}
             </button>

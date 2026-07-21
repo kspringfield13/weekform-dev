@@ -47,9 +47,10 @@ export function InviteForm({ teamId }: { teamId: string }) {
             autoComplete="off"
             placeholder="teammate@example.com"
             required
+            aria-describedby="invite-email-hint"
             disabled={pending}
           />
-          <span className="field-hint">
+          <span className="field-hint" id="invite-email-hint">
             They join as a member. The invite works once, only for this email,
             and expires in 7 days.
           </span>
@@ -70,8 +71,8 @@ export function InviteForm({ teamId }: { teamId: string }) {
       ) : null}
 
       {state.status === "success" && state.inviteUrl ? (
-        <div className="invite-link-box" role="status">
-          <p className="invite-link-title">
+        <div className="invite-link-box">
+          <p className="invite-link-title" role="status" aria-live="polite" aria-atomic="true">
             Invite link for <span className="mono">{state.email}</span>
           </p>
           <div className="invite-link-row">

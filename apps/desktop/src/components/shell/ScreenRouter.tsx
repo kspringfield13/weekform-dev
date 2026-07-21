@@ -39,6 +39,7 @@ import { TeamScreen } from "../team/TeamScreen";
 import type { OnboardingStep } from "../common/OnboardingCard";
 import type { ProactiveAlert, ProactiveAlertSettings } from "../../lib/proactiveAlerts";
 import type { PushToast } from "../../hooks/useToasts";
+import type { AsyncOperationGate } from "../../hooks/useAsyncStatus";
 import type { CloudController } from "../../hooks/useCloudSync";
 import type { CalendarSourcesController } from "../../hooks/useCalendarSources";
 import type { ChatSourcesController } from "../../hooks/useChatSources";
@@ -182,6 +183,7 @@ interface ScreenRouterProps {
   todayKey: string;
   currentWeekRangeLabel: string;
   agentResetGeneration: number;
+  aiConnectionGate: AsyncOperationGate;
   // transient feedback
   pushToast: PushToast;
 }
@@ -305,8 +307,11 @@ export function ScreenRouter({
   todayKey,
   currentWeekRangeLabel,
   agentResetGeneration,
+  aiConnectionGate,
   pushToast,
 }: ScreenRouterProps) {
+  const aiActionsAvailable = aiAvailable && !isResettingLocalData;
+
   const openScreen = (screen: Screen) => {
     if (screen === "setup") {
       onActiveSettingsTabChange("data-sources");
@@ -381,6 +386,7 @@ export function ScreenRouter({
           auditEvents={auditEvents}
           onResetLocalData={onResetLocalData}
           isResettingLocalData={isResettingLocalData}
+          aiConnectionGate={aiConnectionGate}
           resetConfirmationRequestId={resetConfirmationRequestId}
           onResetConfirmationRequestHandled={onResetConfirmationRequestHandled}
           onExportBackup={onExportBackup}
@@ -398,7 +404,7 @@ export function ScreenRouter({
       )}
       {active === "ledger" && (
         <LedgerScreen
-          aiAvailable={aiAvailable}
+          aiAvailable={aiActionsAvailable}
           blocks={blocks}
           activeWindowSamples={activeWindowSamples}
           activeWindowSessions={activeWindowSessions}
@@ -410,6 +416,7 @@ export function ScreenRouter({
           visualContextError={visualContextError}
           paused={paused}
           onClassifySessions={onClassifySessions}
+          onOpenAISettings={() => openSettingsTab("ai-assistance")}
           onConfirm={onConfirm}
           onExclude={onExclude}
           onRelabel={onRelabel}
@@ -418,7 +425,7 @@ export function ScreenRouter({
       )}
       {active === "daily" && (
         <DailyReviewScreen
-          aiAvailable={aiAvailable}
+          aiAvailable={aiActionsAvailable}
           blocks={blocks}
           onboardingSteps={onboardingSteps}
           showOnboarding={showOnboarding}
@@ -453,7 +460,7 @@ export function ScreenRouter({
       )}
       {active === "forecast" && (
         <ForecastScreen
-          aiAvailable={aiAvailable}
+          aiAvailable={aiActionsAvailable}
           snapshot={snapshot}
           snapshotHistory={snapshotHistory}
           nextWeekRangeLabel={nextWeekRangeLabel}
@@ -480,7 +487,7 @@ export function ScreenRouter({
       )}
       {active === "narrative" && (
         <NarrativeScreen
-          aiAvailable={aiAvailable}
+          aiAvailable={aiActionsAvailable}
           narrative={narrative}
           generatedNarrative={generatedNarrative}
           weekRangeLabel={weekRangeLabel}
@@ -532,7 +539,7 @@ export function ScreenRouter({
           generateStatus={accelerationStatus}
           generateError={accelerationError}
           onGenerateSkills={onGenerateAccelerationPlays}
-          aiConfigured={accelerationConfigured}
+          aiConfigured={accelerationConfigured && !isResettingLocalData}
           generatedAt={accelerationGeneratedAt}
           hasAuthoredPlays={hasAuthoredPlays}
           pushToast={pushToast}
@@ -561,11 +568,13 @@ export function ScreenRouter({
           aiConfig={aiConfig}
           hasNarrativeEvidence={hasNarrativeEvidence}
           onOpenScreen={openScreen}
+          onOpenAISettings={() => openSettingsTab("ai-assistance")}
           onClassifySessions={onClassifySessions}
           onGenerateForecast={onGenerateForecast}
           onGenerateNarrative={onRegenerate}
           pushToast={pushToast}
           resetGeneration={agentResetGeneration}
+          isResettingLocalData={isResettingLocalData}
         />
       )}
     </>

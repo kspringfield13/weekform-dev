@@ -28,6 +28,7 @@ export function LedgerScreen({
   paused,
   aiAvailable,
   onClassifySessions,
+  onOpenAISettings,
   onConfirm,
   onExclude,
   onRelabel,
@@ -45,6 +46,7 @@ export function LedgerScreen({
   paused: boolean;
   aiAvailable: boolean;
   onClassifySessions: () => void;
+  onOpenAISettings: () => void;
   onConfirm: (blockId: string) => void;
   onExclude: (blockId: string) => void;
   onRelabel: (blockId: string, field: keyof WorkBlock, value: WorkBlock[keyof WorkBlock]) => void;
@@ -224,6 +226,7 @@ export function LedgerScreen({
         paused={paused}
         aiAvailable={aiAvailable}
         onClassifySessions={onClassifySessions}
+        onOpenAISettings={onOpenAISettings}
       />
       <ActivityHeatmap sessions={activeWindowSessions} />
       {blocks.length === 0 ? (
@@ -236,8 +239,9 @@ export function LedgerScreen({
             <button
               type="button"
               className="primary-action"
-              disabled={classificationStatus === "classifying"}
+              disabled={classificationStatus === "classifying" || !aiAvailable}
               aria-busy={classificationStatus === "classifying"}
+              aria-describedby={!aiAvailable ? "classification-ai-unavailable" : undefined}
               onClick={onClassifySessions}
             >
               <span>

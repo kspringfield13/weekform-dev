@@ -21,6 +21,7 @@ import {
   nextReviewCommandApplication,
   parsePersonalSyncState,
   personalSyncDisconnectBlockReason,
+  rekeyLegacyReplicaBatch,
   removeReviewCommandApplication,
   reviewCommandApplicationDecision,
   reviewCommandApplicationRetryDelayMs,
@@ -69,6 +70,40 @@ test("offline queue deduplicates identical replica content and keeps a stable ba
   const attempted = markReplicaBatchAttempt(retry, retry[0].batchId, "offline");
   assert.equal(attempted[0].attempts, 1);
   assert.equal(attempted[0].lastError, "offline");
+});
+
+test("only the exact legacy-receipt failure rekeys a queued replica without changing its payload", () => {
+  const original = enqueueReplicaBatch([], {
+    fingerprint: "replica-fp-legacy",
+    payload: { schemaVersion: 1 } as PersonalReplicaSyncQueueItemV1["payload"],
+    now: "2026-07-20T12:00:00.000Z",
+    makeId: () => "11111111-2222-4333-8444-555555555555",
+  });
+  const replacementId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+  const recovered = rekeyLegacyReplicaBatch(
+    original,
+    original[0].batchId,
+    "legacy personal replica batch id requires a new batch id",
+    () => replacementId,
+  );
+
+  assert.ok(recovered);
+  assert.equal(recovered?.[0].batchId, replacementId);
+  assert.equal(recovered?.[0].fingerprint, original[0].fingerprint);
+  assert.equal(recovered?.[0].payload, original[0].payload);
+  assert.equal(recovered?.[0].queuedAt, original[0].queuedAt);
+  assert.equal(recovered?.[0].attempts, 0);
+  assert.equal(recovered?.[0].lastError, null);
+  assert.equal(original[0].batchId, "11111111-2222-4333-8444-555555555555");
+
+  assert.equal(
+    rekeyLegacyReplicaBatch(original, original[0].batchId, "conflicting personal replica batch id"),
+    null,
+  );
+  assert.equal(
+    rekeyLegacyReplicaBatch(original, "missing-batch", "legacy personal replica batch id requires a new batch id"),
+    null,
+  );
 });
 
 test("replica source clock advances only for new content and survives same-millisecond changes", () => {

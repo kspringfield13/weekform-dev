@@ -189,7 +189,7 @@ export function NarrativeScreen({
                 <span>Generate Narrative</span>
               </button>
             </EmptyState>
-            {generationError && <InlineError message={generationError} onRetry={onRegenerate} />}
+            {generationError && <InlineError message={generationError} onRetry={aiAvailable ? onRegenerate : undefined} />}
           </>
         )}
       </section>
@@ -246,7 +246,7 @@ export function NarrativeScreen({
             </div>
           </div>
         </div>
-        {generationError && <InlineError message={generationError} onRetry={onRegenerate} />}
+        {generationError && <InlineError message={generationError} onRetry={aiAvailable ? onRegenerate : undefined} />}
 
         <div className="narrative-layout">
           <section className="narrative-panel analyst-narrative">

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { MutableRefObject } from "react";
 import { writePersistedState } from "../services/localStore";
 import type { PersistedAppState } from "../services/localStore";
+import { createPersistenceCoordinator } from "../services/persistenceCoordinator";
 
 // Derive the write payload straight from the persisted schema so the two can never
 // drift: `version` is stamped by the hook, and `isDemoMode` is a runtime-only guard
@@ -15,6 +16,10 @@ const EMPTY_NATIVE_SAMPLES: PersistedAppState["activeWindowSamples"] = [];
 export interface PersistenceBarrier {
   /** Persist the newest complete snapshot observed by the latest React render. */
   flushLatest: () => Promise<void>;
+  /** Close the write lane and wait for any write that already crossed the boundary. */
+  suspendForReset: () => Promise<void>;
+  /** Reopen persistence after Reset has replaced the in-memory workspace. */
+  resumeAfterReset: () => void;
 }
 
 export function usePersistence(
@@ -47,6 +52,14 @@ export function usePersistence(
   // than re-toasting on every subsequent state change.
   const writeErrorSurfaced = useRef(false);
   const pendingTimerRef = useRef<number | null>(null);
+  const suspendedForResetRef = useRef(false);
+  const writeCoordinatorRef = useRef<ReturnType<
+    typeof createPersistenceCoordinator<PersistedAppState>
+  > | null>(null);
+  if (writeCoordinatorRef.current === null) {
+    writeCoordinatorRef.current = createPersistenceCoordinator(writePersistedState);
+  }
+  const writeCoordinator = writeCoordinatorRef.current;
 
   const flushLatest = useCallback(async (): Promise<void> => {
     if (isDemoMode) throw new Error("Demo state is not persisted.");
@@ -56,7 +69,7 @@ export function usePersistence(
       pendingTimerRef.current = null;
     }
     try {
-      await writePersistedState(latestSnapshotRef.current);
+      await writeCoordinator.schedule(latestSnapshotRef.current);
       writeErrorSurfaced.current = false;
     } catch (error) {
       if (!writeErrorSurfaced.current) {
@@ -65,14 +78,28 @@ export function usePersistence(
       }
       throw error;
     }
-  }, [hydrated, isDemoMode]);
+  }, [hydrated, isDemoMode, writeCoordinator]);
+
+  const suspendForReset = useCallback(async (): Promise<void> => {
+    suspendedForResetRef.current = true;
+    if (pendingTimerRef.current !== null) {
+      window.clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    }
+    await writeCoordinator.suspend();
+  }, [writeCoordinator]);
+
+  const resumeAfterReset = useCallback((): void => {
+    writeCoordinator.resume();
+    suspendedForResetRef.current = false;
+  }, [writeCoordinator]);
 
   useEffect(() => {
     // Skip the first-mount write until the async hydration read has resolved
     // (App.tsx flips `hydrated` in readPersistedState().then). Without this gate
     // the empty-state write can race ahead of the read and persist `{blocks: []}`,
     // wiping the user's stored work. Mirrors the `themeHydrated` ref guard.
-    if (isDemoMode || !hydrated.current) return;
+    if (isDemoMode || !hydrated.current || suspendedForResetRef.current) return;
     const timer = window.setTimeout(() => {
       if (pendingTimerRef.current === timer) pendingTimerRef.current = null;
       void flushLatest().catch(() => undefined);
@@ -121,5 +148,8 @@ export function usePersistence(
     flushLatest,
   ]);
 
-  return useMemo(() => ({ flushLatest }), [flushLatest]);
+  return useMemo(
+    () => ({ flushLatest, suspendForReset, resumeAfterReset }),
+    [flushLatest, resumeAfterReset, suspendForReset],
+  );
 }

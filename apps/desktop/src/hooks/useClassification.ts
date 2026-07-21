@@ -12,7 +12,12 @@ import type {
 } from "../../../../packages/domain/src/models";
 import { useEffect } from "react";
 import { plannedStatuses, workCategories, workModes } from "../../../../packages/domain/src/taxonomy";
-import { useAsyncStatus } from "./useAsyncStatus";
+import {
+  isResetInProgress,
+  RESET_IN_PROGRESS_AI_MESSAGE,
+  useAsyncStatus,
+  type ResetInProgressRef,
+} from "./useAsyncStatus";
 import { buildWorkBlockClassifierPrompt, WORK_BLOCK_CLASSIFIER_PROMPT_VERSION } from "../services/workBlockClassifierPrompt";
 import { aiCompleteJson, jsonSchemaFormat } from "../services/aiComplete";
 import { WORK_BLOCK_CLASSIFIER_INSTRUCTIONS, workBlockClassifierSchema } from "../services/workBlockClassifierSchema";
@@ -38,6 +43,7 @@ interface NativeClassifiedWorkBlock {
 
 interface UseClassificationParams {
   isDemoMode: boolean;
+  resetInProgressRef: ResetInProgressRef;
   blocks: WorkBlock[];
   setBlocks: React.Dispatch<React.SetStateAction<WorkBlock[]>>;
   activeWindowSessions: ActivitySession[];
@@ -160,6 +166,7 @@ function classifiedBlockToWorkBlock(
 
 export function useClassification({
   isDemoMode,
+  resetInProgressRef,
   blocks,
   setBlocks,
   activeWindowSessions,
@@ -181,6 +188,9 @@ export function useClassification({
   }, [aiConfig]);
 
   async function classifyActiveWindowSessions(): Promise<AppActionResult> {
+    if (isResetInProgress(resetInProgressRef)) {
+      return { ok: false, message: RESET_IN_PROGRESS_AI_MESSAGE };
+    }
     if (isDemoMode) return { ok: false, message: "Classification is unavailable in demo mode." };
     if (classificationStatus === "classifying") return { ok: false, message: "Classification is already running." };
 

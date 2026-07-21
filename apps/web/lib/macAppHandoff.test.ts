@@ -117,5 +117,5 @@ test("Individual Today and Week offer a desktop-gated Start Tracking handoff", (
   assert.match(nativeSource, /show_quick_view/);
   assert.match(desktopAppSource, /resolveWebTrackingHandoff/);
   assert.match(desktopAppSource, /setActiveSettingsTab\("account"\)/);
-  assert.match(desktopAppSource, /setPaused\(false\)/);
+  assert.match(desktopAppSource, /if \(!requestCapturePaused\(false\)\) return/);
 });

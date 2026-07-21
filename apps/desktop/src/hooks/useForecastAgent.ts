@@ -10,7 +10,12 @@ import type {
   AIConfig,
 } from "../../../../packages/domain/src/models";
 import { normalizeWeekId } from "../../../../packages/inference/src/capacity";
-import { useAsyncStatus } from "./useAsyncStatus";
+import {
+  isResetInProgress,
+  RESET_IN_PROGRESS_AI_MESSAGE,
+  useAsyncStatus,
+  type ResetInProgressRef,
+} from "./useAsyncStatus";
 import { buildForecastAgentPrompt, FORECAST_AGENT_PROMPT_VERSION } from "../services/forecastAgentPrompt";
 import { createAuditEvent } from "../lib/audit";
 import { aiAuditSource, generationProviderUnsupportedMessage, providerSupportsGeneration } from "../services/aiProviders";
@@ -32,6 +37,7 @@ const isStringArray = (candidate: unknown): candidate is string[] =>
 
 interface UseForecastAgentParams {
   isDemoMode: boolean;
+  resetInProgressRef: ResetInProgressRef;
   blocks: WorkBlock[];
   setGeneratedForecast: React.Dispatch<React.SetStateAction<PersistedForecastRecord | null>>;
   setForecastHistory: React.Dispatch<React.SetStateAction<PersistedForecastRecord[]>>;
@@ -49,6 +55,7 @@ interface UseForecastAgentParams {
 
 export function useForecastAgent({
   isDemoMode,
+  resetInProgressRef,
   blocks,
   setGeneratedForecast,
   setForecastHistory,
@@ -66,6 +73,9 @@ export function useForecastAgent({
   const [forecastStatus, forecastError, forecastAsync] = useAsyncStatus<"idle" | "generating">("idle");
 
   async function generateForecastAgent(): Promise<AppActionResult> {
+    if (isResetInProgress(resetInProgressRef)) {
+      return { ok: false, message: RESET_IN_PROGRESS_AI_MESSAGE };
+    }
     if (isDemoMode) return { ok: false, message: "Forecast generation is unavailable in demo mode." };
     if (forecastStatus === "generating") return { ok: false, message: "A forecast is already being generated." };
 
