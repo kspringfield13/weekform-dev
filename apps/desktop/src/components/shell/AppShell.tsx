@@ -8,6 +8,8 @@ import {
   ChevronLeft,
   UsersRound,
   Play,
+  Presentation,
+  LogOut,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { WeeklyCapacitySnapshot } from "../../../../../packages/domain/src/models";
@@ -162,6 +164,28 @@ export function AppShell({
             </span>
           </button>
         )}
+        {demoMode && (
+          <div className="sidebar-demo-card" role="status">
+            <div className="side-metric-heading">
+              <span>{simulationMode ? "Simulation" : "Demo mode"}</span>
+              <Presentation size={14} aria-hidden />
+            </div>
+            <p className="sidebar-demo-copy">
+              {simulationMode
+                ? "This session runs on live synthetic simulation data."
+                : "You’re exploring Weekform with simulated data."}
+            </p>
+            <button
+              className="sidebar-demo-exit"
+              type="button"
+              aria-label={simulationMode ? "Exit the live synthetic simulation and return to Weekform" : "Exit demo and return to your own Weekform data"}
+              onClick={() => window.location.assign(window.location.pathname)}
+            >
+              <LogOut size={13} aria-hidden />
+              <span>{simulationMode ? "Exit simulation" : "Exit demo"}</span>
+            </button>
+          </div>
+        )}
         <button
           className="sidebar-intelligence capacity-summary-trigger"
           type="button"
@@ -228,15 +252,12 @@ export function AppShell({
             <div className="page-context-navigation">
               <ContextNavigation active={active} setActive={setActive} showFlaggedTab={showFlaggedTab} />
               {demoMode && (
-                <button
+                <span
                   className={`demo-badge${simulationMode ? " simulation-runtime-badge" : ""}`}
-                  type="button"
-                  aria-label={simulationMode ? "Exit the live synthetic simulation and return to Weekform" : "Exit demo and return to your own Weekform data"}
-                  title={simulationMode ? "This embedded session uses synthetic simulation data only" : "Leave the simulated demo and return to your own data"}
-                  onClick={() => window.location.assign(window.location.pathname)}
+                  title={simulationMode ? "This embedded session uses synthetic simulation data only" : "You're viewing simulated demo data"}
                 >
-                  {simulationMode ? "SIMULATED · LIVE" : "Demo — exit"}
-                </button>
+                  {simulationMode ? "SIMULATED · LIVE" : "Demo"}
+                </span>
               )}
               {showWeekContext && (
                 <p className="page-week-context">
