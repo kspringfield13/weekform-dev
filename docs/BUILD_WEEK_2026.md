@@ -1047,14 +1047,19 @@ This task is supporting evidence for the public presentation only. It does not r
   and responsive one-column collapse for both manager and member views.
 - **Evidence:** The behavior was reproduced red-first and hardened again after
   the trusted release exposed a registered-desktop regression. The full Web suite
-  passes 603/603, the optimized Next build and authoritative root build exit 0,
-  and Vercel production deployment `dpl_B4pZDYHLKcqDDfVVnEy1YqZDo5to` is Ready at
-  `weekform.dev`. A fresh signed-out Mac browser replay follows Download for
-  Mac to `/login?next=%2Fdownload` without invoking the custom protocol; `/app`
-  and `/download` redirect to authentication, while `/download/artifact`
-  returns 401 without a session. The download CTA no longer has a registered-
-  desktop branch; authenticated Team data remains a separate account-scoped
-  verification surface.
+  passes 600/600, the optimized Next build and authoritative root build exit 0,
+  and all 454 local RLS assertions, 82 Rust tests, 17 release-script tests, and
+  both zero-vulnerability audits pass. Apple accepted the final universal
+  `Weekform_0.1.0_universal.dmg`; the stapled, Gatekeeper-accepted private bytes
+  are 6,989,682 bytes with SHA-256
+  `e028475ec0989ff119b270aeea81e748a226656d2eac5b00d28d1239827f4f7c`.
+  The authenticated candidate download and canonical download both reproduced
+  that exact checksum before and after Vercel promotion. Production deployment
+  `dpl_9wNJNvcuMMfSuZtipgvW6A2SQqhD` is Ready at `weekform.dev`. A fresh
+  authenticated no-device browser replay showed no Web Compact control and
+  routed Start Tracking to `/download` without invoking a custom protocol. The
+  download CTA no longer has a registered-desktop branch; authenticated Team
+  data remains a separate account-scoped verification surface.
 
 ### End-user positioning and three-minute demo
 

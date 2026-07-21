@@ -90,7 +90,7 @@ test("candidate inspection binds project, deployment identity, URL, target, and 
   }
 });
 
-test("previous production parser requires the exact canonical alias and Weekform project", () => {
+test("previous production parser requires an owned lookup alias and Weekform project", () => {
   const inspected = {
     id: "dpl_Previous123",
     name: "weekform",
