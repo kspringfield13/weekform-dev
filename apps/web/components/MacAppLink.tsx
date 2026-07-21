@@ -29,7 +29,7 @@ function isMacBrowser(): boolean {
 export function MacAppLink({
   children,
   fallbackHref = "/download",
-  openUrl,
+  openUrl = WEEKFORM_OPEN_URL,
   ...anchorProps
 }: MacAppLinkProps) {
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {

@@ -33,11 +33,12 @@ const desktopAppSource = readFileSync(
   "utf8",
 );
 
-test("download acquisition stays prompt-free while explicit Mac actions retain a fallback", () => {
+test("download acquisition opens an installed Mac app before falling back to download", () => {
   assert.equal(existsSync(launcherUrl), true);
   const source = existsSync(launcherUrl) ? readFileSync(launcherUrl, "utf8") : "";
 
   assert.match(source, /export const WEEKFORM_OPEN_URL = "weekform:\/\/open/);
+  assert.match(source, /openUrl\s*=\s*WEEKFORM_OPEN_URL/);
   assert.match(source, /!openUrl/);
   assert.match(source, /window\.addEventListener\("blur"/);
   assert.match(source, /visibilitychange/);
