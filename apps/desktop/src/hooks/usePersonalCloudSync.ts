@@ -159,7 +159,7 @@ export function usePersonalCloudSync(input: {
     const current = accountRef.current;
     const env = getCloudEnv();
     const session = await current.getFreshSession();
-    if (!env || !session) return { ok: false as const, message: "Sign in to sync your Web workspace." };
+    if (!env || !session) return { ok: false as const, message: "Weekform could not confirm your Weekform Web session. Check your connection or sign in again." };
     const result = await registerWeekformDeviceV3(
       env,
       session,

@@ -26,6 +26,7 @@ import {
   type CloudMetricPolicy,
   type CloudShareLevel
 } from "../../../../../packages/domain/src/cloud";
+import { cancelCloudOAuthSignIn } from "../../services/cloudClient";
 import { CLOUD_METRIC_KEYS, CLOUD_METRIC_LABELS } from "../../services/cloudPolicy";
 import type { CloudController } from "../../hooks/useCloudSync";
 import { formatAuditTime } from "../../lib/format";
@@ -304,6 +305,22 @@ export function CloudAccountPanel({
                 <span>Sign in with GitHub</span>
               </button>
             </div>
+
+            {activeOAuthProvider !== null && (
+              <div className="cloud-oauth-waiting" role="status">
+                <span>
+                  Finish signing in with {activeOAuthProvider === "google" ? "Google" : "GitHub"} in
+                  your browser. Weekform is waiting for it to complete.
+                </span>
+                <button
+                  className="settings-control cloud-oauth-cancel"
+                  type="button"
+                  onClick={() => void cancelCloudOAuthSignIn()}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
 
             <details className="cloud-password-disclosure">
               <summary>

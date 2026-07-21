@@ -36,8 +36,10 @@ import {
   writePersistedCloudStateStrict
 } from "../services/cloudStore";
 import {
+  CLOUD_OAUTH_CANCELLED_MESSAGE,
   fetchTeamMemberships,
   getCloudEnv,
+  isTerminalRefreshFailure,
   refreshSession,
   signInWithOAuth,
   signInWithPassword,
@@ -116,6 +118,9 @@ const PERSONAL_SYNC_PERSISTENCE_ERROR =
   "Weekform could not save the pending Web review receipt. Keep Weekform open and retry; no server acknowledgement was sent.";
 const SHARED_RESERVATION_PERSISTENCE_ERROR =
   "Weekform could not durably reserve the retry-safe snapshot ID. No workload data was uploaded; keep Weekform open and retry.";
+const SESSION_PERSISTENCE_ERROR =
+  "Weekform could not save your session to this Mac (macOS Keychain), so you may be signed out when the app restarts. Allow the Keychain prompt or sign in again if this persists.";
+const SESSION_EXPIRED_ERROR = "Your Weekform Web session expired. Sign in again to continue syncing.";
 
 export function useCloudAccount({
   isDemoMode,
@@ -249,10 +254,19 @@ export function useCloudAccount({
     };
   }, [isDemoMode, configured, deferHydration, loadTeams]);
 
-  // Persist after hydration; a failed write leaves in-memory state working.
+  // Persist after hydration; a failed write leaves in-memory state working — but a
+  // session that cannot reach the Keychain must not fail silently, or the user looks
+  // signed in now and is inexplicably signed out on the next launch.
   useEffect(() => {
     if (isDemoMode || !configured || !hydrated || accountResetClosedRef.current) return;
-    void enqueueCloudWrite(cloudEnvelopeRef.current).catch(() => undefined);
+    const envelope = cloudEnvelopeRef.current;
+    void enqueueCloudWrite(envelope)
+      .then(() => {
+        setAuthError((current) => (current === SESSION_PERSISTENCE_ERROR ? null : current));
+      })
+      .catch(() => {
+        if (envelope.session) setAuthError(SESSION_PERSISTENCE_ERROR);
+      });
   }, [isDemoMode, configured, hydrated, session, policy, syncState, pendingSnapshot, personalReplicaPolicy, personalSyncState, enqueueCloudWrite]);
 
   const signIn = useCallback(
@@ -304,7 +318,8 @@ export function useCloudAccount({
         const result = await signInWithOAuth(env, provider);
         if (!operation.isCurrent() || epoch !== accountEpochRef.current) return false;
         if (!result.ok) {
-          setAuthError(result.message);
+          // A cancel the user chose is not an error worth a banner.
+          if (result.message !== CLOUD_OAUTH_CANCELLED_MESSAGE) setAuthError(result.message);
           return false;
         }
         setSession(result.value);
@@ -496,9 +511,18 @@ export function useCloudAccount({
           const result = await refreshSession(env, session.refreshToken);
           if (!operation.isCurrent() || epoch !== accountEpochRef.current) return null;
           if (!result.ok) {
+            // Only a definitive token rejection ends the session. A transient
+            // failure (offline at hourly expiry, 5xx) keeps the session and the
+            // refresh token so sync resumes on its own; the current access token
+            // may still be valid inside the 60s early-refresh window.
+            if (!isTerminalRefreshFailure(result.status)) {
+              return typeof session.expiresAt === "number" && session.expiresAt > Date.now()
+                ? session
+                : null;
+            }
             setSession(null);
             setTeams([]);
-            setAuthError(result.message);
+            setAuthError(SESSION_EXPIRED_ERROR);
             return null;
           }
           const refreshed: PersistedCloudSession = {

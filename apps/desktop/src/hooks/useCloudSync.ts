@@ -217,7 +217,7 @@ export function useCloudSync({
           status: "error",
           lastError: preserveManualResyncRequirement(
             current.lastError,
-            "You are signed out. Sign in again to sync."
+            "Weekform could not confirm your Weekform Web session. Check your connection and try again, or sign in again."
           )
         }));
         return false;
@@ -336,7 +336,7 @@ export function useCloudSync({
         setSyncState((current) => ({
           ...current,
           status: "error",
-          lastError: "You are signed out. Sign in again to delete your snapshots."
+          lastError: "Weekform could not confirm your Weekform Web session. Check your connection and try again, or sign in again."
         }));
         return false;
       }
@@ -464,7 +464,7 @@ export function useCloudSync({
         setSyncState((current) => ({
           ...current,
           status: "error",
-          lastError: "Auto-sync stopped: you are signed out. Sign in again to resume."
+          lastError: "Auto-sync could not confirm your Weekform Web session. It will retry automatically; sign in again if this continues."
         }));
         return;
       }

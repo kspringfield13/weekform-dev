@@ -3470,6 +3470,10 @@ fn oauth_html_response(stream: &mut std::net::TcpStream, status: u16, message: &
 const CLOUD_OAUTH_PORT: u16 = 49321;
 const CLOUD_OAUTH_CALLBACK_PATH: &str = "/cloud-auth/callback";
 const CLOUD_OAUTH_TIMEOUT_SECS: u64 = 300;
+/// Machine-readable sentinel returned when a pending browser sign-in is cancelled
+/// (user cancel or Reset Local Data). The webview maps it to a quiet cancel —
+/// it must stay in sync with `CLOUD_OAUTH_CANCELLED_SENTINEL` in `cloudClient.ts`.
+const CLOUD_OAUTH_CANCELLED_SENTINEL: &str = "weekform_oauth_cancelled";
 
 static CLOUD_OAUTH_CALLBACK_GENERATION: AtomicU64 = AtomicU64::new(1);
 
@@ -3489,6 +3493,14 @@ fn cancel_pending_cloud_oauth_callback() {
 fn cancel_pending_oauth_callbacks_for_reset() {
     calendar_sources::cancel_pending_oauth_callback();
     chat_sources::cancel_pending_oauth_callback();
+    cancel_pending_cloud_oauth_callback();
+}
+
+/// User-initiated cancel for a pending Weekform Web browser sign-in; releases the
+/// loopback wait in `start_cloud_oauth` within one poll interval instead of holding
+/// the Account & Sharing panel busy for the full five-minute timeout.
+#[tauri::command]
+fn cancel_cloud_oauth() {
     cancel_pending_cloud_oauth_callback();
 }
 
@@ -3584,7 +3596,7 @@ fn wait_for_cloud_oauth_callback(
 
     loop {
         if !cloud_oauth_callback_is_current(callback_generation) {
-            return Err("Weekform Web sign-in was cancelled by Reset Local Data.".to_string());
+            return Err(CLOUD_OAUTH_CANCELLED_SENTINEL.to_string());
         }
         match listener.accept() {
             Ok((mut stream, _)) => {
@@ -4931,7 +4943,7 @@ mod cloud_oauth_tests {
     use super::{
         build_cloud_oauth_authorize_url, cancel_pending_cloud_oauth_callback,
         current_cloud_oauth_callback_generation, parse_cloud_oauth_callback,
-        wait_for_cloud_oauth_callback,
+        wait_for_cloud_oauth_callback, CLOUD_OAUTH_CANCELLED_SENTINEL,
     };
     use std::{net::TcpListener, sync::mpsc, thread, time::Duration};
 
@@ -4956,7 +4968,7 @@ mod cloud_oauth_tests {
             .recv_timeout(Duration::from_secs(1))
             .expect("callback wait exits promptly")
             .expect_err("reset cancels callback wait");
-        assert!(error.contains("cancelled by Reset Local Data"));
+        assert_eq!(error, CLOUD_OAUTH_CANCELLED_SENTINEL);
     }
 
     #[test]
@@ -5209,6 +5221,7 @@ pub fn run() {
             disconnect_codex,
             cancel_pending_oauth_callbacks_for_reset,
             start_cloud_oauth,
+            cancel_cloud_oauth,
             calendar_sources::calendar_source_statuses,
             calendar_sources::connect_calendar_source,
             calendar_sources::sync_calendar_source,

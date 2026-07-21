@@ -14309,6 +14309,24 @@ html[data-theme="dark"] .settings-tabs button.is-active {
   gap: 10px;
 }
 
+.cloud-oauth-waiting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-subtle);
+  background: var(--surface-muted);
+  font-size: 11px;
+}
+
+.cloud-oauth-cancel {
+  flex-shrink: 0;
+}
+
 .cloud-oauth-button {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);

@@ -154,7 +154,7 @@ export function TeamScreen({
       const session = await cloud.account.getFreshSession();
       if (!session) {
         if (current) {
-          setLoadError("Your Weekform session expired. Sign in again to load team data.");
+          setLoadError("Weekform could not confirm your Weekform Web session. Check your connection, or sign in again.");
           setLoadState("error");
         }
         return;
@@ -201,7 +201,7 @@ export function TeamScreen({
       const session = await cloud.account.getFreshSession();
       if (!session) {
         if (current) {
-          setTimelineError("Your session expired before the workload horizon could load.");
+          setTimelineError("Weekform could not confirm your Weekform Web session before the workload horizon could load.");
           setTimelineState("error");
         }
         return;

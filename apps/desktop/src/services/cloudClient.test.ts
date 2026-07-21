@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import type { PersistedCloudSession } from "./cloudPolicy";
 import type { WorkloadSnapshotRow } from "./cloudPolicy";
 import {
+  CLOUD_OAUTH_CANCELLED_MESSAGE,
   acknowledgeDesktopAction,
   claimReviewCommandV2,
   completeReviewCommandV1,
@@ -26,6 +27,7 @@ import {
   fetchTeamMemberships,
   getCloudEnv,
   isCloudConfigured,
+  isTerminalRefreshFailure,
   markReviewCommandAppliedLocallyV2,
   registerWeekformDeviceV3,
   reviewCommandExistsV2,
@@ -204,6 +206,47 @@ test("signInWithOAuth supports GitHub and surfaces a cancelled browser flow", as
 
   assert.equal(result.ok, false);
   if (!result.ok) assert.match(result.message, /cancelled/i);
+});
+
+test("signInWithOAuth maps the native cancellation sentinel to the quiet cancelled message", async () => {
+  const result = await signInWithOAuth(env, "google", async () => {
+    // The exact string the Rust side returns when the loopback wait is cancelled.
+    throw "weekform_oauth_cancelled";
+  });
+
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.equal(result.message, CLOUD_OAUTH_CANCELLED_MESSAGE);
+});
+
+test("refreshSession failures carry the HTTP status; network failures carry none", async () => {
+  await withFetch(
+    () => jsonResponse({ msg: "upstream unavailable" }, 503),
+    async () => {
+      const result = await refreshSession(env, "rt");
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.status, 503);
+    }
+  );
+  await withFetch(
+    () => {
+      throw new Error("offline");
+    },
+    async () => {
+      const result = await refreshSession(env, "rt");
+      assert.equal(result.ok, false);
+      if (!result.ok) assert.equal(result.status, undefined);
+    }
+  );
+});
+
+test("only an invalid-refresh-token rejection is terminal; offline, 429, and 5xx are transient", () => {
+  assert.equal(isTerminalRefreshFailure(400), true);
+  assert.equal(isTerminalRefreshFailure(401), true);
+  assert.equal(isTerminalRefreshFailure(403), true);
+  assert.equal(isTerminalRefreshFailure(undefined), false);
+  assert.equal(isTerminalRefreshFailure(429), false);
+  assert.equal(isTerminalRefreshFailure(500), false);
+  assert.equal(isTerminalRefreshFailure(503), false);
 });
 
 test("signInWithOAuth rejects providers outside the desktop allowlist", async () => {

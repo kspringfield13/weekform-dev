@@ -170,6 +170,25 @@ async function invokeCloudOAuth(request: CloudOAuthRequest): Promise<CloudOAuthC
   return invoke<CloudOAuthCallback>("start_cloud_oauth", { request });
 }
 
+/** Must stay in sync with `CLOUD_OAUTH_CANCELLED_SENTINEL` in `lib.rs`. */
+const CLOUD_OAUTH_CANCELLED_SENTINEL = "weekform_oauth_cancelled";
+
+/**
+ * The failure message `signInWithOAuth` returns when the pending browser sign-in was
+ * deliberately cancelled. Callers compare against it to skip showing an error banner
+ * for a cancel the user chose.
+ */
+export const CLOUD_OAUTH_CANCELLED_MESSAGE = "Browser sign-in was cancelled.";
+
+/** Releases a pending `start_cloud_oauth` loopback wait (user pressed Cancel). */
+export async function cancelCloudOAuthSignIn(): Promise<void> {
+  try {
+    await invoke("cancel_cloud_oauth");
+  } catch {
+    // Nothing was pending, or we're in a browser build — either way there is nothing to release.
+  }
+}
+
 /**
  * Completes browser OAuth through a short-lived native loopback callback, then
  * exchanges the PKCE code on the same token-parsing path as password sign-in.
@@ -192,6 +211,9 @@ export async function signInWithOAuth(
       : error instanceof Error
         ? error.message.trim()
         : "";
+    if (message === CLOUD_OAUTH_CANCELLED_SENTINEL) {
+      return { ok: false, message: CLOUD_OAUTH_CANCELLED_MESSAGE };
+    }
     return {
       ok: false,
       message: message ? message.slice(0, 200) : "Browser sign-in did not finish. Try again."
@@ -218,6 +240,16 @@ export async function signInWithOAuth(
   }
 }
 
+/**
+ * Refresh failures that mean the session is truly gone — Supabase answers an invalid,
+ * revoked, or already-rotated refresh token with 400 (401/403 for auth-layer rejects).
+ * Everything else — no status (offline), 5xx, 429 — is transient: the caller must KEEP
+ * the local session and retry later instead of signing the user out.
+ */
+export function isTerminalRefreshFailure(status: number | undefined): boolean {
+  return status === 400 || status === 401 || status === 403;
+}
+
 /** Exchange the refresh token for a fresh session before an expiring call. */
 export async function refreshSession(
   env: CloudEnv,
@@ -230,7 +262,11 @@ export async function refreshSession(
       body: JSON.stringify({ refresh_token: refreshToken })
     });
     if (!response.ok) {
-      return { ok: false, message: await failureMessage(response, "Your session expired — sign in again") };
+      return {
+        ok: false,
+        message: await failureMessage(response, "Could not refresh your Weekform Web session"),
+        status: response.status
+      };
     }
     const session = sessionFromTokenResponse((await response.json()) as AuthTokenResponse, Date.now());
     if (!session) return { ok: false, message: "Your session expired — sign in again." };

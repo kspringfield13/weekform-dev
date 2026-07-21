@@ -377,7 +377,7 @@ export function ManagerAccessWorkspace({
     setLoadStatus(liveData ? "refreshing" : "loading");
     const session = await getFreshSession();
     if (!session) {
-      setLoadError("Your Weekform session expired. Sign in again before loading team data.");
+      setLoadError("Weekform could not confirm your Weekform Web session. Check your connection, or sign in again.");
       setLoadStatus("error");
       return;
     }

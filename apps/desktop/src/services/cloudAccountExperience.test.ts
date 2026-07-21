@@ -49,3 +49,32 @@ test("team sharing is one approval-first surface with advanced rules and exact d
   assert.doesNotMatch(panelSource, /<h3>Hourly auto-sync<\/h3>/);
   assert.doesNotMatch(panelSource, /<h3>Review and sync<\/h3>/);
 });
+
+const accountHookSource = readFileSync(
+  new URL("../hooks/useCloudAccount.ts", import.meta.url),
+  "utf8"
+);
+
+test("a pending browser sign-in can be cancelled instead of holding the panel for the full timeout", () => {
+  assert.match(panelSource, /cancelCloudOAuthSignIn/);
+  assert.match(panelSource, /className="cloud-oauth-waiting"/);
+  assert.match(stylesSource, /\.cloud-oauth-waiting/);
+  // A cancel the user chose must not surface as an auth error banner.
+  assert.match(accountHookSource, /CLOUD_OAUTH_CANCELLED_MESSAGE/);
+});
+
+test("a transient refresh failure keeps the session instead of signing the user out", () => {
+  // Only a definitive invalid-refresh-token rejection may clear the session;
+  // offline/5xx at hourly token expiry must leave it intact so sync self-heals.
+  assert.match(accountHookSource, /isTerminalRefreshFailure\(result\.status\)/);
+  const refreshBlock = accountHookSource.slice(
+    accountHookSource.indexOf("const refreshAttempt"),
+    accountHookSource.indexOf("refreshInFlight.current = refreshAttempt")
+  );
+  assert.match(refreshBlock, /if \(!isTerminalRefreshFailure\(result\.status\)\)/);
+});
+
+test("a session that cannot be persisted to the Keychain surfaces a warning instead of failing silently", () => {
+  assert.match(accountHookSource, /SESSION_PERSISTENCE_ERROR/);
+  assert.match(accountHookSource, /if \(envelope\.session\) setAuthError\(SESSION_PERSISTENCE_ERROR\)/);
+});
