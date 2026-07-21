@@ -310,7 +310,9 @@ export function GettingStartedModal({
                     </button>
                     <p>
                       macOS may ask once for permission to identify the app in front so sessions
-                      have useful names.
+                      have useful names. Weekform protects your activity journal with an
+                      encryption key kept in your Mac's Keychain — if macOS asks about Keychain
+                      access, choose “Always Allow.”
                     </p>
                   </div>
                 ) : (
@@ -520,6 +522,11 @@ export function GettingStartedModal({
                     button there for a guided tour of Today, Week, Agent, and History.
                   </p>
                 </div>
+                <p className="getting-started-fine-print">
+                  If macOS asks for Keychain access after this step, that is Weekform unlocking
+                  the encryption key for activity recorded by an earlier install — choose “Always
+                  Allow” to keep that history.
+                </p>
                 <div className="getting-started-demo-card">
                   <span className="getting-started-icon" aria-hidden="true">
                     <MonitorPlay size={17} />

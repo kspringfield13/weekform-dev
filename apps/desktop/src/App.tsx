@@ -197,6 +197,11 @@ export function App() {
   // re-renders and the write effect stays keyed off the persisted-data deps.
   const persistenceHydrated = useRef(false);
   const startupHydrationEpochRef = useRef<ReturnType<typeof createAsyncOperationEpoch> | null>(null);
+  // First-run only: the encrypted-journal reads below are parked here until the
+  // getting-started wizard resolves. Reading the journal touches its Keychain
+  // key, and after a reinstall macOS can answer that first touch with a
+  // password prompt — the wizard explains that prompt before it can appear.
+  const deferredJournalHydrationRef = useRef<(() => void) | null>(null);
   if (startupHydrationEpochRef.current === null) {
     startupHydrationEpochRef.current = createAsyncOperationEpoch();
   }
@@ -294,50 +299,61 @@ export function App() {
       }
       setBrowserScreenHistoryHydrated(true);
       if (isTauriRuntime) {
-        const sessionCutoffMs = Date.now();
-        const sessionSinceMs = sessionCutoffMs - 8 * 24 * 60 * 60 * 1000;
-        void invoke<Array<{
-          sample_id: string;
-          timestamp_ms: number;
-          app_name: string | null;
-          window_title: string | null;
-          capture_error: string | null;
-        }>>("read_capture_journal", { limit: 2000 }).then((journal) => {
-          if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
-          const recovered: ActiveWindowSample[] = journal.flatMap((entry) => {
-            if (entry.capture_error || !entry.app_name || !Number.isFinite(entry.timestamp_ms)) return [];
-            return [{
-              sample_id: entry.sample_id,
-              timestamp: new Date(entry.timestamp_ms).toISOString(),
-              app_name: entry.app_name,
-              window_title: entry.window_title,
-              source_type: "macos_active_window",
-              privacy_level: "local_only",
-            }];
+        const hydrateJournalHistory = () => {
+          const sessionCutoffMs = Date.now();
+          const sessionSinceMs = sessionCutoffMs - 8 * 24 * 60 * 60 * 1000;
+          void invoke<Array<{
+            sample_id: string;
+            timestamp_ms: number;
+            app_name: string | null;
+            window_title: string | null;
+            capture_error: string | null;
+          }>>("read_capture_journal", { limit: 2000 }).then((journal) => {
+            if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
+            const recovered: ActiveWindowSample[] = journal.flatMap((entry) => {
+              if (entry.capture_error || !entry.app_name || !Number.isFinite(entry.timestamp_ms)) return [];
+              return [{
+                sample_id: entry.sample_id,
+                timestamp: new Date(entry.timestamp_ms).toISOString(),
+                app_name: entry.app_name,
+                window_title: entry.window_title,
+                source_type: "macos_active_window",
+                privacy_level: "local_only",
+              }];
+            });
+            setActiveWindowSamples((current) => {
+              const byId = new Map([...current, ...recovered].map((sample) => [sample.sample_id, sample]));
+              return [...byId.values()].sort((left, right) => left.timestamp.localeCompare(right.timestamp)).slice(-2000);
+            });
+          }).catch((error) => {
+            if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
+            setCaptureError(error instanceof Error ? error.message : "The encrypted capture journal could not be read.");
           });
-          setActiveWindowSamples((current) => {
-            const byId = new Map([...current, ...recovered].map((sample) => [sample.sample_id, sample]));
-            return [...byId.values()].sort((left, right) => left.timestamp.localeCompare(right.timestamp)).slice(-2000);
+          void invoke<ActivitySession[]>("read_capture_journal_sessions", {
+            sinceMs: sessionSinceMs,
+            untilMs: sessionCutoffMs,
+            maxSessions: 10_000,
+          }).then((sessions) => {
+            if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
+            setJournalSessionWindow({ cutoffMs: sessionCutoffMs, sessions });
+          }).catch((error) => {
+            if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
+            setCaptureError(
+              error instanceof Error
+                ? error.message
+                : "The recent encrypted activity window could not be reconstructed.",
+            );
           });
-        }).catch((error) => {
-          if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
-          setCaptureError(error instanceof Error ? error.message : "The encrypted capture journal could not be read.");
-        });
-        void invoke<ActivitySession[]>("read_capture_journal_sessions", {
-          sinceMs: sessionSinceMs,
-          untilMs: sessionCutoffMs,
-          maxSessions: 10_000,
-        }).then((sessions) => {
-          if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
-          setJournalSessionWindow({ cutoffMs: sessionCutoffMs, sessions });
-        }).catch((error) => {
-          if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
-          setCaptureError(
-            error instanceof Error
-              ? error.message
-              : "The recent encrypted activity window could not be reconstructed.",
-          );
-        });
+        };
+        const wizardWillShow =
+          !isDemoMode
+          && (data?.gettingStartedStatus ?? "unseen") === "unseen"
+          && (data?.defaultWindowMode ?? "large") === "large";
+        if (wizardWillShow) {
+          deferredJournalHydrationRef.current = hydrateJournalHistory;
+        } else {
+          hydrateJournalHistory();
+        }
       }
 
       // Every launch: bring the main window forward maximized in the full
@@ -2020,6 +2036,16 @@ export function App() {
       setGettingStartedStatus("complete");
     }
   }, [gettingStartedStatus, paused]);
+
+  // Runs the journal hydration parked during a first-run boot (see the
+  // deferred ref above) as soon as the wizard resolves either way.
+  useEffect(() => {
+    if (gettingStartedStatus === "unseen") return;
+    const hydrate = deferredJournalHydrationRef.current;
+    if (!hydrate) return;
+    deferredJournalHydrationRef.current = null;
+    hydrate();
+  }, [gettingStartedStatus]);
 
   // User-initiated retention-window change. Logged once as a discrete privacy
   // action (background expiry of raw activity and Chat evidence stays unlogged).
