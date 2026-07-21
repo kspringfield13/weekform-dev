@@ -526,32 +526,23 @@ client `observed_at` and `source_updated_at` remain provenance and cannot win
 latest ordering through clock skew.
 
 In Individual mode, the Today and Week surfaces include a user-initiated
-**Start Tracking** control for an already-running Weekform Mac. While signed in
-and running, the menu-bar app refreshes its opaque device heartbeat every 15
-seconds, immediately refreshes it when tracking is paused or resumed, and polls
-its own RLS-scoped `desktop_actions` rows every two seconds. The heartbeat adds
-only a boolean for whether local tracking is enabled and its server receipt
-time; it contains no samples, app/window titles, or activity evidence. The
-browser re-authenticates the click and calls a security-definer RPC that returns
-an already-tracking result when a fresh Mac reports tracking enabled, or can
-queue only `start_tracking` for a fresh Mac reporting tracking paused. The
-control expires after 90 seconds. The row contains only
-user, device, and random action ids, the fixed action, and creation/expiration
-timestamps—no activity or workload evidence. Clients cannot insert or delete
-rows directly.
+**Start Tracking** control. That explicit operational click invokes the
+registered `weekform://` macOS handler with the fixed `start-tracking` and
+`compact` parameters. The browser may show its own confirmation before opening
+Weekform. The packaged app validates the owned URL shape, resumes the existing
+native collector, and opens the Desktop-only compact top-right window. If the
+Desktop session is signed out, the app opens its Account settings instead of
+starting tracking. If macOS does not hand the URL to an installed app, Web falls
+back to the authenticated Download page after the launch window.
 
-After the target Mac restores the signed-in account state, it resumes the
-existing native collector, opens the Desktop-only compact top-right window, and
-then acknowledges the action; acknowledgement deletes the cloud row instead of
-retaining a control history. The same Reset-owned personal-cloud operation
-barrier fences heartbeat, poll, local application, and acknowledgement. The
-browser never invokes `weekform://`, does not start browser collection, and does
-not receive Mac activity. A fully quit app cannot be silently launched by a Web
-page. If the account has no unrevoked registered desktop, Start Tracking opens
-the authenticated Download page. If a known desktop exists but is not currently
-active or cannot publish the current tracking-state protocol, Web tells the user
-to open or update Weekform from Applications or the menu bar and try again.
-Weekform Web has no compact popup or compact workspace view.
+The scheme carries no account token, activity sample, app/window title, or
+workload evidence. The browser does not start collection and does not receive
+Mac activity. Existing privacy-minimized Desktop heartbeat and short-lived
+`desktop_actions` support remains in place for compatibility with Web versions
+that used the earlier running-app queue; those rows contain only user, device,
+random action, fixed action, and creation/expiration identifiers and are removed
+after acknowledgement. Weekform Web has no compact popup or compact workspace
+view.
 
 ## Individual Web Ask (weekform.dev, server-side AI)
 

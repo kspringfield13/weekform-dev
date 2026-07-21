@@ -44,10 +44,6 @@ const desktopAppSource = readFileSync(
   new URL("../../desktop/src/App.tsx", import.meta.url),
   "utf8",
 );
-const personalCloudSource = readFileSync(
-  new URL("../../desktop/src/hooks/usePersonalCloudSync.ts", import.meta.url),
-  "utf8",
-);
 
 test("Mac acquisition links always navigate normally without attempting a custom-protocol launch", () => {
   assert.equal(existsSync(launcherUrl), true);
@@ -121,50 +117,21 @@ test("the packaged Mac app owns the Weekform scheme and focuses one existing ins
   assert.match(nativeSource, /weekform_activate_app/);
 });
 
-test("Individual Today and Week queue a prompt-free authenticated Start Tracking action", () => {
-  const startTrackingSource = readFileSync(
-    new URL("../components/DesktopStartTrackingButton.tsx", import.meta.url),
-    "utf8",
+test("Individual Today and Week explicitly open the installed Desktop app to start tracking", () => {
+  assert.match(individualShellSource, /MacAppLink/);
+  assert.match(
+    individualShellSource,
+    /weekform:\/\/open\?source=weekform\.dev&action=start-tracking&view=compact/,
   );
-  const actionsSource = readFileSync(
-    new URL("../app/dashboard/personalActions.ts", import.meta.url),
-    "utf8",
-  );
-  const migrationSource = readFileSync(
-    new URL("../../../supabase/migrations/202607210002_desktop_tracking_state.sql", import.meta.url),
-    "utf8",
-  );
-  const stateSource = readFileSync(new URL("desktopActions.ts", import.meta.url), "utf8");
-  const stylesSource = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
-
-  assert.doesNotMatch(individualShellSource, /weekform:\/\//);
-  assert.doesNotMatch(individualShellSource, /attemptAppOpen/);
   assert.match(individualShellSource, /active === "today" \|\| active === "week"/);
-  assert.match(individualShellSource, /<DesktopStartTrackingButton/);
-  assert.match(startTrackingSource, /queueDesktopStartTracking/);
-  assert.match(startTrackingSource, /useActionState/);
+  assert.match(
+    individualShellSource,
+    /<MacAppLink[\s\S]*?attemptAppOpen[\s\S]*?openUrl=\{WEEKFORM_START_TRACKING_URL\}[\s\S]*?fallbackHref="\/download"/,
+  );
   assert.match(individualShellSource, /Start Tracking/);
-  assert.match(actionsSource, /request_desktop_start_tracking/);
-  assert.match(actionsSource, /result === "no_device"[\s\S]*?redirect\("\/download"\)/);
-  assert.match(actionsSource, /result === "already_tracking"[\s\S]*?status:\s*"already-tracking"/);
-  assert.match(actionsSource, /Tracking is already active in Weekform Desktop\./);
-  assert.match(actionsSource, /result === "offline"[\s\S]*?status:\s*"unavailable"/);
-  assert.match(stateSource, /"already-tracking"/);
-  assert.match(stylesSource, /\.web-start-tracking-status\.is-already-tracking\s*\{[^}]*var\(--signal-green\)/s);
-  assert.match(migrationSource, /tracking_active\s+boolean\s+not null\s+default false/);
-  assert.match(migrationSource, /tracking_state_at\s+timestamptz/);
-  assert.match(migrationSource, /register_weekform_device_v3/);
-  assert.match(migrationSource, /request_desktop_start_tracking/);
-  assert.match(migrationSource, /'already_tracking'/);
-  assert.match(migrationSource, /'no_device'/);
-  assert.match(migrationSource, /'offline'/);
-  assert.match(migrationSource, /'queued'/);
-  assert.match(migrationSource, /expires_at/);
-  assert.match(personalCloudSource, /fetchPendingDesktopActions/);
-  assert.match(personalCloudSource, /acknowledgeDesktopAction/);
-  assert.match(personalCloudSource, /registerWeekformDeviceV3/);
+  assert.doesNotMatch(individualShellSource, /DesktopStartTrackingButton/);
+  assert.match(nativeSource, /consume_pending_web_handoff/);
   assert.match(nativeSource, /show_quick_view/);
-  assert.match(desktopAppSource, /invoke\("show_quick_view"\)/);
+  assert.match(desktopAppSource, /resolveWebTrackingHandoff/);
   assert.match(desktopAppSource, /if \(!requestCapturePaused\(false\)\) return/);
-  assert.match(desktopAppSource, /trackingActive:\s*!paused/);
 });

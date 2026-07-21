@@ -7,7 +7,6 @@ import {
   reviewConfirmBatchInput,
   reviewCommandInput,
 } from "@/lib/personalReplica";
-import type { DesktopStartTrackingState } from "@/lib/desktopActions";
 import { createClient } from "@/lib/supabase/server";
 
 function text(formData: FormData, key: string): string {
@@ -22,47 +21,6 @@ function workspaceNotice(
 ): string {
   const settingsQuery = settingsTab ? `&settings_tab=${settingsTab}` : "";
   return `/app?screen=${screen}${settingsQuery}&notice=${encodeURIComponent(message)}`;
-}
-
-/**
- * Checks a recently seen Mac's privacy-minimized tracking state and queues a
- * short-lived control only when it is paused. The browser never invokes a
- * custom protocol; the server owns the outcome, target, and fixed action.
- */
-export async function queueDesktopStartTracking(
-  _previousState: DesktopStartTrackingState,
-  _formData: FormData,
-): Promise<DesktopStartTrackingState> {
-  const supabase = await createClient();
-  if (!supabase) return { status: "error", message: "Weekform Cloud is not configured." };
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { status: "error", message: "Sign in again to contact Weekform Desktop." };
-
-  const { data: result, error } = await supabase.rpc("request_desktop_start_tracking");
-  if (error) {
-    return { status: "error", message: "Weekform Desktop could not be contacted. Try again." };
-  }
-  if (result === "no_device") redirect("/download");
-  if (result === "already_tracking") {
-    return {
-      status: "already-tracking",
-      message: "Tracking is already active in Weekform Desktop.",
-    };
-  }
-  if (result === "offline") {
-    return {
-      status: "unavailable",
-      message: "Your Weekform Desktop is offline or needs the latest update. Open it from Applications or the menu bar, then try again.",
-    };
-  }
-  if (result !== "queued") {
-    return { status: "error", message: "Weekform Desktop returned an unknown status. Try again." };
-  }
-
-  return {
-    status: "queued",
-    message: "Sent to Weekform Desktop. Tracking will open in compact view.",
-  };
 }
 
 export async function queuePersonalReviewCommand(formData: FormData): Promise<void> {

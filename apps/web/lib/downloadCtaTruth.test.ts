@@ -35,14 +35,18 @@ test("every Web Mac CTA uses the shared prompt-free acquisition or explicit-acti
     if (relativePath !== "components/MacAppLink.tsx" && /<MacAppLink\b/.test(source)) {
       launcherFiles.push(relativePath);
     }
-    if (/attemptAppOpen=/.test(source)) {
+    if (relativePath !== "components/MacAppLink.tsx" && /\battemptAppOpen(?:=|\s|>)/.test(source)) {
       protocolAttemptFiles.push(relativePath);
     }
   }
 
   assert.deepEqual(rawDownloadLinks, []);
   assert.ok(launcherFiles.length >= 10, "Mac handoffs across marketing and the Web app must share the launcher");
-  assert.deepEqual(protocolAttemptFiles, [], "Web controls never invoke a custom protocol");
+  assert.deepEqual(
+    protocolAttemptFiles,
+    ["components/IndividualWorkspaceShell.tsx"],
+    "only the explicit Start Tracking action may invoke the installed Desktop app",
+  );
 });
 
 test("every acquisition link retains the authenticated download page when the app is absent", () => {

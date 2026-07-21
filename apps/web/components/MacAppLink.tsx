@@ -24,8 +24,8 @@ function isMacBrowser(): boolean {
 }
 
 /**
- * Navigates to the real download href by default. Only a server-confirmed,
- * signed-in desktop presence should opt into the native-app handoff.
+ * Navigates to the real download href by default. Only an explicit operational
+ * action such as Start Tracking should opt into the native-app handoff.
  */
 export function MacAppLink({
   children,
