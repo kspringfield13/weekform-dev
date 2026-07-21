@@ -39,6 +39,7 @@
     "macOS": {
       "minimumSystemVersion": "13.0",
       "infoPlist": "Info.plist",
+      "signingIdentity": "Developer ID Application: Blerbz LLC (PC8SXU67D3)",
       "dmg": {
         "windowSize": {
           "width": 660,
