@@ -74,6 +74,9 @@ export function parseInspectedCandidate(raw, { expectedId, expectedUrl }) {
   const root = parseJson(raw, "candidate");
   const deployment = validateCommon(root, "candidate");
   const aliases = deployment.aliases === undefined ? [] : deployment.aliases;
+  const aliasesRemainProjectOwned = Array.isArray(aliases) && aliases.every(
+    (alias) => PROJECT_ALIAS_PATTERN.test(alias),
+  );
   let normalizedExpectedUrl;
   try {
     normalizedExpectedUrl = normalizeDeploymentUrl(expectedUrl, "candidate");
@@ -84,8 +87,7 @@ export function parseInspectedCandidate(raw, { expectedId, expectedUrl }) {
     deployment.name !== EXPECTED_PROJECT ||
     deployment.id !== expectedId ||
     deployment.url !== normalizedExpectedUrl ||
-    !Array.isArray(aliases) ||
-    aliases.length !== 0
+    !aliasesRemainProjectOwned
   ) {
     invalidMetadata("candidate");
   }

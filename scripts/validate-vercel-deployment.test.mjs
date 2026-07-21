@@ -56,11 +56,27 @@ test("candidate inspection binds project, deployment identity, URL, target, and 
     { ...inspected, aliases: [], url: candidate.url },
   );
 
+  const currentCliShape = {
+    ...inspected,
+    aliases: [
+      "weekform-blerbz.vercel.app",
+      "weekform-blerbz-blerbz.vercel.app",
+    ],
+  };
+  assert.deepEqual(
+    parseInspectedCandidate(JSON.stringify(currentCliShape), {
+      expectedId: candidate.id,
+      expectedUrl: candidate.url,
+    }),
+    { ...currentCliShape, url: candidate.url },
+  );
+
   for (const changed of [
     { ...inspected, id: "dpl_Other123" },
     { ...inspected, name: "other" },
     { ...inspected, aliases: ["weekform.dev"] },
-    { ...inspected, aliases: ["weekform.vercel.app"] },
+    { ...inspected, aliases: ["other-project.vercel.app"] },
+    { ...inspected, aliases: ["weekform-blerbz.vercel.app", "hostile.example"] },
     { ...inspected, url: "different-build.vercel.app" },
   ]) {
     assert.throws(
