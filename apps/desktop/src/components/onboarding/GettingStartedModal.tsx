@@ -236,6 +236,12 @@ export function GettingStartedModal({
                     Settings.
                   </p>
                 </div>
+                <p className="getting-started-fine-print">
+                  Weekform keeps its secrets — the key that encrypts your activity journal, and
+                  any credentials you add — in your Mac's Keychain. macOS may ask you to approve
+                  that access during setup, especially after a reinstall. Choose “Always Allow”
+                  to approve it once; your Mac password goes to macOS, never to Weekform.
+                </p>
               </section>
             )}
 
@@ -523,9 +529,9 @@ export function GettingStartedModal({
                   </p>
                 </div>
                 <p className="getting-started-fine-print">
-                  If macOS asks for Keychain access after this step, that is Weekform unlocking
-                  the encryption key for activity recorded by an earlier install — choose “Always
-                  Allow” to keep that history.
+                  If macOS asks for Keychain access after this step, that is Weekform reopening
+                  secure storage saved by an earlier install — your encrypted activity journal
+                  and any signed-in session. Choose “Always Allow” to keep them.
                 </p>
                 <div className="getting-started-demo-card">
                   <span className="getting-started-icon" aria-hidden="true">

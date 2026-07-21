@@ -118,9 +118,17 @@ const SHARED_RESERVATION_PERSISTENCE_ERROR =
 
 export function useCloudAccount({
   isDemoMode,
+  deferHydration = false,
   onAuditEvent
 }: {
   isDemoMode: boolean;
+  /**
+   * True while the first-run wizard is on screen. Hydration (and therefore the
+   * first Keychain-backed storage access, which macOS may answer with a
+   * password prompt after a reinstall) waits until this flips false, so the
+   * wizard can explain that prompt before it can appear.
+   */
+  deferHydration?: boolean;
   onAuditEvent: (event: AuditEvent) => void;
 }): CloudAccountController {
   const configured = useMemo(() => getCloudEnv() !== null, []);
@@ -219,6 +227,7 @@ export function useCloudAccount({
       setHydrated(true);
       return;
     }
+    if (deferHydration) return;
     let cancelled = false;
     const epoch = accountEpochRef.current;
     readPersistedCloudState().then((state) => {
@@ -237,7 +246,7 @@ export function useCloudAccount({
     return () => {
       cancelled = true;
     };
-  }, [isDemoMode, configured, loadTeams]);
+  }, [isDemoMode, configured, deferHydration, loadTeams]);
 
   // Persist after hydration; a failed write leaves in-memory state working.
   useEffect(() => {

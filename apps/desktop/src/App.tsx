@@ -917,6 +917,10 @@ export function App() {
   // Only the shared allowlist builder's payload can leave the device (useCloudSync).
   const cloudAccount = useCloudAccount({
     isDemoMode,
+    // Mirrors the deferred journal hydration above: no Keychain-backed storage
+    // access while the first-run wizard (which explains the possible macOS
+    // Keychain prompt) is still on screen.
+    deferHydration: !isDemoMode && windowMode === "large" && gettingStartedStatus === "unseen",
     onAuditEvent: (event) => {
       if (isDemoMode) return;
       setAuditEvents((current) => [...current, event].slice(-1000));
