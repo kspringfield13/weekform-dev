@@ -2658,6 +2658,8 @@ const CODEX_APP_SERVER_TIMEOUT: Duration = Duration::from_secs(45);
 const CODEX_TURN_TIMEOUT: Duration = Duration::from_secs(180);
 const CODEX_LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
 const CODEX_LOGIN_POLL_INTERVAL: Duration = Duration::from_secs(3);
+const CODEX_CONNECT_READ_ATTEMPTS: u32 = 5;
+const CODEX_CONNECT_READ_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 const CODEX_FEATURE_OVERRIDES: &[&str] = &[
     "features.apps=false",
@@ -3300,10 +3302,21 @@ async fn connect_codex_via_chatgpt(app: AppHandle) -> Result<CodexPlanConnectRes
                 break;
             }
             // Read the final account through a fresh app-server: the login
-            // instance's auth cache predates the sign-in when it completed
-            // out-of-band, so only a restart reliably sees the stored account.
-            server = CodexAppServer::start(&codex_home, &workspace)?;
-            account = codex_account(&mut server, true)?;
+            // instance's auth cache predates the sign-in (the app-server emits
+            // account/login/completed before reloading its own auth cache, and an
+            // out-of-band completion never updates it at all). Credential-store
+            // writes can also land moments after the completion signal, so retry
+            // briefly instead of failing the whole sign-in on that race.
+            for attempt in 0..CODEX_CONNECT_READ_ATTEMPTS {
+                if attempt > 0 {
+                    thread::sleep(CODEX_CONNECT_READ_RETRY_DELAY);
+                }
+                server = CodexAppServer::start(&codex_home, &workspace)?;
+                account = codex_account(&mut server, false)?;
+                if account.pointer("/account/type").and_then(Value::as_str) == Some("chatgpt") {
+                    break;
+                }
+            }
         }
         require_codex_keyring_storage(&codex_home)?;
 
