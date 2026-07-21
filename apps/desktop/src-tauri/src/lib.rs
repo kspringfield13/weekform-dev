@@ -4673,6 +4673,7 @@ pub fn run() {
             calendar_sources::sync_calendar_source,
             calendar_sources::disconnect_calendar_source,
             chat_sources::chat_source_statuses,
+            chat_sources::configure_chat_provider,
             chat_sources::connect_chat_source,
             chat_sources::sync_chat_source,
             chat_sources::disconnect_chat_source,

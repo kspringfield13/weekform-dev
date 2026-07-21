@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import {
+  KeyRound,
   Link2,
   LoaderCircle,
   MessageSquareText,
@@ -14,11 +15,18 @@ import {
   type ChatProviderId,
 } from "../../../../../packages/integrations/src/chat/chatProviderCapabilities";
 import type {
+  ChatConnectionStatus,
   ChatCoverageState,
   ChatSourcesController,
 } from "../../hooks/useChatSources";
 import { formatAuditTime, formatCount } from "../../lib/format";
 import { ChatConnectWizard } from "./ChatConnectWizard";
+import {
+  chatProviderSetupPresentation,
+  normalizeChatProviderSetupInput,
+  WEBEX_DESKTOP_REDIRECT_URI,
+  type ChatProviderSetupInput,
+} from "./chatConnectionPresentation";
 
 const COVERAGE_LABELS: Record<ChatCoverageState, string> = {
   complete: "Complete",
@@ -28,11 +36,42 @@ const COVERAGE_LABELS: Record<ChatCoverageState, string> = {
   permission_limited: "Permission-limited",
 };
 
-function statusLabel(status: { available: boolean; connected: boolean; stale: boolean } | undefined): string {
+function statusLabel(status: ChatConnectionStatus | undefined): string {
   if (status?.stale) return "Status unknown";
   if (status?.connected) return "Connected";
+  if (status?.readinessCode === "missing_client_id") return "Needs Client ID";
+  if (["missing_redirect_uri", "invalid_redirect_uri", "missing_broker_url", "invalid_broker_url"]
+    .includes(status?.readinessCode ?? "")) return "Needs setup";
+  if (status?.readinessCode === "broker_security_review_required") return "Broker review required";
   if (status?.available) return "Ready";
   return "Unavailable";
+}
+
+interface ChatProviderSetupDraft {
+  clientId: string;
+  redirectUri: string;
+  brokerUrl: string;
+}
+
+const INITIAL_SETUP_DRAFTS: Record<ChatProviderId, ChatProviderSetupDraft> = {
+  slack: { clientId: "", redirectUri: "", brokerUrl: "" },
+  google_chat: { clientId: "", redirectUri: "", brokerUrl: "" },
+  webex: { clientId: "", redirectUri: WEBEX_DESKTOP_REDIRECT_URI, brokerUrl: "" },
+};
+
+function setupInput(
+  provider: ChatProviderId,
+  draft: ChatProviderSetupDraft,
+): ChatProviderSetupInput {
+  if (provider === "webex") {
+    return {
+      provider,
+      clientId: draft.clientId,
+      redirectUri: draft.redirectUri,
+      brokerUrl: draft.brokerUrl,
+    };
+  }
+  return { provider, clientId: draft.clientId };
 }
 
 export function ChatSourcesPanel({
@@ -47,9 +86,69 @@ export function ChatSourcesPanel({
   const { range, rangeError, rangeInput } = controller;
   const rangeFeedbackId = "chat-range-feedback";
   const [wizardProvider, setWizardProvider] = useState<ChatProviderId | null>(null);
+  const [setupDrafts, setSetupDrafts] = useState(INITIAL_SETUP_DRAFTS);
+  const [editingProvider, setEditingProvider] = useState<ChatProviderId | null>(null);
+  const [savingProvider, setSavingProvider] = useState<ChatProviderId | null>(null);
+  const [setupErrors, setSetupErrors] = useState<Partial<Record<ChatProviderId, string>>>({});
   const wizardDescriptor = CHAT_PROVIDER_CAPABILITIES.find((provider) => provider.id === wizardProvider);
   const wizardStatus = controller.statuses.find((status) => status.provider === wizardProvider);
   const wizardActivity = wizardProvider ? controller.activity[wizardProvider] : null;
+
+  const saveProviderSetup = async (
+    event: FormEvent<HTMLFormElement>,
+    provider: ChatProviderId,
+  ) => {
+    event.preventDefault();
+    setSetupErrors((current) => ({ ...current, [provider]: undefined }));
+    let normalized: ChatProviderSetupInput;
+    try {
+      normalized = normalizeChatProviderSetupInput(setupInput(provider, setupDrafts[provider]));
+    } catch (error) {
+      setSetupErrors((current) => ({
+        ...current,
+        [provider]: error instanceof Error ? error.message : "Enter valid public connection details.",
+      }));
+      return;
+    }
+    setSavingProvider(provider);
+    try {
+      const status = await controller.configureProvider(normalized);
+      if (!status) {
+        setSetupErrors((current) => ({
+          ...current,
+          [provider]: "The details were saved, but Weekform could not recheck readiness. Use Refresh status to verify them.",
+        }));
+        return;
+      }
+      setSetupDrafts((current) => ({
+        ...current,
+        [provider]: INITIAL_SETUP_DRAFTS[provider],
+      }));
+      setEditingProvider(null);
+      if (status.available) setWizardProvider(provider);
+    } catch (error) {
+      setSetupErrors((current) => ({
+        ...current,
+        [provider]: error instanceof Error
+          ? error.message
+          : "Weekform could not save these public connection details.",
+      }));
+    } finally {
+      setSavingProvider(null);
+    }
+  };
+
+  const updateSetupDraft = (
+    provider: ChatProviderId,
+    field: keyof ChatProviderSetupDraft,
+    value: string,
+  ) => {
+    setSetupDrafts((current) => ({
+      ...current,
+      [provider]: { ...current[provider], [field]: value },
+    }));
+    setSetupErrors((current) => ({ ...current, [provider]: undefined }));
+  };
 
   return (
     <section className="calendar-sources" aria-labelledby="chat-sources-title">
@@ -114,6 +213,12 @@ export function ChatSourcesPanel({
           const busy = activity.phase === "authorizing" || activity.phase === "syncing" || activity.phase === "disconnecting";
           const receipt = activity.receipt;
           const errorId = `chat-${provider.id}-error`;
+          const setup = chatProviderSetupPresentation(provider.id, status);
+          const showSetupInput = setup.visible || editingProvider === provider.id;
+          const draft = setupDrafts[provider.id];
+          const setupError = setupErrors[provider.id];
+          const clientIdHelpId = `chat-${provider.id}-client-id-help`;
+          const setupErrorId = `chat-${provider.id}-setup-error`;
           return (
             <article className="calendar-provider" key={provider.id} aria-busy={busy}>
               <div className={`calendar-provider-mark is-${provider.id}`} aria-hidden>
@@ -128,9 +233,113 @@ export function ChatSourcesPanel({
                   </span>
                 </div>
                 <p>{provider.description}</p>
+                {showSetupInput && (
+                  <form
+                    className="chat-provider-setup"
+                    onSubmit={(event) => void saveProviderSetup(event, provider.id)}
+                  >
+                    <div className="chat-provider-setup-heading">
+                      <div>
+                        <strong>{provider.label} connection details</strong>
+                        <span>Public values only</span>
+                      </div>
+                      {!setup.visible && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingProvider(null);
+                            setSetupDrafts((current) => ({
+                              ...current,
+                              [provider.id]: INITIAL_SETUP_DRAFTS[provider.id],
+                            }));
+                            setSetupErrors((current) => ({ ...current, [provider.id]: undefined }));
+                          }}
+                        >Cancel</button>
+                      )}
+                    </div>
+                    <label className="chat-provider-setup-field" htmlFor={`chat-${provider.id}-client-id`}>
+                      <span>{provider.label} Client ID</span>
+                      <div className="chat-provider-setup-input">
+                        <KeyRound size={14} aria-hidden />
+                        <input
+                          id={`chat-${provider.id}-client-id`}
+                          type="text"
+                          value={draft.clientId}
+                          placeholder={provider.id === "slack"
+                            ? "1234567890.1234567890123"
+                            : provider.id === "google_chat"
+                              ? "123456789-example.apps.googleusercontent.com"
+                              : "Webex public Client ID"}
+                          autoComplete="off"
+                          spellCheck={false}
+                          aria-invalid={Boolean(setupError)}
+                          aria-describedby={setupError ? `${clientIdHelpId} ${setupErrorId}` : clientIdHelpId}
+                          onChange={(event) => updateSetupDraft(provider.id, "clientId", event.target.value)}
+                        />
+                      </div>
+                    </label>
+                    {provider.id === "webex" && (
+                      <div className="chat-provider-setup-grid">
+                        <label className="chat-provider-setup-field" htmlFor="chat-webex-redirect-uri">
+                          <span>Exact redirect URI</span>
+                          <div className="chat-provider-setup-input">
+                            <Link2 size={14} aria-hidden />
+                            <input
+                              id="chat-webex-redirect-uri"
+                              type="url"
+                              value={draft.redirectUri}
+                              autoComplete="off"
+                              spellCheck={false}
+                              aria-invalid={Boolean(setupError)}
+                              aria-describedby={setupError ? setupErrorId : undefined}
+                              onChange={(event) => updateSetupDraft("webex", "redirectUri", event.target.value)}
+                            />
+                          </div>
+                        </label>
+                        <label className="chat-provider-setup-field" htmlFor="chat-webex-broker-url">
+                          <span>Weekform broker URL</span>
+                          <div className="chat-provider-setup-input">
+                            <ShieldCheck size={14} aria-hidden />
+                            <input
+                              id="chat-webex-broker-url"
+                              type="url"
+                              value={draft.brokerUrl}
+                              placeholder="https://weekform.dev/api"
+                              autoComplete="off"
+                              spellCheck={false}
+                              aria-invalid={Boolean(setupError)}
+                              aria-describedby={setupError ? setupErrorId : undefined}
+                              onChange={(event) => updateSetupDraft("webex", "brokerUrl", event.target.value)}
+                            />
+                          </div>
+                        </label>
+                      </div>
+                    )}
+                    <div className="chat-provider-setup-footer">
+                      <small id={clientIdHelpId}>
+                        {provider.id === "slack"
+                          ? "Paste the public Client ID from Slack’s Basic Information page. Never enter the Client Secret."
+                          : provider.id === "google_chat"
+                            ? "Paste the public Desktop app Client ID from Google Cloud. Never enter the Client Secret."
+                            : "The Client Secret stays on Weekform’s reviewed broker and must never be pasted into the desktop app."}
+                      </small>
+                      <button className="settings-control" type="submit" disabled={savingProvider === provider.id}>
+                        {savingProvider === provider.id && <LoaderCircle className="spin" size={14} aria-hidden />}
+                        {savingProvider === provider.id ? "Saving…" : "Save and review access"}
+                      </button>
+                    </div>
+                    {provider.id === "webex" && (
+                      <small>The redirect must match the Webex integration exactly. The broker address is public; its secret and security attestation remain server-controlled.</small>
+                    )}
+                    {setupError && (
+                      <small className="import-error" id={setupErrorId} role="alert">{setupError}</small>
+                    )}
+                  </form>
+                )}
                 <div className="calendar-provider-meta" aria-live="polite">
                   <span>{status
-                    ? status.available || status.connected || status.stale
+                    ? status.available || status.connected || status.stale ||
+                        setup.visible || status.readinessCode === "broker_security_review_required"
                       ? status.detail
                       : "This connector is unavailable in this build. Open the connection window for details or use the sanitized local import below."
                     : "Checking native connector availability…"}</span>
@@ -164,7 +373,7 @@ export function ChatSourcesPanel({
                 {activity.message && <p className="import-error" id={errorId} role="alert">{activity.message}</p>}
               </div>
               <div className="calendar-provider-actions">
-                {status?.stale ? (
+                {showSetupInput ? null : status?.stale ? (
                   <button
                     className="settings-control"
                     type="button"
@@ -207,19 +416,39 @@ export function ChatSourcesPanel({
                     </button>
                   </>
                 ) : (
-                  <button
-                    className="settings-control"
-                    type="button"
-                    disabled={busy}
-                    aria-busy={activity.phase === "authorizing"}
-                    aria-describedby={activity.message ? errorId : undefined}
-                    onClick={() => setWizardProvider(provider.id)}
-                  >
-                    {activity.phase === "authorizing"
-                      ? <LoaderCircle className="spin" size={15} aria-hidden />
-                      : <Link2 size={15} aria-hidden />}
-                    <span>{activity.phase === "authorizing" ? "Authorizing…" : "Connect now"}</span>
-                  </button>
+                  <>
+                    <button
+                      className="settings-control"
+                      type="button"
+                      disabled={busy || status?.readinessCode === "broker_security_review_required"}
+                      aria-busy={activity.phase === "authorizing"}
+                      aria-describedby={activity.message ? errorId : undefined}
+                      onClick={() => setWizardProvider(provider.id)}
+                    >
+                      {activity.phase === "authorizing"
+                        ? <LoaderCircle className="spin" size={15} aria-hidden />
+                        : <Link2 size={15} aria-hidden />}
+                      <span>{activity.phase === "authorizing"
+                        ? "Authorizing…"
+                        : status?.readinessCode === "broker_security_review_required"
+                          ? "Security review required"
+                          : "Connect now"}</span>
+                    </button>
+                    {setup.canEdit && (
+                      <button
+                        className="icon-button"
+                        type="button"
+                        title={`Change ${provider.label} connection details`}
+                        aria-label={`Change ${provider.label} connection details`}
+                        onClick={() => {
+                          setEditingProvider(provider.id);
+                          setSetupErrors((current) => ({ ...current, [provider.id]: undefined }));
+                        }}
+                      >
+                        <KeyRound size={14} aria-hidden />
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             </article>

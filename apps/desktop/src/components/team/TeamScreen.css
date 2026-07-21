@@ -506,6 +506,79 @@ button.team-gantt-cell {
 .team-gantt-detail dd { margin: 0; color: var(--text); font-weight: 650; }
 .team-gantt-empty { padding: 30px; color: var(--text-muted); text-align: center; }
 
+/* Calendar-grade workload horizon: daily context, weekly evidence, one team forecast. */
+.team-gantt-launch {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr) auto;
+  overflow: hidden;
+  background: radial-gradient(circle at 9% 50%, color-mix(in srgb, var(--info) 13%, transparent), transparent 25%), color-mix(in srgb, var(--surface) 96%, var(--background-subtle));
+}
+.team-gantt-launch-visual { position: relative; display: grid; grid-template-rows: repeat(3, 1fr); gap: 7px; align-self: stretch; min-height: 68px; padding: 10px 16px 10px 2px; border-right: 1px solid var(--border); }
+.team-gantt-launch-visual > span { align-self: center; height: 7px; border-radius: 999px; background: color-mix(in srgb, var(--info) 28%, var(--surface-muted)); }
+.team-gantt-launch-visual > span:nth-child(1) { width: 88%; }
+.team-gantt-launch-visual > span:nth-child(2) { width: 62%; }
+.team-gantt-launch-visual > span:nth-child(3) { width: 76%; }
+.team-gantt-launch-visual > i { position: absolute; top: 4px; bottom: 4px; left: 67%; width: 2px; border-radius: 2px; background: var(--warning); box-shadow: 0 0 0 4px color-mix(in srgb, var(--warning) 9%, transparent); }
+
+.team-gantt-dialog { grid-template-rows: auto auto minmax(0, 1fr); }
+.team-gantt-header { align-items: center; }
+.team-gantt-header-actions { flex-wrap: wrap; justify-content: flex-end; }
+.team-gantt-today { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 11px; border: 1px solid color-mix(in srgb, var(--warning) 35%, var(--border)); border-radius: 8px; color: var(--text); background: color-mix(in srgb, var(--warning) 7%, var(--surface)); font-size: 11px; font-weight: 650; }
+.team-gantt-today svg { color: var(--warning); }
+
+.team-gantt-legend { display: flex; align-items: center; gap: 17px; min-height: 42px; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--background-subtle); color: var(--text-muted); font-size: 10px; }
+.team-gantt-legend > span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.team-gantt-legend i { width: 18px; height: 7px; border-radius: 999px; }
+.team-gantt-legend i.is-observed { background: var(--info); }
+.team-gantt-legend i.is-today { width: 2px; height: 13px; border-radius: 2px; background: var(--warning); }
+.team-gantt-legend i.is-forecast { border: 1px solid color-mix(in srgb, var(--info) 52%, var(--border)); background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--info) 26%, transparent) 0 3px, transparent 3px 6px); }
+.team-gantt-legend i.is-unknown { border: 1px dashed var(--border-strong); background: transparent; }
+.team-gantt-legend em { margin-left: auto; color: var(--text-subtle); font-family: "Geist Mono", ui-monospace, monospace; font-size: 9px; font-style: normal; }
+
+.team-gantt-body { grid-template-columns: minmax(0, 1fr) 292px; }
+.team-gantt-scroll { padding: 15px; background: color-mix(in srgb, var(--background-subtle) 64%, var(--background)); }
+.team-gantt-calendar { display: grid; min-width: max-content; overflow: clip; border: 1px solid var(--border-strong); border-radius: 11px; background: var(--surface); box-shadow: 0 12px 30px rgba(0, 0, 0, .08); }
+.team-gantt-corner { position: sticky; z-index: 8; left: -15px; grid-column: 1; grid-row: 1 / span 2; display: grid; align-content: center; gap: 4px; padding: 11px 13px; border-right: 1px solid var(--border-strong); border-bottom: 1px solid var(--border-strong); color: var(--text); background: var(--surface-elevated); font-family: inherit; font-size: 11px; font-weight: 680; }
+.team-gantt-corner small { color: var(--text-subtle); font-family: "Geist Mono", ui-monospace, monospace; font-size: 8px; font-weight: 500; letter-spacing: .03em; text-transform: uppercase; }
+.team-gantt-month { grid-row: 1; min-height: 26px; padding: 7px 8px 5px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--text-muted); background: var(--surface-elevated); font-family: "Geist Mono", ui-monospace, monospace; font-size: 9px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.team-gantt-day { grid-row: 2; display: grid; place-items: center; gap: 2px; min-height: 41px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border-strong); color: var(--text-subtle); background: var(--surface); font-family: "Geist Mono", ui-monospace, monospace; }
+.team-gantt-day span { font-size: 8px; text-transform: uppercase; }
+.team-gantt-day strong { color: var(--text-muted); font-size: 10px; }
+.team-gantt-day.is-weekend { background: color-mix(in srgb, var(--surface-muted) 58%, var(--surface)); }
+.team-gantt-day.is-forecast { background: color-mix(in srgb, var(--info) 5%, var(--surface)); }
+.team-gantt-day.is-today { position: relative; color: var(--warning); background: color-mix(in srgb, var(--warning) 7%, var(--surface)); }
+.team-gantt-day.is-today strong { color: var(--warning); }
+.team-gantt-day.is-today::before { position: absolute; z-index: 7; top: 0; bottom: -100vh; left: -1px; width: 2px; background: var(--warning); content: ""; pointer-events: none; }
+
+.team-gantt-row { position: relative; display: grid; grid-column: 1 / -1; min-height: 70px; }
+.team-gantt-row.is-forecast-row { min-height: 76px; background: color-mix(in srgb, var(--info) 4%, var(--surface)); }
+.team-gantt-person { position: sticky; z-index: 6; left: -15px; grid-column: 1; grid-row: 1; display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-right: 1px solid var(--border-strong); border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 96%, transparent); backdrop-filter: blur(12px); }
+.team-gantt-person > div { display: grid; gap: 3px; min-width: 0; }
+.team-gantt-avatar { display: grid; width: 29px; height: 29px; flex: 0 0 auto; place-items: center; border: 1px solid var(--border); border-radius: 8px; color: var(--text-muted); background: var(--background-subtle); font-size: 9px; font-weight: 720; }
+.team-gantt-avatar.is-forecast { color: var(--info); background: color-mix(in srgb, var(--info) 9%, var(--surface)); }
+.team-gantt-day-slot { grid-row: 1; min-width: 0; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--background-subtle); }
+.team-gantt-day-slot.is-weekend { background: color-mix(in srgb, var(--surface-muted) 62%, var(--background-subtle)); }
+.team-gantt-day-slot.is-forecast { background: color-mix(in srgb, var(--info) 5%, var(--background-subtle)); }
+.team-gantt-day-slot.is-today { background: color-mix(in srgb, var(--warning) 6%, var(--background-subtle)); }
+
+.team-gantt-bar { position: relative; z-index: 4; grid-row: 1; align-self: center; display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 8px; min-width: 0; min-height: 44px; margin: 0 4px; padding: 7px 9px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--info) 35%, var(--border)); border-radius: 8px; color: var(--text); background: color-mix(in srgb, var(--info) 8%, var(--surface-elevated)); box-shadow: 0 5px 13px color-mix(in srgb, var(--info) 10%, transparent); text-align: left; }
+.team-gantt-bar > span:not(.team-gantt-bar-fill) { position: relative; z-index: 1; overflow: hidden; color: var(--text-muted); font-family: "Geist Mono", ui-monospace, monospace; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.team-gantt-bar strong { position: relative; z-index: 1; grid-row: 1 / span 2; grid-column: 2; justify-self: end; font-family: "Geist Mono", ui-monospace, monospace; font-size: 13px; }
+.team-gantt-bar small { position: relative; z-index: 1; overflow: hidden; color: var(--text-subtle); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.team-gantt-bar-fill { position: absolute; z-index: 0; inset: auto auto 0 0; height: 3px; background: var(--info); }
+.team-gantt-bar:hover,
+.team-gantt-bar.is-selected { border-color: var(--info); background: color-mix(in srgb, var(--info) 13%, var(--surface-elevated)); box-shadow: 0 7px 18px color-mix(in srgb, var(--info) 14%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--info) 20%, transparent); }
+.team-gantt-bar.is-forecast { grid-template-columns: minmax(0, 1fr) auto; border-style: dashed; border-color: color-mix(in srgb, var(--info) 58%, var(--border)); background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--info) 9%, transparent) 0 5px, transparent 5px 10px), var(--surface-elevated); }
+.team-gantt-bar.is-forecast > span { display: inline-flex; align-items: center; gap: 5px; color: var(--info); font-family: inherit; font-size: 10px; font-weight: 650; }
+.team-gantt-bar.is-forecast strong { grid-column: 2; }
+.team-gantt-bar.is-forecast small { grid-column: 1 / -1; }
+.team-gantt-forecast-empty { z-index: 3; grid-row: 1; align-self: center; margin: 0 4px; padding: 9px; border: 1px dashed var(--border-strong); border-radius: 8px; color: var(--text-subtle); background: color-mix(in srgb, var(--surface) 74%, transparent); font-size: 9px; text-align: center; }
+.team-gantt-detail { position: relative; z-index: 9; overflow: auto; box-shadow: -12px 0 28px rgba(0, 0, 0, .05); }
+.team-gantt-range { padding: 10px; border: 1px solid color-mix(in srgb, var(--info) 24%, var(--border)); border-radius: 8px; background: color-mix(in srgb, var(--info) 7%, var(--background-subtle)); }
+.team-gantt-range strong { color: var(--info); }
+.team-gantt-trust { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 17px; }
+.team-gantt-trust span { padding: 5px 7px; border: 1px solid var(--border); border-radius: 999px; color: var(--text-subtle); background: var(--background-subtle); font-size: 8px; }
+
 .team-card-actions .primary-action,
 .team-card-actions .secondary-action,
 .team-decision-card > .primary-action,
@@ -552,11 +625,18 @@ button.team-gantt-cell {
     flex-direction: column;
   }
 
+  .team-gantt-launch { grid-template-columns: 1fr; }
+  .team-gantt-launch-visual { display: none; }
+  .team-gantt-legend { gap: 10px; padding: 8px 13px; overflow-x: auto; }
+  .team-gantt-legend em { display: none; }
+
   .team-gantt-body {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(300px, 1fr) auto;
   }
 
   .team-gantt-detail {
+    max-height: 220px;
     border-top: 1px solid var(--border);
     border-left: 0;
   }

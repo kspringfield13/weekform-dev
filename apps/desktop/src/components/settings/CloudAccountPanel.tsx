@@ -336,6 +336,11 @@ export function CloudAccountPanel({ cloud }: { cloud: CloudController }) {
                 arrive here as requests and cannot change local truth until you approve them on this Mac.
               </p>
               {cloud.personal.lastError && <p className="import-error" role="alert">{cloud.personal.lastError}</p>}
+              {cloud.personal.lastNotice && !cloud.personal.lastError && (
+                <p className="cloud-consent-note" role="status" aria-live="polite" aria-atomic="true">
+                  <CheckCircle2 size={13} aria-hidden /> {cloud.personal.lastNotice}
+                </p>
+              )}
               {cloud.personal.pendingCommands.length > 0 && (
                 <div className="cloud-share-preview" aria-label="Pending Web review requests">
                   <strong>{cloud.personal.pendingCommands.length} Web review request{cloud.personal.pendingCommands.length === 1 ? "" : "s"}</strong>

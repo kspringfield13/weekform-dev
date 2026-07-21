@@ -1,5 +1,5 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { SettingsTab } from "../lib/types";
+import type { Screen, SettingsTab } from "../lib/types";
 import type { CloudManagerMember, CloudTeamMembership, CloudTeamRole } from "./cloudClient";
 
 export const DEFAULT_WEEKFORM_WEB_APP_URL = "https://weekform.dev";
@@ -73,9 +73,11 @@ export type ManagerWorkspaceEvent =
 
 const INITIAL_MANAGER_ACTIVITY: ManagerWorkspaceActivity[] = [];
 
-export function createInitialManagerWorkspaceState(): ManagerWorkspaceState {
+export function createInitialManagerWorkspaceState(
+  page: ManagerWorkspacePage = "today",
+): ManagerWorkspaceState {
   return {
-    page: "today",
+    page,
     mode: "manager",
     agentPrompt: "",
     agentAnswer: null,
@@ -83,6 +85,35 @@ export function createInitialManagerWorkspaceState(): ManagerWorkspaceState {
     historyPeriod: "4-weeks",
     activity: INITIAL_MANAGER_ACTIVITY.map((item) => ({ ...item })),
   };
+}
+
+export function managerWorkspacePageForScreen(screen: Screen): ManagerWorkspacePage {
+  if (screen === "daily") return "today";
+  if (
+    screen === "weekly"
+    || screen === "forecast"
+    || screen === "weekly-review"
+    || screen === "narrative"
+    || screen === "usage"
+  ) return "week";
+  if (screen === "agent" || screen === "accelerate" || screen === "skills") return "agent";
+  if (screen === "ledger" || screen === "audit" || screen === "sensitive") return "history";
+  if (screen === "setup") return "settings";
+  return "today";
+}
+
+export function individualScreenForManagerWorkspacePage(
+  page: ManagerWorkspacePage,
+  currentScreen: Screen,
+): Screen {
+  if (currentScreen !== "team" && managerWorkspacePageForScreen(currentScreen) === page) {
+    return currentScreen;
+  }
+  if (page === "week") return "weekly";
+  if (page === "agent") return "agent";
+  if (page === "history") return "ledger";
+  if (page === "settings") return "setup";
+  return "daily";
 }
 
 export function getManagerWorkspaceAgentAnswer(

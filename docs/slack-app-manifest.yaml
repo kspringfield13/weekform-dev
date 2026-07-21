@@ -1,0 +1,21 @@
+display_information:
+  name: Weekform Desktop
+  description: Review content-free Slack attention signals locally in Weekform for Mac.
+oauth_config:
+  redirect_urls:
+    - http://localhost:49324/chat-auth/callback
+  scopes:
+    user:
+      - channels:read
+      - groups:read
+      - im:read
+      - mpim:read
+      - channels:history
+      - groups:history
+      - im:history
+      - mpim:history
+  pkce_enabled: true
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: true

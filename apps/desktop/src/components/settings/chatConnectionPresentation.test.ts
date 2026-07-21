@@ -6,6 +6,10 @@ import { CHAT_PROVIDER_CAPABILITIES } from "../../../../../packages/integrations
 import {
   chatCapabilityNotice,
   chatConnectionPresentation,
+  chatProviderSetupPresentation,
+  normalizeChatProviderSetupInput,
+  normalizeSlackClientIdInput,
+  slackClientIdSetupPresentation,
 } from "./chatConnectionPresentation";
 
 const readyStatus: ChatConnectionStatus = {
@@ -133,4 +137,123 @@ test("end-user provider notices are derived from the shared capability facts", (
   assert.match(notices.slack, /15 rows/i);
   assert.match(notices.google_chat, /restricted/i);
   assert.match(notices.webex, /token-only HTTPS broker/i);
+});
+
+test("Slack Client ID input accepts only the public numeric identifier", () => {
+  assert.equal(normalizeSlackClientIdInput(" 1234567890.1234567890123 "), "1234567890.1234567890123");
+  assert.throws(() => normalizeSlackClientIdInput(""), /Client ID/i);
+  assert.throws(() => normalizeSlackClientIdInput("client-secret-value"), /Client ID/i);
+  assert.throws(() => normalizeSlackClientIdInput("123.456.extra"), /Client ID/i);
+});
+
+test("Slack setup is inline when missing and remains editable before connection", () => {
+  const missing = slackClientIdSetupPresentation({
+    ...readyStatus,
+    available: false,
+    readinessCode: "missing_client_id",
+  });
+  assert.deepEqual(missing, { visible: true, canEdit: true });
+
+  assert.deepEqual(slackClientIdSetupPresentation(readyStatus), {
+    visible: false,
+    canEdit: true,
+  });
+  assert.deepEqual(slackClientIdSetupPresentation({ ...readyStatus, connected: true }), {
+    visible: false,
+    canEdit: false,
+  });
+  assert.deepEqual(slackClientIdSetupPresentation({ ...readyStatus, readinessCode: "unknown" }), {
+    visible: false,
+    canEdit: false,
+  });
+});
+
+test("Google Chat setup accepts only a public desktop OAuth Client ID", () => {
+  assert.deepEqual(normalizeChatProviderSetupInput({
+    provider: "google_chat",
+    clientId: " 123456789-abcDEF.apps.googleusercontent.com ",
+  }), {
+    provider: "google_chat",
+    clientId: "123456789-abcDEF.apps.googleusercontent.com",
+  });
+  assert.throws(
+    () => normalizeChatProviderSetupInput({ provider: "google_chat", clientId: "client-secret-value" }),
+    /Google Chat Client ID/i,
+  );
+  assert.throws(
+    () => normalizeChatProviderSetupInput({ provider: "google_chat", clientId: "https://accounts.google.com" }),
+    /Google Chat Client ID/i,
+  );
+});
+
+test("Webex setup validates all public connection fields without accepting a secret", () => {
+  assert.deepEqual(normalizeChatProviderSetupInput({
+    provider: "webex",
+    clientId: " webex-public-client-id ",
+    redirectUri: " http://127.0.0.1:49323/chat-auth/callback ",
+    brokerUrl: " https://weekform.dev/api ",
+  }), {
+    provider: "webex",
+    clientId: "webex-public-client-id",
+    redirectUri: "http://127.0.0.1:49323/chat-auth/callback",
+    brokerUrl: "https://weekform.dev/api",
+  });
+  assert.throws(
+    () => normalizeChatProviderSetupInput({
+      provider: "webex",
+      clientId: "https://developer.webex.com/client",
+      redirectUri: "http://127.0.0.1:49323/chat-auth/callback",
+      brokerUrl: "https://weekform.dev/api",
+    }),
+    /Webex Client ID/i,
+  );
+  assert.throws(
+    () => normalizeChatProviderSetupInput({
+      provider: "webex",
+      clientId: "webex-public-client-id",
+      redirectUri: "https://weekform.dev/chat-auth/callback",
+      brokerUrl: "https://weekform.dev/api",
+    }),
+    /loopback/i,
+  );
+  assert.throws(
+    () => normalizeChatProviderSetupInput({
+      provider: "webex",
+      clientId: "webex-public-client-id",
+      redirectUri: "http://127.0.0.1:49323/chat-auth/callback",
+      brokerUrl: "http://weekform.dev/api",
+    }),
+    /HTTPS/i,
+  );
+});
+
+test("provider setup is inline only for missing public fields and editable until connected", () => {
+  const googleMissing = chatProviderSetupPresentation("google_chat", {
+    ...readyStatus,
+    provider: "google_chat",
+    available: false,
+    readinessCode: "missing_client_id",
+  });
+  assert.deepEqual(googleMissing, { visible: true, canEdit: true });
+
+  const webexMissingBroker = chatProviderSetupPresentation("webex", {
+    ...readyStatus,
+    provider: "webex",
+    available: false,
+    readinessCode: "missing_broker_url",
+  });
+  assert.deepEqual(webexMissingBroker, { visible: true, canEdit: true });
+
+  const webexReview = chatProviderSetupPresentation("webex", {
+    ...readyStatus,
+    provider: "webex",
+    available: false,
+    readinessCode: "broker_security_review_required",
+  });
+  assert.deepEqual(webexReview, { visible: false, canEdit: true });
+  assert.deepEqual(chatProviderSetupPresentation("webex", {
+    ...readyStatus,
+    provider: "webex",
+    connected: true,
+  }), { visible: false, canEdit: false });
 });

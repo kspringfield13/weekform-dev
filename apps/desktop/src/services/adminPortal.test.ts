@@ -8,6 +8,8 @@ import {
   getAdminPortalPreferencesStorage,
   getManagerAccessSignInUrl,
   getManagerModeMemberships,
+  individualScreenForManagerWorkspacePage,
+  managerWorkspacePageForScreen,
   getTeamWorkspaceMemberships,
   isTeamWorkspaceAvailable,
   resolveTeamWorkspaceMembership,
@@ -39,6 +41,20 @@ test("Manager Access compares at most six individual contributors", () => {
   const selected = ["a", "b", "c", "d", "e", "f"];
   assert.equal(MAX_MANAGER_COMPARISONS, 6);
   assert.deepEqual(toggleManagerComparison(selected, "g"), selected);
+});
+
+test("Individual and Manager modes preserve the current page and compatible subview", () => {
+  assert.equal(managerWorkspacePageForScreen("daily"), "today");
+  assert.equal(managerWorkspacePageForScreen("forecast"), "week");
+  assert.equal(managerWorkspacePageForScreen("accelerate"), "agent");
+  assert.equal(managerWorkspacePageForScreen("audit"), "history");
+  assert.equal(managerWorkspacePageForScreen("setup"), "settings");
+
+  assert.equal(individualScreenForManagerWorkspacePage("week", "forecast"), "forecast");
+  assert.equal(individualScreenForManagerWorkspacePage("agent", "skills"), "skills");
+  assert.equal(individualScreenForManagerWorkspacePage("history", "sensitive"), "sensitive");
+  assert.equal(individualScreenForManagerWorkspacePage("today", "forecast"), "daily");
+  assert.equal(individualScreenForManagerWorkspacePage("settings", "daily"), "setup");
 });
 
 test("Team workspace is available to every active team member, not only managers", () => {

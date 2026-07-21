@@ -107,6 +107,12 @@ test("members and managers get an explorable real-snapshot Gantt horizon", () =>
   assert.match(teamGanttSource, /event\.key !== "Tab"/);
   assert.match(teamGanttSource, /returnFocusTo\?\.focus\(\)/);
   assert.match(teamGanttSource, /document\.body\.style\.overflow = "hidden"/);
+  assert.match(teamGanttSource, /Team workload calendar/);
+  assert.match(teamGanttSource, /Observed history/);
+  assert.match(teamGanttSource, /Today/);
+  assert.match(teamGanttSource, /Team forecast/);
+  assert.match(teamGanttSource, /team-gantt-day/);
+  assert.match(teamPageSource, /forecast=\{forecast\}/);
 });
 
 test("the legacy Manager Access URL is now a role-aware Team selector", () => {

@@ -10,6 +10,10 @@ const accountSource = readFileSync(
   new URL("../hooks/useCloudAccount.ts", import.meta.url),
   "utf8",
 );
+const accountPanelSource = readFileSync(
+  new URL("../components/settings/CloudAccountPanel.tsx", import.meta.url),
+  "utf8",
+);
 
 function between(start: string, end: string): string {
   const from = source.indexOf(start);
@@ -80,9 +84,27 @@ test("personal operations quiesce at an epoch boundary before reset can clear pe
 
 test("replica upload is fenced behind a strict durable queue and source-clock write", () => {
   const sync = between("const syncNow", "const refreshCommands");
+  const materializeAt = sync.indexOf("await currentAccount.setPersonalSyncStateDurably");
   const barrierAt = sync.indexOf("await currentAccount.flushPersonalSyncState()");
   const uploadAt = sync.indexOf("await syncPersonalReplicaBatch");
-  assert.ok(barrierAt >= 0 && uploadAt > barrierAt);
+  assert.ok(
+    materializeAt >= 0 && barrierAt > materializeAt && uploadAt > barrierAt,
+    "manual sync must durably materialize the current replica before the persistence barrier and upload",
+  );
+});
+
+test("manual replica sync exposes a terminal success notice only after a server receipt", () => {
+  const sync = between("const syncNow", "const refreshCommands");
+  const uploadAt = sync.indexOf("await syncPersonalReplicaBatch");
+  const receiptAt = sync.indexOf("lastSuccessAt = result.value.syncedAt", uploadAt);
+  const noticeAt = sync.indexOf("Web updated successfully", receiptAt);
+  assert.ok(
+    uploadAt >= 0 && receiptAt > uploadAt && noticeAt > receiptAt,
+    "success notice must follow a validated server receipt",
+  );
+  assert.match(source, /lastNotice:\s*string \| null/);
+  assert.match(accountPanelSource, /cloud\.personal\.lastNotice/);
+  assert.match(accountPanelSource, /role="status"/);
 });
 
 test("account reset invalidates deferred auth and refresh completions", () => {

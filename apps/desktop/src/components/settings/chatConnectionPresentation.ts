@@ -1,5 +1,6 @@
 import type {
   ChatConnectionStatus,
+  ChatProviderConfiguration,
   ChatProviderActivity,
 } from "../../hooks/useChatSources";
 import type { ChatProviderCapability } from "../../../../../packages/integrations/src/chat/chatProviderCapabilities";
@@ -20,6 +21,129 @@ export interface ChatConnectionPresentation {
   primaryAction: string;
   canClose: boolean;
   requiresRange: boolean;
+}
+
+export interface ChatProviderSetupPresentation {
+  visible: boolean;
+  canEdit: boolean;
+}
+
+export type ChatProviderSetupInput = ChatProviderConfiguration;
+
+export const WEBEX_DESKTOP_REDIRECT_URI =
+  "http://127.0.0.1:49323/chat-auth/callback";
+
+export function normalizeSlackClientIdInput(value: string): string {
+  const normalized = value.trim();
+  if (!/^\d+\.\d+$/.test(normalized) || normalized.length > 96) {
+    throw new Error(
+      "Enter the public Slack Client ID from Basic Information, such as 1234567890.1234567890123.",
+    );
+  }
+  return normalized;
+}
+
+function normalizeGoogleChatClientIdInput(value: string): string {
+  const normalized = value.trim();
+  const valid = normalized.length <= 255
+    && normalized.endsWith(".apps.googleusercontent.com")
+    && /^[A-Za-z0-9.-]+$/.test(normalized);
+  if (!valid) {
+    throw new Error(
+      "Enter the public Google Chat Client ID for a Desktop app, ending in .apps.googleusercontent.com.",
+    );
+  }
+  return normalized;
+}
+
+function normalizeWebexClientIdInput(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length === 0 || normalized.length > 255 || !/^[A-Za-z0-9._-]+$/.test(normalized)) {
+    throw new Error("Enter the public Webex Client ID from your integration settings.");
+  }
+  return normalized;
+}
+
+function normalizeWebexRedirectUriInput(value: string): string {
+  const normalized = value.trim();
+  let url: URL;
+  try {
+    url = new URL(normalized);
+  } catch {
+    throw new Error("Enter an exact loopback HTTP callback with a port and /chat-auth/callback path.");
+  }
+  const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost";
+  if (
+    url.protocol !== "http:"
+    || !loopback
+    || !url.port
+    || url.pathname !== "/chat-auth/callback"
+    || url.username
+    || url.password
+    || url.search
+    || url.hash
+  ) {
+    throw new Error("Enter an exact loopback HTTP callback with a port and /chat-auth/callback path.");
+  }
+  return normalized;
+}
+
+function normalizeWebexBrokerUrlInput(value: string): string {
+  const normalized = value.trim();
+  let url: URL;
+  try {
+    url = new URL(normalized);
+  } catch {
+    throw new Error("Enter the credential-free HTTPS URL for Weekform’s Webex token broker.");
+  }
+  if (
+    url.protocol !== "https:"
+    || !url.hostname
+    || url.username
+    || url.password
+    || url.search
+    || url.hash
+  ) {
+    throw new Error("Enter the credential-free HTTPS URL for Weekform’s Webex token broker.");
+  }
+  return normalized;
+}
+
+export function normalizeChatProviderSetupInput(
+  input: ChatProviderSetupInput,
+): ChatProviderSetupInput {
+  if (input.provider === "slack") {
+    return { provider: input.provider, clientId: normalizeSlackClientIdInput(input.clientId) };
+  }
+  if (input.provider === "google_chat") {
+    return { provider: input.provider, clientId: normalizeGoogleChatClientIdInput(input.clientId) };
+  }
+  return {
+    provider: input.provider,
+    clientId: normalizeWebexClientIdInput(input.clientId),
+    redirectUri: normalizeWebexRedirectUriInput(input.redirectUri),
+    brokerUrl: normalizeWebexBrokerUrlInput(input.brokerUrl),
+  };
+}
+
+export function chatProviderSetupPresentation(
+  provider: ChatProviderCapability["id"],
+  status: ChatConnectionStatus | undefined,
+): ChatProviderSetupPresentation {
+  const setupCodes = provider === "webex"
+    ? new Set(["missing_client_id", "missing_redirect_uri", "invalid_redirect_uri", "missing_broker_url", "invalid_broker_url"])
+    : new Set(["missing_client_id"]);
+  const connected = status?.connected === true;
+  return {
+    visible: !connected && setupCodes.has(status?.readinessCode ?? "unknown"),
+    canEdit: !connected && status?.readinessCode !== "unknown",
+  };
+}
+
+export function slackClientIdSetupPresentation(
+  status: ChatConnectionStatus | undefined,
+): ChatProviderSetupPresentation {
+  return chatProviderSetupPresentation("slack", status);
 }
 
 /** Render end-user limitations from the canonical registry, never parallel metadata. */

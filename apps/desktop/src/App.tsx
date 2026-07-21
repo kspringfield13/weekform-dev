@@ -126,7 +126,9 @@ import {
   getManagerModeMemberships,
   getTeamWorkspaceMemberships,
   getWeekformWebAppUrl,
+  individualScreenForManagerWorkspacePage,
   isTeamWorkspaceAvailable,
+  managerWorkspacePageForScreen,
   resolveTeamWorkspaceMembership,
   resolveSettingsTab,
 } from "./services/adminPortal";
@@ -2742,9 +2744,13 @@ export function App() {
         data-admin-theme={theme}
       >
         <ManagerAccessWorkspace
+          initialPage={managerWorkspacePageForScreen(active)}
           managerTeams={managerMemberships}
           getFreshSession={cloudAccount.getFreshSession}
-          onOpenIndividualWorkspace={() => setManagerModeOpen(false)}
+          onOpenIndividualWorkspace={(page) => {
+            setActive((current) => individualScreenForManagerWorkspacePage(page, current));
+            setManagerModeOpen(false);
+          }}
           onOpenPreferences={() => {
             setManagerModeOpen(false);
             setActiveSettingsTab("account");

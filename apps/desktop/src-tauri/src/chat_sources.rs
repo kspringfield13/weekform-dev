@@ -16,6 +16,9 @@ use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 const KEYCHAIN_SERVICE: &str = "com.weekform.desktop";
 const HASH_SALT_KEY: &str = "weekform:chat:hash-salt:v1";
+const SLACK_CLIENT_ID_KEY: &str = "weekform:chat:slack:client-id:v1";
+const GOOGLE_CHAT_CLIENT_ID_KEY: &str = "weekform:chat:google-chat:client-id:v1";
+const WEBEX_PUBLIC_CONFIG_KEY: &str = "weekform:chat:webex:public-config:v1";
 const OAUTH_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_RANGE_DAYS: i64 = 90;
 const MAX_SURFACES_PER_SYNC: usize = 12;
@@ -90,6 +93,22 @@ impl ChatRangeRequest {
 
 #[derive(Clone)]
 struct ProviderConfig {
+    client_id: String,
+    redirect_uri: Option<String>,
+    broker_url: Option<String>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct StoredWebexPublicConfig {
+    client_id: String,
+    redirect_uri: String,
+    broker_url: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigureChatProviderRequest {
+    provider: ChatProvider,
     client_id: String,
     redirect_uri: Option<String>,
     broker_url: Option<String>,
@@ -504,6 +523,56 @@ fn inspect_provider_config(
     })
 }
 
+fn normalize_slack_client_id(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    let mut segments = value.split('.');
+    let valid = value.len() <= 96
+        && segments.next().is_some_and(|segment| {
+            !segment.is_empty() && segment.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        && segments.next().is_some_and(|segment| {
+            !segment.is_empty() && segment.bytes().all(|byte| byte.is_ascii_digit())
+        })
+        && segments.next().is_none();
+    if !valid {
+        return Err(
+            "Enter the public Slack Client ID from Basic Information, such as 1234567890.1234567890123."
+                .to_string(),
+        );
+    }
+    Ok(value.to_string())
+}
+
+fn normalize_google_chat_client_id(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    let valid = value.len() <= 255
+        && value.ends_with(".apps.googleusercontent.com")
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'));
+    if !valid {
+        return Err(
+            "Enter the public Google Chat Client ID for a Desktop app, ending in .apps.googleusercontent.com."
+                .to_string(),
+        );
+    }
+    Ok(value.to_string())
+}
+
+fn normalize_webex_client_id(value: &str) -> Result<String, String> {
+    let value = value.trim();
+    let valid = !value.is_empty()
+        && value.len() <= 255
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'));
+    if !valid {
+        return Err("Enter the public Webex Client ID from your integration settings.".to_string());
+    }
+    Ok(value.to_string())
+}
+
+#[cfg(test)]
 fn validate_provider_config(
     provider: ChatProvider,
     read: &dyn Fn(&str) -> Option<String>,
@@ -519,10 +588,6 @@ fn provider_readiness(
     inspect_provider_config(provider, read)
         .map(|_| ChatReadinessCode::Ready)
         .unwrap_or_else(|(code, _)| code)
-}
-
-fn provider_config(provider: ChatProvider) -> Result<ProviderConfig, String> {
-    validate_provider_config(provider, &configured_env)
 }
 
 fn keychain_read_json<T: for<'de> Deserialize<'de>>(account: &str) -> Result<Option<T>, String> {
@@ -553,6 +618,47 @@ fn keychain_delete(account: &str) -> Result<(), String> {
         Err(error) if error.code() == -25300 => Ok(()),
         Err(_) => Err("Could not remove chat connection data from macOS Keychain.".to_string()),
     }
+}
+
+fn inspect_current_provider_config(
+    provider: ChatProvider,
+) -> Result<Result<ProviderConfig, (ChatReadinessCode, String)>, String> {
+    let slack_override = if provider == ChatProvider::Slack {
+        keychain_read_json::<String>(SLACK_CLIENT_ID_KEY)?
+    } else {
+        None
+    };
+    let google_override = if provider == ChatProvider::GoogleChat {
+        keychain_read_json::<String>(GOOGLE_CHAT_CLIENT_ID_KEY)?
+    } else {
+        None
+    };
+    let webex_override = if provider == ChatProvider::Webex {
+        keychain_read_json::<StoredWebexPublicConfig>(WEBEX_PUBLIC_CONFIG_KEY)?
+    } else {
+        None
+    };
+    Ok(inspect_provider_config(provider, &|name| match name {
+        "SLACK_CHAT_CLIENT_ID" => slack_override.clone().or_else(|| configured_env(name)),
+        "GOOGLE_CHAT_CLIENT_ID" => google_override.clone().or_else(|| configured_env(name)),
+        "WEBEX_CHAT_CLIENT_ID" => webex_override
+            .as_ref()
+            .map(|configuration| configuration.client_id.clone())
+            .or_else(|| configured_env(name)),
+        "WEBEX_CHAT_REDIRECT_URI" => webex_override
+            .as_ref()
+            .map(|configuration| configuration.redirect_uri.clone())
+            .or_else(|| configured_env(name)),
+        "WEEKFORM_CHAT_OAUTH_BROKER_URL" => webex_override
+            .as_ref()
+            .map(|configuration| configuration.broker_url.clone())
+            .or_else(|| configured_env(name)),
+        _ => configured_env(name),
+    }))
+}
+
+fn provider_config(provider: ChatProvider) -> Result<ProviderConfig, String> {
+    inspect_current_provider_config(provider)?.map_err(|(_, detail)| detail)
 }
 
 fn token_read(provider: ChatProvider) -> Result<Option<StoredChatToken>, String> {
@@ -1297,18 +1403,27 @@ fn callback_listener(
             .map_err(|_| "Could not start the configured Webex sign-in callback.".to_string())?;
         return Ok((listener, redirect.to_string()));
     }
+    if provider == ChatProvider::Slack {
+        let listener = TcpListener::bind(("127.0.0.1", SLACK_DESKTOP_CALLBACK_PORT))
+            .map_err(|_| "Could not start the Slack sign-in callback.".to_string())?;
+        return Ok((listener, slack_desktop_callback_uri()));
+    }
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .map_err(|_| "Could not start chat sign-in.".to_string())?;
     let port = listener
         .local_addr()
         .map_err(|_| "Could not inspect the chat sign-in listener.".to_string())?
         .port();
-    let host = if provider == ChatProvider::Slack {
-        "localhost"
-    } else {
-        "127.0.0.1"
-    };
-    Ok((listener, format!("http://{host}:{port}/chat-auth/callback")))
+    Ok((
+        listener,
+        format!("http://127.0.0.1:{port}/chat-auth/callback"),
+    ))
+}
+
+const SLACK_DESKTOP_CALLBACK_PORT: u16 = 49_324;
+
+fn slack_desktop_callback_uri() -> String {
+    format!("http://localhost:{SLACK_DESKTOP_CALLBACK_PORT}/chat-auth/callback")
 }
 
 fn broker_endpoint(base: &str) -> Result<reqwest::Url, String> {
@@ -2544,7 +2659,7 @@ async fn fetch_webex(
 }
 
 fn connection_status(provider: ChatProvider) -> Result<ChatConnectionStatus, String> {
-    let config = inspect_provider_config(provider, &configured_env);
+    let config = inspect_current_provider_config(provider)?;
     let saved = token_read(provider)?.is_some();
     let available = config.is_ok();
     let connected = available && saved;
@@ -2588,6 +2703,53 @@ pub fn chat_source_statuses() -> Result<Vec<ChatConnectionStatus>, String> {
     .into_iter()
     .map(connection_status)
     .collect()
+}
+
+#[tauri::command]
+pub fn configure_chat_provider(request: ConfigureChatProviderRequest) -> Result<(), String> {
+    if token_read(request.provider)?.is_some() {
+        return Err(format!(
+            "Disconnect {} before changing its connection details.",
+            request.provider.label()
+        ));
+    }
+
+    match request.provider {
+        ChatProvider::Slack => {
+            let client_id = normalize_slack_client_id(&request.client_id)?;
+            keychain_delete(ChatProvider::Slack.cursor_key())?;
+            keychain_write_json(SLACK_CLIENT_ID_KEY, &client_id)
+        }
+        ChatProvider::GoogleChat => {
+            let client_id = normalize_google_chat_client_id(&request.client_id)?;
+            keychain_delete(ChatProvider::GoogleChat.cursor_key())?;
+            keychain_write_json(GOOGLE_CHAT_CLIENT_ID_KEY, &client_id)
+        }
+        ChatProvider::Webex => {
+            let client_id = normalize_webex_client_id(&request.client_id)?;
+            let redirect_uri = request
+                .redirect_uri
+                .as_deref()
+                .ok_or_else(|| "Enter the exact Webex loopback redirect URI.".to_string())?
+                .trim()
+                .to_string();
+            validate_redirect_uri(&redirect_uri)?;
+            let broker_url = request
+                .broker_url
+                .as_deref()
+                .ok_or_else(|| "Enter the HTTPS Weekform Webex token broker URL.".to_string())?
+                .trim()
+                .to_string();
+            validate_broker_url(&broker_url)?;
+            let configuration = StoredWebexPublicConfig {
+                client_id,
+                redirect_uri,
+                broker_url,
+            };
+            keychain_delete(ChatProvider::Webex.cursor_key())?;
+            keychain_write_json(WEBEX_PUBLIC_CONFIG_KEY, &configuration)
+        }
+    }
 }
 
 #[tauri::command]
@@ -2689,27 +2851,38 @@ fn disconnect_key_order(provider: ChatProvider) -> [&'static str; 2] {
 
 #[tauri::command]
 pub fn clear_chat_source_storage() -> Result<(), String> {
-    for provider in [
-        ChatProvider::Slack,
-        ChatProvider::GoogleChat,
-        ChatProvider::Webex,
-    ] {
-        for key in disconnect_key_order(provider) {
-            keychain_delete(key)?;
-        }
+    for key in chat_reset_key_order() {
+        keychain_delete(key)?;
     }
-    keychain_delete(HASH_SALT_KEY)
+    Ok(())
+}
+
+fn chat_reset_key_order() -> [&'static str; 10] {
+    [
+        ChatProvider::Slack.cursor_key(),
+        ChatProvider::Slack.token_key(),
+        SLACK_CLIENT_ID_KEY,
+        ChatProvider::GoogleChat.cursor_key(),
+        ChatProvider::GoogleChat.token_key(),
+        GOOGLE_CHAT_CLIENT_ID_KEY,
+        ChatProvider::Webex.cursor_key(),
+        ChatProvider::Webex.token_key(),
+        WEBEX_PUBLIC_CONFIG_KEY,
+        HASH_SALT_KEY,
+    ]
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        authoritative_receipt_coverage, callback_decision, collection_authority_coverage,
-        disconnect_key_order, exclusive_provider_lower_bound, keyed_digest,
-        normalize_google_messages, normalize_slack_messages, normalize_webex_messages,
-        participant_bucket, project_google_messages, project_slack_messages_with_count,
-        project_webex_messages, provider_authorization_parameters, provider_readiness,
-        receipt_semantics, retain_requested_events, slack_history_next_cursor,
+        authoritative_receipt_coverage, callback_decision, chat_reset_key_order,
+        collection_authority_coverage, disconnect_key_order, exclusive_provider_lower_bound,
+        keyed_digest, normalize_google_chat_client_id, normalize_google_messages,
+        normalize_slack_client_id, normalize_slack_messages, normalize_webex_client_id,
+        normalize_webex_messages, participant_bucket, project_google_messages,
+        project_slack_messages_with_count, project_webex_messages,
+        provider_authorization_parameters, provider_readiness, receipt_semantics,
+        retain_requested_events, slack_desktop_callback_uri, slack_history_next_cursor,
         slack_rate_limit_model_eligible, take_secret_value, validate_provider_config,
         validate_redirect_uri, webex_page_reached_start, CallbackDecision, ChatConnectionStatus,
         ChatProvider, ChatRangeRequest, ChatReadinessCode, ProviderFetch, StoredChatCursor,
@@ -2929,6 +3102,24 @@ mod tests {
     }
 
     #[test]
+    fn public_provider_client_ids_are_validated_before_keychain_storage() {
+        assert_eq!(
+            normalize_google_chat_client_id(" 123456789-abcDEF.apps.googleusercontent.com ")
+                .unwrap(),
+            "123456789-abcDEF.apps.googleusercontent.com",
+        );
+        assert!(normalize_google_chat_client_id("client-secret-value").is_err());
+        assert!(normalize_google_chat_client_id("https://accounts.google.com").is_err());
+
+        assert_eq!(
+            normalize_webex_client_id(" webex-public-client-id ").unwrap(),
+            "webex-public-client-id",
+        );
+        assert!(normalize_webex_client_id("https://developer.webex.com/client").is_err());
+        assert!(normalize_webex_client_id("client id with spaces").is_err());
+    }
+
+    #[test]
     fn webex_configuration_requires_https_broker_and_loopback_redirect() {
         let valid = |name: &str| match name {
             "WEBEX_CHAT_CLIENT_ID" => Some("synthetic-client".to_string()),
@@ -3008,6 +3199,32 @@ mod tests {
         assert!(validate_redirect_uri("http://localhost:49323/chat-auth/callback").is_ok());
         assert!(validate_redirect_uri("https://example.test/chat-auth/callback").is_err());
         assert!(validate_redirect_uri("http://127.0.0.1:49323/other").is_err());
+    }
+
+    #[test]
+    fn slack_uses_the_manifest_registered_desktop_callback() {
+        assert_eq!(
+            slack_desktop_callback_uri(),
+            "http://localhost:49324/chat-auth/callback"
+        );
+    }
+
+    #[test]
+    fn slack_client_id_accepts_only_the_public_numeric_identifier() {
+        assert_eq!(
+            normalize_slack_client_id(" 1234567890.1234567890123 ").unwrap(),
+            "1234567890.1234567890123"
+        );
+        for invalid in ["", "client-secret-value", "123.456.extra", "123.", ".456"] {
+            assert!(normalize_slack_client_id(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn reset_removes_user_entered_public_chat_configuration() {
+        assert!(chat_reset_key_order().contains(&"weekform:chat:slack:client-id:v1"));
+        assert!(chat_reset_key_order().contains(&"weekform:chat:google-chat:client-id:v1"));
+        assert!(chat_reset_key_order().contains(&"weekform:chat:webex:public-config:v1"));
     }
 
     #[test]

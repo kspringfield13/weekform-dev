@@ -319,6 +319,7 @@ function ManagerSettings({ onOpenPreferences, webAppDashboardUrl }: { onOpenPref
 }
 
 export function ManagerAccessWorkspace({
+  initialPage = "today",
   managerTeams = [],
   getFreshSession,
   onOpenIndividualWorkspace,
@@ -326,14 +327,19 @@ export function ManagerAccessWorkspace({
   onSignOut,
   webAppDashboardUrl: configuredWebAppDashboardUrl,
 }: {
+  initialPage?: ManagerWorkspacePage;
   managerTeams?: CloudTeamMembership[];
   getFreshSession?: () => Promise<PersistedCloudSession | null>;
-  onOpenIndividualWorkspace?: () => void;
+  onOpenIndividualWorkspace?: (page: ManagerWorkspacePage) => void;
   onOpenPreferences: () => void;
   onSignOut: () => void;
   webAppDashboardUrl?: string;
 }) {
-  const [workspace, dispatch] = useReducer(managerWorkspaceReducer, undefined, createInitialManagerWorkspaceState);
+  const [workspace, dispatch] = useReducer(
+    managerWorkspaceReducer,
+    initialPage,
+    createInitialManagerWorkspaceState,
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [filters, setFilters] = useState<ManagerRosterFilters>({ query: "", team: "all", category: "all", risk: "all" });
@@ -442,7 +448,7 @@ export function ManagerAccessWorkspace({
         <div className="manager-page-shell">
           <header className="manager-page-header"><div><div className="manager-page-context"><span className="manager-kicker">{mode === "manager" ? `Live team data · ${lastSyncedLabel}` : "Personal workspace"}</span>{mode === "manager" && <span className="manager-mode-indicator"><Waypoints size={12} aria-hidden />Manager · approved summaries</span>}</div><h1>{copy[0]}</h1><p>{copy[1]}</p></div><ModeToggle mode={mode} onChange={(nextMode) => {
             if (nextMode === "individual" && onOpenIndividualWorkspace) {
-              onOpenIndividualWorkspace();
+              onOpenIndividualWorkspace(page);
               return;
             }
             dispatch({ type: "set-mode", mode: nextMode });

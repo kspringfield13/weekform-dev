@@ -32,11 +32,72 @@ export interface TeamTimeline {
   rows: TeamTimelineRow[];
 }
 
+export type TeamCalendarDayKind = "history" | "today" | "forecast";
+
+export interface TeamCalendarDay {
+  dateId: string;
+  weekId: string;
+  weekdayLabel: string;
+  dayLabel: string;
+  monthLabel: string;
+  isWeekend: boolean;
+  kind: TeamCalendarDayKind;
+}
+
+export interface TeamCalendarBar {
+  point: TeamTimelinePoint;
+  startIndex: number;
+  spanDays: number;
+}
+
+export interface TeamCalendarRow {
+  userId: string;
+  displayName: string;
+  isSelf: boolean;
+  bars: TeamCalendarBar[];
+}
+
+export interface TeamCalendar {
+  days: TeamCalendarDay[];
+  rows: TeamCalendarRow[];
+  todayIndex: number;
+  forecastStartIndex: number;
+}
+
+export interface TeamTimelineCapacityForecast {
+  verdict: "forecast" | "insufficient-shared-data" | "no-history";
+  median: number | null;
+  min: number | null;
+  max: number | null;
+  weekCount: number;
+  sharedCount: number;
+  memberCount: number;
+  latestWeekId: string | null;
+}
+
 const ZOOM_WEEK_COUNTS: Record<TeamTimelineZoom, number> = {
   week: 1,
   month: 4,
   quarter: 13,
 };
+
+const DAY_MS = 86_400_000;
+const FORECAST_DAY_COUNT = 7;
+const FORECAST_WINDOW_WEEKS = 6;
+const MIN_FORECAST_SHARED_COUNT = 2;
+const MIN_FORECAST_SHARED_RATIO = 0.5;
+const STALE_AFTER_MS = 7 * DAY_MS;
+
+function isoDateId(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function parseIsoDay(value: string): Date | null {
+  const dateId = value.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateId)) return null;
+  const date = new Date(`${dateId}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) || isoDateId(date) !== dateId ? null : date;
+}
 
 function isoWeekId(date: Date): string {
   const cursor = new Date(Date.UTC(
@@ -62,6 +123,167 @@ function isoWeekMonday(weekId: string): Date | null {
   const monday = new Date(januaryFourth);
   monday.setUTCDate(januaryFourth.getUTCDate() - januaryFourthDay + 1 + ((week - 1) * 7));
   return isoWeekId(monday) === weekId ? monday : null;
+}
+
+/**
+ * Daily calendar columns for the existing Week / Month / Quarter controls.
+ * Each horizon shows that many completed-or-current calendar days and always
+ * reserves the next seven days as a visibly separate forecast window.
+ */
+export function teamTimelineCalendarDays(
+  todayIso: string,
+  zoom: TeamTimelineZoom,
+): TeamCalendarDay[] {
+  const today = parseIsoDay(todayIso);
+  if (!today) return [];
+  const historyDayCount = ZOOM_WEEK_COUNTS[zoom] * 7;
+  const first = new Date(today.getTime() - ((historyDayCount - 1) * DAY_MS));
+  return Array.from({ length: historyDayCount + FORECAST_DAY_COUNT }, (_, index) => {
+    const date = new Date(first.getTime() + (index * DAY_MS));
+    const dateId = isoDateId(date);
+    const offsetFromToday = Math.round((date.getTime() - today.getTime()) / DAY_MS);
+    const weekday = date.getUTCDay();
+    return {
+      dateId,
+      weekId: isoWeekId(date),
+      weekdayLabel: new Intl.DateTimeFormat("en", { weekday: "short", timeZone: "UTC" }).format(date),
+      dayLabel: String(date.getUTCDate()),
+      monthLabel: new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(date),
+      isWeekend: weekday === 0 || weekday === 6,
+      kind: offsetFromToday < 0 ? "history" : offsetFromToday === 0 ? "today" : "forecast",
+    };
+  });
+}
+
+/**
+ * Position weekly approved summaries on a daily calendar. A snapshot occupies
+ * only the visible days of its ISO week and never extends into the forecast
+ * side of Today, so the chart does not imply daily observations we do not own.
+ */
+export function buildTeamCalendar(
+  points: TeamTimelinePoint[],
+  todayIso: string,
+  zoom: TeamTimelineZoom,
+  identities: TeamTimelineIdentity[] = [],
+): TeamCalendar {
+  const days = teamTimelineCalendarDays(todayIso, zoom);
+  const todayIndex = days.findIndex((day) => day.kind === "today");
+  const forecastStartIndex = days.findIndex((day) => day.kind === "forecast");
+  const visibleWeekIds = new Set(days.filter((day) => day.kind !== "forecast").map((day) => day.weekId));
+  const latestByMemberWeek = new Map<string, TeamTimelinePoint>();
+
+  for (const point of points) {
+    if (!visibleWeekIds.has(point.weekId)) continue;
+    const key = `${point.userId}:${point.weekId}`;
+    const current = latestByMemberWeek.get(key);
+    if (!current || point.syncedAt > current.syncedAt) latestByMemberWeek.set(key, point);
+  }
+
+  const identityByUser = new Map<string, Pick<TeamTimelinePoint, "displayName" | "isSelf">>(
+    identities.map(({ userId, displayName, isSelf }) => [userId, { displayName, isSelf }]),
+  );
+  for (const point of latestByMemberWeek.values()) {
+    identityByUser.set(point.userId, {
+      displayName: point.displayName,
+      isSelf: point.isSelf,
+    });
+  }
+
+  const rows = Array.from(identityByUser, ([userId, identity]) => {
+    const bars = Array.from(latestByMemberWeek.values())
+      .filter((point) => point.userId === userId)
+      .map((point) => {
+        const indexes = days.flatMap((day, index) => (
+          day.kind !== "forecast" && day.weekId === point.weekId ? [index] : []
+        ));
+        if (indexes.length === 0) return null;
+        return {
+          point,
+          startIndex: indexes[0] as number,
+          spanDays: indexes.length,
+        };
+      })
+      .filter((bar): bar is TeamCalendarBar => bar !== null)
+      .sort((left, right) => left.startIndex - right.startIndex);
+    return { userId, displayName: identity.displayName, isSelf: identity.isSelf, bars };
+  }).sort((left, right) => (
+    Number(right.isSelf) - Number(left.isSelf)
+    || left.displayName.localeCompare(right.displayName)
+    || left.userId.localeCompare(right.userId)
+  ));
+
+  return { days, rows, todayIndex, forecastStartIndex };
+}
+
+function numericMedian(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2
+    : (sorted[middle] as number);
+}
+
+/**
+ * A compact, deterministic reliable-capacity forecast for the native calendar.
+ * It mirrors the Web forecast's guardrails: latest retries win, current team
+ * coverage must include at least two people and half the roster, and the value
+ * is the median/range of up to six weekly team medians—not a per-person guess.
+ */
+export function buildTeamTimelineCapacityForecast(
+  points: TeamTimelinePoint[],
+  memberCount: number,
+  nowIso: string,
+): TeamTimelineCapacityForecast {
+  const latestByMemberWeek = new Map<string, TeamTimelinePoint>();
+  for (const point of points) {
+    const key = `${point.userId}:${point.weekId}`;
+    const current = latestByMemberWeek.get(key);
+    if (!current || point.syncedAt > current.syncedAt) latestByMemberWeek.set(key, point);
+  }
+  const capacityPoints = [...latestByMemberWeek.values()].filter((point) => (
+    typeof point.reliableCapacityPct === "number" && Number.isFinite(point.reliableCapacityPct)
+  ));
+  const weekIds = [...new Set(capacityPoints.map((point) => point.weekId))].sort();
+  if (weekIds.length === 0) {
+    return { verdict: "no-history", median: null, min: null, max: null, weekCount: 0, sharedCount: 0, memberCount, latestWeekId: null };
+  }
+
+  const now = Date.parse(nowIso);
+  const latestWeekId = [...weekIds].reverse().find((weekId) => capacityPoints.some((point) => {
+    if (point.weekId !== weekId) return false;
+    const synced = Date.parse(point.syncedAt);
+    return Number.isFinite(now) && Number.isFinite(synced) && now - synced <= STALE_AFTER_MS;
+  })) ?? null;
+  const currentPoints = latestWeekId === null ? [] : capacityPoints.filter((point) => {
+    if (point.weekId !== latestWeekId) return false;
+    const synced = Date.parse(point.syncedAt);
+    return Number.isFinite(now) && Number.isFinite(synced) && now - synced <= STALE_AFTER_MS;
+  });
+  const sharedCount = new Set(currentPoints.map((point) => point.userId)).size;
+  const coverageOk = sharedCount >= MIN_FORECAST_SHARED_COUNT
+    && memberCount > 0
+    && sharedCount / memberCount >= MIN_FORECAST_SHARED_RATIO;
+  if (!coverageOk) {
+    return { verdict: "insufficient-shared-data", median: null, min: null, max: null, weekCount: 0, sharedCount, memberCount, latestWeekId };
+  }
+
+  const weeklyMedians = weekIds.flatMap((weekId) => {
+    const median = numericMedian(capacityPoints
+      .filter((point) => point.weekId === weekId)
+      .map((point) => point.reliableCapacityPct as number));
+    return median === null ? [] : [median];
+  }).slice(-FORECAST_WINDOW_WEEKS);
+  return {
+    verdict: "forecast",
+    median: numericMedian(weeklyMedians),
+    min: Math.min(...weeklyMedians),
+    max: Math.max(...weeklyMedians),
+    weekCount: weeklyMedians.length,
+    sharedCount,
+    memberCount,
+    latestWeekId,
+  };
 }
 
 export function teamTimelineWeeks(

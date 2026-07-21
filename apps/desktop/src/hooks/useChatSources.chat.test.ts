@@ -394,7 +394,13 @@ test("connection status uses typed readiness and never forwards native setup det
       readiness_code: "not_a_real_code",
       detail: "WEBEX_CHAT_CLIENT_ID is missing",
     },
-    { provider: "google_chat", available: true, connected: false },
+    {
+      provider: "google_chat",
+      available: false,
+      connected: false,
+      readinessCode: "missing_client_id",
+      detail: "GOOGLE_CHAT_CLIENT_ID=/private/operator/value",
+    },
   ]);
 
   const slack = statuses.find((status) => status.provider === "slack");
@@ -403,12 +409,28 @@ test("connection status uses typed readiness and never forwards native setup det
   assert.equal(slack?.readinessCode, "missing_client_id");
   assert.equal(
     slack?.detail,
-    "This connector is unavailable in this build.",
+    "Add the public Client ID from your Slack app to continue.",
   );
-  assert.equal(google?.readinessCode, "ready");
+  assert.equal(google?.readinessCode, "missing_client_id");
+  assert.equal(google?.detail, "Add the public Desktop app Client ID from Google Cloud to continue.");
   assert.equal(webex?.readinessCode, "unknown");
   assert.equal(webex?.detail, "This connector is unavailable in this build.");
   assert.doesNotMatch(statuses.map((status) => status.detail).join(" "), /CLIENT_ID|private/i);
+});
+
+test("Webex broker review status stays actionable without exposing deployment values", () => {
+  const statuses = normalizeChatStatuses([{
+    provider: "webex",
+    available: false,
+    connected: false,
+    readinessCode: "broker_security_review_required",
+    detail: "WEBEX_CHAT_BROKER_SECURITY_VERIFIED=false at /private/value",
+  }]);
+
+  const webex = statuses.find((status) => status.provider === "webex");
+  assert.equal(webex?.readinessCode, "broker_security_review_required");
+  assert.match(webex?.detail ?? "", /security review/i);
+  assert.doesNotMatch(webex?.detail ?? "", /WEBEX_CHAT_|private|false/i);
 });
 
 test("a post-disconnect status failure cannot turn the completed mutation into a failed disconnect", async () => {

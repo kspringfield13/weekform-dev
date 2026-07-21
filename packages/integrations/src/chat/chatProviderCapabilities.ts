@@ -126,7 +126,7 @@ export const CHAT_PROVIDER_CAPABILITIES = [
       docsLinkLabel: "Slack desktop PKCE guide",
       buildSettings: ["SLACK_CHAT_CLIENT_ID"],
       summary:
-        "Create or open a Slack app, enable desktop PKCE and token rotation, and add its public Client ID to the Weekform desktop build.",
+        "Create or open a Slack app, enable desktop PKCE and token rotation, then paste its public Client ID into Weekform or provide the optional build default.",
     },
   },
   {
@@ -176,7 +176,7 @@ export const CHAT_PROVIDER_CAPABILITIES = [
       docsLinkLabel: "Google Chat authorization guide",
       buildSettings: ["GOOGLE_CHAT_CLIENT_ID"],
       summary:
-        "Enable the Google Chat API, configure the OAuth consent screen, and add a macOS desktop Client ID to the Weekform desktop build.",
+        "Enable the Google Chat API, configure the OAuth consent screen, then paste the public Desktop app Client ID into Weekform or provide the optional build default.",
     },
   },
   {
@@ -232,7 +232,7 @@ export const CHAT_PROVIDER_CAPABILITIES = [
         "WEBEX_CHAT_BROKER_SECURITY_VERIFIED",
       ],
       summary:
-        "Create a confidential Webex integration, register Weekform's exact loopback callback, and configure the reviewed token-only HTTPS broker. Keep the Client Secret on the broker only.",
+        "Create a confidential Webex integration, then paste its public Client ID, exact loopback callback, and reviewed HTTPS broker address into Weekform. Keep the Client Secret on the broker only.",
     },
   },
 ] as const satisfies readonly ChatProviderCapability[];

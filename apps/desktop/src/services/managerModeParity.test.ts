@@ -30,6 +30,10 @@ const teamGantt = readFileSync(
   new URL("../components/team/TeamGantt.tsx", import.meta.url),
   "utf8",
 );
+const appSource = readFileSync(
+  new URL("../App.tsx", import.meta.url),
+  "utf8",
+);
 
 test("Desktop Team is a membership-gated first-class destination", () => {
   assert.match(screenTypes, /export type Screen\s*=\s*[^;]*"team"/);
@@ -48,6 +52,11 @@ test("Desktop Team exposes a real-data workload Gantt for members and managers",
   assert.match(teamGantt, /event\.key !== "Tab"/);
   assert.match(teamGantt, /returnFocusTo\?\.focus\(\)/);
   assert.doesNotMatch(teamGantt, /Synthetic|const GANTT_FIXTURES/);
+  assert.match(teamGantt, /Team workload calendar/);
+  assert.match(teamGantt, /Observed history/);
+  assert.match(teamGantt, /Today/);
+  assert.match(teamGantt, /Forecast window/);
+  assert.match(teamGantt, /team-gantt-day/);
 });
 
 test("Manager mode keeps the desktop shell and changes context rather than layout", () => {
@@ -60,6 +69,16 @@ test("Manager mode keeps the desktop shell and changes context rather than layou
     /mode === "manager" && <span className="manager-mode-indicator"/,
   );
   assert.doesNotMatch(managerWorkspace, /manager-access-app[^\n]*\$\{mode/);
+});
+
+test("Desktop mode toggles retain the current page instead of resetting to Today", () => {
+  assert.match(
+    managerWorkspace,
+    /managerWorkspaceReducer,\s*initialPage,\s*createInitialManagerWorkspaceState/s,
+  );
+  assert.match(managerWorkspace, /onOpenIndividualWorkspace\(page\)/);
+  assert.match(appSource, /initialPage=\{managerWorkspacePageForScreen\(active\)\}/);
+  assert.match(appSource, /individualScreenForManagerWorkspacePage\(page, current\)/);
 });
 
 test("Manager Access uses the same desktop shell proportions as Weekform", () => {

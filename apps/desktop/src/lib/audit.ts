@@ -77,7 +77,7 @@ export function createChatImportAuditEvent(input: {
 /** Local audit record for a chat OAuth boundary or bounded provider sync. */
 export function createChatSyncAuditEvent(input: {
   provider: ChatProviderId;
-  action: "connect" | "sync" | "disconnect";
+  action: "configure" | "connect" | "sync" | "disconnect";
   success: boolean;
   range?: { start_date: string; end_date: string };
   coverage?: "complete" | "scope_limited" | "partial" | "rate_limited" | "permission_limited";
@@ -91,7 +91,9 @@ export function createChatSyncAuditEvent(input: {
   hasMore?: boolean;
 }): AuditEvent {
   const descriptor = chatProviderDescriptor(input.provider);
-  const pastTense = input.action === "connect"
+  const pastTense = input.action === "configure"
+    ? "connection setup"
+    : input.action === "connect"
     ? "connection"
     : input.action === "disconnect"
       ? "disconnection"
@@ -112,6 +114,8 @@ export function createChatSyncAuditEvent(input: {
         : input.hasMore
           ? "A bounded content-free page was retained locally; workload transformation is waiting for the remaining provider pages."
           : "Content-free evidence was retained locally, but this run lacked complete replacement authority and did not change workload."
+      : input.action === "configure" && input.success
+        ? "The public connection details were saved locally without storing a Client Secret."
       : input.success
         ? `${descriptor.label} ${pastTense} completed without exposing message content to the workload model.`
         : `${descriptor.label} ${pastTense} did not complete; workload evidence was unchanged.`,
@@ -133,6 +137,9 @@ export function createChatSyncAuditEvent(input: {
       more_provider_pages: input.hasMore ?? false,
       credentials_saved_to_keychain:
         input.action === "connect" ? (input.success ? true : null) : null,
+      public_connection_config_saved_to_keychain:
+        input.action === "configure" ? (input.success ? true : null) : null,
+      client_secret_requested: false,
       credentials_removed:
         input.action === "disconnect" ? (input.success ? true : null) : null,
       content_discarded_at_native_boundary: true,
@@ -148,7 +155,7 @@ export function createChatSyncAuditEvent(input: {
       canonical_chat_evidence_sent_to_weekform_cloud: false,
       derived_chat_blocks_follow_existing_replica_controls: true,
       oauth_credentials_may_transit_token_broker:
-        input.provider === "webex" && input.action !== "disconnect",
+        input.provider === "webex" && (input.action === "connect" || input.action === "sync"),
       oauth_broker_handles_chat_data: false
     }
   });

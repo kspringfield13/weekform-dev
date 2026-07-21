@@ -39,6 +39,7 @@ export interface PersonalCloudSyncController {
   enabled: boolean;
   syncBusy: boolean;
   lastError: string | null;
+  lastNotice: string | null;
   queuedBatches: number;
   pendingCommands: ReviewCommandV1[];
   syncNow: () => Promise<boolean>;
@@ -68,6 +69,7 @@ export function usePersonalCloudSync(input: {
     persistLatestLocalState,
   } = input;
   const [syncBusy, setSyncBusy] = useState(false);
+  const [lastNotice, setLastNotice] = useState<string | null>(null);
   const [pendingCommands, setPendingCommands] = useState<ReviewCommandV1[]>([]);
   const inFlight = useRef(false);
   const commandInFlight = useRef(false);
@@ -126,6 +128,7 @@ export function usePersonalCloudSync(input: {
   // same week, while other weeks remain queued. Nothing queues before explicit consent.
   useEffect(() => {
     if (!enabled) return;
+    setLastNotice(null);
     const now = new Date().toISOString();
     account.setPersonalSyncState((current) => fingerprintedReplicas.reduce(
       (state, replica) => enqueueReplicaBatchWithClock(state, { ...replica, now }),
@@ -148,7 +151,7 @@ export function usePersonalCloudSync(input: {
     return { ok: true as const, env, session };
   }, []);
 
-  const syncNow = useCallback(async (): Promise<boolean> => {
+  const syncNow = useCallback(async (materializeCurrentReplica = true): Promise<boolean> => {
     const operation = beginOperation();
     if (!operation) return false;
     if (!enabled || inFlight.current) {
@@ -158,39 +161,57 @@ export function usePersonalCloudSync(input: {
     const currentAccount = accountRef.current;
     inFlight.current = true;
     setSyncBusy(true);
+    if (materializeCurrentReplica) setLastNotice(null);
     const attemptedAt = new Date().toISOString();
-    currentAccount.setPersonalSyncState((current) => ({ ...current, lastAttemptAt: attemptedAt, lastError: null }));
     try {
       // Queue payload + hybrid logical clock must be durable before the server
       // can accept the batch. A crash after acceptance therefore cannot restart
       // from an older clock or forget the accepted batch identity.
+      let durableState;
       try {
+        durableState = await currentAccount.setPersonalSyncStateDurably((current) => {
+          const materialized = materializeCurrentReplica
+            ? fingerprintedReplicas.reduce(
+                (state, replica) => enqueueReplicaBatchWithClock(
+                  state,
+                  { ...replica, now: attemptedAt },
+                ),
+                current,
+              )
+            : current;
+          return { ...materialized, lastAttemptAt: attemptedAt, lastError: null };
+        });
         await currentAccount.flushPersonalSyncState();
       } catch {
+        currentAccount.setPersonalSyncState((current) => ({
+          ...current,
+          lastError: "Weekform could not save the Web sync queue. Keep Weekform open and try again.",
+        }));
         return false;
       }
       if (!operation.isCurrent()) return false;
       const ready = await ensureDevice();
       if (!operation.isCurrent()) return false;
       if (!ready.ok) {
+        setLastNotice(null);
         currentAccount.setPersonalSyncState((current) => ({ ...current, lastError: ready.message }));
         return false;
       }
-      const durableAccount = accountRef.current;
-      let queue = durableAccount.personalSyncState.queue;
-      let cursor = durableAccount.personalSyncState.cursor;
-      let lastSuccessAt = durableAccount.personalSyncState.lastSuccessAt;
+      let queue = durableState.queue;
+      let cursor = durableState.cursor;
+      let lastSuccessAt = durableState.lastSuccessAt;
       const syncedWeekIds: string[] = [];
       let syncedBlockCount = 0;
       for (const item of queue) {
         const result = await syncPersonalReplicaBatch(
           ready.env,
           ready.session,
-          durableAccount.personalSyncState.deviceId,
+          durableState.deviceId,
           item,
         );
         if (!operation.isCurrent()) return false;
         if (!result.ok) {
+          setLastNotice(null);
           queue = markReplicaBatchAttempt(queue, item.batchId, result.message);
           currentAccount.setPersonalSyncState((current) => ({
             ...current,
@@ -209,29 +230,42 @@ export function usePersonalCloudSync(input: {
         syncedWeekIds.push(item.payload.weekId);
         syncedBlockCount += item.payload.blocks.length;
         queue = queue.filter((queued) => queued.batchId !== item.batchId);
-        currentAccount.setPersonalSyncState((current) => ({
-          ...current,
-          cursor: Math.max(current.cursor, cursor),
-          queue: current.queue.filter((queued) => queued.batchId !== item.batchId),
-          lastSuccessAt,
-          lastAttemptAt: attemptedAt,
-          lastError: null,
-        }));
+        try {
+          await currentAccount.setPersonalSyncStateDurably((current) => ({
+            ...current,
+            cursor: Math.max(current.cursor, cursor),
+            queue: current.queue.filter((queued) => queued.batchId !== item.batchId),
+            lastSuccessAt,
+            lastAttemptAt: attemptedAt,
+            lastError: null,
+          }));
+        } catch {
+          setLastNotice(null);
+          currentAccount.setPersonalSyncState((current) => ({
+            ...current,
+            lastError: "Web accepted the update, but Weekform could not save its receipt. Keep Weekform open and retry Sync Web.",
+          }));
+          return false;
+        }
       }
-      if (lastSuccessAt) {
+      if (lastSuccessAt && syncedWeekIds.length > 0) {
         currentAccount.emitAudit("personal_sync_success", "Updated the private Weekform Web workspace with reviewed, derived fields", {
           week_ids: syncedWeekIds,
           block_count: syncedBlockCount,
           cursor,
         });
+        setLastNotice(
+          `Web updated successfully for ${syncedWeekIds.length} week${syncedWeekIds.length === 1 ? "" : "s"}.`,
+        );
+        return true;
       }
-      return true;
+      return !materializeCurrentReplica;
     } finally {
       inFlight.current = false;
       setSyncBusy(false);
       operation.finish();
     }
-  }, [beginOperation, enabled, ensureDevice]);
+  }, [beginOperation, enabled, ensureDevice, fingerprintedReplicas]);
 
   const refreshCommands = useCallback(async () => {
     const operation = beginOperation();
@@ -732,19 +766,19 @@ export function usePersonalCloudSync(input: {
   // guard prevents this from competing with the polling/reconnect paths.
   useEffect(() => {
     if (!shouldFlushPersonalQueue(enabled, account.personalSyncState.queue.length)) return;
-    void syncNow();
+    void syncNow(false);
   }, [account.personalSyncState.queue.length, enabled, syncNow]);
 
   // Near-real-time while the app is open; offline batches persist and flush on reconnect.
   useEffect(() => {
     if (!enabled) return;
-    void syncNow();
+    void syncNow(false);
     void refreshCommands();
     const timer = window.setInterval(() => {
-      void syncNow();
+      void syncNow(false);
       void refreshCommands();
     }, 15_000);
-    const online = () => { void syncNow(); void refreshCommands(); };
+    const online = () => { void syncNow(false); void refreshCommands(); };
     window.addEventListener("online", online);
     return () => {
       window.clearInterval(timer);
@@ -756,6 +790,7 @@ export function usePersonalCloudSync(input: {
     enabled,
     syncBusy,
     lastError: account.personalSyncState.lastError,
+    lastNotice,
     queuedBatches: account.personalSyncState.queue.length,
     pendingCommands,
     syncNow,
@@ -763,5 +798,5 @@ export function usePersonalCloudSync(input: {
     approveCommand,
     rejectCommand,
     quiesceForReset,
-  }), [account.personalSyncState, approveCommand, enabled, pendingCommands, quiesceForReset, refreshCommands, rejectCommand, syncBusy, syncNow]);
+  }), [account.personalSyncState, approveCommand, enabled, lastNotice, pendingCommands, quiesceForReset, refreshCommands, rejectCommand, syncBusy, syncNow]);
 }

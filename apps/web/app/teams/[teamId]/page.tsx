@@ -597,6 +597,7 @@ async function MemberView({
           history={history}
           identities={[{ userId: viewerId, name: "You" }]}
           role="member"
+          todayIso={nowIso}
           viewerId={viewerId}
         />
       )}
@@ -892,9 +893,11 @@ async function ManagerView({
       ) : (
         <TeamGantt
           anchorWeekId={timelineAnchorWeek}
+          forecast={forecast}
           history={history}
           identities={timelineIdentities}
           role="manager"
+          todayIso={nowIso}
           viewerId={viewerId}
         />
       )}

@@ -209,9 +209,10 @@ fields.
 
 Slack uses its [generally available desktop authorization-code flow with
 PKCE](https://docs.slack.dev/changelog/2026/03/30/pkce/) over a loopback
-callback. Slack desktop redirects grant user scopes only; the registered app
-must issue rotating tokens, and Slack's PKCE refresh tokens expire after 30
-days. For non-Marketplace apps, Slack can limit
+callback at `http://localhost:49324/chat-auth/callback`, matching the checked-in
+Slack app manifest. Slack desktop redirects grant user scopes only; the
+registered app must issue rotating tokens, and Slack's PKCE refresh tokens
+expire after 30 days. For non-Marketplace apps, Slack can limit
 [`conversations.history`](https://api.slack.com/methods/conversations.history)
 to one request per minute and 15 rows per request, so a bounded transfer may
 need resumable pages and visible retry guidance. Google Chat uses Google's
@@ -244,21 +245,32 @@ credential bodies. The broker returns 503 until that operational check is
 attested with `WEBEX_CHAT_BROKER_SECURITY_VERIFIED=true`; the flag does not
 replace the implemented distributed limiter or the deployment logging review.
 
-Refresh tokens, provider self identifiers, bounded pagination cursors, and the
-hash salt live in macOS Keychain and are excluded from React app state and
-Weekform exports. On the Mac, access tokens are held only for the native
-provider request. Native secret wrappers clear PKCE verifiers, authorization
+Refresh tokens, provider self identifiers, bounded pagination cursors, the
+hash salt, and saved public Chat connection details live in macOS Keychain and
+are excluded from Weekform exports. A public value exists transiently in the
+React form while the user enters it, then clears after a verified save; native
+status responses do not return the stored value. Slack and Google Chat store a
+public Client ID. Webex stores its public Client ID, exact loopback redirect,
+and credential-free HTTPS broker address. The inputs validate only those public
+values and never request a Client Secret. Webex's secret stays on the broker,
+and its security attestation remains release-controlled. On the Mac, access
+tokens are held only for the native provider request. Native secret wrappers
+clear PKCE verifiers, authorization
 codes, access and refresh tokens, provider self identifiers, and serialized
 credential/cursor buffers on drop. The narrow `zeroize` dependency implements
 that memory-clearing boundary without replacing the existing Keychain format or
 adding a provider SDK.
 
-The connection wizard is an end-user flow, not a build-configuration form. An
-unconfigured native build says that the connector is unavailable and keeps
-operator-only requirements behind an expandable disclosure; it never asks the
-user to set a build variable or paste a secret. The existing sanitized local
-JSON import remains available. A configured connector first shows the requested
-access, then system-browser authorization, native content-free filtering,
+Each Chat source row provides inline public connection fields when setup is
+missing and a change action while the source remains disconnected. Slack and
+Google Chat ask only for their public Client ID. Webex asks for the public
+Client ID, exact redirect URI, and HTTPS broker address. Saving a ready
+connector opens the existing access review; it does not start browser
+authorization by itself. If Webex's deployment security review is incomplete,
+the public details can be saved but **Connect now** remains disabled with an
+explicit blocker. No connector asks the user to set a build variable or paste a
+secret. The existing sanitized local JSON import remains available. A configured connector first shows the requested access,
+then system-browser authorization, native content-free filtering,
 bounded initial-transfer progress, retryable errors, and completion. The wizard
 does not dismiss itself while authorization or transfer is active. Native
 readiness reaches React only as an allowlisted code; missing or unknown codes
@@ -270,7 +282,8 @@ does not revoke the provider-side grant. Users can revoke that grant in the
 provider's own account controls. Raw-evidence retention expires canonical Chat
 evidence and derived Chat raw events while leaving reviewable work blocks.
 Reset Local Data clears Chat evidence and work blocks and attempts to remove all
-Chat credentials, cursors, and the hash salt; a failed durable cleanup is
+Chat credentials, cursors, all saved public Chat connection details, and the
+hash salt; a failed durable cleanup is
 reported as requiring a retry. No admin or compliance token is supported.
 
 The connector contracts, projection tests, builds, and local UI can be verified

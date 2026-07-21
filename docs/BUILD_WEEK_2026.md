@@ -834,6 +834,35 @@ The hackathon-readiness and provenance task is supplemental evidence:
   zero vulnerabilities. Rendered browser review at the 1024×720 minimum covered
   the unavailable-build flow in light and dark themes with no page errors. The
   configured live-account authorization and transfer flow remains unclaimed.
+  A July 20 Slack registration follow-through adds a checked-in, paste-ready
+  app manifest with exactly the connector's eight read-only user scopes, desktop
+  PKCE, token rotation, no bot scopes, and one stable localhost callback shared
+  by the manifest and native listener. A follow-up moves Slack's public Client
+  ID into an inline Data Sources input with explicit numeric validation, a
+  **Save and review access** boundary, local Keychain persistence, a disconnected
+  edit path, reset coverage, and an audit event that never records the value or
+  claims a Client Secret. `SLACK_CHAT_CLIENT_ID` remains an optional build
+  default. Native Chat tests pass 38/38; focused presentation, lifecycle, and
+  Chat audit tests pass 32/32; Cargo check, Rust format check, and the
+  authoritative root build pass. The manifest parses locally with its callback
+  and security flags verified. A Slack-issued Client ID and live account
+  authorization are still required and remain unclaimed.
+  A same-day connector setup follow-through applies that inline, public-only
+  pattern to Google Chat and Webex. Google accepts a validated Desktop app
+  Client ID. Webex accepts its public Client ID, exact loopback redirect, and
+  credential-free HTTPS broker address, while its Client Secret and security
+  attestation remain outside the desktop app. Public values use provider-specific
+  validation at both React and Rust boundaries, persist in macOS Keychain,
+  participate in Reset Local Data, and emit value-free audit events. Webex stays
+  visibly locked when its deployment security review is absent instead of
+  presenting a false ready state. Build defaults remain compatible fallbacks.
+  Focused presentation, lifecycle, and Chat audit tests pass 36/36; native Chat
+  tests pass 39/39; the authoritative root build, Cargo check, Rust format
+  check, and diff check pass. The three-field Webex layout was reviewed at the
+  1024×720 minimum in light and dark themes with synthetic public values and no
+  page errors; this rendered review does not prove native authorization.
+  Live provider registration, broker deployment, and account authorization are
+  still required and remain unclaimed.
 
 - **July 20 production Manager Mode:** The desktop Manager Mode replaced its
   synthetic roster, metrics, briefing, history, and coordination queue with
@@ -859,6 +888,18 @@ The hackathon-readiness and provenance task is supplemental evidence:
   The chart fetch is bounded to 650 explicit summary rows and adds no raw
   evidence, AI, or browser-persistence path. Its modal owns Escape, focus-loop,
   focus-return, background-scroll, and responsive overflow behavior.
+  A calendar-grade follow-through keeps the same Week, Month, and Quarter
+  controls while replacing week-box columns with 7, 28, or 91 daily history
+  columns plus a separately accented seven-day forecast window. A continuous
+  Today spine, weekend shading, sticky identities, an explicit legend, and a
+  Today recenter action make the horizon readable without implying that weekly
+  snapshots are daily observations. Web reuses the existing coverage-gated
+  team forecast; Desktop mirrors its reliable-capacity guardrails and withholds
+  the range unless at least two people and half the roster have current approved
+  data. Forecasts remain team medians, never per-member predictions. Six focused
+  inference tests and sixteen Desktop/Web Team contract tests pass, along with
+  both production builds. Live authenticated visual proof remains a separate
+  surface and is not claimed by these repository checks.
 
 - **July 20 capacity drill-in parity:** The desktop sidebar's Reliable capacity
   card is now keyboard- and pointer-actionable in both workspace modes. The

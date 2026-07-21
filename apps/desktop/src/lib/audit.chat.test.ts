@@ -48,6 +48,24 @@ test("a failed connection audit does not claim Keychain state stayed unchanged",
   assert.equal(failed.details.provider_keychain_state_may_have_changed, true);
 });
 
+test("public connector setup audits all providers without claiming OAuth credentials", () => {
+  for (const provider of ["slack", "google_chat", "webex"] as const) {
+    const configured = createChatSyncAuditEvent({
+      provider,
+      action: "configure",
+      success: true,
+    });
+
+    assert.match(configured.title, /Connection setup completed/i);
+    assert.match(configured.summary, /public connection details/i);
+    assert.match(configured.summary, /without storing a Client Secret/i);
+    assert.equal(configured.details.public_connection_config_saved_to_keychain, true);
+    assert.equal(configured.details.client_secret_requested, false);
+    assert.equal(configured.details.credentials_saved_to_keychain, null);
+    assert.equal(configured.details.oauth_credentials_may_transit_token_broker, false);
+  }
+});
+
 test("a failed sync audit allows for token refresh before the provider read failed", () => {
   const failed = createChatSyncAuditEvent({
     provider: "google_chat",

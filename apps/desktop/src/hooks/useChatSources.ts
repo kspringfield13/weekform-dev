@@ -33,6 +33,16 @@ export type NativeChatConnectorReadinessCode =
 
 export type ChatConnectorReadinessCode = NativeChatConnectorReadinessCode | "unknown";
 
+export type ChatProviderConfiguration =
+  | { provider: "slack"; clientId: string }
+  | { provider: "google_chat"; clientId: string }
+  | {
+      provider: "webex";
+      clientId: string;
+      redirectUri: string;
+      brokerUrl: string;
+    };
+
 export type ChatCoverageState =
   | "complete"
   | "scope_limited"
@@ -101,12 +111,15 @@ export interface ChatSourcesController {
   rangeError: string | null;
   updateRange: (field: keyof ChatRangeInput, value: string) => void;
   refreshStatuses: () => Promise<void>;
+  configureProvider: (
+    configuration: ChatProviderConfiguration,
+  ) => Promise<ChatConnectionStatus | null>;
   connect: (provider: ChatProviderId) => Promise<void>;
   sync: (provider: ChatProviderId) => Promise<void>;
   disconnect: (provider: ChatProviderId) => Promise<void>;
 }
 
-type ConnectionAction = "connect" | "sync" | "disconnect";
+type ConnectionAction = "configure" | "connect" | "sync" | "disconnect";
 
 const ATTENTION_SIGNALS: readonly ChatAttentionSignal[] = [
   "ambient",
@@ -369,9 +382,40 @@ export function normalizeChatStatuses(value: unknown): ChatConnectionStatus[] {
       connected: status.connected,
       stale: false,
       readinessCode: status.readinessCode,
-      detail: nativeStatusDetail(status.available, status.connected),
+      detail: chatReadinessDetail(id, status.readinessCode, status.available, status.connected),
     };
   });
+}
+
+function chatReadinessDetail(
+  provider: ChatProviderId,
+  readinessCode: ChatConnectorReadinessCode,
+  available: boolean,
+  connected: boolean,
+): string {
+  if (readinessCode === "missing_client_id") {
+    if (provider === "slack") return "Add the public Client ID from your Slack app to continue.";
+    if (provider === "google_chat") {
+      return "Add the public Desktop app Client ID from Google Cloud to continue.";
+    }
+    return "Add the public Client ID from your Webex integration to continue.";
+  }
+  if (readinessCode === "missing_redirect_uri") {
+    return "Add the exact Webex loopback redirect URI to continue.";
+  }
+  if (readinessCode === "invalid_redirect_uri") {
+    return "Replace the Webex redirect with an exact loopback HTTP callback.";
+  }
+  if (readinessCode === "missing_broker_url") {
+    return "Add Weekform’s HTTPS Webex token broker address to continue.";
+  }
+  if (readinessCode === "invalid_broker_url") {
+    return "Replace the Webex token broker address with a credential-free HTTPS URL.";
+  }
+  if (readinessCode === "broker_security_review_required") {
+    return "Public Webex details are saved. Connection remains locked until the Weekform token broker passes its deployment security review.";
+  }
+  return nativeStatusDetail(available, connected);
 }
 
 function normalizeEvidenceEvent(value: unknown, expectedProvider: ChatProviderId): ChatEvidenceEventV1 {
@@ -877,6 +921,33 @@ export function useChatSources(input: {
     }
   }, [refreshStatuses, setProviderActivity, transfer]);
 
+  const configureProvider = useCallback(async (
+    configuration: ChatProviderConfiguration,
+  ): Promise<ChatConnectionStatus | null> => {
+    try {
+      await invoke<void>("configure_chat_provider", { request: configuration });
+      callbacksRef.current.onConnectionEvent?.(configuration.provider, "configure", true);
+    } catch (error) {
+      callbacksRef.current.onConnectionEvent?.(configuration.provider, "configure", false);
+      throw error;
+    }
+
+    // Configuration is already durably saved. Readiness is a secondary check:
+    // Webex can truthfully remain locked behind the broker security review.
+    try {
+      const result = await invoke<unknown>("chat_source_statuses");
+      const refreshed = normalizeChatStatuses(result);
+      setStatuses(refreshed);
+      setStatusError(null);
+      return refreshed.find((status) => status.provider === configuration.provider) ?? null;
+    } catch (error) {
+      const message = safeNativeError(error, "status");
+      setStatuses((current) => degradeChatStatusesAfterRefreshFailure(current, message));
+      setStatusError(message);
+      return null;
+    }
+  }, []);
+
   const sync = useCallback(async (provider: ChatProviderId): Promise<void> => {
     await transfer(provider);
   }, [transfer]);
@@ -929,6 +1000,7 @@ export function useChatSources(input: {
     rangeError: rangeResult.error,
     updateRange,
     refreshStatuses,
+    configureProvider,
     connect,
     sync,
     disconnect,
