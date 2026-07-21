@@ -2620,6 +2620,7 @@ fn get_env_ai_key_status() -> EnvAiKeyStatus {
 const CODEX_APP_SERVER_TIMEOUT: Duration = Duration::from_secs(45);
 const CODEX_TURN_TIMEOUT: Duration = Duration::from_secs(180);
 const CODEX_LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
+const CODEX_LOGIN_POLL_INTERVAL: Duration = Duration::from_secs(3);
 
 const CODEX_FEATURE_OVERRIDES: &[&str] = &[
     "features.apps=false",
@@ -3005,6 +3006,18 @@ fn codex_account(server: &mut CodexAppServer, refresh: bool) -> Result<Value, St
     )
 }
 
+/// True when the shared credential store already holds a ChatGPT sign-in.
+/// Uses a fresh app-server instance on purpose: a running instance only
+/// reports the auth state it cached at startup, so credentials stored by an
+/// out-of-band sign-in (e.g. the browser flow handing off to the ChatGPT app)
+/// are visible only to a newly started server.
+fn codex_chatgpt_account_present(codex_home: &Path, workspace: &Path) -> bool {
+    CodexAppServer::start(codex_home, workspace)
+        .and_then(|mut probe| codex_account(&mut probe, false))
+        .map(|account| account.pointer("/account/type").and_then(Value::as_str) == Some("chatgpt"))
+        .unwrap_or(false)
+}
+
 fn require_codex_keyring_storage(codex_home: &Path) -> Result<(), String> {
     let fallback_auth = codex_home.join("auth.json");
     if !fallback_auth.exists() {
@@ -3203,6 +3216,13 @@ async fn connect_codex_via_chatgpt(app: AppHandle) -> Result<CodexPlanConnectRes
                 .map_err(|error| format!("Could not open ChatGPT sign-in: {error}"))?;
 
             let deadline = std::time::Instant::now() + CODEX_LOGIN_TIMEOUT;
+            // The browser flow can finish out-of-band: the hosted sign-in may hand off
+            // to the ChatGPT/Codex app, which stores the credentials in the Keychain
+            // without this app-server instance ever emitting account/login/completed.
+            // Probe the credential store between polls so either completion path
+            // connects promptly instead of leaving the user to time out and click
+            // Connect a second time.
+            let mut next_probe = std::time::Instant::now() + CODEX_LOGIN_POLL_INTERVAL;
             loop {
                 if !CODEX_LIFECYCLE.is_current(lifecycle_token) {
                     return Err(
@@ -3216,6 +3236,14 @@ async fn connect_codex_via_chatgpt(app: AppHandle) -> Result<CodexPlanConnectRes
                 let Some(message) =
                     server.poll_next_message(remaining.min(Duration::from_millis(250)))?
                 else {
+                    // Probe errors are ignored: the notification path stays primary
+                    // and the deadline bounds the wait either way.
+                    if std::time::Instant::now() >= next_probe {
+                        if codex_chatgpt_account_present(&codex_home, &workspace) {
+                            break;
+                        }
+                        next_probe = std::time::Instant::now() + CODEX_LOGIN_POLL_INTERVAL;
+                    }
                     continue;
                 };
                 if message.get("method").and_then(Value::as_str) != Some("account/login/completed")
@@ -3233,6 +3261,10 @@ async fn connect_codex_via_chatgpt(app: AppHandle) -> Result<CodexPlanConnectRes
                 }
                 break;
             }
+            // Read the final account through a fresh app-server: the login
+            // instance's auth cache predates the sign-in when it completed
+            // out-of-band, so only a restart reliably sees the stored account.
+            server = CodexAppServer::start(&codex_home, &workspace)?;
             account = codex_account(&mut server, true)?;
         }
         require_codex_keyring_storage(&codex_home)?;
