@@ -35,6 +35,7 @@ test("the root layout starts dark and applies a saved override before the page p
   );
   assert.match(layout, /headers\(\)/);
   assert.match(layout, /weekform:web-theme/);
+  assert.match(layout, /<html[^>]*data-scroll-behavior="smooth"/);
   assert.doesNotMatch(layout + toggle, /prefers-color-scheme/);
   assert.match(layout, /suppressHydrationWarning/);
 });

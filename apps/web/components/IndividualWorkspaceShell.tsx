@@ -135,6 +135,8 @@ export function IndividualWorkspaceShell({
   workspaceMode = "individual",
   accountActions,
   initialScreen,
+  individualHrefBase = "/app",
+  demoReadOnly = false,
 }: {
   children: ReactNode;
   reliableCapacity: number | null;
@@ -146,6 +148,8 @@ export function IndividualWorkspaceShell({
   workspaceMode?: "individual" | "manager" | "team";
   accountActions: ReactNode;
   initialScreen: string | undefined;
+  individualHrefBase?: string;
+  demoReadOnly?: boolean;
 }) {
   const initialRoute = resolveIndividualWorkspaceRoute(initialScreen);
   const [active, setActive] = useState<IndividualDestination>(initialRoute.destination);
@@ -161,7 +165,7 @@ export function IndividualWorkspaceShell({
   const mobileNavigationOpen = isNarrowViewport && !sidebarCollapsed;
   const activeRoute = { destination: active, subview: activeSubview } satisfies IndividualWorkspaceRoute;
   const desktopHandoffUrl = desktopPageHandoffUrl(activeRoute, workspaceMode);
-  const individualHref = workspaceHref("/app", activeRoute);
+  const individualHref = workspaceHref(individualHrefBase, activeRoute);
   const activeTeamHref = workspaceHref(teamHref, activeRoute);
   const teamDestinationHref = teamHref;
   const managerWorkspace = workspaceMode === "manager";
@@ -169,7 +173,7 @@ export function IndividualWorkspaceShell({
   const teamWorkspace = managerWorkspace || memberTeamWorkspace;
   const teamModeLabel = teamRole === "member" ? "Team" : "Manager mode";
   const settingsHref = workspaceHref(
-    managerWorkspace ? teamHref : "/app",
+    managerWorkspace ? teamHref : individualHrefBase,
     { destination: "settings", subview: "settings" },
   );
 
@@ -277,7 +281,7 @@ export function IndividualWorkspaceShell({
       return;
     }
     if (memberTeamWorkspace) {
-      window.location.assign(workspaceHref("/app", route));
+      window.location.assign(workspaceHref(individualHrefBase, route));
       return;
     }
     setActive(route.destination);
@@ -345,7 +349,7 @@ export function IndividualWorkspaceShell({
           <strong>{managerWorkspace ? "Your team, ready to lead" : memberTeamWorkspace ? "Your team connection" : "Your week, ready to take shape"}</strong>
         </div>
         <div className="web-toolbar-state" role="status">
-          {managerWorkspace ? <ManagerWindowIcon /> : <i aria-hidden="true" />} {managerWorkspace ? "Manager · synced summaries" : memberTeamWorkspace ? "Team member · your data only" : "API-connected · no workload cache"}
+          {managerWorkspace ? <ManagerWindowIcon /> : <i aria-hidden="true" />} {demoReadOnly ? "Synthetic local demo · read-only" : managerWorkspace ? "Manager · synced summaries" : memberTeamWorkspace ? "Team member · your data only" : "API-connected · no workload cache"}
         </div>
         <div className="web-toolbar-actions">
           <div
@@ -387,7 +391,7 @@ export function IndividualWorkspaceShell({
         >
           <span aria-hidden="true">×</span>
         </button>
-        <Link href="/app" className="brand" aria-label="Weekform Web home" onClick={closeMobileNavigation}>
+        <Link href={individualHrefBase} className="brand" aria-label="Weekform Web home" onClick={closeMobileNavigation}>
           <WeekformMark className="brand-mark" />
           <span className="brand-lockup">
             <strong className="brand-name">Weekform</strong>
@@ -494,7 +498,7 @@ export function IndividualWorkspaceShell({
         aria-hidden={mobileNavigationOpen ? true : undefined}
       >
         <div className="web-workspace-mode-row">
-          {!teamWorkspace && (active === "today" || active === "week") ? (
+          {!demoReadOnly && !teamWorkspace && (active === "today" || active === "week") ? (
             <DesktopStartTrackingButton>
               <StartTrackingIcon />
               Start Tracking

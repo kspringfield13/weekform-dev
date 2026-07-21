@@ -1094,6 +1094,27 @@ This task is supporting evidence for the public presentation only. It does not r
   before and after promotion of deployment
   `dpl_7r5xtmnDFMrhU8XKcbiqDUBCMb2N`.
 
+- **July 21 integrated calendar and local Web demo:** Codex upgraded the Team
+  calendar from a sparse row timeline into a responsive evidence calendar and
+  workload runway. Week, month, and quarter ranges now align approved team
+  summaries with a private daily layer for the signed-in viewer's Apple Calendar
+  counts and content-free Slack metadata; the UI keeps those personal facts
+  visibly separate from team-shared aggregates and never invents values for
+  unknown members or days. The local Next.js demo exposes this complete story at
+  `/demo` and `/demo/team` only when the explicit development flag is enabled on
+  an exact loopback host. It supplies 13 synthetic weeks across five team members,
+  includes all Individual and Manager page views, performs no Supabase request,
+  renders no write form, and returns 404 from production builds and non-loopback
+  hosts. Focused demo tests pass 6/6, the Web static suite passes 615/615, and
+  `npm run verify:release` exits 0 across Web typecheck, release tests, Rust tests,
+  both production builds, and both zero-vulnerability audits. Rendered review
+  covered dark and light themes, reduced motion, keyboard dialog return, and
+  1440×1000, 1024×720, and 390×844 layouts. The Web-only work does not alter the
+  trusted Mac package: the current Developer ID-signed, notarized, stapled,
+  Gatekeeper-accepted universal DMG remains 7,004,919 bytes with SHA-256
+  `1c9e5e623dac1ea8f54d7d31a8c0c50b9f5ded3c86418f195885647525cc9c20`,
+  privately hosted for authenticated short-lived download.
+
 ### End-user positioning and three-minute demo
 
 The final positioning and product-demo narrative were refined in a separate in-period task:

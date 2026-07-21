@@ -5,8 +5,11 @@ import {
   CalendarDays,
   CalendarRange,
   ChartNoAxesGantt,
+  CheckCircle2,
   Crosshair,
+  LockKeyhole,
   Maximize2,
+  MessageSquareText,
   ShieldCheck,
   Sparkles,
   X,
@@ -15,11 +18,14 @@ import {
 import {
   buildTeamCalendar,
   buildTeamCalendarWeeks,
+  defaultTeamCalendarEvidenceDate,
+  type TeamCalendarEvidenceDay,
   type TeamCalendarWeek,
   type TeamTimelinePoint,
   type TeamTimelineZoom,
 } from "../../../../../packages/inference/src/teamTimeline";
 import type { TeamCapacityForecast } from "@/lib/forecast";
+import { formatEvidenceCount } from "@/lib/teamGanttEvidencePresentation";
 
 interface TeamGanttSnapshot {
   userId: string;
@@ -33,13 +39,26 @@ interface TeamGanttSnapshot {
   eligibleBlocks: number;
 }
 
+interface TeamGanttEvidenceSources {
+  calendar: string;
+  chat: string;
+}
+
 const ZOOM_LABELS: Array<{ id: TeamTimelineZoom; label: string }> = [
   { id: "week", label: "Week" },
   { id: "month", label: "Month" },
   { id: "quarter", label: "Quarter" },
 ];
 
+const EVIDENCE_HORIZON_LABELS: Record<TeamTimelineZoom, string> = {
+  week: "Your week, with the signal turned on",
+  month: "Your month, with the signal turned on",
+  quarter: "Your quarter, with the signal turned on",
+};
+
 const WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const EMPTY_EVIDENCE: TeamCalendarEvidenceDay[] = [];
+const GENERIC_EVIDENCE_SOURCES: TeamGanttEvidenceSources = { calendar: "Calendar", chat: "Chat" };
 
 const METRIC_LANES = [
   { key: "reliableCapacityPct", label: "Reliable capacity", tone: "capacity" },
@@ -61,20 +80,42 @@ function weekRangeLabel(week: TeamCalendarWeek): string {
   return `${first.monthLabel} ${first.dayLabel}–${last.monthLabel} ${last.dayLabel}`;
 }
 
+function formatMinutes(value: number): string {
+  if (value < 60) return `${value}m`;
+  const hours = Math.floor(value / 60);
+  const minutes = value % 60;
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+}
+
+function evidenceInsightLabel(insight: TeamCalendarEvidenceDay["insight"]): string | null {
+  if (insight === "blended-pressure") return "Meeting + communication pressure";
+  if (insight === "meeting-dense") return "Meeting-dense day";
+  if (insight === "communication-burst") return "Communication burst";
+  return null;
+}
+
 function CalendarInspector({
   forecast,
   forecastSelected,
+  evidenceSources,
+  selectedEvidence,
   selectedPoint,
   selectedWeek,
 }: {
   forecast?: TeamCapacityForecast;
   forecastSelected: boolean;
+  evidenceSources: TeamGanttEvidenceSources;
+  selectedEvidence: TeamCalendarEvidenceDay | null;
   selectedPoint: TeamTimelinePoint | null;
   selectedWeek: TeamCalendarWeek | null;
 }) {
   const reliableForecast = forecast?.verdict === "forecast" ? forecast.metrics.reliableCapacityPct.forecast : null;
   if (forecastSelected && reliableForecast && forecast) {
     return <><span className="team-section-kicker">Forward look · team aggregate</span><h3>{Math.round(reliableForecast.median)}% reliable capacity</h3><p className="web-team-gantt-range">Expected range <strong>{Math.round(reliableForecast.min)}–{Math.round(reliableForecast.max)}%</strong></p><dl><div><dt>Coverage</dt><dd>{forecast.sharedCount}/{forecast.memberCount}</dd></div><div><dt>History used</dt><dd>{forecast.metrics.reliableCapacityPct.weekCount} weeks</dd></div><div><dt>Forecast type</dt><dd>Team median</dd></div></dl><p>{forecast.basisLabel} Prototype heuristic, not a commitment.</p></>;
+  }
+  if (selectedEvidence) {
+    const insight = evidenceInsightLabel(selectedEvidence.insight);
+    return <><span className="team-section-kicker">Your private connected facts · {selectedEvidence.dateId}</span><h3>{insight ?? "Reviewed activity context"}</h3><dl><div><dt>{evidenceSources.calendar}</dt><dd>{selectedEvidence.calendarEventCount ? `${selectedEvidence.calendarEventCount} · ${formatMinutes(selectedEvidence.calendarMinutes)}` : "No event fact"}</dd></div><div><dt>{evidenceSources.chat} episodes</dt><dd>{selectedEvidence.chatEpisodeCount || "No episode fact"}</dd></div><div><dt>Directed triggers</dt><dd>{selectedEvidence.directedChatCount || "None observed"}</dd></div><div><dt>Reviewed blocks</dt><dd>{selectedEvidence.reviewedBlockCount || "None reviewed"}</dd></div></dl><p>Counts and unioned time only. Titles, people, message content, and connector identifiers stay out of the team snapshot.</p></>;
   }
   if (selectedPoint) {
     return <><span className="team-section-kicker">Approved snapshot · {selectedPoint.weekId}</span><h3>{selectedPoint.displayName}</h3><dl><div><dt>Reliable capacity</dt><dd>{formatMetric(selectedPoint.reliableCapacityPct)}</dd></div><div><dt>Reactive load</dt><dd>{formatMetric(selectedPoint.reactivePct)}</dd></div><div><dt>Meetings</dt><dd>{formatMetric(selectedPoint.meetingPct)}</dd></div><div><dt>Fragmented work</dt><dd>{formatMetric(selectedPoint.fragmentedPct)}</dd></div><div><dt>Review coverage</dt><dd>{selectedPoint.reviewedBlocks}/{selectedPoint.eligibleBlocks}</dd></div></dl><p>Synced {new Date(selectedPoint.syncedAt).toLocaleString()}</p></>;
@@ -87,6 +128,8 @@ function CalendarInspector({
 
 export function TeamGantt({
   anchorWeekId,
+  evidence = EMPTY_EVIDENCE,
+  evidenceSources,
   forecast,
   history,
   identities,
@@ -95,6 +138,8 @@ export function TeamGantt({
   viewerId,
 }: {
   anchorWeekId: string;
+  evidence?: TeamCalendarEvidenceDay[];
+  evidenceSources?: TeamGanttEvidenceSources;
   forecast?: TeamCapacityForecast;
   history: TeamGanttSnapshot[];
   identities: Array<{ userId: string; name: string }>;
@@ -105,6 +150,7 @@ export function TeamGantt({
   const [open, setOpen] = useState(false);
   const [zoom, setZoom] = useState<TeamTimelineZoom>("month");
   const [selectedPoint, setSelectedPoint] = useState<TeamTimelinePoint | null>(null);
+  const [selectedEvidenceDate, setSelectedEvidenceDate] = useState<string | null>(null);
   const [selectedWeekId, setSelectedWeekId] = useState<string | null>(null);
   const [forecastSelected, setForecastSelected] = useState(false);
   const launchRef = useRef<HTMLButtonElement | null>(null);
@@ -129,6 +175,36 @@ export function TeamGantt({
   }, [history, identities, teamRole, viewerId]);
   const calendar = useMemo(() => buildTeamCalendar(points, todayIso, zoom, identities.map((identity) => ({ userId: identity.userId, displayName: identity.name, isSelf: identity.userId === viewerId }))), [identities, points, todayIso, viewerId, zoom]);
   const weeks = useMemo(() => buildTeamCalendarWeeks(calendar), [calendar]);
+  const hasEvidence = evidence.length > 0;
+  const sourceLabels = {
+    calendar: evidenceSources?.calendar.trim() || GENERIC_EVIDENCE_SOURCES.calendar,
+    chat: evidenceSources?.chat.trim() || GENERIC_EVIDENCE_SOURCES.chat,
+  };
+  const visibleDateIds = useMemo(() => new Set(calendar.days.map((day) => day.dateId)), [calendar]);
+  const visibleEvidence = useMemo(() => evidence.filter((day) => visibleDateIds.has(day.dateId)), [evidence, visibleDateIds]);
+  const evidenceByDate = useMemo(() => new Map(visibleEvidence.map((day) => [day.dateId, day])), [visibleEvidence]);
+  const defaultEvidenceDate = useMemo(() => defaultTeamCalendarEvidenceDate(visibleEvidence, todayIso), [todayIso, visibleEvidence]);
+  const selectedEvidence = selectedEvidenceDate ? evidenceByDate.get(selectedEvidenceDate) ?? null : null;
+  const evidenceTotals = useMemo(() => visibleEvidence.reduce((totals, day) => ({
+    calendarEvents: totals.calendarEvents + day.calendarEventCount,
+    calendarMinutes: totals.calendarMinutes + day.calendarMinutes,
+    chatEpisodes: totals.chatEpisodes + day.chatEpisodeCount,
+    reviewedBlocks: totals.reviewedBlocks + day.reviewedBlockCount,
+  }), { calendarEvents: 0, calendarMinutes: 0, chatEpisodes: 0, reviewedBlocks: 0 }), [visibleEvidence]);
+  const weeklyEvidence = useMemo(() => weeks.map((week) => {
+    const days = week.days.flatMap((day) => day ? [evidenceByDate.get(day.dateId)].filter((value): value is TeamCalendarEvidenceDay => Boolean(value)) : []);
+    return {
+      weekId: week.weekId,
+      days,
+      calendarEvents: days.reduce((total, day) => total + day.calendarEventCount, 0),
+      calendarMinutes: days.reduce((total, day) => total + day.calendarMinutes, 0),
+      chatEpisodes: days.reduce((total, day) => total + day.chatEpisodeCount, 0),
+      reviewedBlocks: days.reduce((total, day) => total + day.reviewedBlockCount, 0),
+      pressureDays: days.filter((day) => day.insight !== null).length,
+    };
+  }), [evidenceByDate, weeks]);
+  const maxWeeklyCalendarMinutes = Math.max(1, ...weeklyEvidence.map((week) => week.calendarMinutes));
+  const maxWeeklyChatEpisodes = Math.max(1, ...weeklyEvidence.map((week) => week.chatEpisodes));
   const selectedWeek = weeks.find((week) => week.weekId === selectedWeekId) ?? null;
   const reliableForecast = forecast?.verdict === "forecast" ? forecast.metrics.reliableCapacityPct.forecast : null;
   const forecastStartWeekId = calendar.days[calendar.forecastStartIndex]?.weekId ?? null;
@@ -137,6 +213,7 @@ export function TeamGantt({
     return visibleDays.length > 0 && visibleDays.every((day) => day.kind === "forecast");
   })?.weekId ?? forecastStartWeekId;
   const runwayStyle = { gridTemplateColumns: `minmax(138px, 0.9fr) repeat(${weeks.length}, minmax(${zoom === "quarter" ? 80 : 100}px, 1fr))` };
+  const activePressureDays = visibleEvidence.filter((day) => day.insight !== null).length;
 
   const scrollToToday = useCallback(() => {
     const viewport = scrollRef.current;
@@ -147,9 +224,10 @@ export function TeamGantt({
     viewport.scrollTo({ top: Math.max(0, viewport.scrollTop + todayTop - viewportTop - 88), behavior: "smooth" });
   }, []);
 
-  const selectPoint = (point: TeamTimelinePoint) => { setSelectedPoint(point); setSelectedWeekId(null); setForecastSelected(false); };
-  const selectWeek = (weekId: string) => { setSelectedWeekId(weekId); setSelectedPoint(null); setForecastSelected(false); };
-  const selectForecast = () => { setForecastSelected(true); setSelectedPoint(null); setSelectedWeekId(null); };
+  const selectPoint = (point: TeamTimelinePoint) => { setSelectedPoint(point); setSelectedEvidenceDate(null); setSelectedWeekId(null); setForecastSelected(false); };
+  const selectWeek = (weekId: string) => { setSelectedWeekId(weekId); setSelectedPoint(null); setSelectedEvidenceDate(null); setForecastSelected(false); };
+  const selectForecast = () => { setForecastSelected(true); setSelectedPoint(null); setSelectedEvidenceDate(null); setSelectedWeekId(null); };
+  const selectEvidence = (dateId: string) => { setSelectedEvidenceDate(dateId); setSelectedPoint(null); setSelectedWeekId(null); setForecastSelected(false); };
 
   useEffect(() => {
     if (!open) return;
@@ -178,35 +256,70 @@ export function TeamGantt({
     return () => window.cancelAnimationFrame(frame);
   }, [open, scrollToToday, zoom]);
 
+  useEffect(() => {
+    if (!open || !hasEvidence || selectedEvidenceDate || selectedPoint || selectedWeekId || forecastSelected) return;
+    setSelectedEvidenceDate(defaultEvidenceDate);
+  }, [defaultEvidenceDate, forecastSelected, hasEvidence, open, selectedEvidenceDate, selectedPoint, selectedWeekId]);
+
   return <>
     <section className="web-team-gantt-launch" aria-labelledby={`team-gantt-launch-${teamRole}`}>
       <div className="web-team-gantt-launch-visual" aria-hidden="true"><span /><span /><span /><span /><i /></div>
-      <div><span className="team-section-kicker">Workload calendar</span><h2 id={`team-gantt-launch-${teamRole}`}>See the week before you commit it</h2><p>Calendar context, approved workload signals, and a planning runway—without ranking people.</p></div>
+      <div><span className="team-section-kicker">{hasEvidence ? "Integrated workload calendar" : "Workload calendar"}</span><h2 id={`team-gantt-launch-${teamRole}`}>{hasEvidence ? "See the facts behind the week" : "See the week before you commit it"}</h2><p>{hasEvidence ? `Your private ${sourceLabels.calendar} and ${sourceLabels.chat} context sits beside team-approved workload summaries and a planning runway—without ranking people.` : "Calendar context, approved workload signals, and a planning runway—without ranking people."}</p></div>
       <button ref={launchRef} className="button button-primary" type="button" onClick={() => setOpen(true)}><CalendarRange aria-hidden="true" /> Open calendar <Maximize2 aria-hidden="true" /></button>
     </section>
 
     {open ? <div className="web-team-gantt-overlay" role="dialog" aria-modal="true" aria-labelledby="web-team-gantt-title" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
       <section ref={dialogRef} className="web-team-gantt-dialog">
         <header className="web-team-gantt-header">
-          <div><span className="team-section-kicker">{teamRole === "manager" ? "Team-wide approved signals" : "Your approved signals"} · through {anchorWeekId}</span><h2 id="web-team-gantt-title">Team workload calendar</h2><p>A real calendar for weekly evidence, with team-level workload analytics below.</p></div>
+          <div><span className="team-section-kicker">{hasEvidence ? "Your private evidence horizon · team-approved weekly summaries" : teamRole === "manager" ? "Team-wide approved signals" : "Your approved signals"} · through {anchorWeekId}</span><h2 id="web-team-gantt-title">Team workload calendar</h2><p>{hasEvidence ? `Your daily ${sourceLabels.calendar} and ${sourceLabels.chat} facts stay visible only to you. Team-approved weekly summaries remain the shared layer.` : "A real calendar for weekly evidence, with team-level workload analytics below."}</p></div>
           <div className="web-team-gantt-header-actions">
-            <button className="web-team-gantt-today" type="button" onClick={scrollToToday}><Crosshair aria-hidden="true" />Today</button>
-            <div className="web-team-gantt-zoom" role="group" aria-label="Calendar time scale">{ZOOM_LABELS.map(({ id, label }) => <button key={id} className={zoom === id ? "is-active" : ""} type="button" aria-pressed={zoom === id} onClick={() => { setZoom(id); setSelectedPoint(null); setSelectedWeekId(null); setForecastSelected(false); }}>{label}</button>)}</div>
+            <button className="web-team-gantt-today" type="button" onClick={() => { scrollToToday(); if (evidenceByDate.has(todayIso.slice(0, 10))) selectEvidence(todayIso.slice(0, 10)); }}><Crosshair aria-hidden="true" />Today</button>
+            <div className="web-team-gantt-zoom" role="group" aria-label="Calendar time scale">{ZOOM_LABELS.map(({ id, label }) => <button key={id} className={zoom === id ? "is-active" : ""} type="button" aria-pressed={zoom === id} onClick={() => { setZoom(id); setSelectedPoint(null); setSelectedEvidenceDate(null); setSelectedWeekId(null); setForecastSelected(false); }}>{label}</button>)}</div>
             <button ref={closeRef} className="web-team-gantt-close" type="button" aria-label="Close calendar" onClick={() => setOpen(false)}><X aria-hidden="true" /></button>
           </div>
         </header>
 
-        <div className="web-team-gantt-legend" role="group" aria-label="Calendar legend"><span><i className="is-observed" />Observed history</span><span><i className="is-today" />Today</span><span><i className="is-forecast" />Team forecast</span><span><i className="is-unknown" />Not shared</span><em>{calendar.todayIndex + 1} days through today · 7-day forecast window</em></div>
+        <div className="web-team-gantt-legend" role="group" aria-label="Calendar legend"><span><i className="is-observed" />Observed history</span>{hasEvidence ? <><span><i className="is-calendar" />Your {sourceLabels.calendar}</span><span><i className="is-chat" />Your {sourceLabels.chat} metadata</span><span><i className="is-reviewed" />Your reviewed fact</span></> : null}<span><i className="is-today" />Today</span><span><i className="is-forecast" />Team forecast</span><span><i className="is-unknown" />Not shared</span><em>{calendar.todayIndex + 1} days through today · 7-day forecast window</em></div>
 
         <div className="web-team-gantt-body">
           <main ref={scrollRef} className={`web-team-gantt-scroll is-${zoom}`} role="region" tabIndex={0} aria-label="Scrollable team workload calendar">
+            {hasEvidence ? <section className="web-team-gantt-flight-strip" aria-label="Your private connected workload evidence summary">
+              <div className="web-team-gantt-flight-intro"><span className="team-section-kicker">Your private evidence horizon</span><strong>{activePressureDays ? `${activePressureDays} pressure ${activePressureDays === 1 ? "day" : "days"} surfaced` : "A calm evidence horizon"}</strong><small>Select an active date to inspect your facts.</small></div>
+              <div className="web-team-gantt-flight-stat is-calendar"><CalendarDays aria-hidden="true" /><span><strong>{evidenceTotals.calendarEvents}</strong><small>{sourceLabels.calendar} events</small></span><em>{formatMinutes(evidenceTotals.calendarMinutes)}</em></div>
+              <div className="web-team-gantt-flight-stat is-chat"><MessageSquareText aria-hidden="true" /><span><strong>{evidenceTotals.chatEpisodes}</strong><small>{sourceLabels.chat} episodes</small></span><em>metadata only</em></div>
+              <div className="web-team-gantt-flight-stat is-reviewed"><CheckCircle2 aria-hidden="true" /><span><strong>{evidenceTotals.reviewedBlocks}</strong><small>Reviewed blocks</small></span><em>correctable truth</em></div>
+              <div className="web-team-gantt-flight-privacy"><LockKeyhole aria-hidden="true" /><span><strong>Private by design</strong><small>Daily facts never enter team sync</small></span></div>
+            </section> : null}
             <section className="web-team-gantt-calendar-panel" aria-labelledby="web-team-calendar-panel-title">
-              <div className="web-team-gantt-panel-heading"><div><span className="team-section-kicker"><CalendarDays aria-hidden="true" /> Calendar</span><h3 id="web-team-calendar-panel-title">Approved workload by week</h3></div><p>Summaries sit on their real ISO week. Daily cells provide context; they do not imply daily observation.</p></div>
+              <div className="web-team-gantt-panel-heading"><div><span className="team-section-kicker"><CalendarDays aria-hidden="true" /> {hasEvidence ? "Workload field" : "Calendar"}</span><h3 id="web-team-calendar-panel-title">{hasEvidence ? EVIDENCE_HORIZON_LABELS[zoom] : "Approved workload by week"}</h3></div><p>{hasEvidence ? <><strong>Daily:</strong> your private connected facts · <strong>Weekly:</strong> team-approved summaries</> : "Summaries sit on their real ISO week. Daily cells provide context; they do not imply daily observation."}</p></div>
               <div className="web-team-gantt-weekdays" aria-hidden="true">{WEEKDAY_LABELS.map((label) => <span key={label}>{label}</span>)}</div>
               <div className="web-team-gantt-calendar-weeks">
                 {weeks.map((week) => <article className={`web-team-gantt-calendar-week${week.hasToday ? " is-current" : ""}${week.hasForecast ? " has-forecast" : ""}`} key={week.weekId}>
                   <div className="web-team-gantt-calendar-days">
-                    {WEEKDAY_LABELS.map((weekdayLabel, index) => { const day = week.days[index]; return day ? <div className={`web-team-gantt-calendar-day is-${day.kind}${day.isWeekend ? " is-weekend" : ""}`} data-today-marker={day.kind === "today" ? "true" : undefined} key={day.dateId} title={day.dateId}><span>{day.monthLabel}</span><strong>{day.dayLabel}</strong>{day.kind === "today" ? <em>Today</em> : null}</div> : <div className="web-team-gantt-calendar-day is-outside" key={`${week.weekId}:${weekdayLabel}`} />; })}
+                    {WEEKDAY_LABELS.map((weekdayLabel, index) => {
+                      const day = week.days[index];
+                      if (!day) return <div className="web-team-gantt-calendar-day is-outside" key={`${week.weekId}:${weekdayLabel}`} />;
+                      if (!hasEvidence) return <div className={`web-team-gantt-calendar-day is-${day.kind}${day.isWeekend ? " is-weekend" : ""}`} data-today-marker={day.kind === "today" ? "true" : undefined} key={day.dateId} title={day.dateId}><span>{day.monthLabel}</span><strong>{day.dayLabel}</strong>{day.kind === "today" ? <em>Today</em> : null}</div>;
+                      const dayEvidence = evidenceByDate.get(day.dateId);
+                      return <button
+                        className={`web-team-gantt-calendar-day is-${day.kind}${day.isWeekend ? " is-weekend" : ""}${selectedEvidenceDate === day.dateId ? " is-selected" : ""}`}
+                        data-today-marker={day.kind === "today" ? "true" : undefined}
+                        disabled={!dayEvidence}
+                        key={day.dateId}
+                        onClick={() => dayEvidence && selectEvidence(day.dateId)}
+                        title={dayEvidence ? `Inspect connected facts for ${day.dateId}` : day.dateId}
+                        type="button"
+                      >
+                        <span>{day.monthLabel}</span><strong>{day.dayLabel}</strong>
+                        {dayEvidence ? <span className="web-team-gantt-day-facts" aria-label={`Your private facts: ${formatEvidenceCount(dayEvidence.calendarEventCount, `${sourceLabels.calendar} event`)}, ${formatEvidenceCount(dayEvidence.chatEpisodeCount, `${sourceLabels.chat} episode`)}, ${formatEvidenceCount(dayEvidence.reviewedBlockCount, "reviewed block")}`}>
+                          {dayEvidence.calendarEventCount > 0 ? <i className="is-calendar" title={`Your ${formatEvidenceCount(dayEvidence.calendarEventCount, `${sourceLabels.calendar} event`)}, ${formatMinutes(dayEvidence.calendarMinutes)}`}><CalendarDays aria-hidden="true" /><b>{dayEvidence.calendarEventCount}</b><small>{formatMinutes(dayEvidence.calendarMinutes)}</small></i> : null}
+                          {dayEvidence.chatEpisodeCount > 0 ? <i className="is-chat" title={`Your ${formatEvidenceCount(dayEvidence.chatEpisodeCount, `${sourceLabels.chat} metadata episode`)}`}><MessageSquareText aria-hidden="true" /><b>{dayEvidence.chatEpisodeCount}</b></i> : null}
+                          {dayEvidence.reviewedBlockCount > 0 ? <i className="is-reviewed" title={formatEvidenceCount(dayEvidence.reviewedBlockCount, "reviewed work block")}><CheckCircle2 aria-hidden="true" /><b>{dayEvidence.reviewedBlockCount}</b></i> : null}
+                        </span> : null}
+                        {dayEvidence?.insight ? <small className={`web-team-gantt-day-insight is-${dayEvidence.insight}`} title={evidenceInsightLabel(dayEvidence.insight) ?? undefined}><i />{evidenceInsightLabel(dayEvidence.insight)}</small> : null}
+                        {day.kind === "today" ? <em>Today</em> : null}
+                      </button>;
+                    })}
                   </div>
                   <div className="web-team-gantt-week-band">
                     <div className="web-team-gantt-week-meta"><strong>{week.weekId.replace("-", " ")}</strong><span>{weekRangeLabel(week)}</span></div>
@@ -221,6 +334,21 @@ export function TeamGantt({
               </div>
             </section>
 
+            {hasEvidence ? <section className="web-team-gantt-activity" aria-labelledby="web-team-connected-activity-title">
+              <div className="web-team-gantt-rhythm-heading"><div><span className="team-section-kicker"><MessageSquareText aria-hidden="true" /> Your evidence rhythm</span><h3 id="web-team-connected-activity-title">How your private horizon changes week to week</h3></div><div className="web-team-gantt-rhythm-key"><span className="is-calendar">{sourceLabels.calendar}</span><span className="is-chat">{sourceLabels.chat}</span></div></div>
+              <div className="web-team-gantt-activity-grid">
+                {weeklyEvidence.map((week) => {
+                  const firstEvidence = week.days[0];
+                  return <button className={`web-team-gantt-activity-week${week.pressureDays ? " has-pressure" : ""}`} data-anchor-week={week.weekId === anchorWeekId ? "true" : undefined} disabled={!firstEvidence} key={week.weekId} onClick={() => firstEvidence && selectEvidence(firstEvidence.dateId)} type="button">
+                    <span className="web-team-gantt-activity-week-label">{week.weekId.replace(/^\d{4}-/, "")}</span>
+                    <div className="web-team-gantt-activity-track is-calendar"><span style={{ width: `${(week.calendarMinutes / maxWeeklyCalendarMinutes) * 100}%` }} /><strong>{week.calendarEvents ? `${week.calendarEvents} cal · ${formatMinutes(week.calendarMinutes)}` : "No calendar fact"}</strong></div>
+                    <div className="web-team-gantt-activity-track is-chat"><span style={{ width: `${(week.chatEpisodes / maxWeeklyChatEpisodes) * 100}%` }} /><strong>{week.chatEpisodes ? `${week.chatEpisodes} ${sourceLabels.chat} episodes` : `No ${sourceLabels.chat} fact`}</strong></div>
+                    <small><CheckCircle2 aria-hidden="true" /> {week.reviewedBlocks} reviewed{week.pressureDays ? ` · ${week.pressureDays} pressure ${week.pressureDays === 1 ? "day" : "days"}` : ""}</small>
+                  </button>;
+                })}
+              </div>
+            </section> : null}
+
             <section className="web-team-gantt-runway" aria-labelledby="web-team-runway-title">
               <div className="web-team-gantt-panel-heading"><div><span className="team-section-kicker"><ChartNoAxesGantt aria-hidden="true" /> Analytics</span><h3 id="web-team-runway-title">Workload runway</h3></div><p>Team medians across approved summaries. Select a segment for evidence and coverage.</p></div>
               <div className="web-team-gantt-runway-scroll">
@@ -232,7 +360,7 @@ export function TeamGantt({
             </section>
           </main>
 
-          <aside className="web-team-gantt-detail" aria-live="polite"><CalendarInspector forecast={forecast} forecastSelected={forecastSelected} selectedPoint={selectedPoint} selectedWeek={selectedWeek} /></aside>
+          <aside className="web-team-gantt-detail" aria-live="polite"><CalendarInspector evidenceSources={sourceLabels} forecast={forecast} forecastSelected={forecastSelected} selectedEvidence={selectedEvidence} selectedPoint={selectedPoint} selectedWeek={selectedWeek} /></aside>
         </div>
       </section>
     </div> : null}

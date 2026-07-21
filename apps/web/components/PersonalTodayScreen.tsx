@@ -79,9 +79,11 @@ const COMMAND_ACTION = {
 function PersonalReviewBlock({
   block,
   command,
+  demoReadOnly = false,
 }: {
   block: PersonalReplicaBlockV1;
   command: ReviewCommandView | null;
+  demoReadOnly?: boolean;
 }) {
   const confidence = confidencePresentation(block.confidence);
   const status = command?.status ?? null;
@@ -117,6 +119,13 @@ function PersonalReviewBlock({
         </div>
       ) : null}
 
+      {demoReadOnly ? (
+        <div className="web-demo-review-fields" aria-label="Review fields shown without edit controls">
+          <div><span>Work category</span><strong>{block.category}</strong></div>
+          <div><span>Planned status</span><strong>{plannedStatusLabel(block.plannedStatus)}</strong></div>
+          <div><span>Work mode</span><strong>{block.mode}</strong></div>
+        </div>
+      ) : (
       <form action={queuePersonalReviewCommand} className="tag-grid web-review-relabel-form">
         <ReviewCommandFields block={block} action="relabel" />
         <label className="tag-field">
@@ -161,11 +170,18 @@ function PersonalReviewBlock({
           {status === "rejected" ? "Request relabel again" : "Request relabel"}
         </FormSubmitButton>
       </form>
+      )}
 
       <p className="web-review-private-note">
         Private project, stakeholder, and evidence details stay on your Mac.
       </p>
 
+      {demoReadOnly ? (
+        <div className="web-demo-review-receipt" role="note">
+          <span aria-hidden="true">✓</span>
+          <p><strong>Preview only</strong><small>Review requests are disabled in the local demo.</small></p>
+        </div>
+      ) : (
       <div className="block-actions">
         <form action={queuePersonalReviewCommand}>
           <ReviewCommandFields block={block} action="confirm" />
@@ -180,6 +196,7 @@ function PersonalReviewBlock({
           </FormSubmitButton>
         </form>
       </div>
+      )}
     </article>
   );
 }
@@ -189,11 +206,13 @@ export function PersonalTodayScreen({
   error,
   reviewCommands,
   reviewCommandsError,
+  demoReadOnly = false,
 }: {
   replicas: PersonalReplicaView[];
   error: string | null;
   reviewCommands: ReviewCommandView[];
   reviewCommandsError: string | null;
+  demoReadOnly?: boolean;
 }) {
   const current = replicas[0] ?? null;
   const blocks = current?.payload.blocks ?? [];
@@ -221,13 +240,15 @@ export function PersonalTodayScreen({
             {!current ? "No review-safe week connected." : heading}
           </h1>
           <p className="screen-subhead">
-            Confirm the obvious blocks, relabel the odd ones, or exclude anything sensitive. Web requests return to your Mac for approval.
+            {demoReadOnly
+              ? "Explore a realistic review queue with every edit and approval path safely disabled."
+              : "Confirm the obvious blocks, relabel the odd ones, or exclude anything sensitive. Web requests return to your Mac for approval."}
           </p>
         </div>
         {!error && !reviewCommandsError && current && reviewQueue.length > 0 ? (
           <div className="review-header-actions">
-            <span className="web-today-approval-chip">Approval required on Mac</span>
-            {eligibleConfirmTargets.length > 0 && !reviewCommandsError ? (
+            <span className="web-today-approval-chip">{demoReadOnly ? "Read-only preview" : "Approval required on Mac"}</span>
+            {!demoReadOnly && eligibleConfirmTargets.length > 0 && !reviewCommandsError ? (
               <form action={queuePersonalReviewConfirmBatch}>
                 <input
                   name="targets"
@@ -314,6 +335,7 @@ export function PersonalTodayScreen({
               {reviewQueue.map((block) => (
                 <PersonalReviewBlock
                   block={block}
+                  demoReadOnly={demoReadOnly}
                   command={reviewCommands.find((command) => (
                     command.blockId === block.blockId
                     && command.weekId === block.weekId

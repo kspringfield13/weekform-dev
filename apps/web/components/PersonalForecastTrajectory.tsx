@@ -147,7 +147,7 @@ export function PersonalForecastTrajectory({
                 onMouseEnter={() => setActiveSeries(series.key)}
                 onMouseLeave={() => setActiveSeries(null)}
               >
-                <title>{point.weekId}: {series.label} {pct(point[series.key] as number)}</title>
+                <title>{`${point.weekId}: ${series.label} ${pct(point[series.key] as number)}`}</title>
               </circle>
             ))}
             <text className="personal-forecast-axis-label" x={trajectoryX(index, trajectory.length)} y={TRAJECTORY_HEIGHT - 2} textAnchor="middle">{shortWeek(point.weekId)}</text>

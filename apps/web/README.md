@@ -47,7 +47,17 @@ cd apps/web
 npm install
 cp .env.example .env.local   # then fill in your Supabase values
 npm run dev                  # http://localhost:3000
+npm run demo                 # read-only synthetic workspace at /demo
 ```
+
+`npm run demo` sets the server-only `WEEKFORM_WEB_LOCAL_DEMO=1` flag. The
+`/demo` and `/demo/team` routes then render only on an exact `localhost` or
+`127.0.0.1` development host. They remain outside the protected route set and
+short-circuit Supabase session refresh only after that exact local gate passes;
+they do not create a Supabase client, persist review commands, or render in a
+production build. The fixture uses synthetic Apple Calendar and Slack inputs,
+reduces them through the real Team Calendar evidence model, and keeps provider
+identity out of the review-safe personal replica.
 
 Environment variables. Account, team, and workload pages use only the
 publishable URL/anon key plus the signed-in user's cookie session. Two optional
@@ -58,6 +68,7 @@ OAuth token broker. Neither secret is bundled into browser or desktop code.
 | --- | --- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase publishable (anon) key |
+| `WEEKFORM_WEB_LOCAL_DEMO` | Development only. Set to exactly `1` by `npm run demo`; rejected outside development and exact loopback hosts |
 | `WEEKFORM_ARTIFACT_BUCKET` | Optional. Private Supabase Storage bucket holding the official packaged Mac artifact |
 | `WEEKFORM_ARTIFACT_PATH` | Optional. Immutable object path within that bucket: `releases/stable/<sha256>/Weekform_0.1.0_universal.dmg` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Optional, **secret**. Used only in the server-owned official and beta artifact routes to mint short-lived signed URLs; never sent to the browser |
@@ -329,6 +340,13 @@ attestations true and for comparing the uploaded bytes with the checksum.
   (`2dc0b16f473b73521a3c52280471cfdbb9fe56de3b47138f8ee1f565123d3154`)
   matched the exact local Developer ID-signed beta DMG. The synthetic account
   and temporary auth/download state were deleted after verification.
+- On July 21, 2026, the canonical publisher verified the official universal
+  Mac release end to end. The private, authenticated download is `7,004,919`
+  bytes with SHA-256
+  `1c9e5e623dac1ea8f54d7d31a8c0c50b9f5ded3c86418f195885647525cc9c20`.
+  Both architectures, the hardened Developer ID signature, notarization,
+  staple, Gatekeeper acceptance, mounted-app acceptance, immutable private
+  upload, and candidate/canonical downloaded-byte equality passed.
 
 ## Known limitations
 
@@ -340,9 +358,9 @@ attestations true and for comparing the uploaded bytes with the checksum.
 - Invites are member-role only; manager-role invites, invite revocation UI,
   and role changes are not built yet (revocation is permitted by RLS but has
   no button).
-- The official "Download now" action remains unavailable until Developer ID
-  signing, Apple notarization, stapling, checksum recording, private hosting,
-  and a live downloaded-byte comparison are explicitly proven.
+- The local Web demo is synthetic and read-only. Its Apple Calendar and Slack
+  status cards do not claim a live Web connector or move provider records into
+  Team cloud; production Team pages continue to use approved aggregate data.
 - Sessions are standard Supabase cookie sessions; this is a prototype, not
   audited production auth.
 
@@ -350,6 +368,7 @@ attestations true and for comparing the uploaded bytes with the checksum.
 
 ```bash
 npm run dev        # local dev server
+npm run demo       # local-only, read-only synthetic Individual + Team demo
 npm run build      # production build (works without env vars)
 npm run start      # serve the production build
 npm run typecheck  # tsc --noEmit
@@ -361,5 +380,6 @@ From the repository root:
 npm run test:web   # node:test suite for the pure invite helpers (via tsx)
 npm run test:supabase:rls # executable local pgTAP authorization gate
 npm run verify:web:release # static tests + local RLS + production Web build
+npm run web:demo   # root shortcut for the local Next Web demo
 npm run web:build  # this workspace's production build
 ```

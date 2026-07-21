@@ -120,6 +120,11 @@ test("Web Forecast renders an accessible observed-baseline track record with an 
   assert.match(source, /<table\b/);
   assert.match(source, /aria-describedby=["']personal-forecast-trajectory-table["']/);
   assert.match(source, /id=["']personal-forecast-trajectory-table["']/);
+  assert.match(
+    trajectorySource,
+    /<title>\{`\$\{point\.weekId\}: \$\{series\.label\} \$\{pct\(/,
+    "SVG titles must be one text node so React does not warn during hydration",
+  );
   assert.doesNotMatch(
     source,
     /<span[^>]*>\s*(?:predicted|forecast)\s*<\/span>[\s\S]{0,300}<span[^>]*>\s*actual\s*<\/span>/i,

@@ -341,6 +341,16 @@ Weekform has no inbox connector and requests no inbox access. The public demo
 uses synthetic Calendar, Chat, roster, and summary data and performs no Team
 network request.
 
+The Next Web development workspace also has an explicit local demo at `/demo`
+and `/demo/team`. It is enabled only when a server-only development flag is set
+and the request uses an exact loopback host; production returns not found. The
+fixture creates synthetic Apple Calendar and Slack metadata, passes only daily
+counts/minutes and deterministic pressure labels through the Team Calendar
+evidence reducer, and publishes a separate provider-free personal replica.
+The route is read-only: it does not create an authenticated client, issue
+review commands, write local browser workload storage, or make Team network
+requests.
+
 ## AI and OpenAI/Codex Data
 
 OpenAI is Weekform's default and recommended AI provider. AI is optional and supports two distinct connection boundaries:

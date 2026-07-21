@@ -5,6 +5,7 @@
   "description": "weekform.dev — marketing, auth, and team onboarding surface for Weekform.",
   "scripts": {
     "dev": "next dev",
+    "demo": "WEEKFORM_WEB_LOCAL_DEMO=1 next dev --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"

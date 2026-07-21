@@ -26,6 +26,7 @@
     "web:typecheck": "npm --prefix apps/web run typecheck",
     "verify:web:release": "npm run web:typecheck && npm run test:web:static && npm run test:supabase:rls && npm run web:build",
     "web:dev": "npm --prefix apps/web run dev",
+    "web:demo": "npm --prefix apps/web run demo",
     "web:build": "npm --prefix apps/web run build",
     "validate:cloud": "npm run test:cloud && npm run web:build",
     "verify:cloud-web": "npm run test:desktop-cloud && npm run test:web && npm run web:build",

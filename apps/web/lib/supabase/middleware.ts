@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 
 import { isProtectedWebPath } from "../protectedPaths";
 import { buildContentSecurityPolicy } from "../securityPolicy";
+import { localWebDemoRequestEnabled } from "../localWebDemoGate";
 import { getSupabaseEnv } from "./config";
 
 const AUTH_REDIRECT_PAGES = ["/signup"];
@@ -39,6 +40,21 @@ export async function updateSession(request: NextRequest) {
   };
 
   let supabaseResponse = nextResponse();
+
+  // The explicit local demo is a synthetic, read-only surface. Preserve the
+  // security nonce/headers above, but do not refresh auth or contact Supabase.
+  // The page repeats this exact fail-closed gate before rendering any fixture.
+  if (
+    !isProtectedWebPath(request.nextUrl.pathname)
+    && localWebDemoRequestEnabled({
+      enabled: process.env.WEEKFORM_WEB_LOCAL_DEMO,
+      host: request.headers.get("host"),
+      nodeEnv: process.env.NODE_ENV,
+      pathname: request.nextUrl.pathname,
+    })
+  ) {
+    return supabaseResponse;
+  }
 
   const env = getSupabaseEnv();
   if (!env) {
