@@ -139,6 +139,16 @@ test("Individual Today and Week queue a prompt-free authenticated Start Tracking
   assert.match(individualShellSource, /<DesktopStartTrackingButton/);
   assert.match(startTrackingSource, /queueDesktopStartTracking/);
   assert.match(startTrackingSource, /useActionState/);
+  assert.match(startTrackingSource, /role="dialog"/);
+  assert.match(startTrackingSource, /aria-modal="true"/);
+  assert.match(startTrackingSource, /Tracking starts on your Mac/);
+  assert.match(startTrackingSource, /visual layer/);
+  assert.match(startTrackingSource, /the source/);
+  assert.match(
+    startTrackingSource,
+    /<MacAppLink[\s\S]*?fallbackHref="\/download"[\s\S]*?Download Weekform for Mac/,
+    "the explainer's primary action must be the shared prompt-free Download launcher",
+  );
   assert.match(individualShellSource, /Start Tracking/);
   assert.match(actionsSource, /request_desktop_start_tracking/);
   assert.match(actionsSource, /result === "no_device"[\s\S]*?redirect\("\/download"\)/);

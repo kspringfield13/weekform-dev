@@ -129,14 +129,20 @@ test("the Individual toolbar rotates quietly and respects reduced-motion prefere
   );
 });
 
-test("Start Tracking and the workspace switch share equal top and side gutters", () => {
+test("the workspace switch overlays the content frame without reserving a row", () => {
   const actionRow = rule(".web-workspace-mode-row");
 
-  assert.match(actionRow, /padding:\s*14px\s+14px\s+0\s*;/);
+  assert.match(actionRow, /height:\s*0\s*;/);
+  assert.match(actionRow, /padding:\s*0\s+14px\s*;/);
   assert.doesNotMatch(actionRow, /clamp\(/);
   assert.match(
     stylesSource,
-    /@media\s*\(max-width:\s*520px\)[\s\S]*?\.web-workspace-mode-row\s*\{[^}]*padding:\s*10px\s+10px\s+0\s*;/,
+    /@media\s*\(max-width:\s*520px\)[\s\S]*?\.web-workspace-mode-row\s*\{[^}]*padding:\s*0\s+10px\s*;/,
+  );
+  assert.match(
+    shellSource,
+    /web-sidebar-tracking[\s\S]*?<DesktopStartTrackingButton[\s\S]*?<\/div>\s*\)\s*: null\}\s*<div className="sidebar-intelligence">/,
+    "Start Tracking must sit in the sidebar directly above the Reliable capacity module",
   );
 });
 

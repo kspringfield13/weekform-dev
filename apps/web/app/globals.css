@@ -7102,12 +7102,13 @@ button.web-team-gantt-cell {
 .web-workspace-mode-row {
   position: sticky;
   z-index: 7;
-  top: 0;
+  top: 14px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   justify-content: flex-end;
-  padding: 14px 14px 0;
+  height: 0;
+  padding: 0 14px;
   pointer-events: none;
 }
 
@@ -7121,8 +7122,21 @@ button.web-team-gantt-cell {
 
 .web-start-tracking-form {
   position: relative;
-  margin-right: auto;
   pointer-events: auto;
+}
+
+.web-individual-app .web-sidebar-tracking {
+  display: grid;
+  margin-top: auto;
+}
+
+.web-individual-app .web-sidebar-tracking + .sidebar-intelligence {
+  margin-top: 0;
+}
+
+.web-sidebar-tracking .web-start-tracking-action {
+  width: 100%;
+  justify-content: center;
 }
 
 .web-start-tracking-action {
@@ -7163,6 +7177,88 @@ button.web-team-gantt-cell {
 .web-start-tracking-action svg {
   width: 16px;
   height: 16px;
+}
+
+.web-start-tracking-card {
+  width: min(520px, calc(100vw - 36px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  gap: 12px;
+}
+
+.web-start-tracking-roles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.web-start-tracking-roles > div {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 12px 13px;
+}
+
+.web-start-tracking-roles strong {
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.web-start-tracking-roles span {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.web-start-tracking-steps {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0 0 0 19px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.web-start-tracking-steps li::marker {
+  color: var(--text-subtle);
+  font-weight: 650;
+}
+
+.web-start-tracking-dialog-actions {
+  display: grid;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.web-start-tracking-dialog-actions form {
+  display: contents;
+}
+
+.web-start-tracking-dialog-actions .button {
+  width: 100%;
+  min-height: 42px;
+  justify-content: center;
+}
+
+.web-start-tracking-dialog-actions .web-start-tracking-download {
+  text-decoration: none;
+}
+
+.web-start-tracking-card .web-start-tracking-status {
+  position: static;
+  width: auto;
+  max-width: none;
+}
+
+@media (max-width: 560px) {
+  .web-start-tracking-roles {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .team-workspace-shell {
@@ -8803,6 +8899,8 @@ button.web-team-gantt-cell {
   }
   .web-individual-app .brand,
   .web-individual-app .sidebar-intelligence { display: none; }
+  .web-individual-app .web-sidebar-tracking { margin: 4px 0 0; }
+  .web-sidebar-tracking .web-start-tracking-action { width: max-content; min-height: 38px; }
   .web-individual-app .nav-list { display: flex; width: max-content; margin: 0; }
   .web-individual-app .nav-item { width: auto; min-height: 42px; grid-template-columns: auto; padding: 7px 12px; text-align: center; }
   .web-individual-app .nav-item.nav-item-settings { display: grid; }
@@ -9004,8 +9102,8 @@ button.web-team-gantt-cell {
   .web-toolbar-button { padding-inline: 8px; }
   .web-individual-app .workspace-shell { padding-inline: 12px; }
   .web-workspace-mode-row {
-    flex-wrap: wrap;
-    padding: 10px 10px 0;
+    top: 10px;
+    padding: 0 10px;
   }
   .web-start-tracking-action {
     min-height: 40px;

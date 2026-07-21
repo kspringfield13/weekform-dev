@@ -555,9 +555,13 @@ client `observed_at` and `source_updated_at` remain provenance and cannot win
 latest ordering through clock skew.
 
 In Individual mode, the Today and Week surfaces include a user-initiated
-**Start Tracking** control. The browser does not invoke the registered
-`weekform://` scheme, so this action never creates a browser-owned “Open
-Weekform.app?” confirmation. Instead, an authenticated server action calls the
+**Start Tracking** control. Activating it first opens an in-page explainer
+dialog stating that capture happens only in the Mac app while Web remains the
+review-safe visual layer; its primary action is ordinary navigation to the
+authenticated Download page. The browser does not invoke the registered
+`weekform://` scheme from this control, so it never creates a browser-owned
+“Open Weekform.app?” confirmation. The dialog’s explicit secondary action runs
+an authenticated server action that calls the
 fixed `request_desktop_start_tracking` RPC. The server selects only a recently
 reporting, unrevoked Mac registered to the signed-in account. It reports a
 recent confirmation only when that Mac has completed and durably journaled a

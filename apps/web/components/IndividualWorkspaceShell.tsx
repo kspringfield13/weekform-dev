@@ -494,6 +494,14 @@ export function IndividualWorkspaceShell({
             </span>
           </Link>
         )}
+        {!demoReadOnly && !teamWorkspace && (active === "today" || active === "week") ? (
+          <div className="web-sidebar-tracking">
+            <DesktopStartTrackingButton>
+              <StartTrackingIcon />
+              Start Tracking
+            </DesktopStartTrackingButton>
+          </div>
+        ) : null}
         <div className="sidebar-intelligence">
           <div className="side-metric-heading"><span>{teamWorkspace ? "Team signals" : "Reliable capacity"}</span><span aria-hidden="true">◌</span></div>
           <div className="side-metric-value">
@@ -553,12 +561,6 @@ export function IndividualWorkspaceShell({
         aria-hidden={mobileNavigationOpen ? true : undefined}
       >
         <div className="web-workspace-mode-row">
-          {!demoReadOnly && !teamWorkspace && (active === "today" || active === "week") ? (
-            <DesktopStartTrackingButton>
-              <StartTrackingIcon />
-              Start Tracking
-            </DesktopStartTrackingButton>
-          ) : null}
           <WorkspaceModeToggle
             individualHref={individualHref}
             teamAvailable={teamAvailable}
