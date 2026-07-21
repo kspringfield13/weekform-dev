@@ -823,8 +823,8 @@ async function ManagerView({
             <li><ShieldCheck aria-hidden="true" /> Raw activity, notes, screenshots, and window titles stay unavailable.</li>
           </ul>
           {!ownSnapshot ? (
-            <MacAppLink attemptAppOpen={desktopIdentified} className="button button-secondary team-open-desktop-action">
-              Open Weekform Desktop to review sharing
+            <MacAppLink className="button button-secondary team-open-desktop-action">
+              Get Weekform for Mac to review sharing
             </MacAppLink>
           ) : null}
         </aside>

@@ -323,6 +323,22 @@ the alignment QA.
   opens Account & Sharing without changing the current pause state; a missing
   app falls back to the authenticated download route. No raw activity or native
   permission moves into the browser.
+- **July 21 trusted Mac release and acquisition correction:** Apple accepted the
+  universal `Weekform_0.1.0_universal.dmg`; the final bytes are Developer ID
+  signed, notarized, stapled, Gatekeeper-accepted, checksum-bound, and privately
+  hosted for authenticated short-lived download. The normal `/download` surface
+  now shows the direct installer action and concise install/trust guidance while
+  hiding the source-build fallback whenever that trusted package is available.
+  Desktop-registration state no longer changes any acquisition CTA into an app
+  launch: header, hero, product-choice, closing, Team fallback, and download-page
+  controls all navigate normally. Only the explicitly operational **Start
+  Tracking** action may invoke `weekform://`. The correction was reproduced
+  red-first; 603/603 Web tests, 432 local RLS assertions, 82 Rust tests, release
+  script tests, root and optimized Web builds, and both zero-vulnerability
+  audits passed. Production deployment
+  `dpl_B4pZDYHLKcqDDfVVnEy1YqZDo5to` is Ready at `weekform.dev`; a fresh browser
+  click reaches `/login?next=%2Fdownload` with no protocol dialog, and the
+  unauthenticated artifact boundary remains a private no-store `401`.
 
 ### Layered Supabase sign-in
 
@@ -1015,24 +1031,25 @@ This task is supporting evidence for the public presentation only. It does not r
 
 ### Web acquisition handoff and Team-screen parity
 
-- **Date:** July 20, 2026
+- **Date:** July 20–21, 2026
 - **Outcome:** Codex corrected the public Mac acquisition path so Download for
-  Mac follows the authenticated latest-download page by default instead of
-  invoking the `weekform://` scheme. Native app opening and Start Tracking now
-  require both a signed-in account and an unrevoked registered desktop; lookup
-  absence or failure stays on `/download`. The authenticated Web Team route now
+  Mac always follows the authenticated latest-download page instead of invoking
+  the `weekform://` scheme. Only Start Tracking attempts the native handoff, and
+  it requires both a signed-in account and an unrevoked registered desktop;
+  lookup absence or failure stays on `/download`. The authenticated Web Team route now
   uses the Desktop Team screen's compact header, role and workspace controls,
   four-part evidence rail, asymmetric decision layout, 1180px content rail,
   and responsive one-column collapse for both manager and member views.
-- **Evidence:** The new behavior was reproduced red-first. The full Web suite
-  passes 577/577, focused acquisition and Team-parity contracts pass 16/16,
-  the optimized Next build and authoritative root build exit 0, and Vercel
-  production deployment `dpl_2nNsjdXw9odcSWfV37mgedZ32rDM` is Ready at
+- **Evidence:** The behavior was reproduced red-first and hardened again after
+  the trusted release exposed a registered-desktop regression. The full Web suite
+  passes 603/603, the optimized Next build and authoritative root build exit 0,
+  and Vercel production deployment `dpl_B4pZDYHLKcqDDfVVnEy1YqZDo5to` is Ready at
   `weekform.dev`. A fresh signed-out Mac browser replay follows Download for
   Mac to `/login?next=%2Fdownload` without invoking the custom protocol; `/app`
   and `/download` redirect to authentication, while `/download/artifact`
-  returns 401 without a session. Authenticated Team data and the registered-
-  desktop branch remain separate account-scoped verification surfaces.
+  returns 401 without a session. The download CTA no longer has a registered-
+  desktop branch; authenticated Team data remains a separate account-scoped
+  verification surface.
 
 ### End-user positioning and three-minute demo
 

@@ -237,18 +237,17 @@ test("download page keeps the Mac choice minimal and actionable", () => {
   );
 });
 
-test("pending Mac release offers Weekform Desktop beside Web", () => {
+test("pending Mac release offers an explicit source fallback beside Web", () => {
   const source = readFileSync(
     new URL("../app/download/page.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(
-    source,
-    /fallbackHref=\{releasePresentation\.kind === "pending"[\s\S]*\? "#source-install"/,
-  );
-  assert.match(source, /\? "Weekform Desktop"/);
-  assert.doesNotMatch(source, /GitHub ZIP|Install from source/i);
+  assert.match(source, /releasePresentation\.kind === "pending"\s*\?\s*\(/);
+  assert.match(source, /href="#source-install"/);
+  assert.match(source, /Install Weekform from source/);
+  assert.doesNotMatch(source, /fallbackHref=/);
+  assert.doesNotMatch(source, /GitHub ZIP/i);
   assert.match(source, /git clone --depth 1/);
   assert.match(source, /cd weekform-dev && bash start\.sh/);
   assert.match(source, /className="button button-secondary download-web-action"/);

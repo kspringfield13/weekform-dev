@@ -4,9 +4,7 @@ import { redirect } from "next/navigation";
 
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
-import { MacAppLink } from "@/components/MacAppLink";
 import { WeekformMark } from "@/components/WeekformMark";
-import { hasOwnRegisteredDesktop } from "@/lib/desktopPresence";
 import {
   RELEASE_INFO,
   getBetaReleasePresentation,
@@ -78,8 +76,6 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
     redirect("/login?next=/download");
   }
 
-  const desktopIdentified = await hasOwnRegisteredDesktop(supabase);
-
   const artifactConfig = parseArtifactConfig(process.env);
   const betaArtifactConfig = parseBetaArtifactConfig(process.env);
   const officialReleasePresentation = getReleasePresentation(artifactConfig);
@@ -132,25 +128,26 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
             </p>
 
             <div className="download-minimal-actions">
-              <MacAppLink
-                attemptAppOpen={desktopIdentified}
-                fallbackHref={releasePresentation.kind === "pending"
-                  ? "#source-install"
-                  : releasePresentation.action.href}
-                className="button button-primary download-primary-action"
-                aria-describedby={releasePresentation.kind === "beta"
-                  ? "download-beta-note"
-                  : undefined}
-              >
-                <DownloadGlyph />
-                <span>
-                  {desktopIdentified
-                    ? "Open Weekform Desktop"
-                    : releasePresentation.kind === "pending"
-                    ? "Weekform Desktop"
-                    : releasePresentation.action.label}
-                </span>
-              </MacAppLink>
+              {releasePresentation.kind === "pending" ? (
+                <a
+                  href="#source-install"
+                  className="button button-primary download-primary-action"
+                >
+                  <DownloadGlyph />
+                  <span>Install Weekform from source</span>
+                </a>
+              ) : (
+                <Link
+                  href={releasePresentation.action.href}
+                  className="button button-primary download-primary-action"
+                  aria-describedby={releasePresentation.kind === "beta"
+                    ? "download-beta-note"
+                    : "download-release-note"}
+                >
+                  <DownloadGlyph />
+                  <span>{releasePresentation.action.label}</span>
+                </Link>
+              )}
               <Link
                 href="/app"
                 className="button button-secondary download-web-action"
@@ -164,34 +161,41 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
                 {releasePresentation.disclosure}
               </p>
             ) : null}
+            {releasePresentation.kind === "available" ? (
+              <p id="download-release-note" className="download-minimal-note">
+                {releasePresentation.note}
+              </p>
+            ) : null}
           </div>
         </section>
 
-        <section
-          id="source-install"
-          className="download-source-install"
-          aria-labelledby="source-install-title"
-        >
-          <p className="download-section-label">Two commands</p>
-          <h2 id="source-install-title">Paste these two commands into Terminal.</h2>
-          <ol className="download-command-list">
-            <li>
-              <span>1</span>
-              <code>{SOURCE_CLONE_COMMAND}</code>
-            </li>
-            <li>
-              <span>2</span>
-              <code>{SOURCE_START_COMMAND}</code>
-            </li>
-          </ol>
-          <p className="download-minimal-note">
-            The guided setup builds, installs, and opens Weekform Desktop.
-          </p>
-          <div className="download-minimal-meta">
-            <span>{RELEASE_INFO.macOsRequirement}</span>
-            <a href={SOURCE_REPO_URL} className="text-link">View source</a>
-          </div>
-        </section>
+        {releasePresentation.kind === "pending" ? (
+          <section
+            id="source-install"
+            className="download-source-install"
+            aria-labelledby="source-install-title"
+          >
+            <p className="download-section-label">Two commands</p>
+            <h2 id="source-install-title">Paste these two commands into Terminal.</h2>
+            <ol className="download-command-list">
+              <li>
+                <span>1</span>
+                <code>{SOURCE_CLONE_COMMAND}</code>
+              </li>
+              <li>
+                <span>2</span>
+                <code>{SOURCE_START_COMMAND}</code>
+              </li>
+            </ol>
+            <p className="download-minimal-note">
+              The guided setup builds, installs, and opens Weekform Desktop.
+            </p>
+            <div className="download-minimal-meta">
+              <span>{RELEASE_INFO.macOsRequirement}</span>
+              <a href={SOURCE_REPO_URL} className="text-link">View source</a>
+            </div>
+          </section>
+        ) : null}
       </main>
       <SiteFooter />
     </>

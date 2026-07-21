@@ -11,6 +11,10 @@ const downloadSource = readFileSync(
   new URL("../app/download/page.tsx", import.meta.url),
   "utf8",
 );
+const headerSource = readFileSync(
+  new URL("../components/SiteHeader.tsx", import.meta.url),
+  "utf8",
+);
 const tauriConfig = JSON.parse(
   readFileSync(new URL("../../desktop/src-tauri/tauri.conf.json", import.meta.url), "utf8"),
 ) as {
@@ -41,7 +45,7 @@ const desktopAppSource = readFileSync(
   "utf8",
 );
 
-test("Mac download links navigate normally unless an authenticated desktop is identified", () => {
+test("Mac acquisition links always navigate normally without attempting a custom-protocol launch", () => {
   assert.equal(existsSync(launcherUrl), true);
   const source = existsSync(launcherUrl) ? readFileSync(launcherUrl, "utf8") : "";
 
@@ -63,9 +67,21 @@ test("Mac download links navigate normally unless an authenticated desktop is id
     Number(fallbackDelayValue.replaceAll("_", "")) >= 10_000,
     "Chrome's first-open confirmation needs enough time before download fallback",
   );
-  assert.match(landingSource, /attemptAppOpen=\{desktopIdentified\}/);
-  assert.match(downloadSource, /attemptAppOpen=\{desktopIdentified\}/);
-  assert.match(downloadSource, /desktopIdentified\s*\?\s*"Open Weekform Desktop"/);
+  assert.doesNotMatch(landingSource, /attemptAppOpen=/);
+  assert.doesNotMatch(downloadSource, /attemptAppOpen=/);
+  assert.doesNotMatch(headerSource, /attemptAppOpen=/);
+  assert.doesNotMatch(landingSource, /hasOwnRegisteredDesktop|desktopIdentified/);
+  assert.doesNotMatch(downloadSource, /hasOwnRegisteredDesktop|desktopIdentified/);
+  assert.doesNotMatch(headerSource, /"Open Mac App"/);
+  assert.doesNotMatch(downloadSource, /"Open Weekform Desktop"/);
+});
+
+test("the trusted package replaces source-build instructions when the official DMG is available", () => {
+  assert.match(
+    downloadSource,
+    /releasePresentation\.kind === "pending"\s*\?\s*\([\s\S]*id="source-install"[\s\S]*\)\s*:\s*null/,
+  );
+  assert.match(downloadSource, /href=\{releasePresentation\.action\.href\}/);
 });
 
 test("the packaged Mac app owns the Weekform scheme and focuses one existing instance", () => {

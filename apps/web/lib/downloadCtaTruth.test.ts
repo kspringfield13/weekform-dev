@@ -24,6 +24,7 @@ function tsxFiles(directory: URL): URL[] {
 test("every Web Mac CTA uses the shared prompt-free acquisition or explicit-action link", () => {
   const rawDownloadLinks: string[] = [];
   const launcherFiles: string[] = [];
+  const protocolAttemptFiles: string[] = [];
 
   for (const file of tsxFiles(webRoot)) {
     const source = readFileSync(file, "utf8");
@@ -34,10 +35,18 @@ test("every Web Mac CTA uses the shared prompt-free acquisition or explicit-acti
     if (relativePath !== "components/MacAppLink.tsx" && /<MacAppLink\b/.test(source)) {
       launcherFiles.push(relativePath);
     }
+    if (/attemptAppOpen=/.test(source)) {
+      protocolAttemptFiles.push(relativePath);
+    }
   }
 
   assert.deepEqual(rawDownloadLinks, []);
   assert.ok(launcherFiles.length >= 10, "Mac handoffs across marketing and the Web app must share the launcher");
+  assert.deepEqual(
+    protocolAttemptFiles,
+    ["components/IndividualWorkspaceShell.tsx"],
+    "only the explicit Start Tracking command may invoke the Weekform custom protocol",
+  );
 });
 
 test("every acquisition link retains the authenticated download page when the app is absent", () => {
