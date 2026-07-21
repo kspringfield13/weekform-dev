@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildTeamCalendar,
+  buildTeamCalendarWeeks,
   buildTeamTimelineCapacityForecast,
   buildTeamTimeline,
   teamTimelineCalendarDays,
@@ -118,17 +119,63 @@ test("Team calendar turns weekly snapshots into honest week-span bars without ex
   assert.equal(calendar.rows[1]?.bars[0]?.point.reviewedBlocks, 7);
 });
 
+test("Team calendar projects the rolling horizon into Monday-first visual week rows", () => {
+  const weeks = buildTeamCalendarWeeks(buildTeamCalendar(
+    points,
+    "2026-07-20T12:00:00.000Z",
+    "month",
+    [
+      { userId: "manager", displayName: "Morgan", isSelf: true },
+      { userId: "member", displayName: "Ari", isSelf: false },
+    ],
+  ));
+
+  assert.equal(weeks.length, 6);
+  assert.equal(weeks[0]?.weekId, "2026-W26");
+  assert.equal(weeks[0]?.days[0], null);
+  assert.equal(weeks[0]?.days[1]?.dateId, "2026-06-23");
+  assert.equal(weeks[4]?.days[0]?.kind, "today");
+  assert.equal(weeks[4]?.hasToday, true);
+  assert.equal(weeks[4]?.hasForecast, true);
+  assert.equal(weeks[5]?.days[0]?.kind, "forecast");
+});
+
+test("Team calendar week analytics use medians, preserve unknowns, and expose review coverage", () => {
+  const weeks = buildTeamCalendarWeeks(buildTeamCalendar(
+    points,
+    "2026-07-20T12:00:00.000Z",
+    "month",
+    [
+      { userId: "manager", displayName: "Morgan", isSelf: true },
+      { userId: "member", displayName: "Ari", isSelf: false },
+    ],
+  ));
+  const week29 = weeks.find((week) => week.weekId === "2026-W29");
+  const week28 = weeks.find((week) => week.weekId === "2026-W28");
+
+  assert.equal(week29?.sharedCount, 1);
+  assert.equal(week29?.reliableCapacityPct, 12);
+  assert.equal(week29?.reactivePct, 33);
+  assert.equal(week29?.fragmentedPct, null);
+  assert.equal(week29?.reviewedBlocks, 7);
+  assert.equal(week29?.eligibleBlocks, 8);
+  assert.equal(week28?.reliableCapacityPct, null);
+  assert.equal(week28?.sharedCount, 0);
+});
+
 test("Team calendar forecast uses team weekly medians and withholds low-coverage predictions", () => {
+  const baseline = points[0];
+  assert.ok(baseline);
   const current = points.concat([
     {
-      ...points[0]!,
+      ...baseline,
       userId: "member",
       displayName: "Ari",
       reliableCapacityPct: 42,
       syncedAt: "2026-07-20T19:00:00.000Z",
     },
     {
-      ...points[0]!,
+      ...baseline,
       weekId: "2026-W29",
       reliableCapacityPct: 32,
       syncedAt: "2026-07-13T19:00:00.000Z",

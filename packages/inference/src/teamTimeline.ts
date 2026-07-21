@@ -64,6 +64,21 @@ export interface TeamCalendar {
   forecastStartIndex: number;
 }
 
+export interface TeamCalendarWeek {
+  weekId: string;
+  days: Array<TeamCalendarDay | null>;
+  points: TeamTimelinePoint[];
+  sharedCount: number;
+  reviewedBlocks: number;
+  eligibleBlocks: number;
+  reliableCapacityPct: number | null;
+  reactivePct: number | null;
+  meetingPct: number | null;
+  fragmentedPct: number | null;
+  hasToday: boolean;
+  hasForecast: boolean;
+}
+
 export interface TeamTimelineCapacityForecast {
   verdict: "forecast" | "insufficient-shared-data" | "no-history";
   median: number | null;
@@ -222,6 +237,59 @@ function numericMedian(values: number[]): number | null {
   return sorted.length % 2 === 0
     ? ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2
     : (sorted[middle] as number);
+}
+
+function medianPointMetric(
+  points: TeamTimelinePoint[],
+  key: "reliableCapacityPct" | "reactivePct" | "meetingPct" | "fragmentedPct",
+): number | null {
+  return numericMedian(points.flatMap((point) => {
+    const value = point[key];
+    return typeof value === "number" && Number.isFinite(value) ? [value] : [];
+  }));
+}
+
+/**
+ * Convert the rolling horizon into Monday-first calendar rows and team-level
+ * weekly analytics. Metrics are medians of the latest approved member summary;
+ * missing values stay null and forecast days never become observations.
+ */
+export function buildTeamCalendarWeeks(calendar: TeamCalendar): TeamCalendarWeek[] {
+  const weeks: TeamCalendarWeek[] = [];
+  const weekById = new Map<string, TeamCalendarWeek>();
+
+  for (const day of calendar.days) {
+    let week = weekById.get(day.weekId);
+    if (!week) {
+      const points = calendar.rows.flatMap((row) => row.bars
+        .filter((bar) => bar.point.weekId === day.weekId)
+        .map((bar) => bar.point));
+      week = {
+        weekId: day.weekId,
+        days: Array<TeamCalendarDay | null>(7).fill(null),
+        points,
+        sharedCount: new Set(points.map((point) => point.userId)).size,
+        reviewedBlocks: points.reduce((total, point) => total + point.reviewedBlocks, 0),
+        eligibleBlocks: points.reduce((total, point) => total + point.eligibleBlocks, 0),
+        reliableCapacityPct: medianPointMetric(points, "reliableCapacityPct"),
+        reactivePct: medianPointMetric(points, "reactivePct"),
+        meetingPct: medianPointMetric(points, "meetingPct"),
+        fragmentedPct: medianPointMetric(points, "fragmentedPct"),
+        hasToday: false,
+        hasForecast: false,
+      };
+      weekById.set(day.weekId, week);
+      weeks.push(week);
+    }
+    const parsed = parseIsoDay(day.dateId);
+    if (!parsed) continue;
+    const mondayFirstIndex = (parsed.getUTCDay() + 6) % 7;
+    week.days[mondayFirstIndex] = day;
+    week.hasToday ||= day.kind === "today";
+    week.hasForecast ||= day.kind === "forecast";
+  }
+
+  return weeks;
 }
 
 /**

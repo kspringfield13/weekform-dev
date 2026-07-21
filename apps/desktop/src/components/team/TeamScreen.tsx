@@ -408,7 +408,7 @@ export function TeamScreen({
           anchorWeekId={timelineAnchorWeek}
           identities={timelineIdentities}
           points={timelinePoints}
-          role={manager ? "manager" : "member"}
+          teamRole={manager ? "manager" : "member"}
         />
       )}
     </section>

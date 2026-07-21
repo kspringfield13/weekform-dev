@@ -111,7 +111,9 @@ test("members and managers get an explorable real-snapshot Gantt horizon", () =>
   assert.match(teamGanttSource, /Observed history/);
   assert.match(teamGanttSource, /Today/);
   assert.match(teamGanttSource, /Team forecast/);
-  assert.match(teamGanttSource, /team-gantt-day/);
+  assert.match(teamGanttSource, /web-team-gantt-calendar-week/);
+  assert.match(teamGanttSource, /Workload runway/);
+  assert.match(teamGanttSource, /Reliable capacity[\s\S]*Reactive load[\s\S]*Meetings[\s\S]*Fragmented work/);
   assert.match(teamPageSource, /forecast=\{forecast\}/);
 });
 

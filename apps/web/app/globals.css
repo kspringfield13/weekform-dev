@@ -8811,3 +8811,132 @@ button.web-team-gantt-cell {
     padding-inline: 10px;
   }
 }
+
+/* Team workload calendar: responsive calendar matrix and Gantt-like analytics runway. */
+.web-team-gantt-overlay { padding: clamp(8px, 1.4vw, 20px); }
+.web-team-gantt-dialog { container-type: inline-size; width: min(1680px, 100%); grid-template-rows: auto auto minmax(0, 1fr); }
+.web-team-gantt-header { align-items: center; padding: clamp(16px, 1.6vw, 23px) clamp(17px, 2vw, 29px); }
+.web-team-gantt-header h2 { font-size: clamp(21px, 1.7vw, 28px); letter-spacing: -.025em; }
+.web-team-gantt-header p { max-width: 660px; font-size: 11px; }
+.web-team-gantt-zoom { padding: 3px; }
+.web-team-gantt-zoom button { min-height: 33px; padding: 0 clamp(10px, 1vw, 15px); }
+.web-team-gantt-zoom button:focus-visible,
+.web-team-gantt-today:focus-visible,
+.web-team-gantt-close:focus-visible,
+.web-team-gantt-week-event:focus-visible,
+.web-team-gantt-runway-cell:focus-visible { outline: 2px solid var(--decision); outline-offset: 2px; }
+
+.web-team-gantt-body { grid-template-columns: minmax(0, 1fr) clamp(270px, 20cqw, 344px); background: color-mix(in srgb, var(--background-subtle) 70%, var(--background)); }
+.web-team-gantt-scroll { display: block; overflow: auto; padding: clamp(12px, 1.5vw, 22px); scroll-behavior: smooth; }
+.web-team-gantt-runway { margin-top: clamp(14px, 1.5vw, 22px); }
+.web-team-gantt-calendar-panel,
+.web-team-gantt-runway { overflow: hidden; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--surface); box-shadow: 0 14px 38px color-mix(in srgb, #000 8%, transparent); }
+.web-team-gantt-panel-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 15px 17px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface-elevated) 94%, var(--decision-soft)); }
+.web-team-gantt-panel-heading > div { min-width: 0; }
+.web-team-gantt-panel-heading .team-section-kicker { display: inline-flex; align-items: center; gap: 6px; }
+.web-team-gantt-panel-heading .team-section-kicker svg { width: 13px; height: 13px; }
+.web-team-gantt-panel-heading h3 { margin: 5px 0 0; font-size: clamp(15px, 1.25vw, 19px); letter-spacing: -.02em; }
+.web-team-gantt-panel-heading p { max-width: 510px; margin: 0; color: var(--text-subtle); font-size: 9px; line-height: 1.45; text-align: right; }
+
+.web-team-gantt-weekdays,
+.web-team-gantt-calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.web-team-gantt-weekdays { position: sticky; z-index: 7; top: -1px; border-bottom: 1px solid var(--border-strong); background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(12px); }
+.web-team-gantt-weekdays span { padding: 9px 10px; border-right: 1px solid var(--border); color: var(--text-subtle); font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 8px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.web-team-gantt-weekdays span:last-child { border-right: 0; }
+.web-team-gantt-calendar-week { position: relative; border-bottom: 1px solid var(--border-strong); background: var(--surface); }
+.web-team-gantt-calendar-week:last-child { border-bottom: 0; }
+.web-team-gantt-calendar-week.is-current { box-shadow: inset 3px 0 0 var(--warning); }
+.web-team-gantt-calendar-day { position: relative; display: grid; grid-template-columns: auto 1fr; align-content: start; gap: 2px 6px; min-height: clamp(60px, 6.4vw, 90px); padding: 8px 10px; overflow: hidden; border-right: 1px solid var(--border); color: var(--text-muted); background: var(--background-subtle); }
+.web-team-gantt-calendar-day:last-child { border-right: 0; }
+.web-team-gantt-calendar-day.is-weekend { background: color-mix(in srgb, var(--surface-muted) 72%, var(--background-subtle)); }
+.web-team-gantt-calendar-day.is-forecast { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--decision) 6%, transparent) 0 5px, transparent 5px 10px), var(--background-subtle); }
+.web-team-gantt-calendar-day.is-outside { background: color-mix(in srgb, var(--background) 70%, var(--surface-muted)); }
+.web-team-gantt-calendar-day > span { color: var(--text-subtle); font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 7px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.web-team-gantt-calendar-day > strong { justify-self: end; color: var(--text-muted); font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 11px; }
+.web-team-gantt-calendar-day > em { grid-column: 1 / -1; align-self: end; justify-self: start; margin-top: auto; padding: 3px 6px; border-radius: 999px; color: var(--warning); background: color-mix(in srgb, var(--warning) 11%, transparent); font-size: 7px; font-style: normal; font-weight: 700; text-transform: uppercase; }
+.web-team-gantt-calendar-day.is-today { color: var(--warning); background: linear-gradient(180deg, color-mix(in srgb, var(--warning) 10%, var(--surface)), color-mix(in srgb, var(--warning) 4%, var(--background-subtle))); }
+.web-team-gantt-calendar-day.is-today > strong { color: var(--warning); }
+.web-team-gantt-calendar-day.is-today::after { position: absolute; z-index: 5; top: 0; right: -1px; bottom: -64px; width: 2px; background: var(--warning); box-shadow: 0 0 12px color-mix(in srgb, var(--warning) 35%, transparent); content: ""; pointer-events: none; }
+
+.web-team-gantt-week-band { display: grid; grid-template-columns: clamp(108px, 11vw, 148px) minmax(0, 1fr); min-height: 56px; border-top: 1px solid var(--border); background: var(--surface); }
+.web-team-gantt-week-meta { display: grid; align-content: center; gap: 3px; padding: 9px 11px; border-right: 1px solid var(--border); }
+.web-team-gantt-week-meta strong { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 9px; }
+.web-team-gantt-week-meta span,
+.web-team-gantt-week-empty,
+.web-team-gantt-event-overflow { color: var(--text-subtle); font-size: 8px; }
+.web-team-gantt-week-events { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 7px; overflow-x: auto; }
+.web-team-gantt-week-event { position: relative; display: grid; grid-template-columns: minmax(60px, 1fr) auto; gap: 2px 8px; min-width: 154px; max-width: 220px; min-height: 40px; padding: 6px 8px 6px 10px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--decision) 31%, var(--border)); border-radius: 9px; color: var(--text); background: color-mix(in srgb, var(--decision) 7%, var(--surface-elevated)); text-align: left; }
+.web-team-gantt-week-event::before { position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--decision); content: ""; }
+.web-team-gantt-week-event > span { overflow: hidden; color: var(--text-muted); font-size: 9px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.web-team-gantt-week-event > strong { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 10px; }
+.web-team-gantt-week-event > small { grid-column: 1 / -1; color: var(--text-subtle); font-size: 7px; }
+.web-team-gantt-week-event:hover,
+.web-team-gantt-week-event.is-selected { border-color: var(--decision); background: color-mix(in srgb, var(--decision) 13%, var(--surface-elevated)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--decision) 20%, transparent); }
+.web-team-gantt-week-event.is-forecast { min-width: 196px; border-style: dashed; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--decision) 8%, transparent) 0 5px, transparent 5px 10px), var(--surface-elevated); }
+.web-team-gantt-week-event.is-forecast > span { display: inline-flex; align-items: center; gap: 5px; color: var(--decision-ink); }
+.web-team-gantt-week-event.is-forecast svg { width: 12px; height: 12px; }
+.web-team-gantt-week-empty { align-self: center; padding: 0 8px; }
+.web-team-gantt-week-empty.is-forecast { padding: 7px 9px; border: 1px dashed var(--border-strong); border-radius: 7px; }
+.web-team-gantt-scroll.is-quarter .web-team-gantt-calendar-day { min-height: 45px; padding: 6px 8px; }
+.web-team-gantt-scroll.is-quarter .web-team-gantt-calendar-day > em { display: none; }
+.web-team-gantt-scroll.is-quarter .web-team-gantt-week-band { min-height: 45px; }
+.web-team-gantt-scroll.is-quarter .web-team-gantt-week-event { min-height: 33px; }
+
+.web-team-gantt-runway-scroll { overflow-x: auto; overscroll-behavior-inline: contain; }
+.web-team-gantt-runway-grid { display: grid; min-width: max-content; }
+.web-team-gantt-runway-corner,
+.web-team-gantt-runway-week { min-height: 46px; padding: 8px 10px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border-strong); background: var(--surface-elevated); }
+.web-team-gantt-runway-corner { position: sticky; z-index: 4; left: 0; display: grid; align-content: center; color: var(--text-subtle); font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 8px; letter-spacing: .06em; text-transform: uppercase; }
+.web-team-gantt-runway-week { display: grid; align-content: center; gap: 2px; color: var(--text-muted); }
+.web-team-gantt-runway-week strong { font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 9px; }
+.web-team-gantt-runway-week span { overflow: hidden; color: var(--text-subtle); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.web-team-gantt-runway-week.is-current { color: var(--warning); background: color-mix(in srgb, var(--warning) 7%, var(--surface-elevated)); }
+.web-team-gantt-runway-row { --lane: var(--decision); display: grid; grid-column: 1 / -1; }
+.web-team-gantt-runway-row.is-reactive { --lane: var(--warning); }
+.web-team-gantt-runway-row.is-meetings { --lane: var(--text-muted); }
+.web-team-gantt-runway-row.is-fragmented { --lane: color-mix(in srgb, var(--warning) 55%, var(--decision)); }
+.web-team-gantt-runway-label { position: sticky; z-index: 3; left: 0; display: grid; align-content: center; gap: 2px; min-height: 52px; padding: 8px 10px; border-right: 1px solid var(--border-strong); border-bottom: 1px solid var(--border); background: var(--surface); }
+.web-team-gantt-runway-label span { font-size: 9px; font-weight: 650; }
+.web-team-gantt-runway-label small { color: var(--text-subtle); font-size: 7px; }
+.web-team-gantt-runway-cell { position: relative; display: grid; place-items: center end; min-height: 52px; padding: 8px; overflow: hidden; border: 0; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); color: var(--text); background: var(--background-subtle); }
+.web-team-gantt-runway-cell > span { position: absolute; inset: 9px auto 9px 0; min-width: 2px; border-radius: 0 5px 5px 0; background: color-mix(in srgb, var(--lane) 24%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lane) 28%, transparent); transition: width 180ms ease; }
+.web-team-gantt-runway-cell > strong { position: relative; z-index: 1; font-family: "Geist Mono Variable", ui-monospace, monospace; font-size: 9px; }
+.web-team-gantt-runway-cell:hover,
+.web-team-gantt-runway-cell.is-selected { background: color-mix(in srgb, var(--lane) 9%, var(--surface-elevated)); box-shadow: inset 0 0 0 1px var(--lane); }
+.web-team-gantt-runway-cell.is-empty { place-items: center; color: var(--text-subtle); }
+.web-team-gantt-runway-cell.is-empty > span { display: none; }
+.web-team-gantt-runway-cell.is-empty > strong { max-width: 66px; overflow: hidden; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+.web-team-gantt-runway-cell.is-forecast { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--decision) 7%, transparent) 0 5px, transparent 5px 10px), var(--background-subtle); }
+
+.web-team-gantt-detail { padding: clamp(19px, 2cqw, 29px); overflow: auto; background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 96%, var(--decision-soft)), var(--surface)); }
+.web-team-gantt-detail > svg { width: 25px; height: 25px; color: var(--decision); }
+
+@container (max-width: 1080px) {
+  .web-team-gantt-body { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+  .web-team-gantt-detail { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; max-height: 235px; border-top: 1px solid var(--border-strong); border-left: 0; }
+  .web-team-gantt-detail > .team-section-kicker,
+  .web-team-gantt-detail > h3,
+  .web-team-gantt-detail > svg { grid-column: 1; }
+  .web-team-gantt-detail > dl { grid-column: 2; grid-row: 1 / span 4; margin-top: 0; }
+  .web-team-gantt-detail > p,
+  .web-team-gantt-detail > .web-team-gantt-trust { grid-column: 1; }
+}
+
+@container (max-width: 760px) {
+  .web-team-gantt-header { align-items: stretch; flex-direction: column; }
+  .web-team-gantt-header-actions { justify-content: space-between; }
+  .web-team-gantt-legend { overflow-x: auto; }
+  .web-team-gantt-legend em { display: none; }
+  .web-team-gantt-panel-heading { align-items: start; flex-direction: column; gap: 6px; }
+  .web-team-gantt-panel-heading p { max-width: none; text-align: left; }
+  .web-team-gantt-calendar-day { min-height: 55px; padding: 7px; }
+  .web-team-gantt-calendar-day > span { display: none; }
+  .web-team-gantt-week-band { grid-template-columns: 94px minmax(0, 1fr); }
+  .web-team-gantt-week-event { min-width: 142px; }
+  .web-team-gantt-detail { display: block; max-height: 225px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-team-gantt-runway-cell > span { transition: none; }
+  .web-team-gantt-scroll { scroll-behavior: auto; }
+}

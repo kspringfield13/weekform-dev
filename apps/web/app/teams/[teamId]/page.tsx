@@ -643,7 +643,7 @@ async function MemberView({
           anchorWeekId={history.reduce((latest, point) => point.weekId > latest ? point.weekId : latest, own?.weekId ?? currentIsoWeekId())}
           history={history}
           identities={[{ userId: viewerId, name: "You" }]}
-          role="member"
+          teamRole="member"
           todayIso={nowIso}
           viewerId={viewerId}
         />
@@ -939,7 +939,7 @@ async function ManagerView({
           forecast={forecast}
           history={history}
           identities={timelineIdentities}
-          role="manager"
+          teamRole="manager"
           todayIso={nowIso}
           viewerId={viewerId}
         />

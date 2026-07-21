@@ -56,7 +56,9 @@ test("Desktop Team exposes a real-data workload Gantt for members and managers",
   assert.match(teamGantt, /Observed history/);
   assert.match(teamGantt, /Today/);
   assert.match(teamGantt, /Forecast window/);
-  assert.match(teamGantt, /team-gantt-day/);
+  assert.match(teamGantt, /team-gantt-calendar-week/);
+  assert.match(teamGantt, /Workload runway/);
+  assert.match(teamGantt, /Reliable capacity[\s\S]*Reactive load[\s\S]*Meetings[\s\S]*Fragmented work/);
 });
 
 test("Manager mode keeps the desktop shell and changes context rather than layout", () => {
