@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UserRound, Waypoints } from "lucide-react";
 
 interface WorkspaceModeToggleProps {
   teamHref: string;
@@ -21,7 +22,7 @@ export function WorkspaceModeToggle({
         href={individualHref}
         aria-current={mode === "individual" ? "page" : undefined}
       >
-        <span aria-hidden="true">●</span>
+        <UserRound aria-hidden="true" />
         Individual
       </Link>
       {teamAvailable ? (
@@ -29,12 +30,12 @@ export function WorkspaceModeToggle({
           href={teamHref}
           aria-current={mode === "manager" || mode === "team" ? "page" : undefined}
         >
-          <span aria-hidden="true">●●</span>
+          <Waypoints aria-hidden="true" />
           {teamLabel}
         </Link>
       ) : (
         <span aria-disabled="true" title="Team mode requires an active team membership">
-          <span aria-hidden="true">●●</span>
+          <Waypoints aria-hidden="true" />
           {teamLabel}
         </span>
       )}

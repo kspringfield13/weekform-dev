@@ -8,6 +8,9 @@ import {
   getAdminPortalPreferencesStorage,
   getManagerAccessSignInUrl,
   getManagerModeMemberships,
+  getTeamWorkspaceMemberships,
+  isTeamWorkspaceAvailable,
+  resolveTeamWorkspaceMembership,
   LOCAL_ADMIN_PORTAL_PREFERENCES_KEY,
   LOCAL_ADMIN_PORTAL_SESSION_KEY,
   readAdminPortalPreferences,
@@ -36,6 +39,33 @@ test("Manager Access compares at most six individual contributors", () => {
   const selected = ["a", "b", "c", "d", "e", "f"];
   assert.equal(MAX_MANAGER_COMPARISONS, 6);
   assert.deepEqual(toggleManagerComparison(selected, "g"), selected);
+});
+
+test("Team workspace is available to every active team member, not only managers", () => {
+  const memberships = [
+    { teamId: "team-member", teamName: "Research", role: "member" as const, sharePolicy: null },
+    { teamId: "team-manager", teamName: "Delivery", role: "manager" as const, sharePolicy: null },
+  ];
+
+  assert.deepEqual(getTeamWorkspaceMemberships(memberships), memberships);
+  assert.equal(
+    resolveTeamWorkspaceMembership(memberships, "team-member")?.role,
+    "member",
+  );
+  assert.equal(
+    resolveTeamWorkspaceMembership(memberships, "missing")?.teamId,
+    "team-member",
+  );
+});
+
+test("Team navigation is hidden unless a signed-in account has membership or enabled sharing", () => {
+  assert.equal(isTeamWorkspaceAvailable(false, [], false, null), false);
+  assert.equal(isTeamWorkspaceAvailable(true, [], false, null), false);
+  assert.equal(isTeamWorkspaceAvailable(true, [
+    { teamId: "team-1", teamName: "Research", role: "member", sharePolicy: null },
+  ], false, null), true);
+  assert.equal(isTeamWorkspaceAvailable(true, [], true, "team-1"), true);
+  assert.equal(isTeamWorkspaceAvailable(false, [], true, "team-1"), false);
 });
 
 test("Manager Access comparison toggles members without disturbing selection order", () => {

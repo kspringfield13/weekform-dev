@@ -6,7 +6,7 @@ import {
   Radio,
   Gauge,
   ChevronLeft,
-  UsersRound,
+  Waypoints,
   Play,
   Presentation,
   LogOut,
@@ -46,8 +46,8 @@ export function AppShell({
   showTrackingReminder,
   toasts,
   onDismissToast,
-  managerAccessAvailable,
-  onOpenManagerAccess,
+  teamAvailable,
+  teamRole,
   children
 }: {
   active: Screen;
@@ -71,8 +71,8 @@ export function AppShell({
   showTrackingReminder: boolean;
   toasts: Toast[];
   onDismissToast: (id: string) => void;
-  managerAccessAvailable: boolean;
-  onOpenManagerAccess: () => void;
+  teamAvailable: boolean;
+  teamRole: "owner" | "manager" | "member" | null;
   children: ReactNode;
 }) {
   // Context navigation is shown inside the page column when a primary section
@@ -151,16 +151,17 @@ export function AppShell({
             );
           })}
         </nav>
-        {managerAccessAvailable && (
+        {teamAvailable && (
           <button
-            className="nav-item manager-access-entry"
-            onClick={onOpenManagerAccess}
+            className={`nav-item manager-access-entry${active === "team" ? " is-active" : ""}`}
+            onClick={() => setActive("team")}
+            aria-current={active === "team" ? "page" : undefined}
             type="button"
           >
-            <UsersRound size={18} aria-hidden />
+            <Waypoints size={18} aria-hidden />
             <span>
-              <strong>Manager Access</strong>
-              <small>Approved team signals</small>
+              <strong>Team</strong>
+              <small>{teamRole === "member" ? "Membership and sharing" : "Workload and coordination"}</small>
             </span>
           </button>
         )}

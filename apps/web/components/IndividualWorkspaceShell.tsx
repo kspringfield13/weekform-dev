@@ -128,6 +128,18 @@ function StartTrackingIcon() {
   );
 }
 
+function ManagerWindowIcon() {
+  return (
+    <svg className="web-window-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="5" cy="12" r="2" />
+      <circle cx="12" cy="5" r="2" />
+      <circle cx="19" cy="12" r="2" />
+      <path d="M6.7 10.9 10.3 6.2M13.7 6.2l3.6 4.7M7 12h10" />
+      <path d="M12 14v6" />
+    </svg>
+  );
+}
+
 export function IndividualWorkspaceShell({
   children,
   greetingName,
@@ -150,7 +162,7 @@ export function IndividualWorkspaceShell({
   teamAvailable: boolean;
   teamHref: string;
   teamRole?: "member" | "manager" | "owner";
-  workspaceMode?: "individual" | "manager";
+  workspaceMode?: "individual" | "manager" | "team";
   accountActions: ReactNode;
   initialScreen: string | undefined;
   initialWindowSurface: WebWindowSurface;
@@ -172,7 +184,10 @@ export function IndividualWorkspaceShell({
   const activeRoute = { destination: active, subview: activeSubview } satisfies IndividualWorkspaceRoute;
   const individualHref = workspaceHref("/app", activeRoute);
   const activeTeamHref = workspaceHref(teamHref, activeRoute);
+  const teamDestinationHref = teamHref;
   const managerWorkspace = workspaceMode === "manager";
+  const memberTeamWorkspace = workspaceMode === "team";
+  const teamWorkspace = managerWorkspace || memberTeamWorkspace;
   const teamModeLabel = teamRole === "member" ? "Team" : "Manager mode";
 
   const closeMobileNavigation = () => {
@@ -273,6 +288,10 @@ export function IndividualWorkspaceShell({
   };
 
   const navigateToRoute = (route: IndividualWorkspaceRoute) => {
+    if (memberTeamWorkspace) {
+      window.location.assign(workspaceHref("/app", route));
+      return;
+    }
     setActive(route.destination);
     setActiveSubview(route.subview);
     pushWorkspaceRoute(route);
@@ -298,7 +317,7 @@ export function IndividualWorkspaceShell({
     return () => window.removeEventListener("keydown", handlePrimaryShortcut);
   });
 
-  const baseContextViews = managerWorkspace ? [] : (CONTEXT_VIEWS[active] ?? []);
+  const baseContextViews = teamWorkspace ? [] : (CONTEXT_VIEWS[active] ?? []);
   const contextViews = active === "history" && activeSubview === "sensitive"
     ? [...baseContextViews, { id: "sensitive" as const, label: "Flagged" }]
     : baseContextViews;
@@ -384,11 +403,11 @@ export function IndividualWorkspaceShell({
         aria-hidden={mobileNavigationOpen ? true : undefined}
       >
         <div className="web-toolbar-title">
-          <strong>{managerWorkspace ? "Your team, ready to coordinate" : "Your week, ready to review"}</strong>
-          <span>{managerWorkspace ? "Member-approved signals only" : "Private evidence stays on your Mac"}</span>
+          <strong>{managerWorkspace ? "Your team, ready to coordinate" : memberTeamWorkspace ? "Your team connection" : "Your week, ready to review"}</strong>
+          <span>{teamWorkspace ? "Member-approved signals only" : "Private evidence stays on your Mac"}</span>
         </div>
         <div className="web-toolbar-state" role="status">
-          <i aria-hidden="true" /> {managerWorkspace ? "Synced team summaries" : "API-connected · no workload cache"}
+          {managerWorkspace ? <ManagerWindowIcon /> : <i aria-hidden="true" />} {managerWorkspace ? "Manager · synced summaries" : memberTeamWorkspace ? "Team member · your data only" : "API-connected · no workload cache"}
         </div>
         <div className="web-toolbar-actions">
           <div
@@ -476,9 +495,9 @@ export function IndividualWorkspaceShell({
         </nav>
         {teamAvailable && (
           <Link
-            className={`nav-item team-access-entry${managerWorkspace ? " is-active" : ""}`}
-            href={activeTeamHref}
-            aria-current={managerWorkspace ? "page" : undefined}
+            className={`nav-item team-access-entry${teamWorkspace ? " is-active" : ""}`}
+            href={teamDestinationHref}
+            aria-current={teamWorkspace ? "page" : undefined}
             onClick={closeMobileNavigation}
           >
             <NavIcon id="manager" />
@@ -489,15 +508,15 @@ export function IndividualWorkspaceShell({
           </Link>
         )}
         <div className="sidebar-intelligence">
-          <div className="side-metric-heading"><span>{managerWorkspace ? "Team signals" : "Reliable capacity"}</span><span aria-hidden="true">◌</span></div>
+          <div className="side-metric-heading"><span>{teamWorkspace ? "Team signals" : "Reliable capacity"}</span><span aria-hidden="true">◌</span></div>
           <div className="side-metric-value">
             <strong>{reliableCapacity === null ? "—" : `${Math.round(reliableCapacity)}%`}</strong>
-            <small>{managerWorkspace ? "Approved only" : reliableCapacity === null ? "Needs signal" : "This week"}</small>
+            <small>{teamWorkspace ? "Approved only" : reliableCapacity === null ? "Needs signal" : "This week"}</small>
           </div>
           <div className="side-capacity-track" aria-hidden="true">
             <span style={{ width: `${Math.max(0, Math.min(100, reliableCapacity ?? 0))}%` }} />
           </div>
-          <div className="web-private-state"><i aria-hidden="true" /> {managerWorkspace ? "No raw activity" : "Review-safe fields only"}</div>
+          <div className="web-private-state"><i aria-hidden="true" /> {teamWorkspace ? "No raw activity" : "Review-safe fields only"}</div>
         </div>
         <button
           className={active === "settings" ? "settings-button is-active" : "settings-button"}
@@ -535,7 +554,7 @@ export function IndividualWorkspaceShell({
         aria-hidden={mobileNavigationOpen ? true : undefined}
       >
         <div className="web-workspace-mode-row">
-          {!managerWorkspace && (active === "today" || active === "week") ? (
+          {!teamWorkspace && (active === "today" || active === "week") ? (
             <MacAppLink
               openUrl={WEEKFORM_START_TRACKING_URL}
               fallbackHref="/download"

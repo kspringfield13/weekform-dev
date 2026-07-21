@@ -68,7 +68,6 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
 import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
-import { WorkspaceModeToggle } from "@/components/WorkspaceModeToggle";
 import { IndividualWorkspaceShell } from "@/components/IndividualWorkspaceShell";
 import { signOut } from "@/app/auth/actions";
 import { resolveWebWindowSurface } from "@/lib/webCompactWindow";
@@ -78,6 +77,7 @@ import {
   ManagerActionsPanel,
   type ActionRiskOption,
 } from "./ManagerActionsPanel";
+import { TeamGantt } from "./TeamGantt";
 
 export const metadata: Metadata = { title: "Team" };
 export const dynamic = "force-dynamic";
@@ -104,6 +104,16 @@ function formatDate(iso: string): string {
     month: "short",
     day: "numeric",
   });
+}
+
+function currentIsoWeekId(): string {
+  const date = new Date();
+  const cursor = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = cursor.getUTCDay() || 7;
+  cursor.setUTCDate(cursor.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(cursor.getUTCFullYear(), 0, 1));
+  const week = Math.ceil((((cursor.getTime() - yearStart.getTime()) / 86_400_000) + 1) / 7);
+  return `${cursor.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
 function inviteStatus(invite: {
@@ -348,6 +358,23 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
   if (query.mode) windowSearch.set("mode", query.mode);
   if (query.popup) windowSearch.set("popup", query.popup);
   if (query.window) windowSearch.set("window", query.window);
+  const initialWindowSurface = resolveWebWindowSurface(windowSearch.toString());
+  const toolbarAccountActions = (
+    <>
+      <span className="web-toolbar-identity">
+        <span className="web-toolbar-account-avatar" aria-hidden="true">
+          {user.email?.slice(0, 1).toUpperCase() ?? "W"}
+        </span>
+        <span className="web-toolbar-account" title={user.email ?? undefined}>{user.email}</span>
+      </span>
+      <form action={signOut}>
+        <button className="web-toolbar-button web-sign-out-button" type="submit">
+          <LogOut aria-hidden="true" />
+          <span>Sign out</span>
+        </button>
+      </form>
+    </>
+  );
 
   return manager ? (
     <IndividualWorkspaceShell
@@ -359,24 +386,9 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
       teamHref={`/teams/${teamId}`}
       teamRole={membership.role}
       workspaceMode="manager"
-      accountActions={(
-        <>
-          <span className="web-toolbar-identity">
-            <span className="web-toolbar-account-avatar" aria-hidden="true">
-              {user.email?.slice(0, 1).toUpperCase() ?? "W"}
-            </span>
-            <span className="web-toolbar-account" title={user.email ?? undefined}>{user.email}</span>
-          </span>
-          <form action={signOut}>
-            <button className="web-toolbar-button web-sign-out-button" type="submit">
-              <LogOut aria-hidden="true" />
-              <span>Sign out</span>
-            </button>
-          </form>
-        </>
-      )}
+      accountActions={toolbarAccountActions}
       initialScreen={query.screen}
-      initialWindowSurface={resolveWebWindowSurface(windowSearch.toString())}
+      initialWindowSurface={initialWindowSurface}
     >
       <div className="container workspace-shell team-workspace-shell">
         <div className="team-freshness-strip">
@@ -395,9 +407,20 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
       </div>
     </IndividualWorkspaceShell>
   ) : (
-    <>
-      <SiteHeader />
-      <main className="container team-page-container">
+    <IndividualWorkspaceShell
+      greetingName={membership.teamName}
+      reliableCapacity={null}
+      reviewCount={0}
+      activeWeekLabel={null}
+      teamAvailable
+      teamHref={`/teams/${teamId}`}
+      teamRole={membership.role}
+      workspaceMode="team"
+      accountActions={toolbarAccountActions}
+      initialScreen={undefined}
+      initialWindowSurface={initialWindowSurface}
+    >
+      <main className="container workspace-shell team-page-container">
         <header className="team-command-header">
           <div className="team-command-copy">
             <Link
@@ -416,12 +439,6 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
               <ShieldCheck aria-hidden="true" />
               {membership.role === "owner" ? "Team owner" : membership.role}
             </span>
-            <WorkspaceModeToggle
-              teamAvailable
-              teamHref={`/teams/${teamId}`}
-              mode="team"
-              teamLabel="Team"
-            />
           </div>
         </header>
 
@@ -435,10 +452,14 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
           </div>
         ) : null}
 
-        <MemberView teamId={teamId} viewerId={user.id} />
+        <MemberView
+          teamId={teamId}
+          teamName={membership.teamName}
+          role={membership.role}
+          viewerId={user.id}
+        />
       </main>
-      <SiteFooter />
-    </>
+    </IndividualWorkspaceShell>
   );
 }
 
@@ -449,9 +470,13 @@ export default async function TeamPage({ params, searchParams }: TeamPageProps) 
  */
 async function MemberView({
   teamId,
+  teamName,
+  role,
   viewerId,
 }: {
   teamId: string;
+  teamName: string;
+  role: TeamRole;
   viewerId: string;
 }) {
   const supabase = await createClient();
@@ -460,18 +485,49 @@ async function MemberView({
   }
 
   const nowIso = new Date().toISOString();
-  const [{ snapshots, error }, { value: policyValue, error: policyError }] =
+  const [
+    { snapshots, error },
+    { snapshots: history, error: historyError },
+    { value: policyValue, error: policyError },
+  ] =
     await Promise.all([
       listLatestTeamSnapshots(supabase, teamId),
+      listTeamSnapshotHistory(supabase, teamId),
       getTeamSharePolicyValue(supabase, teamId),
     ]);
   const teamPolicy = policyError ? null : parseTeamSharePolicy(policyValue);
   const own = snapshots.find((snapshot) => snapshot.userId === viewerId) ?? null;
+  const freshness = own ? snapshotFreshness(own, nowIso) : null;
 
   return (
     <>
-      <section className="panel" aria-labelledby="member-share-title">
-        <h2 id="member-share-title">What this team sees from you</h2>
+      <div className="team-status-rail" aria-label="Your team sharing status">
+        <div>
+          <span>Membership</span>
+          <strong>Active</strong>
+          <small>{role}</small>
+        </div>
+        <div>
+          <span>Coordination signal</span>
+          <strong>{own ? "Shared" : "Private"}</strong>
+          <small>{own ? shareLevelLabel(own.shareLevel) : "Nothing automatic"}</small>
+        </div>
+        <div>
+          <span>Freshness</span>
+          <strong>{freshness === "fresh" ? "Current" : freshness === "aging" ? "Aging" : freshness === "stale" ? "Stale" : "Not synced"}</strong>
+          <small>{own ? formatDateTime(own.observedAt) : "No snapshot"}</small>
+        </div>
+        <div>
+          <span>Team boundary</span>
+          <strong>{teamPolicy ? shareLevelLabel(teamPolicy.maxShareLevel) : "Member choice"}</strong>
+          <small>Can only narrow sharing</small>
+        </div>
+      </div>
+
+      <div className="team-decision-grid team-member-decision-grid">
+      <section className="panel team-member-signal" aria-labelledby="member-share-title">
+        <span className="team-section-kicker">Your coordination signal</span>
+        <h2 id="member-share-title">What {teamName} sees from you</h2>
         {error ? (
           <div className="form-alert" role="alert">
             Your shared snapshot could not be loaded right now. Reload the page
@@ -515,13 +571,43 @@ async function MemberView({
         </p>
       </section>
 
-      <section className="panel" aria-labelledby="member-leave-title">
-        <h2 id="member-leave-title">Leave this team</h2>
+      <aside className="panel team-member-boundary" aria-labelledby="member-boundary-title">
+        <span className="team-section-kicker">What this helps decide</span>
+        <h2 id="member-boundary-title">Coordinate without exposing your workday</h2>
+        <p>
+          Your approved capacity and load signal can help the team discuss commitments.
+          It cannot reveal your apps, raw activity, notes, window titles, or how you compare with another person.
+        </p>
+        <ul className="team-member-boundary-list">
+          <li><ShieldCheck aria-hidden="true" /> You choose every shared metric.</li>
+          <li><ShieldCheck aria-hidden="true" /> Missing values remain unknown, never zero.</li>
+          <li><ShieldCheck aria-hidden="true" /> Managers receive summaries, never raw evidence.</li>
+        </ul>
+      </aside>
+      </div>
+
+      {historyError ? (
+        <div className="form-alert" role="alert">Your workload horizon could not be loaded. No placeholder timeline is shown.</div>
+      ) : (
+        <TeamGantt
+          anchorWeekId={history.reduce((latest, point) => point.weekId > latest ? point.weekId : latest, own?.weekId ?? currentIsoWeekId())}
+          history={history}
+          identities={[{ userId: viewerId, name: "You" }]}
+          role="member"
+          viewerId={viewerId}
+        />
+      )}
+
+      <section className="panel team-leave-panel" aria-labelledby="member-leave-title">
+        <div>
+          <span className="team-section-kicker">Membership control</span>
+          <h2 id="member-leave-title">Leave this team</h2>
         <p>
           Leaving stops managers of this team from seeing any future snapshots.
           Snapshots you already shared remain until you delete your cloud
           history from your dashboard.
         </p>
+        </div>
         <form action={leaveTeam}>
           <input type="hidden" name="team_id" value={teamId} />
           <FormSubmitButton
@@ -584,6 +670,14 @@ async function ManagerView({
   const reactive = metricStat(summary.reactive, summary.sharingCount);
   const meetings = metricStat(summary.meetings, summary.sharingCount);
   const fragmentation = metricStat(summary.fragmentation, summary.sharingCount);
+  const timelineIdentities = roster.map((entry) => ({
+    userId: entry.userId,
+    name: entry.displayName ?? entry.email ?? `member-${entry.userId.slice(0, 8)}`,
+  }));
+  const timelineAnchorWeek = history.reduce(
+    (latest, point) => point.weekId > latest ? point.weekId : latest,
+    currentIsoWeekId(),
+  );
 
   return (
     <div className="team-manager-workspace">
@@ -719,6 +813,18 @@ async function ManagerView({
           </>
         )}
       </section>
+
+      {historyError ? (
+        <div className="form-alert" role="alert">The team workload horizon could not be loaded. No placeholder timeline is shown.</div>
+      ) : (
+        <TeamGantt
+          anchorWeekId={timelineAnchorWeek}
+          history={history}
+          identities={timelineIdentities}
+          role="manager"
+          viewerId={viewerId}
+        />
+      )}
 
       <section
         className="panel team-roster-section"

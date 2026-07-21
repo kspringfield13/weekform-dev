@@ -22,6 +22,14 @@ const siteHeaderSource = readFileSync(
   new URL("../components/SiteHeader.tsx", import.meta.url),
   "utf8",
 );
+const modeToggleSource = readFileSync(
+  new URL("../components/WorkspaceModeToggle.tsx", import.meta.url),
+  "utf8",
+);
+const teamGanttSource = readFileSync(
+  new URL("../app/teams/[teamId]/TeamGantt.tsx", import.meta.url),
+  "utf8",
+);
 
 test("the side panel exposes Team for any membership and hides it without one", () => {
   assert.match(shellSource, /teamAvailable\s*&&/);
@@ -29,13 +37,18 @@ test("the side panel exposes Team for any membership and hides it without one", 
   assert.doesNotMatch(shellSource, /<strong>Manager Access<\/strong>/);
   assert.match(dashboardSource, /teamAvailable=\{teams\.length > 0\}/);
   assert.match(dashboardSource, /teamHref=\{teamHref\}/);
+  assert.match(shellSource, /href=\{teamDestinationHref\}/);
+  assert.doesNotMatch(shellSource, /href=\{activeTeamHref\}[\s\S]*?<strong>Team<\/strong>/);
 });
 
 test("the Individual and Manager switch remains visible above every workspace page", () => {
   assert.match(shellSource, /<main[\s\S]*?<WorkspaceModeToggle[\s\S]*?\{children\}/);
-  assert.match(shellSource, /workspaceMode\?:\s*"individual"\s*\|\s*"manager"/);
+  assert.match(shellSource, /workspaceMode\?:\s*"individual"\s*\|\s*"manager"\s*\|\s*"team"/);
   assert.match(teamPageSource, /workspaceMode="manager"/);
+  assert.match(teamPageSource, /workspaceMode="team"/);
   assert.match(shellSource, /teamRole\s*===\s*"member"\s*\?\s*"Team"\s*:\s*"Manager mode"/);
+  assert.match(modeToggleSource, /Waypoints/);
+  assert.doesNotMatch(modeToggleSource, />●●?</);
 });
 
 test("manager Team pages preserve the five Desktop destinations with team-wide content", () => {
@@ -58,9 +71,23 @@ test("manager Team pages preserve the five Desktop destinations with team-wide c
 });
 
 test("members get a generalized Team workspace without manager-only data", () => {
-  assert.match(teamPageSource, /teamLabel="Team"/);
+  assert.match(teamPageSource, /workspaceMode="team"/);
+  assert.match(teamPageSource, /teamRole=\{membership\.role\}/);
   assert.match(teamPageSource, /Your team space/);
+  assert.match(teamPageSource, /Your coordination signal/);
+  assert.match(teamPageSource, /team-status-rail/);
   assert.match(teamPageSource, /manager\s*\?\s*\([\s\S]*?<ManagerView[\s\S]*?\)\s*:\s*\([\s\S]*?<MemberView/);
+  assert.match(shellSource, /!teamWorkspace\s*&&\s*\(active === "today" \|\| active === "week"\)/);
+});
+
+test("members and managers get an explorable real-snapshot Gantt horizon", () => {
+  assert.match(teamPageSource, /<TeamGantt/);
+  assert.match(teamPageSource, /history=\{history\}/);
+  assert.match(teamPageSource, /viewerId=\{viewerId\}/);
+  assert.match(teamPageSource, /listTeamSnapshotHistory/);
+  assert.match(teamGanttSource, /event\.key !== "Tab"/);
+  assert.match(teamGanttSource, /returnFocusTo\?\.focus\(\)/);
+  assert.match(teamGanttSource, /document\.body\.style\.overflow = "hidden"/);
 });
 
 test("the legacy Manager Access URL is now a role-aware Team selector", () => {

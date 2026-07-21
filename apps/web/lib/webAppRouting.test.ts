@@ -48,7 +48,8 @@ test("Individual and Manager web surfaces expose the shared mode switch", () => 
   assert.match(modeToggleSource, /aria-current/);
   assert.match(dashboardSource, /<WorkspaceModeToggle/);
   assert.match(managerAccessSource, /<WorkspaceModeToggle/);
-  assert.match(teamPageSource, /<WorkspaceModeToggle/);
+  assert.match(teamPageSource, /<IndividualWorkspaceShell/);
+  assert.match(individualShellSource, /<WorkspaceModeToggle/);
 });
 
 test("primary Web app return paths target /app rather than /dashboard", () => {

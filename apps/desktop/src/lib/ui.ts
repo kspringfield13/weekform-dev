@@ -11,7 +11,8 @@ export const screenLabels: Record<string, string> = {
   sensitive: "Flagged Captures",
   agent: "Agent",
   accelerate: "Acceleration",
-  skills: "Skills Library"
+  skills: "Skills Library",
+  team: "Team"
 };
 
 export const sectionLabels: Record<string, string> = {

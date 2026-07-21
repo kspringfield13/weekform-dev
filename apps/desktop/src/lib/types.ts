@@ -1,4 +1,4 @@
-export type Screen = "setup" | "ledger" | "daily" | "weekly" | "forecast" | "weekly-review" | "narrative" | "usage" | "audit" | "sensitive" | "agent" | "accelerate" | "skills";
+export type Screen = "setup" | "ledger" | "daily" | "weekly" | "forecast" | "weekly-review" | "narrative" | "usage" | "audit" | "sensitive" | "agent" | "accelerate" | "skills" | "team";
 export type SettingsTab = "data-sources" | "data-control" | "ai-assistance" | "ai-usage" | "notifications" | "account";
 export type WindowMode = "large" | "compact";
 export type PrimarySection = "today" | "week" | "history";

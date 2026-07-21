@@ -2426,12 +2426,11 @@ button.text-link {
   white-space: nowrap;
 }
 
-.workspace-mode-toggle a > span,
-.workspace-mode-toggle > span > span {
+.workspace-mode-toggle a > svg,
+.workspace-mode-toggle > span > svg {
+  width: 14px;
+  height: 14px;
   color: var(--signal-green);
-  font-family: var(--font-mono);
-  font-size: 7px;
-  letter-spacing: -0.12em;
 }
 
 .workspace-mode-toggle a[aria-current="page"] {
@@ -5085,6 +5084,365 @@ button.text-link {
   font-size: 10px;
 }
 
+.team-page-container > .team-status-rail {
+  margin: 22px 0 0;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.team-member-decision-grid {
+  grid-template-columns: minmax(0, 1.45fr) minmax(280px, .75fr);
+  margin-top: 22px;
+}
+
+.team-member-signal,
+.team-member-boundary {
+  border-top: 2px solid var(--border-strong);
+}
+
+.team-member-signal h2,
+.team-member-boundary h2,
+.team-leave-panel h2 {
+  margin-top: 7px;
+}
+
+.team-member-boundary-list {
+  display: grid;
+  gap: 11px;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.team-member-boundary-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.team-member-boundary-list svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  color: var(--signal-green);
+}
+
+.team-leave-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  margin-top: 22px;
+}
+
+.team-leave-panel > div {
+  max-width: 760px;
+}
+
+.team-leave-panel form {
+  flex: 0 0 auto;
+}
+
+.web-team-gantt-launch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  margin-top: 22px;
+  padding: 22px 24px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 94%, var(--decision-soft));
+}
+
+.web-team-gantt-launch h2 {
+  margin: 7px 0 0;
+  font-size: 20px;
+  letter-spacing: -.025em;
+}
+
+.web-team-gantt-launch p {
+  max-width: 720px;
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.web-team-gantt-launch .button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+.web-team-gantt-launch .button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.web-team-gantt-overlay {
+  position: fixed;
+  z-index: 300;
+  inset: 0;
+  display: grid;
+  padding: 16px;
+  background: color-mix(in srgb, var(--background) 82%, transparent);
+  backdrop-filter: blur(18px);
+}
+
+.web-team-gantt-dialog {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1680px, 100%);
+  height: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--background);
+  box-shadow: 0 28px 90px color-mix(in srgb, #000 28%, transparent);
+}
+
+.web-team-gantt-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 28px;
+  padding: 20px 22px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.web-team-gantt-header h2 {
+  margin: 6px 0 0;
+  font-size: 26px;
+  letter-spacing: -.045em;
+}
+
+.web-team-gantt-header p {
+  margin: 5px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.web-team-gantt-header-actions,
+.web-team-gantt-zoom {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.web-team-gantt-zoom {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text-subtle);
+  background: var(--background-subtle);
+}
+
+.web-team-gantt-zoom > svg {
+  width: 14px;
+  height: 14px;
+}
+
+.web-team-gantt-zoom button,
+.web-team-gantt-close {
+  min-height: 30px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--text-subtle);
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.web-team-gantt-zoom button {
+  padding: 0 10px;
+}
+
+.web-team-gantt-zoom button.is-active {
+  color: var(--text);
+  background: var(--surface-muted);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.web-team-gantt-close {
+  display: grid;
+  width: 34px;
+  place-items: center;
+  border: 1px solid var(--border);
+}
+
+.web-team-gantt-close svg {
+  width: 17px;
+  height: 17px;
+}
+
+.web-team-gantt-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  min-height: 0;
+}
+
+.web-team-gantt-scroll {
+  min-width: 0;
+  overflow: auto;
+  padding: 20px;
+  outline: none;
+}
+
+.web-team-gantt-scroll:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--decision);
+}
+
+.web-team-gantt-grid {
+  display: grid;
+  min-width: max-content;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+}
+
+.web-team-gantt-row {
+  display: grid;
+  grid-template-columns: subgrid;
+}
+
+.web-team-gantt-corner,
+.web-team-gantt-week,
+.web-team-gantt-person,
+.web-team-gantt-cell {
+  min-width: 0;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.web-team-gantt-corner,
+.web-team-gantt-week {
+  padding: 11px;
+  color: var(--text-subtle);
+  background: var(--surface-muted);
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 10px;
+}
+
+.web-team-gantt-person {
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 13px;
+  background: var(--surface);
+}
+
+.web-team-gantt-person strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-team-gantt-person small,
+.web-team-gantt-cell small {
+  color: var(--text-subtle);
+  font-size: 9px;
+}
+
+.web-team-gantt-cell {
+  position: relative;
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 3px;
+  min-height: 66px;
+  padding: 11px;
+  overflow: hidden;
+  color: var(--text);
+  background: var(--background-subtle);
+  text-align: left;
+}
+
+button.web-team-gantt-cell {
+  cursor: pointer;
+}
+
+.web-team-gantt-cell > span:first-child {
+  position: absolute;
+  inset: auto auto 0 0;
+  height: 4px;
+  background: var(--decision);
+}
+
+.web-team-gantt-cell strong {
+  position: relative;
+  font-family: "Geist Mono Variable", ui-monospace, monospace;
+  font-size: 14px;
+}
+
+.web-team-gantt-cell:hover,
+.web-team-gantt-cell.is-selected {
+  background: var(--surface-elevated);
+  box-shadow: inset 0 0 0 1px var(--decision);
+}
+
+.web-team-gantt-cell.is-empty {
+  place-items: center;
+  color: var(--text-subtle);
+  background: var(--background);
+  font-size: 9px;
+}
+
+.web-team-gantt-detail {
+  min-width: 0;
+  padding: 22px;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.web-team-gantt-detail > svg {
+  width: 22px;
+  height: 22px;
+  color: var(--signal-green);
+}
+
+.web-team-gantt-detail h3 {
+  margin: 8px 0 0;
+  font-size: 19px;
+}
+
+.web-team-gantt-detail > p {
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.web-team-gantt-detail dl {
+  display: grid;
+  margin: 17px 0 0;
+}
+
+.web-team-gantt-detail dl > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.web-team-gantt-detail dt { color: var(--text-subtle); }
+.web-team-gantt-detail dd { margin: 0; color: var(--text); font-weight: 650; }
+.web-team-gantt-empty { padding: 36px; color: var(--text-muted); text-align: center; }
+
 .team-overview-panel > .stat-grid {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
@@ -5365,6 +5723,26 @@ button.text-link {
     grid-template-columns: 1fr;
   }
 
+  .team-leave-panel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .web-team-gantt-launch,
+  .web-team-gantt-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .web-team-gantt-body {
+    grid-template-columns: 1fr;
+  }
+
+  .web-team-gantt-detail {
+    border-top: 1px solid var(--border);
+    border-left: 0;
+  }
+
   .team-planning-panel,
   .team-invites-panel {
     grid-column: auto;
@@ -5523,6 +5901,12 @@ button.text-link {
   border-radius: 50%;
   background: var(--signal-green);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--signal-green) 12%, transparent);
+}
+
+.web-toolbar-state > .web-window-glyph {
+  width: 14px;
+  height: 14px;
+  color: var(--signal-green);
 }
 
 .web-toolbar-actions {

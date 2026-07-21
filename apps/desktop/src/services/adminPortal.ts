@@ -210,6 +210,34 @@ export function getManagerModeMemberships(
   return memberships.filter(({ role }) => role === "owner" || role === "manager");
 }
 
+/** Every active membership earns the private Team destination; role only changes its contents. */
+export function getTeamWorkspaceMemberships(
+  memberships: CloudTeamMembership[],
+): CloudTeamMembership[] {
+  return memberships;
+}
+
+export function resolveTeamWorkspaceMembership(
+  memberships: CloudTeamMembership[],
+  preferredTeamId: string | null,
+): CloudTeamMembership | null {
+  return memberships.find(({ teamId }) => teamId === preferredTeamId)
+    ?? memberships[0]
+    ?? null;
+}
+
+export function isTeamWorkspaceAvailable(
+  signedIn: boolean,
+  memberships: CloudTeamMembership[],
+  sharingEnabled: boolean,
+  sharedTeamId: string | null,
+): boolean {
+  return signedIn && (
+    memberships.length > 0
+    || (sharingEnabled && sharedTeamId !== null)
+  );
+}
+
 export function toggleManagerComparison(selectedIds: string[], memberId: string): string[] {
   if (selectedIds.includes(memberId)) {
     return selectedIds.filter((id) => id !== memberId);

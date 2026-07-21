@@ -124,7 +124,10 @@ import { ManagerAccessWorkspace } from "./admin/ManagerAccessWorkspace";
 import { createSimulationDemoState } from "./admin/simulationDemoData";
 import {
   getManagerModeMemberships,
+  getTeamWorkspaceMemberships,
   getWeekformWebAppUrl,
+  isTeamWorkspaceAvailable,
+  resolveTeamWorkspaceMembership,
   resolveSettingsTab,
 } from "./services/adminPortal";
 import { deriveWeeklyReviewState } from "./services/weeklyReview";
@@ -865,10 +868,28 @@ export function App() {
     [cloudAccount.teams],
   );
   const managerAccessAvailable = cloudAccount.account !== null && managerMemberships.length > 0;
+  const teamMemberships = useMemo(
+    () => getTeamWorkspaceMemberships(cloudAccount.teams),
+    [cloudAccount.teams],
+  );
+  const activeTeamMembership = useMemo(
+    () => resolveTeamWorkspaceMembership(teamMemberships, cloudAccount.policy.teamId),
+    [cloudAccount.policy.teamId, teamMemberships],
+  );
+  const teamAvailable = isTeamWorkspaceAvailable(
+    cloudAccount.account !== null,
+    teamMemberships,
+    cloudAccount.policy.enabled,
+    cloudAccount.policy.teamId,
+  );
 
   useEffect(() => {
     if (!managerAccessAvailable) setManagerModeOpen(false);
   }, [managerAccessAvailable]);
+
+  useEffect(() => {
+    if (!teamAvailable && active === "team") setActive("daily");
+  }, [active, teamAvailable]);
 
   // The ritual closes the current week. `forecastTrackRecord` deliberately
   // excludes the accumulating current week, so project its existing live
@@ -2764,8 +2785,8 @@ export function App() {
       showTrackingReminder={showTrackingReminder}
       toasts={toasts}
       onDismissToast={dismissToast}
-      managerAccessAvailable={managerAccessAvailable}
-      onOpenManagerAccess={() => setManagerModeOpen(true)}
+      teamAvailable={teamAvailable}
+      teamRole={activeTeamMembership?.role ?? null}
     >
       <ScreenRouter
         active={active}
@@ -2836,6 +2857,9 @@ export function App() {
         retentionDays={retentionDays}
         setRetentionDays={changeRetentionDays}
         cloud={cloud}
+        onOpenManagerWorkspace={() => {
+          if (managerAccessAvailable) setManagerModeOpen(true);
+        }}
         proactiveAlert={proactiveAlert}
         onDismissProactiveAlert={dismissProactiveAlert}
         proactiveAlertSettings={proactiveAlertSettings}

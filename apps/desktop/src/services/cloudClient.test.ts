@@ -20,6 +20,7 @@ import {
   fetchPendingReviewCommandsV1,
   fetchPendingReviewCommandsV2,
   fetchManagerTeamWorkspace,
+  fetchTeamWorkloadTimeline,
   fetchTeamMemberships,
   getCloudEnv,
   isCloudConfigured,
@@ -568,6 +569,43 @@ test("fetchManagerTeamWorkspace includes the signed-in manager and joins approve
       assert.equal(identityRequest?.method, "POST");
       assert.deepEqual(JSON.parse(identityRequest?.body ?? ""), { target_team_id: teamId });
       assert.ok(requests.some((request) => request.url.includes("select=user_id,team_id,week_id,synced_at,share_level")));
+    },
+  );
+});
+
+test("fetchTeamWorkloadTimeline loads only bounded summary history and preserves unknown metrics", async () => {
+  const teamId = "20000000-0000-4000-8000-000000000001";
+  await withFetch(
+    () => jsonResponse([{
+      user_id: "10000000-0000-4000-8000-000000000002",
+      week_id: "2026-W29",
+      synced_at: "2026-07-13T20:00:00.000Z",
+      reliable_new_work_capacity_pct: "18",
+      reactive_pct: null,
+      meeting_pct: "27",
+      fragmented_work_pct: "31",
+      reviewed_blocks: 7,
+      eligible_blocks: 9,
+    }]),
+    async (requests) => {
+      const result = await fetchTeamWorkloadTimeline(env, makeSession(), teamId);
+      assert.ok(result.ok);
+      assert.deepEqual(result.value, [{
+        userId: "10000000-0000-4000-8000-000000000002",
+        weekId: "2026-W29",
+        syncedAt: "2026-07-13T20:00:00.000Z",
+        reliableCapacityPct: 18,
+        reactivePct: null,
+        meetingPct: 27,
+        fragmentedPct: 31,
+        reviewedBlocks: 7,
+        eligibleBlocks: 9,
+      }]);
+      assert.equal(requests.length, 1);
+      assert.match(requests[0]!.url, /workload_snapshots\?select=user_id,week_id,synced_at/);
+      assert.match(requests[0]!.url, /team_id=eq\.20000000-0000-4000-8000-000000000001/);
+      assert.match(requests[0]!.url, /limit=650/);
+      assert.doesNotMatch(requests[0]!.url, /project_allocation|category_allocation|observed_at/);
     },
   );
 });

@@ -96,11 +96,11 @@ export async function listLatestTeamSnapshots(
 }
 
 /**
- * Hard cap on history rows fetched per team: ~8 weeks of weekly snapshots for
- * a 50-member team. A bound, not a promise of completeness — the trend module
- * only ever compares the two most recent weeks it actually receives.
+ * Hard cap on history rows fetched per team: one 13-week quarter for a
+ * 50-member team. A bound, not a promise of completeness — callers still
+ * render only the weeks they actually receive.
  */
-export const HISTORY_ROW_LIMIT = 400;
+export const HISTORY_ROW_LIMIT = 650;
 
 /**
  * Bounded snapshot history for one team, newest first. Queries the underlying

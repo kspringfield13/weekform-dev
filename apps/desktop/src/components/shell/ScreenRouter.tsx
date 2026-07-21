@@ -35,6 +35,7 @@ import { SensitiveReviewScreen } from "../audit/SensitiveReviewScreen";
 import { AgentScreen } from "../agent/AgentScreen";
 import { AccelerationScreen } from "../accelerate/AccelerationScreen";
 import { SkillsLibraryScreen } from "../accelerate/SkillsLibraryScreen";
+import { TeamScreen } from "../team/TeamScreen";
 import type { OnboardingStep } from "../common/OnboardingCard";
 import type { ProactiveAlert, ProactiveAlertSettings } from "../../lib/proactiveAlerts";
 import type { PushToast } from "../../hooks/useToasts";
@@ -124,6 +125,7 @@ interface ScreenRouterProps {
   setRetentionDays: (value: number | null) => void;
   // Account & Sharing (setup screen)
   cloud: CloudController;
+  onOpenManagerWorkspace: () => void;
   // proactive alerts (compact widget + setup screen)
   proactiveAlert: ProactiveAlert | null;
   onDismissProactiveAlert: () => void;
@@ -256,6 +258,7 @@ export function ScreenRouter({
   retentionDays,
   setRetentionDays,
   cloud,
+  onOpenManagerWorkspace,
   proactiveAlert,
   onDismissProactiveAlert,
   proactiveAlertSettings,
@@ -336,6 +339,16 @@ export function ScreenRouter({
 
   return (
     <>
+      {active === "team" && (
+        <TeamScreen
+          cloud={cloud}
+          snapshot={snapshot}
+          hasWorkBlocks={blocks.length > 0}
+          onOpenIndividual={() => onOpenScreen("daily")}
+          onOpenManagerWorkspace={onOpenManagerWorkspace}
+          onOpenSharingSettings={() => openSettingsTab("account")}
+        />
+      )}
       {active === "setup" && (
         <SetupScreen
           aiAvailable={aiAvailable}

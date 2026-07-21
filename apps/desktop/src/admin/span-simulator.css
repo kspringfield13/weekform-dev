@@ -849,7 +849,7 @@
 .manager-access-toolbar { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--admin-line); background: color-mix(in srgb, var(--admin-panel) 90%, transparent); backdrop-filter: blur(18px) saturate(1.2); user-select: none; }
 html[data-runtime="tauri"] .manager-access-toolbar { padding-left: 108px; }
 .manager-access-toolbar > span { display: inline-flex; gap: 8px; align-items: center; color: var(--admin-muted); font-family: "Geist Mono", ui-monospace, monospace; font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
-.manager-access-toolbar > span i { width: 6px; height: 6px; border-radius: 50%; background: var(--admin-positive); box-shadow: 0 0 0 4px color-mix(in srgb, var(--admin-positive) 12%, transparent); }
+.manager-access-toolbar > span svg { color: var(--admin-positive); }
 .manager-access-toolbar > div { display: flex; align-items: center; gap: 7px; }
 .manager-access-toolbar button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 0 9px; border: 1px solid transparent; border-radius: 8px; color: var(--admin-faint); background: transparent; font-size: 11px; }
 .manager-web-app-link { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 0 9px; border: 1px solid var(--admin-line); border-radius: 8px; color: var(--admin-muted); background: color-mix(in srgb, var(--admin-panel) 76%, transparent); font-size: 11px; text-decoration: none; }
@@ -894,7 +894,7 @@ html[data-runtime="tauri"] .manager-access-toolbar { padding-left: 108px; }
 .manager-page-context { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .manager-kicker { display: inline-flex; align-items: center; gap: 7px; color: var(--admin-faint); font-family: "Geist Mono", ui-monospace, monospace; font-size: 10px; font-weight: 620; letter-spacing: .075em; text-transform: uppercase; }
 .manager-mode-indicator { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 0 7px; border: 1px solid var(--admin-line); border-radius: 999px; color: var(--admin-muted); background: var(--admin-panel); font-size: 10px; font-weight: 600; }
-.manager-mode-indicator i { width: 5px; height: 5px; border-radius: 50%; background: var(--admin-positive); box-shadow: 0 0 0 3px color-mix(in srgb, var(--admin-positive) 12%, transparent); }
+.manager-mode-indicator svg { color: var(--admin-positive); }
 .manager-page-header h1 { margin: 5px 0 4px; font-size: 22px; font-weight: 650; letter-spacing: -.035em; line-height: 1.12; }
 .manager-page-header p { margin: 0; color: var(--admin-muted); font-size: 12px; }
 .manager-mode-control { display: grid; grid-template-columns: repeat(2, minmax(0, auto)); gap: 3px; flex: 0 0 auto; padding: 3px; border: 1px solid var(--admin-line); border-radius: 10px; background: var(--admin-panel); }

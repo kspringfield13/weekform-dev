@@ -848,6 +848,17 @@ The hackathon-readiness and provenance task is supplemental evidence:
   resize controls. Focused desktop cloud/manager tests, the root production
   build, and live Supabase/browser proof are recorded separately; repository
   code alone is not claimed as deployed production evidence.
+  A same-day Team workspace follow-through replaces the former Manager Access
+  side-nav entry with a membership-gated **Team** destination on Desktop and
+  Web. Members receive a generalized connection, sharing, and personal-signal
+  view; owners/managers receive team-wide approved summaries, with the signed-in
+  manager included. Both roles can open a large Workload Gantt backed by real
+  RLS-scoped snapshot history, zoom between 1-, 4-, and 13-week horizons, and
+  drill into the approved metrics and review coverage for one week. Missing
+  periods and roster members remain **Not shared** rather than zero or omitted.
+  The chart fetch is bounded to 650 explicit summary rows and adds no raw
+  evidence, AI, or browser-persistence path. Its modal owns Escape, focus-loop,
+  focus-return, background-scroll, and responsive overflow behavior.
 
 - **July 20 capacity drill-in parity:** The desktop sidebar's Reliable capacity
   card is now keyboard- and pointer-actionable in both workspace modes. The

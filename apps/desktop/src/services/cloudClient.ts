@@ -289,6 +289,18 @@ export interface CloudManagerWorkspaceData {
   latestSyncedAt: string | null;
 }
 
+export interface CloudTeamTimelineSnapshot {
+  userId: string;
+  weekId: string;
+  syncedAt: string;
+  reliableCapacityPct: number | null;
+  reactivePct: number | null;
+  meetingPct: number | null;
+  fragmentedPct: number | null;
+  reviewedBlocks: number;
+  eligibleBlocks: number;
+}
+
 function asTeamRole(value: unknown): CloudTeamRole {
   return value === "owner" || value === "manager" ? value : "member";
 }
@@ -490,6 +502,57 @@ export async function fetchManagerTeamWorkspace(
     return syncedAt && (!latest || syncedAt > latest) ? syncedAt : latest;
   }, null);
   return { ok: true, value: { members, latestSyncedAt } };
+}
+
+/**
+ * Bounded, RLS-scoped weekly history for the Team workload horizon. Plain members receive only
+ * their own rows; managers receive the rows their authenticated team role permits. The query is
+ * an explicit summary allowlist and never requests allocation JSON or raw evidence.
+ */
+export async function fetchTeamWorkloadTimeline(
+  env: CloudEnv,
+  session: PersistedCloudSession,
+  teamId: string,
+): Promise<CloudResult<CloudTeamTimelineSnapshot[]>> {
+  const query =
+    "select=user_id,week_id,synced_at,reliable_new_work_capacity_pct,reactive_pct," +
+    "meeting_pct,fragmented_work_pct,reviewed_blocks,eligible_blocks" +
+    `&team_id=eq.${encodeURIComponent(teamId)}&order=synced_at.desc&limit=650`;
+  try {
+    const response = await fetch(`${env.url}/rest/v1/workload_snapshots?${query}`, {
+      headers: authHeaders(env, session.accessToken),
+    });
+    if (!response.ok) {
+      return { ok: false, message: await failureMessage(response, "Could not load the team workload horizon") };
+    }
+    const raw: unknown = await response.json();
+    if (!Array.isArray(raw)) {
+      return { ok: false, message: "The team workload horizon response was incomplete." };
+    }
+    const points: CloudTeamTimelineSnapshot[] = [];
+    for (const value of raw) {
+      if (typeof value !== "object" || value === null) continue;
+      const row = value as Record<string, unknown>;
+      const userId = typeof row.user_id === "string" ? row.user_id : "";
+      const weekId = typeof row.week_id === "string" ? row.week_id : "";
+      const syncedAt = typeof row.synced_at === "string" ? row.synced_at : "";
+      if (!userId || !weekId || !syncedAt) continue;
+      points.push({
+        userId,
+        weekId,
+        syncedAt,
+        reliableCapacityPct: managerMetric(row.reliable_new_work_capacity_pct),
+        reactivePct: managerMetric(row.reactive_pct),
+        meetingPct: managerMetric(row.meeting_pct),
+        fragmentedPct: managerMetric(row.fragmented_work_pct),
+        reviewedBlocks: managerCount(row.reviewed_blocks),
+        eligibleBlocks: managerCount(row.eligible_blocks),
+      });
+    }
+    return { ok: true, value: points };
+  } catch {
+    return { ok: false, message: NETWORK_ERROR_MESSAGE };
+  }
 }
 
 /**

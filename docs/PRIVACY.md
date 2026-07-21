@@ -398,6 +398,17 @@ only from that response; approval-gated briefings, manager actions, and the full
 server audit trail remain in the authenticated Web workspace. Minimize, resize,
 appearance, and navigation controls do not change this data boundary.
 
+The role-aware **Team** destination is shown only while the signed-in account
+has an active team membership or has sharing enabled for a connected team. Its
+Workload Gantt reads a bounded maximum of 650 approved snapshot rows, enough for
+one 13-week quarter across 50 members. The query allowlists only week, server
+sync time, reliable-capacity, reactive, meeting, fragmentation, and review-count
+fields. A plain member's RLS session can see only that member's own history;
+owners and managers can see only the team history their active role authorizes.
+Roster members without a visible snapshot remain explicitly **Not shared**.
+Zoom and drill-down state is ephemeral React state and creates no new browser or
+desktop persistence, upload, AI request, or raw-evidence path.
+
 The sign-in page also supports passwordless email Magic Links through Supabase
 Auth. The submitted email address is processed by Supabase and the configured
 email-delivery service solely to deliver the one-time sign-in link; the flow

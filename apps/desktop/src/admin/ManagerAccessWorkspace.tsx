@@ -26,6 +26,7 @@ import {
   Sparkles,
   UserRound,
   Users,
+  Waypoints,
   X,
 } from "lucide-react";
 import { WeekformMark } from "../components/common/WeekformMark";
@@ -53,6 +54,7 @@ import {
 } from "../services/cloudClient";
 import type { PersistedCloudSession } from "../services/cloudPolicy";
 import { buildTeamCapacityDetail } from "../services/capacityDetail";
+import "./span-simulator.css";
 
 const NAV_ITEMS = [
   { id: "today" as const, label: "Today", description: "Daily review queue", icon: CalendarCheck },
@@ -127,7 +129,7 @@ function ModeToggle({ mode, onChange }: { mode: ManagerWorkspaceMode; onChange: 
         <UserRound size={13} aria-hidden /> Individual
       </button>
       <button aria-pressed={mode === "manager"} onClick={() => onChange("manager")} type="button">
-        <Users size={13} aria-hidden /> Manager mode
+        <Waypoints size={13} aria-hidden /> Manager mode
       </button>
     </div>
   );
@@ -426,11 +428,11 @@ export function ManagerAccessWorkspace({
       data-workspace-mode={mode}
     >
       <header className="manager-access-toolbar" onPointerDown={startToolbarDrag}>
-        <span><i aria-hidden /> Manager Access</span>
+        <span><Waypoints size={13} aria-hidden /> Team · Manager</span>
         <div><span className="manager-live-badge">Live approved data · {managerTeams.length} {managerTeams.length === 1 ? "team" : "teams"}</span><button aria-label="Refresh team data" disabled={loadStatus === "refreshing"} onClick={() => void refreshManagerData()} title={`Last team sync: ${lastSyncedLabel}`} type="button"><RefreshCw className={loadStatus === "refreshing" ? "manager-spin" : undefined} size={14} /></button><a aria-label="Open Manager Access in the authenticated Weekform web app" className="manager-web-app-link" href={webAppDashboardUrl} rel="noreferrer" target="_blank"><Globe2 size={14} /><span>Web app</span></a><button type="button" onClick={onOpenPreferences} aria-label="Open display preferences"><Settings size={15} /></button><button type="button" onClick={() => void getCurrentWindow().minimize().catch(() => undefined)} aria-label="Minimize window" title="Minimize window"><Minus size={15} /></button><button type="button" onClick={() => void getCurrentWindow().toggleMaximize().catch(() => undefined)} aria-label="Resize window" title="Resize window"><Maximize2 size={14} /></button><button type="button" onClick={onSignOut}><LogOut size={14} /> Sign out</button></div>
       </header>
       <aside className="manager-access-sidebar" aria-label="Manager Access navigation">
-        <button className="manager-access-brand" onClick={() => navigate("today")} type="button"><WeekformMark /><span><strong>Weekform</strong><small>Manager Access</small></span></button>
+        <button className="manager-access-brand" onClick={() => navigate("today")} type="button"><WeekformMark /><span><strong>Weekform</strong><small>Team workspace</small></span></button>
         <nav>{NAV_ITEMS.map(({ id, label, description, icon: Icon }) => <button aria-current={page === id ? "page" : undefined} className={page === id ? "is-active" : ""} key={id} onClick={() => navigate(id)} type="button"><Icon size={18} /><span><strong>{label}</strong><small>{description}</small></span>{id === "today" && attentionCount > 0 && <b>{attentionCount}</b>}</button>)}</nav>
         <button className="manager-sidebar-signal capacity-summary-trigger" type="button" aria-haspopup="dialog" aria-expanded={capacityDetailOpen} onClick={() => setCapacityDetailOpen(true)}><div><span>Reliable capacity</span><Gauge size={14} /></div><span className="manager-sidebar-signal-value"><strong>{teamCapacity === null ? "—" : `${teamCapacity}%`}</strong><small>Team median</small></span><i><b style={{ width: `${teamCapacity ?? 0}%` }} /></i><p><ShieldCheck size={11} /> {sharingCount} of {members.length} sharing approved summaries</p></button>
         <button className={page === "settings" ? "manager-sidebar-settings is-active" : "manager-sidebar-settings"} onClick={() => navigate("settings")} type="button"><Settings size={17} /><span>Settings</span></button>
@@ -438,7 +440,7 @@ export function ManagerAccessWorkspace({
       <button className="manager-sidebar-collapse" onClick={() => setSidebarCollapsed(!sidebarCollapsed)} aria-label={sidebarCollapsed ? "Show sidebar" : "Hide sidebar"} type="button"><ChevronLeft size={14} /></button>
       <main className="manager-access-main">
         <div className="manager-page-shell">
-          <header className="manager-page-header"><div><div className="manager-page-context"><span className="manager-kicker">{mode === "manager" ? `Live team data · ${lastSyncedLabel}` : "Personal workspace"}</span>{mode === "manager" && <span className="manager-mode-indicator"><i aria-hidden />Manager · approved summaries</span>}</div><h1>{copy[0]}</h1><p>{copy[1]}</p></div><ModeToggle mode={mode} onChange={(nextMode) => {
+          <header className="manager-page-header"><div><div className="manager-page-context"><span className="manager-kicker">{mode === "manager" ? `Live team data · ${lastSyncedLabel}` : "Personal workspace"}</span>{mode === "manager" && <span className="manager-mode-indicator"><Waypoints size={12} aria-hidden />Manager · approved summaries</span>}</div><h1>{copy[0]}</h1><p>{copy[1]}</p></div><ModeToggle mode={mode} onChange={(nextMode) => {
             if (nextMode === "individual" && onOpenIndividualWorkspace) {
               onOpenIndividualWorkspace();
               return;
