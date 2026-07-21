@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
-import type { MutableRefObject } from "react";
 import { writePersistedState } from "../services/localStore";
 import type { PersistedAppState } from "../services/localStore";
 import { createPersistenceCoordinator } from "../services/persistenceCoordinator";
@@ -24,7 +23,7 @@ export interface PersistenceBarrier {
 
 export function usePersistence(
   state: PersistableState,
-  hydrated: MutableRefObject<boolean>,
+  hydrated: boolean,
   onWriteError?: (error: unknown) => void
 ) {
   const { isDemoMode, ...persistData } = state;
@@ -63,7 +62,7 @@ export function usePersistence(
 
   const flushLatest = useCallback(async (): Promise<void> => {
     if (isDemoMode) throw new Error("Demo state is not persisted.");
-    if (!hydrated.current) throw new Error("Saved Weekform state has not finished loading.");
+    if (!hydrated) throw new Error("Saved Weekform state has not finished loading.");
     if (pendingTimerRef.current !== null) {
       window.clearTimeout(pendingTimerRef.current);
       pendingTimerRef.current = null;
@@ -96,10 +95,10 @@ export function usePersistence(
 
   useEffect(() => {
     // Skip the first-mount write until the async hydration read has resolved
-    // (App.tsx flips `hydrated` in readPersistedState().then). Without this gate
+    // (App.tsx flips `hydrated` after both startup phases). Without this gate
     // the empty-state write can race ahead of the read and persist `{blocks: []}`,
     // wiping the user's stored work. Mirrors the `themeHydrated` ref guard.
-    if (isDemoMode || !hydrated.current || suspendedForResetRef.current) return;
+    if (isDemoMode || !hydrated || suspendedForResetRef.current) return;
     const timer = window.setTimeout(() => {
       if (pendingTimerRef.current === timer) pendingTimerRef.current = null;
       void flushLatest().catch(() => undefined);
@@ -144,6 +143,7 @@ export function usePersistence(
     persistData.tokenUsageSettings,
     persistData.usageCsvRowHashes,
     persistData.consentReceipts,
+    hydrated,
     isDemoMode,
     flushLatest,
   ]);

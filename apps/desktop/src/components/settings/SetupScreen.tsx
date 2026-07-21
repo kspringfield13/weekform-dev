@@ -508,40 +508,38 @@ export function SetupScreen({
         )}
       </div>
 
-      {!isAccountSettings && (
-        <>
-          <div className="settings-walkthrough-replay">
-            <div>
-              <strong>App walkthrough</strong>
-              <span>Replay the guided tour of the main sections.</span>
-            </div>
-            <button className="ghost-action" type="button" onClick={onReplayWalkthrough}>
-              <Compass size={15} aria-hidden />
-              <span>Replay walkthrough</span>
-            </button>
+      <div className="settings-preferences-grid">
+        <div className="settings-walkthrough-replay">
+          <div>
+            <strong>App walkthrough</strong>
+            <span>Replay the guided tour of the main sections.</span>
           </div>
+          <button className="ghost-action" type="button" onClick={onReplayWalkthrough}>
+            <Compass size={15} aria-hidden />
+            <span>Replay walkthrough</span>
+          </button>
+        </div>
 
-          <div className="settings-walkthrough-replay">
-            <div>
-              <strong>Default window size</strong>
-              <span>How Weekform opens from the menu bar.</span>
-            </div>
-            <div className="data-export-options">
-              <label className="sr-only" htmlFor="default-window-mode">Default window size on open</label>
-              <select
-                id="default-window-mode"
-                value={defaultWindowMode}
-                onChange={(event) =>
-                  onDefaultWindowModeChange(event.target.value === "compact" ? "compact" : "large")
-                }
-              >
-                <option value="large">Full window</option>
-                <option value="compact">Compact widget</option>
-              </select>
-            </div>
+        <div className="settings-walkthrough-replay">
+          <div>
+            <strong>Default window size</strong>
+            <span>How Weekform opens from the menu bar.</span>
           </div>
-        </>
-      )}
+          <div className="data-export-options">
+            <label className="sr-only" htmlFor="default-window-mode">Default window size on open</label>
+            <select
+              id="default-window-mode"
+              value={defaultWindowMode}
+              onChange={(event) =>
+                onDefaultWindowModeChange(event.target.value === "compact" ? "compact" : "large")
+              }
+            >
+              <option value="large">Full window</option>
+              <option value="compact">Compact widget</option>
+            </select>
+          </div>
+        </div>
+      </div>
 
       <nav className="settings-tabs" role="tablist" aria-label="Settings sections">
         {SETTINGS_TABS.map((tab, index) => (

@@ -12856,24 +12856,35 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
   background: var(--accent-muted);
 }
 
-/* "Replay walkthrough" row in Settings. */
+/* Persistent window preferences shared by every Settings tab. */
+.settings-preferences-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
 .settings-walkthrough-replay {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-top: 16px;
-  margin-bottom: 16px;
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
 }
 
+.settings-preferences-grid .settings-walkthrough-replay {
+  min-width: 0;
+  margin: 0;
+}
+
 .settings-walkthrough-replay > div {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .settings-walkthrough-replay strong {
@@ -12885,6 +12896,12 @@ html[data-theme="dark"] .agent-active .pause-button:hover {
 .settings-walkthrough-replay span {
   font-size: 12px;
   color: var(--text-subtle);
+}
+
+@media (max-width: 720px) {
+  .settings-preferences-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---------------------------------------------------------------------------

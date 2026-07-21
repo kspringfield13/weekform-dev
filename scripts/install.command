@@ -359,6 +359,11 @@ ${BOLD}One more thing — launching the app:${RESET}
     first launch adds a short welcome, a tour, and a quick setup.
   • Weekform also keeps its logo in the ${BOLD}menu bar${RESET} (top-right), not
     the Dock. Close the window anytime — click the icon to reopen it.
+  • After you read the welcome page and choose ${BOLD}Begin setup${RESET}, macOS may
+    ask for your ${BOLD}login password${RESET}. This lets Weekform use the Keychain
+    key that encrypts your local activity journal and reopen any credentials you
+    chose to save. Choose ${BOLD}Always Allow${RESET} so macOS remembers the approval.
+    Your password goes to macOS, never to Weekform.
   • macOS will ask for ${BOLD}Accessibility${RESET} permission. This lets the app
     see which app is in the foreground (never your keystrokes or screen).
     Approve it in System Settings → Privacy & Security → Accessibility.

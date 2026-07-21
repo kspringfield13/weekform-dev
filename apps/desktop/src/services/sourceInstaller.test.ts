@@ -90,6 +90,19 @@ test("source installer explains that a cloned source checkout can be removed", (
   assert.match(installer, /cloned source checkout can be moved to Trash/i);
 });
 
+test("source installer explains the post-welcome Keychain prompt before offering to launch", () => {
+  assert.match(installer, /After you read the welcome page and choose .*Begin setup/i);
+  assert.match(installer, /login password/i);
+  assert.match(installer, /encrypts your local activity journal/i);
+  assert.match(installer, /Always Allow/);
+  assert.match(installer, /password goes to macOS, never to Weekform/i);
+  assert.ok(
+    installer.indexOf("After you read the welcome page") <
+      installer.indexOf('confirm "Open Weekform now?"'),
+    "Keychain guidance must appear before the installer launches Weekform",
+  );
+});
+
 test("source installer never bypasses Gatekeeper quarantine", () => {
   assert.doesNotMatch(installer, /xattr\s+-[dr]+\s+com\.apple\.quarantine/i);
   assert.doesNotMatch(installer, /right-click Weekform\.app and choose Open/i);

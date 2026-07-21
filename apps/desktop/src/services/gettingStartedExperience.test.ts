@@ -25,6 +25,30 @@ test("privacy and tracking are explained as reviewable evidence under user contr
   assert.match(modalSource, /Pause from the toolbar at any time/);
 });
 
+test("the welcome page explains and acknowledges Keychain access before startup can request it", () => {
+  assert.match(modalSource, /onIntroAcknowledged: \(\) => void/);
+  assert.match(modalSource, /Mac's Keychain guards the\s+key that encrypts your activity journal/);
+  assert.match(modalSource, /Choose “Always Allow”/);
+  assert.match(modalSource, /your password goes to\s+macOS, never to Weekform/);
+  assert.match(modalSource, /if \(step === "intro"\) onIntroAcknowledged\(\)/);
+  assert.match(appSource, /onIntroAcknowledged=\{acknowledgeKeychainAccess\}/);
+});
+
+test("first-run startup shows non-secret state before Keychain-backed hydration", () => {
+  assert.match(appSource, /readPersistedState\(\{ hydrateAISecret: false \}\)/);
+  assert.match(appSource, /const keychainAccessDeferred\s*=\s*firstRunWizardPending\s*&&\s*!keychainAccessAcknowledged/);
+  assert.match(appSource, /if \(keychainAccessDeferred\) return;/);
+  assert.match(
+    appSource,
+    /if \(isDemoMode \|\| !isTauriRuntime \|\| retentionDays === null \|\| keychainAccessDeferred\) return/,
+  );
+  assert.ok(
+    appSource.indexOf('invoke("present_main_window")') <
+      appSource.indexOf("const hydrateKeychainBackedStartup"),
+    "the welcome window must be presented before Keychain-backed startup is defined or run",
+  );
+});
+
 test("retention is a direct, accessible choice and distinguishes raw from reviewed data", () => {
   assert.match(modalSource, /<fieldset className="getting-started-retention"/);
   assert.match(modalSource, /type="radio"/);

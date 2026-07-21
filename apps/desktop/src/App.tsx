@@ -191,19 +191,18 @@ export function App() {
   const { todayKey, currentWeekId, currentWeekRangeLabel, nextWeekId, nextWeekRangeLabel } =
     useDateContext();
 
-  // Gates the persistence write until the async hydration read below resolves, so the
-  // first-mount write can't race ahead of the read and clobber stored state with an empty
-  // snapshot (data-loss). Mirrors `themeHydrated`. A ref (not state) so flipping it never
-  // re-renders and the write effect stays keyed off the persisted-data deps.
-  const persistenceHydrated = useRef(false);
+  // Gates persistence until both startup phases resolve. This is state (rather
+  // than a ref) so completing deferred Keychain hydration re-runs the write
+  // effect and preserves an immediate "Set up later" decision.
+  const [persistenceHydrated, setPersistenceHydrated] = useState(isDemoMode);
   const [localPersistenceHydrationSettled, setLocalPersistenceHydrationSettled] =
     useState(isDemoMode);
+  const [keychainAccessAcknowledged, setKeychainAccessAcknowledged] = useState(false);
   const startupHydrationEpochRef = useRef<ReturnType<typeof createAsyncOperationEpoch> | null>(null);
-  // First-run only: the encrypted-journal reads below are parked here until the
-  // getting-started wizard resolves. Reading the journal touches its Keychain
-  // key, and after a reinstall macOS can answer that first touch with a
-  // password prompt — the wizard explains that prompt before it can appear.
-  const deferredJournalHydrationRef = useRef<(() => void) | null>(null);
+  // First-run only: every startup task that can touch Keychain is parked here
+  // until the user advances past the welcome-page explanation. This includes
+  // AI credential hydration, legacy journal migration, and journal reads.
+  const deferredKeychainHydrationRef = useRef<(() => void) | null>(null);
   if (startupHydrationEpochRef.current === null) {
     startupHydrationEpochRef.current = createAsyncOperationEpoch();
   }
@@ -218,34 +217,14 @@ export function App() {
   }
   const localImportReadersRef = useRef<Set<FileReader>>(new Set());
 
-  // Async load persisted state (hydrates non-ledger state and forces re-eval)
+  // Startup has two phases. First, load only non-secret Store state and show
+  // the real window. On a first run, Keychain-backed work remains parked until
+  // the user advances past the welcome-page explanation.
   useEffect(() => {
     if (isDemoMode) return;
     const hydrationToken = startupHydrationEpochRef.current!.start();
-    const hydration = readPersistedState().then(async (data) => {
+    const hydration = readPersistedState({ hydrateAISecret: false }).then((data) => {
       if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
-      // One-time compatibility migration: older builds kept raw samples in the
-      // general Tauri Store. Move them into the encrypted native journal before
-      // allowing the next persistence write to clear that legacy duplicate.
-      if (isTauriRuntime && data?.activeWindowSamples?.length) {
-        await invoke("import_capture_journal_samples", {
-          samples: data.activeWindowSamples.flatMap((sample) => {
-            const timestampMs = new Date(sample.timestamp).getTime();
-            if (!Number.isFinite(timestampMs)) return [];
-            return [{
-              sample_id: sample.sample_id,
-              timestamp_ms: timestampMs,
-              app_name: sample.app_name,
-              window_title: sample.window_title,
-              capture_error: null,
-            }];
-          }),
-        });
-        if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
-      }
-      // The read/migration resolved, so it's now safe to persist regardless of
-      // whether data was found.
-      persistenceHydrated.current = true;
       if (data) {
         setPersistedSnapshot(data);
         // Hydrate chrome + other states
@@ -301,17 +280,63 @@ export function App() {
       }
       setLocalPersistenceHydrationSettled(true);
       setBrowserScreenHistoryHydrated(true);
+
+      // Present only after the non-secret settings above select the correct
+      // first-run/full/compact layout. No Keychain command has run yet.
+      if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
       if (isTauriRuntime) {
-        const hydrateJournalHistory = () => {
+        void invoke("present_main_window").catch(() => undefined);
+      } else {
+        // Browser/dev storage has no native Keychain boundary, so its first
+        // read is already complete and safe to persist.
+        setPersistenceHydrated(true);
+        return;
+      }
+
+      const hydrateKeychainBackedStartup = () => {
+        if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
+        const keychainHydration = readPersistedState().then(async (hydratedData) => {
+          if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
+
+          // One-time compatibility migration: older builds kept raw samples in
+          // the general Store. The migration is deliberately in this second
+          // phase because writing the encrypted journal can unlock its Keychain
+          // key after a reinstall.
+          if (hydratedData?.activeWindowSamples?.length) {
+            await invoke("import_capture_journal_samples", {
+              samples: hydratedData.activeWindowSamples.flatMap((sample) => {
+                const timestampMs = new Date(sample.timestamp).getTime();
+                if (!Number.isFinite(timestampMs)) return [];
+                return [{
+                  sample_id: sample.sample_id,
+                  timestamp_ms: timestampMs,
+                  app_name: sample.app_name,
+                  window_title: sample.window_title,
+                  capture_error: null,
+                }];
+              }),
+            });
+            if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
+          }
+
+          if (hydratedData) {
+            setPersistedSnapshot(hydratedData);
+            setAiConfig(hydratedData.aiConfig ?? null);
+          }
+          // Full credential hydration and any journal migration resolved, so
+          // persistence can no longer overwrite data it failed to load.
+          setPersistenceHydrated(true);
+
           const sessionCutoffMs = Date.now();
           const sessionSinceMs = sessionCutoffMs - 8 * 24 * 60 * 60 * 1000;
-          void invoke<Array<{
+          try {
+            const journal = await invoke<Array<{
             sample_id: string;
             timestamp_ms: number;
             app_name: string | null;
             window_title: string | null;
             capture_error: string | null;
-          }>>("read_capture_journal", { limit: 2000 }).then((journal) => {
+            }>>("read_capture_journal", { limit: 2000 });
             if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
             const recovered: ActiveWindowSample[] = journal.flatMap((entry) => {
               if (entry.capture_error || !entry.app_name || !Number.isFinite(entry.timestamp_ms)) return [];
@@ -328,57 +353,56 @@ export function App() {
               const byId = new Map([...current, ...recovered].map((sample) => [sample.sample_id, sample]));
               return [...byId.values()].sort((left, right) => left.timestamp.localeCompare(right.timestamp)).slice(-2000);
             });
-          }).catch((error) => {
+          } catch (error) {
             if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
             setCaptureError(error instanceof Error ? error.message : "The encrypted capture journal could not be read.");
-          });
-          void invoke<ActivitySession[]>("read_capture_journal_sessions", {
-            sinceMs: sessionSinceMs,
-            untilMs: sessionCutoffMs,
-            maxSessions: 10_000,
-          }).then((sessions) => {
+          }
+          try {
+            const sessions = await invoke<ActivitySession[]>("read_capture_journal_sessions", {
+              sinceMs: sessionSinceMs,
+              untilMs: sessionCutoffMs,
+              maxSessions: 10_000,
+            });
             if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
             setJournalSessionWindow({ cutoffMs: sessionCutoffMs, sessions });
-          }).catch((error) => {
+          } catch (error) {
             if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
             setCaptureError(
               error instanceof Error
                 ? error.message
                 : "The recent encrypted activity window could not be reconstructed.",
             );
-          });
-        };
-        const wizardWillShow =
-          !isDemoMode
-          && (data?.gettingStartedStatus ?? "unseen") === "unseen"
-          && (data?.defaultWindowMode ?? "large") === "large";
-        if (wizardWillShow) {
-          deferredJournalHydrationRef.current = hydrateJournalHistory;
-        } else {
-          hydrateJournalHistory();
-        }
-      }
+          }
+        }).catch((error) => {
+          if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
+          // Never reinterpret a Keychain or legacy-journal migration failure as
+          // an empty profile. Persistence stays gated so saved state is safe.
+          const detail = error instanceof Error ? error.message : String(error);
+          setCaptureError(`Saved Weekform data could not be loaded: ${detail}`);
+        });
+        startupHydrationBarrierRef.current = keychainHydration;
+      };
 
-      // Every launch: bring the main window forward maximized in the full
-      // layout (first launch lands in welcome → walkthrough → setup; returning
-      // users land on their dashboard). The menu-bar icon stays available
-      // either way; closing the window returns the app to tray-only.
-      if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
-      void invoke("present_main_window").catch(() => undefined);
+      const wizardWillShow =
+        (data?.gettingStartedStatus ?? "unseen") === "unseen"
+        && (data?.defaultWindowMode ?? "large") === "large";
+      if (wizardWillShow) {
+        deferredKeychainHydrationRef.current = hydrateKeychainBackedStartup;
+      } else {
+        hydrateKeychainBackedStartup();
+      }
     }).catch((error) => {
       if (!startupHydrationEpochRef.current!.isCurrent(hydrationToken)) return;
-      // Never reinterpret a read, Keychain, or legacy-journal migration failure
-      // as an empty first launch: that would let a later save overwrite data we
-      // failed to hydrate. Keep persistence gated and make recovery visible.
+      // Never reinterpret a Store read failure as an empty first launch: that
+      // would let a later save overwrite data we failed to hydrate.
       const detail = error instanceof Error ? error.message : String(error);
       setCaptureError(`Saved Weekform data could not be loaded: ${detail}`);
       setLocalPersistenceHydrationSettled(true);
       setBrowserScreenHistoryHydrated(true);
       void invoke("present_main_window").catch(() => undefined);
     });
-    // readPersistedState can perform durable Store/Keychain migrations, and the
-    // callback can import a legacy sample set into the native journal. Reset
-    // waits this entire boundary before clearing any of those destinations.
+    // The barrier is replaced with the second-phase promise when Keychain work
+    // begins. Reset invalidates this token before awaiting either phase.
     startupHydrationBarrierRef.current = hydration;
     return () => startupHydrationEpochRef.current?.invalidate();
   }, [isDemoMode, isTauriRuntime]);
@@ -639,10 +663,14 @@ export function App() {
   // prompt is always shown before the prompt itself can appear.
   const firstRunWizardPending =
     !isDemoMode && windowMode === "large" && gettingStartedStatus === "unseen";
+  const keychainAccessDeferred = firstRunWizardPending && !keychainAccessAcknowledged;
+  const acknowledgeKeychainAccess = useCallback(() => {
+    setKeychainAccessAcknowledged(true);
+  }, []);
 
   const calendarSources = useCalendarSources({
     enabled: isTauriRuntime && !isDemoMode,
-    deferStatusProbe: firstRunWizardPending,
+    deferStatusProbe: keychainAccessDeferred,
     onEvents: applyCalendarSourceEvents,
     onDisconnected: (provider) => {
       setAuditEvents((current) => [
@@ -798,7 +826,7 @@ export function App() {
 
   const chatSources = useChatSources({
     enabled: isTauriRuntime && !isDemoMode,
-    deferStatusProbe: firstRunWizardPending,
+    deferStatusProbe: keychainAccessDeferred,
     onSyncResult: applyChatSourceResult,
     onConnectionEvent: (provider, action, success) => {
       // Every sync outcome carries its richer receipt in applyChatSourceResult.
@@ -933,9 +961,9 @@ export function App() {
   const cloudAccount = useCloudAccount({
     isDemoMode,
     // Mirrors the deferred journal hydration above: no Keychain-backed storage
-    // access while the first-run wizard (which explains the possible macOS
-    // Keychain prompt) is still on screen.
-    deferHydration: firstRunWizardPending,
+    // access until the first-run welcome has explained the possible macOS
+    // Keychain prompt and the user acknowledges it.
+    deferHydration: keychainAccessDeferred,
     onAuditEvent: (event) => {
       if (isDemoMode) return;
       setAuditEvents((current) => [...current, event].slice(-1000));
@@ -1135,7 +1163,7 @@ export function App() {
   // must not trigger a full-history read/rewrite. Failures remain visible because
   // retention is a consequential privacy control, not background housekeeping.
   useEffect(() => {
-    if (isDemoMode || !isTauriRuntime || retentionDays === null) return;
+    if (isDemoMode || !isTauriRuntime || retentionDays === null || keychainAccessDeferred) return;
     const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
     void invoke("prune_capture_journal", { cutoffMs: Math.max(0, Math.floor(cutoff)) })
       .then(() => {
@@ -1149,7 +1177,7 @@ export function App() {
         setCaptureError(message);
         pushToast({ tone: "error", message });
       });
-  }, [isDemoMode, isTauriRuntime, retentionDays, todayKey, pushToast]);
+  }, [isDemoMode, isTauriRuntime, retentionDays, todayKey, keychainAccessDeferred, pushToast]);
 
   // Retention policy: auto-expire raw activity older than the user-chosen window
   // (null = keep everything). This covers both the raw active-window samples and the
@@ -2043,15 +2071,15 @@ export function App() {
     }
   }, [gettingStartedStatus, paused]);
 
-  // Runs the journal hydration parked during a first-run boot (see the
-  // deferred ref above) as soon as the wizard resolves either way.
+  // Run the parked Keychain-backed phase only after the welcome explanation is
+  // acknowledged (Begin setup) or the user deliberately dismisses the wizard.
   useEffect(() => {
-    if (gettingStartedStatus === "unseen") return;
-    const hydrate = deferredJournalHydrationRef.current;
+    if (keychainAccessDeferred) return;
+    const hydrate = deferredKeychainHydrationRef.current;
     if (!hydrate) return;
-    deferredJournalHydrationRef.current = null;
+    deferredKeychainHydrationRef.current = null;
     hydrate();
-  }, [gettingStartedStatus]);
+  }, [keychainAccessDeferred]);
 
   // User-initiated retention-window change. Logged once as a discrete privacy
   // action (background expiry of raw activity and Chat evidence stays unlogged).
@@ -2545,7 +2573,7 @@ export function App() {
     // Reset may win the race with launch hydration. Once deletion is confirmed,
     // let the cleared render and reset receipt establish the new persisted
     // baseline; the startup token above can no longer commit its stale read.
-    if (persistedStateCleared) persistenceHydrated.current = true;
+    if (persistedStateCleared) setPersistenceHydrated(true);
     const cloudCredentialsCleared = resetWriteBoundariesQuiesced
       ? await cloudAccount.clearAll().catch(() => false)
       : false;
@@ -2666,6 +2694,7 @@ export function App() {
     setAiConfig(null);
     setWalkthroughCompleted(false);
     setGettingStartedStatus("unseen");
+    setKeychainAccessAcknowledged(false);
     setDefaultWindowMode("large");
     setManagerSummaryText(null);
     setGeneratedNarrative(null);
@@ -3234,6 +3263,7 @@ export function App() {
           onConnectOpenAiKey={connectOpenAiKeyFromWizard}
           onConnectViaCodexPlan={connectViaCodexPlanFromWizard}
           onOpenDemo={openDemoSimulation}
+          onIntroAcknowledged={acknowledgeKeychainAccess}
           onDismiss={finishGettingStarted}
         />
       )}

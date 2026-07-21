@@ -683,7 +683,7 @@ test("pause and reset close the renderer capture gate before native work can fin
 test("startup Store and native-journal hydration share the reset epoch fence", () => {
   const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
   const hydration = app.slice(
-    app.indexOf("// Async load persisted state"),
+    app.indexOf("// Startup has two phases"),
     app.indexOf("const initialBlocks"),
   );
   const reset = app.slice(
@@ -696,6 +696,7 @@ test("startup Store and native-journal hydration share the reset epoch fence", (
   assert.match(hydration, /read_capture_journal_sessions[\s\S]*?isCurrent\(hydrationToken\)[\s\S]*?setJournalSessionWindow/);
   assert.match(reset, /startupHydrationEpochRef\.current!\.invalidate\(\)/);
   assert.match(hydration, /startupHydrationBarrierRef\.current\s*=\s*hydration/);
+  assert.match(hydration, /startupHydrationBarrierRef\.current\s*=\s*keychainHydration/);
   assert.ok(
     reset.indexOf("await startupHydrationQuiescence") < reset.indexOf("clearPersistedState()"),
     "durable hydration migrations must settle before Reset clears Store and Keychain state",

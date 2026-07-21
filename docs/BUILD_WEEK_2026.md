@@ -1188,6 +1188,24 @@ Only the session IDs and concise evidence summaries are intended for publication
 - **Observable evidence:** A regression test reproduced the prior state in which an unconsented policy could not build the preview required to expose its own consent control. Focused tests now prove preview-before-approval, upload denial before approval, one-action approval policy construction, retry-safe reservation persistence, and the approval-to-first-sync UI path. The root TypeScript/pricing/Vite build completed successfully. Live authenticated Supabase row insertion remains a separate production-data proof surface.
 - **Human product direction:** Kyle identified that the Account & Sharing ceremony obscured the actual decision and asked for operational sync driven by team sharing rules plus approval at the individual level. The resulting flow preserves the narrowing-only team boundary and exact-data inspection while making the individual approval the single consequential action.
 
+### First-run Keychain explanation and prompt ordering
+
+- **Date:** July 21, 2026
+- **Outcome:** Kyle identified that macOS could display Weekform's Keychain password
+  sheet before the application window appeared. Codex split startup into a
+  non-secret phase that presents the first-run wizard and a Keychain-backed
+  phase that begins only after the user acknowledges the welcome explanation.
+  The welcome page and source-installer terminal output now explain that the
+  login password goes to macOS, that Keychain protects the local activity-journal
+  encryption key and saved credentials, and why choosing **Always Allow** avoids
+  repeated prompts.
+- **Observable evidence:** regression contracts cover window-before-Keychain
+  ordering and defer credential hydration, journal migration/reads, cloud and
+  connector probes, and retention pruning. The 346-test desktop service suite
+  and authoritative root build pass. The welcome page was visually checked in
+  the browser with a clean console; the macOS password sheet remains a separate
+  packaged-app smoke-test surface and is not claimed as exercised here.
+
 ## Required `/feedback` submission field
 
 Use this primary Project-thread value for the required feedback field:

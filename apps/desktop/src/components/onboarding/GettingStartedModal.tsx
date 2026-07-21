@@ -67,6 +67,7 @@ export function GettingStartedModal({
   onConnectOpenAiKey,
   onConnectViaCodexPlan,
   onOpenDemo,
+  onIntroAcknowledged,
   onDismiss,
 }: {
   paused: boolean;
@@ -79,6 +80,7 @@ export function GettingStartedModal({
   onConnectOpenAiKey: (apiKey: string) => void;
   onConnectViaCodexPlan: () => Promise<string>;
   onOpenDemo: () => void;
+  onIntroAcknowledged: () => void;
   onDismiss: () => void;
 }) {
   const [stepIndex, setStepIndex] = useState(0);
@@ -116,6 +118,11 @@ export function GettingStartedModal({
     } finally {
       setCodexBusy(false);
     }
+  };
+
+  const advanceFromCurrentStep = () => {
+    if (step === "intro") onIntroAcknowledged();
+    setStepIndex((index) => index + 1);
   };
 
   useEffect(() => {
@@ -589,7 +596,7 @@ export function GettingStartedModal({
                 <button
                   className="getting-started-btn is-primary"
                   type="button"
-                  onClick={() => setStepIndex((index) => index + 1)}
+                  onClick={advanceFromCurrentStep}
                   ref={primaryButtonRef}
                 >
                   {isFirst ? "Begin setup" : "Continue"} <ArrowRight size={14} aria-hidden="true" />

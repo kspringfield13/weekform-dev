@@ -565,6 +565,16 @@ test("React persistence coalesces bursts and excludes native journal samples fro
   );
 });
 
+test("two-phase startup re-runs persistence after Keychain hydration becomes ready", () => {
+  assert.match(appSource, /const \[persistenceHydrated, setPersistenceHydrated\]\s*=\s*useState\(isDemoMode\)/);
+  assert.match(persistenceHookSource, /if \(isDemoMode \|\| !hydrated \|\| suspendedForResetRef\.current\) return/);
+  const effectDependencies = persistenceHookSource.slice(
+    persistenceHookSource.indexOf("persistData.blocks"),
+    persistenceHookSource.indexOf("return useMemo"),
+  );
+  assert.match(effectDependencies, /\bhydrated\b/);
+});
+
 test("React persistence exposes an awaitable barrier for the latest rendered snapshot", () => {
   assert.match(persistenceHookSource, /latestSnapshotRef/);
   assert.match(persistenceHookSource, /const flushLatest\s*=\s*useCallback/);
@@ -638,10 +648,22 @@ test("failed hydration blocks overwrite and remains visible instead of becoming 
     /export async function readPersistedState[\s\S]*?catch\s*\{\s*return null;\s*\}/,
   );
   const hydrationSource = appSource.slice(
-    appSource.indexOf("// Async load persisted state"),
+    appSource.indexOf("// Startup has two phases"),
     appSource.indexOf("const initialBlocks"),
   );
   assert.match(hydrationSource, /Saved Weekform data could not be loaded/);
   assert.match(hydrationSource, /present_main_window/);
   assert.doesNotMatch(hydrationSource, /import_capture_journal_samples[\s\S]{0,500}\.catch\(\(\) => undefined\)/);
+});
+
+test("startup can inspect persisted state without touching the AI credential in Keychain", () => {
+  assert.match(
+    localStoreSource,
+    /export async function readPersistedState\([\s\S]*?hydrateAISecret = true[\s\S]*?hydrateAISecret\?: boolean/,
+  );
+  assert.match(
+    localStoreSource,
+    /const hydratedAIConfig = hydrateAISecret[\s\S]*?hydrateAIProviderSecret\([\s\S]*?: deferredAIProviderSecret\(/,
+  );
+  assert.match(localStoreSource, /function deferredAIProviderSecret\(/);
 });

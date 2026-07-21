@@ -759,6 +759,27 @@ async function hydrateAIProviderSecret(
 }
 
 /**
+ * Return only the non-secret AI connection metadata while first-run UI is
+ * explaining macOS Keychain access. The durable binding stays registered in
+ * memory, but no native Keychain command runs until the caller explicitly
+ * requests full hydration.
+ */
+function deferredAIProviderSecret(
+  config: AIConfig | null,
+  persistedBinding: unknown,
+): {
+  config: AIConfig | null;
+  credentialBinding: string | null;
+  migratedLegacySecret: false;
+} {
+  return {
+    config: sanitizeAIConfigForPersistence(config),
+    credentialBinding: parseAICredentialBinding(persistedBinding),
+    migratedLegacySecret: false,
+  };
+}
+
+/**
  * Validate the persisted getting-started status. Legacy blobs predate the field:
  * anyone who already finished the first-run walkthrough must NOT retroactively
  * get the "Getting started" modal on their next launch, so a missing/malformed
@@ -1441,7 +1462,9 @@ async function getStore(): Promise<Store | null> {
   return Store.load(STORE_FILE);
 }
 
-export async function readPersistedState(): Promise<PersistedAppState | null> {
+export async function readPersistedState(
+  { hydrateAISecret = true }: { hydrateAISecret?: boolean } = {},
+): Promise<PersistedAppState | null> {
   const store = await getStore();
   if (!store) {
       // Fallback to localStorage for web/dev
@@ -1540,36 +1563,38 @@ export async function readPersistedState(): Promise<PersistedAppState | null> {
   const parsedAIConfig = parseAIConfig(parsed.aiConfig);
   const persistedCredentialBinding = parseAICredentialBinding(parsed.aiCredentialBinding);
   let migrationRollbackState: unknown = parsed;
-  const hydratedAIConfig = await hydrateAIProviderSecret(
-    parsedAIConfig,
-    parsed.aiCredentialBinding,
-    (binding) => commitStoreValueWithRollback(
-      store,
-      STATE_KEY,
-      migrationRollbackState,
-      {
-        ...parsed,
-        aiConfig: sanitizeAIConfigForPersistence(parsedAIConfig),
-        aiCredentialBinding: binding,
-        aiCredentialBindings: collectAIProviderCredentialBindings(
-          parsed.aiCredentialBindings,
-          persistedCredentialBinding,
-          binding,
-        ),
-      },
-    ),
-    async (binding) => {
-      knownAISecretBindings.add(binding);
-      const registeredState = appendAIProviderCredentialBindingToStoreState(parsed, binding);
-      await commitStoreValueWithRollback(
+  const hydratedAIConfig = hydrateAISecret
+    ? await hydrateAIProviderSecret(
+      parsedAIConfig,
+      parsed.aiCredentialBinding,
+      (binding) => commitStoreValueWithRollback(
         store,
         STATE_KEY,
-        parsed,
-        registeredState,
-      );
-      migrationRollbackState = registeredState;
-    },
-  );
+        migrationRollbackState,
+        {
+          ...parsed,
+          aiConfig: sanitizeAIConfigForPersistence(parsedAIConfig),
+          aiCredentialBinding: binding,
+          aiCredentialBindings: collectAIProviderCredentialBindings(
+            parsed.aiCredentialBindings,
+            persistedCredentialBinding,
+            binding,
+          ),
+        },
+      ),
+      async (binding) => {
+        knownAISecretBindings.add(binding);
+        const registeredState = appendAIProviderCredentialBindingToStoreState(parsed, binding);
+        await commitStoreValueWithRollback(
+          store,
+          STATE_KEY,
+          parsed,
+          registeredState,
+        );
+        migrationRollbackState = registeredState;
+      },
+    )
+    : deferredAIProviderSecret(parsedAIConfig, parsed.aiCredentialBinding);
   currentAISecretBinding = hydratedAIConfig.credentialBinding;
   if (currentAISecretBinding) knownAISecretBindings.add(currentAISecretBinding);
   lastAISecretFingerprint = hydratedAIConfig.config?.connectionMode === "api_key"
