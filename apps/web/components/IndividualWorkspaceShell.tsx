@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { WeekformMark } from "@/components/WeekformMark";
 import { DesktopStartTrackingButton } from "@/components/DesktopStartTrackingButton";
+import { MacAppLink } from "@/components/MacAppLink";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { WebEditionLabel } from "@/components/WebEditionLabel";
 import { WorkspaceModeToggle } from "@/components/WorkspaceModeToggle";
@@ -16,6 +17,7 @@ import {
   type IndividualSubview,
   type IndividualWorkspaceRoute,
 } from "@/lib/individualWorkspaceRoute";
+import { desktopPageHandoffUrl } from "@/lib/desktopPageHandoff";
 import { resolveMobileNavigationFocusAction } from "@/lib/mobileNavigationFocus";
 
 const DESTINATIONS: Array<{
@@ -158,6 +160,7 @@ export function IndividualWorkspaceShell({
   const restoreSidebarFocusRef = useRef(false);
   const mobileNavigationOpen = isNarrowViewport && !sidebarCollapsed;
   const activeRoute = { destination: active, subview: activeSubview } satisfies IndividualWorkspaceRoute;
+  const desktopHandoffUrl = desktopPageHandoffUrl(activeRoute, workspaceMode);
   const individualHref = workspaceHref("/app", activeRoute);
   const activeTeamHref = workspaceHref(teamHref, activeRoute);
   const teamDestinationHref = teamHref;
@@ -443,15 +446,27 @@ export function IndividualWorkspaceShell({
           </div>
           <div className="web-private-state"><i aria-hidden="true" /> {teamWorkspace ? "No raw activity" : "Review-safe fields only"}</div>
         </div>
-        <button
-          className={active === "settings" ? "settings-button is-active" : "settings-button"}
-          type="button"
-          aria-current={active === "settings" ? "page" : undefined}
-          onClick={() => navigate(SETTINGS_DESTINATION)}
-        >
-          <NavIcon id="settings" />
-          <span>Settings</span>
-        </button>
+        <div className="web-sidebar-footer-actions">
+          <MacAppLink
+            attemptAppOpen
+            openUrl={desktopHandoffUrl}
+            fallbackHref="/download"
+            className="web-open-desktop-button"
+            aria-label="Open current page in Weekform Desktop"
+            title="Open current page in Weekform Desktop"
+          >
+            <WeekformMark className="web-open-desktop-mark" />
+          </MacAppLink>
+          <button
+            className={active === "settings" ? "settings-button is-active" : "settings-button"}
+            type="button"
+            aria-current={active === "settings" ? "page" : undefined}
+            onClick={() => navigate(SETTINGS_DESTINATION)}
+          >
+            <NavIcon id="settings" />
+            <span>Settings</span>
+          </button>
+        </div>
       </aside>
 
       <button

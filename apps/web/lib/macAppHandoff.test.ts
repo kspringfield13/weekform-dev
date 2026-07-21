@@ -133,8 +133,8 @@ test("Individual Today and Week queue a prompt-free authenticated Start Tracking
   const stateSource = readFileSync(new URL("desktopActions.ts", import.meta.url), "utf8");
   const stylesSource = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
-  assert.doesNotMatch(individualShellSource, /weekform:\/\//);
-  assert.doesNotMatch(individualShellSource, /attemptAppOpen/);
+  assert.doesNotMatch(startTrackingSource, /weekform:\/\//);
+  assert.doesNotMatch(startTrackingSource, /attemptAppOpen/);
   assert.match(individualShellSource, /active === "today" \|\| active === "week"/);
   assert.match(individualShellSource, /<DesktopStartTrackingButton/);
   assert.match(startTrackingSource, /queueDesktopStartTracking/);
@@ -150,5 +150,45 @@ test("Individual Today and Week queue a prompt-free authenticated Start Tracking
   assert.match(personalCloudSource, /acknowledgeDesktopAction/);
   assert.match(personalCloudSource, /registerWeekformDeviceV3/);
   assert.match(desktopAppSource, /invoke\("show_quick_view"\)/);
-  assert.match(desktopAppSource, /if \(!requestCapturePaused\(false\)\) return/);
+  assert.match(
+    desktopAppSource,
+    /const handleDesktopStartTracking[\s\S]{0,500}!requestCapturePaused\(false\)/,
+  );
+  assert.doesNotMatch(
+    nativeSource,
+    /WEB_HANDOFF_START_TRACKING|PendingWebHandoff|consume_pending_web_handoff|clear-capacity:web-handoff/,
+  );
+});
+
+test("the sidebar Desktop icon opens the matching current page through an allowlisted native handoff", () => {
+  const handoffSource = readFileSync(new URL("desktopPageHandoff.ts", import.meta.url), "utf8");
+  const stylesSource = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+
+  assert.match(individualShellSource, /desktopPageHandoffUrl\(activeRoute, workspaceMode\)/);
+  assert.match(
+    individualShellSource,
+    /<MacAppLink[\s\S]*?attemptAppOpen[\s\S]*?openUrl=\{desktopHandoffUrl\}[\s\S]*?aria-label="Open current page in Weekform Desktop"/,
+  );
+  assert.match(individualShellSource, /<WeekformMark className="web-open-desktop-mark"/);
+  assert.match(handoffSource, /source=weekform\.dev&view=large&screen=/);
+  assert.match(stylesSource, /\.web-open-desktop-mark\s*\{[^}]*width:\s*11px[^}]*height:\s*9px/s);
+  assert.match(nativeSource, /fn web_handoff_screen/);
+  assert.match(nativeSource, /consume_pending_web_navigation/);
+  assert.match(nativeSource, /clear-capacity:web-navigation/);
+  assert.match(desktopAppSource, /consume_pending_web_navigation/);
+  assert.match(desktopAppSource, /clear-capacity:web-navigation/);
+  assert.match(desktopAppSource, /shouldConsumePendingWebNavigation/);
+  assert.match(desktopAppSource, /localPersistenceHydrationSettled/);
+  assert.doesNotMatch(
+    desktopAppSource,
+    /listening\s*&&\s*screen\s*&&\s*screen in screenLabels/,
+  );
+  assert.match(
+    desktopAppSource,
+    /function applyNativeScreen\(screen: Screen\)[\s\S]{0,220}setManagerModeOpen\(false\)[\s\S]{0,120}setActive\(screen\)/,
+  );
+  assert.match(
+    desktopAppSource,
+    /if \(cloudAccount\.hydrated && !teamAvailable && active === "team"\) setActive\("daily"\)/,
+  );
 });

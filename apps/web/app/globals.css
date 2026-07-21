@@ -6680,6 +6680,37 @@ button.web-team-gantt-cell {
   font-weight: 500;
   cursor: pointer;
 }
+.web-sidebar-footer-actions {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 4px;
+}
+.web-sidebar-footer-actions .settings-button { width: 100%; }
+.web-open-desktop-button {
+  display: inline-grid;
+  width: 36px;
+  min-height: 36px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text-subtle);
+  background: transparent;
+  padding: 0;
+  text-decoration: none;
+  cursor: pointer;
+}
+.web-open-desktop-button:hover {
+  border-color: var(--border);
+  color: var(--text);
+  background: var(--hover-background);
+}
+.web-open-desktop-mark {
+  display: block;
+  width: 11px;
+  height: 9px;
+  flex: 0 0 auto;
+}
 .web-individual-app .settings-button:hover { color: var(--text); background: var(--hover-background); }
 .web-individual-app .settings-button.is-active { border-color: var(--border); color: var(--text); background: var(--control-background); box-shadow: var(--raised-shadow); }
 .web-individual-app .settings-button .web-nav-glyph { width: 17px; height: 17px; }
@@ -8095,6 +8126,13 @@ button.web-team-gantt-cell {
   .web-individual-app .team-access-entry { width: 100%; margin-top: 2px; }
   .web-individual-app .settings-button {
     display: inline-flex;
+    min-height: 44px;
+  }
+  .web-sidebar-footer-actions {
+    grid-template-columns: 44px minmax(0, 1fr);
+  }
+  .web-open-desktop-button {
+    width: 44px;
     min-height: 44px;
   }
   .web-sidebar-dialog-close {

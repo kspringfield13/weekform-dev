@@ -116,6 +116,7 @@ import {
 } from "./hooks/useChatSources";
 import { usePersonalCloudSync } from "./hooks/usePersonalCloudSync";
 import { screenLabels } from "./lib/ui";
+import { shouldConsumePendingWebNavigation } from "./lib/webNavigation";
 import {
   MAX_VISUAL_CONTEXT_CAPTURES_PER_DAY,
   MIN_VISUAL_CONTEXT_SESSION_MINUTES,
@@ -140,7 +141,6 @@ import {
   resolveSettingsTab,
 } from "./services/adminPortal";
 import { deriveWeeklyReviewState } from "./services/weeklyReview";
-import { resolveWebTrackingHandoff } from "./services/webTrackingHandoff";
 import {
   resolveGettingStartedDemoExit,
   resolveGettingStartedExit,
@@ -196,6 +196,8 @@ export function App() {
   // snapshot (data-loss). Mirrors `themeHydrated`. A ref (not state) so flipping it never
   // re-renders and the write effect stays keyed off the persisted-data deps.
   const persistenceHydrated = useRef(false);
+  const [localPersistenceHydrationSettled, setLocalPersistenceHydrationSettled] =
+    useState(isDemoMode);
   const startupHydrationEpochRef = useRef<ReturnType<typeof createAsyncOperationEpoch> | null>(null);
   // First-run only: the encrypted-journal reads below are parked here until the
   // getting-started wizard resolves. Reading the journal touches its Keychain
@@ -297,6 +299,7 @@ export function App() {
         setUsageCsvRowHashes(data.usageCsvRowHashes ?? []);
         setConsentReceipts(data.consentReceipts ?? []);
       }
+      setLocalPersistenceHydrationSettled(true);
       setBrowserScreenHistoryHydrated(true);
       if (isTauriRuntime) {
         const hydrateJournalHistory = () => {
@@ -369,6 +372,7 @@ export function App() {
       // failed to hydrate. Keep persistence gated and make recovery visible.
       const detail = error instanceof Error ? error.message : String(error);
       setCaptureError(`Saved Weekform data could not be loaded: ${detail}`);
+      setLocalPersistenceHydrationSettled(true);
       setBrowserScreenHistoryHydrated(true);
       void invoke("present_main_window").catch(() => undefined);
     });
@@ -926,7 +930,6 @@ export function App() {
       setAuditEvents((current) => [...current, event].slice(-1000));
     },
   });
-  const desktopSignedIn = cloudAccount.account !== null;
   const cloudSync = useCloudSync({
     account: cloudAccount,
     snapshot,
@@ -988,8 +991,8 @@ export function App() {
   }, [managerAccessAvailable]);
 
   useEffect(() => {
-    if (!teamAvailable && active === "team") setActive("daily");
-  }, [active, teamAvailable]);
+    if (cloudAccount.hydrated && !teamAvailable && active === "team") setActive("daily");
+  }, [active, cloudAccount.hydrated, teamAvailable]);
 
   // The ritual closes the current week. `forecastTrackRecord` deliberately
   // excludes the accumulating current week, so project its existing live
@@ -1477,12 +1480,34 @@ export function App() {
   }, [active, browserScreenHistoryHydrated, isTauriRuntime]);
 
   useEffect(() => {
-    function navigateFromNative(event: Event) {
-      const screen = (event as CustomEvent<Screen>).detail;
+    function applyNativeScreen(screen: Screen) {
       if (screen in screenLabels) {
+        setManagerModeOpen(false);
         setActive(screen);
         setWindowMode("large");
       }
+    }
+
+    function navigateFromNative(event: Event) {
+      applyNativeScreen((event as CustomEvent<Screen>).detail);
+    }
+
+    const canConsumePendingWebNavigation = shouldConsumePendingWebNavigation(
+      isTauriRuntime,
+      localPersistenceHydrationSettled,
+    );
+    async function consumeWebPageNavigation() {
+      if (!canConsumePendingWebNavigation) return;
+      try {
+        const screen = await invoke<Screen | null>("consume_pending_web_navigation");
+        if (screen && screen in screenLabels) applyNativeScreen(screen);
+      } catch {
+        // A development webview may temporarily outlive an older native command boundary.
+      }
+    }
+
+    function navigateFromWeb() {
+      void consumeWebPageNavigation();
     }
 
     function togglePauseFromNative() {
@@ -1498,56 +1523,20 @@ export function App() {
     }
 
     window.addEventListener("clear-capacity:navigate", navigateFromNative);
+    window.addEventListener("clear-capacity:web-navigation", navigateFromWeb);
     window.addEventListener("clear-capacity:toggle-pause", togglePauseFromNative);
     window.addEventListener("clear-capacity:quick-view", openQuickViewFromNative);
     window.addEventListener("clear-capacity:large-view", openLargeViewFromNative);
+    if (canConsumePendingWebNavigation) void consumeWebPageNavigation();
 
     return () => {
       window.removeEventListener("clear-capacity:navigate", navigateFromNative);
+      window.removeEventListener("clear-capacity:web-navigation", navigateFromWeb);
       window.removeEventListener("clear-capacity:toggle-pause", togglePauseFromNative);
       window.removeEventListener("clear-capacity:quick-view", openQuickViewFromNative);
       window.removeEventListener("clear-capacity:large-view", openLargeViewFromNative);
     };
-  }, [requestCapturePaused]);
-
-  useEffect(() => {
-    if (!isTauriRuntime || !cloudAccount.hydrated) return;
-
-    let active = true;
-    let consuming = false;
-    const consumeWebHandoff = async () => {
-      if (consuming) return;
-      consuming = true;
-      try {
-        const action = await invoke<string | null>("consume_pending_web_handoff");
-        if (!active || action !== "start_tracking") return;
-
-        const resolution = resolveWebTrackingHandoff(desktopSignedIn);
-        if (resolution.startTracking) {
-          if (!requestCapturePaused(false)) return;
-          setWindowMode(resolution.windowMode);
-          pushToast({ tone: "success", message: "Tracking started in compact view" });
-          return;
-        }
-
-        if (resolution.settingsTab) setActiveSettingsTab(resolution.settingsTab);
-        if (resolution.screen) setActive(resolution.screen);
-        setWindowMode(resolution.windowMode);
-        void invoke("present_main_window").catch(() => undefined);
-        pushToast({ tone: "info", message: "Sign in to Weekform Desktop to start tracking" });
-      } finally {
-        consuming = false;
-      }
-    };
-    const handleWebHandoff = () => { void consumeWebHandoff(); };
-
-    window.addEventListener("clear-capacity:web-handoff", handleWebHandoff);
-    void consumeWebHandoff();
-    return () => {
-      active = false;
-      window.removeEventListener("clear-capacity:web-handoff", handleWebHandoff);
-    };
-  }, [cloudAccount.hydrated, desktopSignedIn, isTauriRuntime, pushToast, requestCapturePaused]);
+  }, [isTauriRuntime, localPersistenceHydrationSettled, requestCapturePaused]);
 
   useEffect(() => {
     async function copyManagerSummaryFromNative() {

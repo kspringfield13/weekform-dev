@@ -265,9 +265,8 @@ struct DefaultOpenState {
     compact: AtomicBool,
 }
 
-struct PendingWebHandoff(Mutex<Option<String>>);
+struct PendingWebNavigation(Mutex<Option<String>>);
 
-const WEB_HANDOFF_START_TRACKING: &str = "start_tracking";
 #[derive(Clone, Deserialize, Serialize)]
 struct ActiveWindowPayload {
     sample_id: String,
@@ -568,13 +567,31 @@ fn weekform_query_value<'a>(raw_url: &'a str, key: &str) -> Option<&'a str> {
     })
 }
 
-fn web_handoff_action(raw_url: &str) -> Option<&'static str> {
-    if !is_weekform_open_url(raw_url) {
+fn web_handoff_screen(raw_url: &str) -> Option<&'static str> {
+    if !is_weekform_open_url(raw_url)
+        || weekform_query_value(raw_url, "source") != Some("weekform.dev")
+        || weekform_query_value(raw_url, "view") != Some("large")
+    {
         return None;
     }
-    (weekform_query_value(raw_url, "action") == Some("start-tracking")
-        && weekform_query_value(raw_url, "view") == Some("compact"))
-    .then_some(WEB_HANDOFF_START_TRACKING)
+
+    match weekform_query_value(raw_url, "screen") {
+        Some("daily") => Some("daily"),
+        Some("weekly") => Some("weekly"),
+        Some("forecast") => Some("forecast"),
+        Some("weekly-review") => Some("weekly-review"),
+        Some("usage") => Some("usage"),
+        Some("narrative") => Some("narrative"),
+        Some("agent") => Some("agent"),
+        Some("accelerate") => Some("accelerate"),
+        Some("skills") => Some("skills"),
+        Some("ledger") => Some("ledger"),
+        Some("audit") => Some("audit"),
+        Some("sensitive") => Some("sensitive"),
+        Some("setup") => Some("setup"),
+        Some("team") => Some("team"),
+        _ => None,
+    }
 }
 
 fn apply_window_mode(app: &AppHandle, mode: &str) {
@@ -629,14 +646,14 @@ fn handle_weekform_open_url(app: &AppHandle, raw_url: &str) -> bool {
         return false;
     }
 
-    if let Some(action) = web_handoff_action(raw_url) {
-        if let Ok(mut pending) = app.state::<PendingWebHandoff>().0.lock() {
-            *pending = Some(action.to_string());
+    if let Some(screen) = web_handoff_screen(raw_url) {
+        if let Ok(mut pending) = app.state::<PendingWebNavigation>().0.lock() {
+            *pending = Some(screen.to_string());
         }
-        show_quick_view_internal(app);
+        show_large_dashboard(app);
         if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-            let _ =
-                window.eval("window.dispatchEvent(new CustomEvent('clear-capacity:web-handoff'))");
+            let _ = window
+                .eval("window.dispatchEvent(new CustomEvent('clear-capacity:web-navigation'))");
         }
     } else {
         show_large_dashboard(app);
@@ -647,33 +664,52 @@ fn handle_weekform_open_url(app: &AppHandle, raw_url: &str) -> bool {
 
 #[cfg(test)]
 mod web_handoff_tests {
-    use super::{is_weekform_open_url, web_handoff_action, WEB_HANDOFF_START_TRACKING};
+    use super::{is_weekform_open_url, web_handoff_screen};
 
     #[test]
-    fn tracking_handoff_requires_the_owned_action_and_compact_view() {
+    fn ordinary_weekform_open_links_remain_valid_without_a_page_intent() {
+        assert!(is_weekform_open_url("weekform://open?source=weekform.dev"));
         assert_eq!(
-            web_handoff_action(
-                "weekform://open?source=weekform.dev&action=start-tracking&view=compact"
-            ),
-            Some(WEB_HANDOFF_START_TRACKING),
-        );
-        assert_eq!(
-            web_handoff_action("weekform://open?action=start-tracking&view=large"),
-            None,
-        );
-        assert_eq!(
-            web_handoff_action("https://weekform.dev/?action=start-tracking&view=compact"),
+            web_handoff_screen("weekform://open?source=weekform.dev"),
             None,
         );
     }
 
     #[test]
-    fn ordinary_weekform_open_links_remain_valid_without_starting_tracking() {
-        assert!(is_weekform_open_url("weekform://open?source=weekform.dev"));
-        assert_eq!(
-            web_handoff_action("weekform://open?source=weekform.dev"),
-            None,
-        );
+    fn page_handoffs_accept_only_allowlisted_large_view_screen_values() {
+        for screen in [
+            "daily",
+            "weekly",
+            "forecast",
+            "weekly-review",
+            "usage",
+            "narrative",
+            "agent",
+            "accelerate",
+            "skills",
+            "ledger",
+            "audit",
+            "sensitive",
+            "setup",
+            "team",
+        ] {
+            let url = format!("weekform://open?source=weekform.dev&view=large&screen={screen}");
+            assert_eq!(web_handoff_screen(&url), Some(screen));
+        }
+    }
+
+    #[test]
+    fn page_handoffs_reject_unknown_sources_modes_and_screens() {
+        for url in [
+            "weekform://open?source=attacker.test&view=large&screen=weekly",
+            "weekform://open?source=weekform.dev&view=compact&screen=weekly",
+            "weekform://open?source=weekform.dev&action=start-tracking&view=compact",
+            "weekform://open?source=weekform.dev&view=large&screen=admin",
+            "weekform://open?source=weekform.dev&view=large&screen=weekly%26action%3Dstart-tracking",
+            "https://weekform.dev/?source=weekform.dev&view=large&screen=weekly",
+        ] {
+            assert_eq!(web_handoff_screen(url), None, "{url}");
+        }
     }
 }
 
@@ -2622,7 +2658,7 @@ fn set_default_window_mode(open_state: State<'_, DefaultOpenState>, mode: String
 }
 
 #[tauri::command]
-fn consume_pending_web_handoff(state: State<'_, PendingWebHandoff>) -> Option<String> {
+fn consume_pending_web_navigation(state: State<'_, PendingWebNavigation>) -> Option<String> {
     state.0.lock().ok()?.take()
 }
 
@@ -5140,7 +5176,7 @@ pub fn run() {
         .manage(DefaultOpenState {
             compact: AtomicBool::new(false),
         })
-        .manage(PendingWebHandoff(Mutex::new(None)))
+        .manage(PendingWebNavigation(Mutex::new(None)))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -5167,7 +5203,7 @@ pub fn run() {
             set_clear_capacity_window_mode,
             show_quick_view,
             set_default_window_mode,
-            consume_pending_web_handoff,
+            consume_pending_web_navigation,
             get_env_ai_key_status,
             connect_codex_via_chatgpt,
             disconnect_codex,

@@ -44,8 +44,8 @@ test("every Web Mac CTA uses the shared prompt-free acquisition or explicit-acti
   assert.ok(launcherFiles.length >= 10, "Mac handoffs across marketing and the Web app must share the launcher");
   assert.deepEqual(
     protocolAttemptFiles,
-    [],
-    "Web controls must never trigger a browser-owned custom-protocol prompt",
+    ["components/IndividualWorkspaceShell.tsx"],
+    "only the explicit open-current-page Desktop icon may trigger a custom-protocol prompt",
   );
 });
 

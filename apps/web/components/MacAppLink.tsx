@@ -24,8 +24,9 @@ function isMacBrowser(): boolean {
 }
 
 /**
- * Navigates to the real download href by default. Only an explicit operational
- * action such as Start Tracking should opt into the native-app handoff.
+ * Navigates to the real download href by default. Only an explicit control
+ * whose stated purpose is opening Weekform Desktop should opt into the native
+ * app handoff; ordinary acquisition and Web actions remain normal navigation.
  */
 export function MacAppLink({
   children,

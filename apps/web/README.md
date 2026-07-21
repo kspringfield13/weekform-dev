@@ -296,7 +296,10 @@ weaken the official signed/notarized/stapled release gate.
    registered to the signed-in account through the short-lived command queue.
    It never invokes a custom protocol; offline users are told to open the Mac
    app, while accounts without a registered desktop follow the authenticated
-   installer route.
+   installer route. Separately, the explicit Weekform-mark button beside Web
+   Settings may invoke `weekform://` to open the current allowlisted screen in
+   the large Desktop window. That opt-in navigation can show the browser-owned
+   app-opening confirmation and does not carry account, team, or workload data.
    Update `RELEASE_INFO` in `apps/web/lib/download.ts` for every later version.
 
 The Web app validates that proof metadata is complete and well-formed; the

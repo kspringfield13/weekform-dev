@@ -303,10 +303,12 @@ the alignment QA.
   menu-bar reopen passes each moved the native window count from zero to one.
   The package retains the registered `weekform://` scheme,
   with single-instance native handling that restores, activates, and focuses
-  the requested window. Web controls no longer invoke that scheme: Download/Get
-  Mac acquisition buttons remain normal links to the authenticated download
-  page, and Start Tracking uses the authenticated Desktop command channel. No
-  Web control triggers a browser-owned “Open Weekform.app?” dialog. A fail-closed publisher now encodes the
+  the requested window. Download/Get Mac acquisition buttons do not invoke that
+  scheme and remain normal links to the authenticated download page; Start
+  Tracking uses the authenticated Desktop command channel. The later explicit
+  Weekform-mark sidebar button is the sole Web control designed to invoke the
+  scheme and may therefore show a browser-owned “Open Weekform.app?” dialog. A
+  fail-closed publisher now encodes the
   signed universal build, Apple notarization, stapling, Gatekeeper, immutable
   private upload, hosted-byte checksum, proof-env, and production deployment
   sequence. A local Keychain notarization profile was available for the July 20
@@ -325,8 +327,9 @@ the alignment QA.
   The final UX contract therefore uses the authenticated queue: a recently
   active, unrevoked Mac can report already-active state or receive one expiring
   start command; a stopped or stale Mac gets honest inline guidance to open the
-  app. The browser cannot launch a quit app, never invokes `weekform://`, and
-  receives no raw activity, account token, or native permission.
+  app. That tracking action cannot launch a quit app, never invokes
+  `weekform://`, and receives no raw activity, account token, or native
+  permission.
 - **July 21 trusted Mac release and acquisition correction:** Apple accepted the
   universal `Weekform_0.1.0_universal.dmg`; the final bytes are Developer ID
   signed, notarized, stapled, Gatekeeper-accepted, checksum-bound, and privately

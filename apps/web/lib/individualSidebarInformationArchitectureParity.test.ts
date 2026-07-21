@@ -67,6 +67,11 @@ test("Settings matches Desktop sidebar hierarchy on wide and narrow layouts", ()
     "wide Web layouts must expose Settings through the Desktop footer control",
   );
   assert.match(shellSource, /navigate\([^)]*settings/i);
+  assert.match(
+    shellSource,
+    /className="web-sidebar-footer-actions"[\s\S]*?<MacAppLink[\s\S]*?<WeekformMark[\s\S]*?<\/MacAppLink>[\s\S]*?className=\{active\s*===\s*["']settings["']/,
+    "the icon-only Desktop handoff must sit immediately left of the Settings footer control",
+  );
 
   assert.match(
     stylesSource,
@@ -77,5 +82,9 @@ test("Settings matches Desktop sidebar hierarchy on wide and narrow layouts", ()
     stylesSource,
     /@media\s*\(max-width:\s*760px\)[\s\S]*?\.web-individual-app\s+\.nav-item\.nav-item-settings\s*\{[^}]*display:\s*grid\s*;/,
     "the Settings primary-list entry must return when the footer control is unavailable on narrow layouts",
+  );
+  assert.match(
+    stylesSource,
+    /\.web-sidebar-footer-actions\s*\{[^}]*grid-template-columns:\s*36px\s+minmax\(0,\s*1fr\)/s,
   );
 });
