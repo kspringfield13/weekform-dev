@@ -25,9 +25,9 @@ function workspaceNotice(
 }
 
 /**
- * Queues a short-lived control for an already-running, recently seen Mac.
- * The browser never invokes a custom protocol, and the server owns both the
- * target device and the fixed start_tracking action.
+ * Checks a recently seen Mac's privacy-minimized tracking state and queues a
+ * short-lived control only when it is paused. The browser never invokes a
+ * custom protocol; the server owns the outcome, target, and fixed action.
  */
 export async function queueDesktopStartTracking(
   _previousState: DesktopStartTrackingState,
@@ -38,24 +38,25 @@ export async function queueDesktopStartTracking(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { status: "error", message: "Sign in again to contact Weekform Desktop." };
 
-  const { data: registeredDesktops, error: deviceError } = await supabase
-    .from("weekform_devices")
-    .select("id")
-    .is("revoked_at", null)
-    .limit(1);
-  if (deviceError) {
-    return { status: "error", message: "Weekform Desktop could not be checked. Try again." };
-  }
-  if (!registeredDesktops || registeredDesktops.length === 0) redirect("/download");
-
-  const { error } = await supabase.rpc("queue_start_tracking_action");
+  const { data: result, error } = await supabase.rpc("request_desktop_start_tracking");
   if (error) {
-    return error.message.includes("desktop unavailable")
-      ? {
-          status: "unavailable",
-          message: "Your Weekform Desktop is offline. Open it from Applications or the menu bar, then try again.",
-        }
-      : { status: "error", message: "Weekform Desktop could not be contacted. Try again." };
+    return { status: "error", message: "Weekform Desktop could not be contacted. Try again." };
+  }
+  if (result === "no_device") redirect("/download");
+  if (result === "already_tracking") {
+    return {
+      status: "already-tracking",
+      message: "Tracking is already active in Weekform Desktop.",
+    };
+  }
+  if (result === "offline") {
+    return {
+      status: "unavailable",
+      message: "Your Weekform Desktop is offline or needs the latest update. Open it from Applications or the menu bar, then try again.",
+    };
+  }
+  if (result !== "queued") {
+    return { status: "error", message: "Weekform Desktop returned an unknown status. Try again." };
   }
 
   return {

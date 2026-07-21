@@ -131,9 +131,11 @@ test("Individual Today and Week queue a prompt-free authenticated Start Tracking
     "utf8",
   );
   const migrationSource = readFileSync(
-    new URL("../../../supabase/migrations/202607210001_desktop_actions.sql", import.meta.url),
+    new URL("../../../supabase/migrations/202607210002_desktop_tracking_state.sql", import.meta.url),
     "utf8",
   );
+  const stateSource = readFileSync(new URL("desktopActions.ts", import.meta.url), "utf8");
+  const stylesSource = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
   assert.doesNotMatch(individualShellSource, /weekform:\/\//);
   assert.doesNotMatch(individualShellSource, /attemptAppOpen/);
@@ -142,21 +144,27 @@ test("Individual Today and Week queue a prompt-free authenticated Start Tracking
   assert.match(startTrackingSource, /queueDesktopStartTracking/);
   assert.match(startTrackingSource, /useActionState/);
   assert.match(individualShellSource, /Start Tracking/);
-  const deviceLookupAt = actionsSource.indexOf('.from("weekform_devices")');
-  const downloadAt = actionsSource.indexOf('redirect("/download")', deviceLookupAt);
-  const queueAt = actionsSource.indexOf('rpc("queue_start_tracking_action")', downloadAt);
-  assert.ok(
-    deviceLookupAt >= 0 && downloadAt > deviceLookupAt && queueAt > downloadAt,
-    "an account without a registered desktop must go to Download before any action can be queued",
-  );
-  assert.match(actionsSource, /\.is\("revoked_at", null\)[\s\S]*?\.limit\(1\)/);
-  assert.match(actionsSource, /queue_start_tracking_action/);
-  assert.match(migrationSource, /last_seen_at\s*>=\s*now\(\)\s*-\s*interval '60 seconds'/);
+  assert.match(actionsSource, /request_desktop_start_tracking/);
+  assert.match(actionsSource, /result === "no_device"[\s\S]*?redirect\("\/download"\)/);
+  assert.match(actionsSource, /result === "already_tracking"[\s\S]*?status:\s*"already-tracking"/);
+  assert.match(actionsSource, /Tracking is already active in Weekform Desktop\./);
+  assert.match(actionsSource, /result === "offline"[\s\S]*?status:\s*"unavailable"/);
+  assert.match(stateSource, /"already-tracking"/);
+  assert.match(stylesSource, /\.web-start-tracking-status\.is-already-tracking\s*\{[^}]*var\(--signal-green\)/s);
+  assert.match(migrationSource, /tracking_active\s+boolean\s+not null\s+default false/);
+  assert.match(migrationSource, /tracking_state_at\s+timestamptz/);
+  assert.match(migrationSource, /register_weekform_device_v3/);
+  assert.match(migrationSource, /request_desktop_start_tracking/);
+  assert.match(migrationSource, /'already_tracking'/);
+  assert.match(migrationSource, /'no_device'/);
+  assert.match(migrationSource, /'offline'/);
+  assert.match(migrationSource, /'queued'/);
   assert.match(migrationSource, /expires_at/);
-  assert.match(migrationSource, /acknowledge_desktop_action/);
   assert.match(personalCloudSource, /fetchPendingDesktopActions/);
   assert.match(personalCloudSource, /acknowledgeDesktopAction/);
+  assert.match(personalCloudSource, /registerWeekformDeviceV3/);
   assert.match(nativeSource, /show_quick_view/);
   assert.match(desktopAppSource, /invoke\("show_quick_view"\)/);
   assert.match(desktopAppSource, /if \(!requestCapturePaused\(false\)\) return/);
+  assert.match(desktopAppSource, /trackingActive:\s*!paused/);
 });

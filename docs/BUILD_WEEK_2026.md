@@ -1061,6 +1061,20 @@ This task is supporting evidence for the public presentation only. It does not r
   download CTA no longer has a registered-desktop branch; authenticated Team
   data remains a separate account-scoped verification surface.
 
+- **July 21 tracking-state correction:** a fresh Desktop heartbeat now publishes
+  only whether local tracking is enabled or paused. Start Tracking returns a
+  green already-active status without queuing a control when tracking is on,
+  while paused, stale/old-client, and no-device outcomes remain distinct. The
+  shared authenticated Web toolbar also wraps its workspace title instead of
+  truncating it, so the full heading remains visible across routes and zoom.
+  Production migration `202607210002` is applied. Apple accepted the refreshed
+  universal package; the notarized, stapled, Gatekeeper-accepted DMG is
+  6,989,770 bytes with SHA-256
+  `d56760474a91f17c3c00318452ed0a4bf8a9c1af5ea1859decacde88d55d3df4`.
+  Candidate and canonical authenticated downloads reproduced those exact bytes
+  before and after promotion of deployment
+  `dpl_7r5xtmnDFMrhU8XKcbiqDUBCMb2N`.
+
 ### End-user positioning and three-minute demo
 
 The final positioning and product-demo narrative were refined in a separate in-period task:

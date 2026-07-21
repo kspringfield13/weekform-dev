@@ -658,18 +658,23 @@ export async function deleteMySnapshotsForTeam(
   }
 }
 
-/** Register or refresh this signed-in Mac and advertise isolated review protocol v2. */
-export async function registerWeekformDeviceV2(
+/** Register or refresh this signed-in Mac with review v2 and tracking-state support. */
+export async function registerWeekformDeviceV3(
   env: CloudEnv,
   session: PersistedCloudSession,
   deviceId: string,
   deviceName: string,
+  trackingActive: boolean,
 ): Promise<CloudResult<null>> {
   try {
-    const response = await fetch(`${env.url}/rest/v1/rpc/register_weekform_device_v2`, {
+    const response = await fetch(`${env.url}/rest/v1/rpc/register_weekform_device_v3`, {
       method: "POST",
       headers: authHeaders(env, session.accessToken),
-      body: JSON.stringify({ p_device_id: deviceId, p_device_name: deviceName }),
+      body: JSON.stringify({
+        p_device_id: deviceId,
+        p_device_name: deviceName,
+        p_tracking_active: trackingActive,
+      }),
     });
     if (!response.ok) return { ok: false, message: await failureMessage(response, "Could not register this Mac"), status: response.status };
     return { ok: true, value: null };

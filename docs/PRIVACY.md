@@ -528,10 +528,14 @@ latest ordering through clock skew.
 In Individual mode, the Today and Week surfaces include a user-initiated
 **Start Tracking** control for an already-running Weekform Mac. While signed in
 and running, the menu-bar app refreshes its opaque device heartbeat every 15
-seconds and polls its own RLS-scoped `desktop_actions` rows every two seconds.
-The browser re-authenticates the click and calls a security-definer RPC that can
-queue only `start_tracking`, targets only the caller's unrevoked Mac seen within
-the last 60 seconds, and expires the row after 90 seconds. The row contains only
+seconds, immediately refreshes it when tracking is paused or resumed, and polls
+its own RLS-scoped `desktop_actions` rows every two seconds. The heartbeat adds
+only a boolean for whether local tracking is enabled and its server receipt
+time; it contains no samples, app/window titles, or activity evidence. The
+browser re-authenticates the click and calls a security-definer RPC that returns
+an already-tracking result when a fresh Mac reports tracking enabled, or can
+queue only `start_tracking` for a fresh Mac reporting tracking paused. The
+control expires after 90 seconds. The row contains only
 user, device, and random action ids, the fixed action, and creation/expiration
 timestamps—no activity or workload evidence. Clients cannot insert or delete
 rows directly.
@@ -545,8 +549,9 @@ browser never invokes `weekform://`, does not start browser collection, and does
 not receive Mac activity. A fully quit app cannot be silently launched by a Web
 page. If the account has no unrevoked registered desktop, Start Tracking opens
 the authenticated Download page. If a known desktop exists but is not currently
-active, Web tells the user to open Weekform from Applications or the menu bar
-and try again. Weekform Web has no compact popup or compact workspace view.
+active or cannot publish the current tracking-state protocol, Web tells the user
+to open or update Weekform from Applications or the menu bar and try again.
+Weekform Web has no compact popup or compact workspace view.
 
 ## Individual Web Ask (weekform.dev, server-side AI)
 

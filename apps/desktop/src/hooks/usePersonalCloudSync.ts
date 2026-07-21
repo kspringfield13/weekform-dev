@@ -19,7 +19,7 @@ import {
   fetchPendingReviewCommandsV2,
   getCloudEnv,
   markReviewCommandAppliedLocallyV2,
-  registerWeekformDeviceV2,
+  registerWeekformDeviceV3,
   reviewCommandExistsV2,
   syncPersonalReplicaBatch,
 } from "../services/cloudClient";
@@ -70,6 +70,7 @@ export function usePersonalCloudSync(input: {
   addCorrection: (correction: Omit<UserCorrection, "correction_id" | "timestamp">) => void;
   persistLatestLocalState: () => Promise<void>;
   onStartTracking: () => Promise<boolean>;
+  trackingActive: boolean;
 }): PersonalCloudSyncController {
   const {
     account,
@@ -79,6 +80,7 @@ export function usePersonalCloudSync(input: {
     addCorrection,
     persistLatestLocalState,
     onStartTracking,
+    trackingActive,
   } = input;
   const [syncBusy, setSyncBusy] = useState(false);
   const [lastNotice, setLastNotice] = useState<string | null>(null);
@@ -88,6 +90,7 @@ export function usePersonalCloudSync(input: {
   const desktopActionInFlight = useRef(false);
   const desktopActionHeartbeatAt = useRef(0);
   const desktopActionHeartbeatDeviceId = useRef<string | null>(null);
+  const desktopActionHeartbeatTrackingActive = useRef<boolean | null>(null);
   const handledDesktopActionIds = useRef(new Set<string>());
   const operationBoundaryRef = useRef<ConnectorResetBoundary | null>(null);
   if (operationBoundaryRef.current === null) {
@@ -96,6 +99,8 @@ export function usePersonalCloudSync(input: {
   const operationBoundary = operationBoundaryRef.current;
   const accountRef = useRef(account);
   accountRef.current = account;
+  const trackingActiveRef = useRef(trackingActive);
+  trackingActiveRef.current = trackingActive;
   const enabled = account.personalReplicaPolicy.enabled
     && account.personalReplicaPolicy.consentedAt !== null
     && account.account !== null
@@ -140,11 +145,12 @@ export function usePersonalCloudSync(input: {
     const env = getCloudEnv();
     const session = await current.getFreshSession();
     if (!env || !session) return { ok: false as const, message: "Sign in to sync your Web workspace." };
-    const result = await registerWeekformDeviceV2(
+    const result = await registerWeekformDeviceV3(
       env,
       session,
       current.personalSyncState.deviceId,
       current.personalSyncState.deviceName,
+      trackingActiveRef.current,
     );
     if (!result.ok) return result;
     return { ok: true as const, env, session };
@@ -400,16 +406,19 @@ export function usePersonalCloudSync(input: {
 
       const now = Date.now();
       if (desktopActionHeartbeatDeviceId.current !== current.personalSyncState.deviceId
+        || desktopActionHeartbeatTrackingActive.current !== trackingActiveRef.current
         || now - desktopActionHeartbeatAt.current >= 15_000) {
-        const registered = await registerWeekformDeviceV2(
+        const registered = await registerWeekformDeviceV3(
           env,
           session,
           current.personalSyncState.deviceId,
           current.personalSyncState.deviceName,
+          trackingActiveRef.current,
         );
         if (!operation.isCurrent() || !registered.ok) return;
         desktopActionHeartbeatAt.current = now;
         desktopActionHeartbeatDeviceId.current = current.personalSyncState.deviceId;
+        desktopActionHeartbeatTrackingActive.current = trackingActiveRef.current;
       }
 
       const actions = await fetchPendingDesktopActions(

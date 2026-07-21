@@ -72,6 +72,10 @@ test("the Web toolbar names the active workspace and ends with the standard prod
   const product = rule(".web-toolbar-product");
   assert.match(product, /justify-self:\s*end\s*;/);
   assert.match(product, /font-family:\s*"Geist Variable"/);
+
+  const title = rule(".web-toolbar-title strong");
+  assert.doesNotMatch(title, /overflow:\s*hidden|text-overflow:\s*ellipsis/);
+  assert.match(title, /white-space:\s*normal\s*;/);
 });
 
 test("context tabs and page content use the current Desktop strip and content frame", () => {

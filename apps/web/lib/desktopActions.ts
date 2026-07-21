@@ -1,5 +1,5 @@
 export type DesktopStartTrackingState = {
-  status: "idle" | "queued" | "unavailable" | "error";
+  status: "idle" | "queued" | "already-tracking" | "unavailable" | "error";
   message: string;
 };
 

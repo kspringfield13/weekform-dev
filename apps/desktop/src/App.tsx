@@ -937,6 +937,7 @@ export function App() {
     addCorrection,
     persistLatestLocalState: appPersistence.flushLatest,
     onStartTracking: handleDesktopStartTracking,
+    trackingActive: !paused,
   });
   const cloud: CloudController = useMemo(
     () => ({ account: cloudAccount, sync: cloudSync, personal: personalCloud }),

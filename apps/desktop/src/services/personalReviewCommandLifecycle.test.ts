@@ -87,7 +87,8 @@ test("personal operations quiesce at a shared operation boundary before reset ca
 test("prompt-free desktop actions share the reset fence and acknowledge only after local application", () => {
   const refresh = between("const refreshDesktopActions", "const finishCommand");
   assert.match(refresh, /const operation = beginOperation\(\)/);
-  assert.match(refresh, /registerWeekformDeviceV2/);
+  assert.match(refresh, /registerWeekformDeviceV3/);
+  assert.match(refresh, /trackingActiveRef\.current/);
   assert.match(refresh, /fetchPendingDesktopActions/);
   const applyAt = refresh.indexOf("await onStartTracking()");
   const acknowledgeAt = refresh.indexOf("await acknowledgeDesktopAction", applyAt);
@@ -95,6 +96,14 @@ test("prompt-free desktop actions share the reset fence and acknowledge only aft
   assert.match(refresh, /if \(!operation\.isCurrent\(\) \|\| !applied\) return/);
   assert.match(refresh, /operation\.finish\(\)/);
   assert.match(source, /setInterval\(\(\) => \{ void refreshDesktopActions\(\); \}, 2_000\)/);
+});
+
+test("desktop heartbeat publishes only the current tracking-enabled boolean", () => {
+  assert.match(source, /trackingActive:\s*boolean/);
+  assert.match(source, /trackingActiveRef\.current\s*=\s*trackingActive/);
+  const ensureDevice = between("const ensureDevice", "const syncNow");
+  assert.match(ensureDevice, /registerWeekformDeviceV3/);
+  assert.match(ensureDevice, /trackingActiveRef\.current/);
 });
 
 test("replica upload is fenced behind a strict durable queue and source-clock write", () => {

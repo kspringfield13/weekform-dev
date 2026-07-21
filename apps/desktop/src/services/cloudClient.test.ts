@@ -27,7 +27,7 @@ import {
   getCloudEnv,
   isCloudConfigured,
   markReviewCommandAppliedLocallyV2,
-  registerWeekformDeviceV2,
+  registerWeekformDeviceV3,
   reviewCommandExistsV2,
   refreshSession,
   signInWithOAuth,
@@ -776,21 +776,23 @@ test("delete/upsert failures surface the server message without throwing", async
 // Review command two-phase claim/application lifecycle
 // ---------------------------------------------------------------------------
 
-test("registerWeekformDeviceV2 advertises protocol support before reading the isolated inbox", async () => {
+test("registerWeekformDeviceV3 advertises tracking state before reading the isolated inbox", async () => {
   await withFetch(
     () => jsonResponse({ id: "82000000-0000-4000-8000-000000000001" }),
     async (requests) => {
-      const result = await registerWeekformDeviceV2(
+      const result = await registerWeekformDeviceV3(
         env,
         makeSession(),
         "82000000-0000-4000-8000-000000000001",
         "Synthetic Mac",
+        true,
       );
       assert.deepEqual(result, { ok: true, value: null });
-      assert.equal(requests[0].url, `${env.url}/rest/v1/rpc/register_weekform_device_v2`);
+      assert.equal(requests[0].url, `${env.url}/rest/v1/rpc/register_weekform_device_v3`);
       assert.deepEqual(JSON.parse(requests[0].body ?? ""), {
         p_device_id: "82000000-0000-4000-8000-000000000001",
         p_device_name: "Synthetic Mac",
+        p_tracking_active: true,
       });
     },
   );
