@@ -2,6 +2,7 @@ import type { CloudSharePolicyV1 } from "../../../../packages/domain/src/cloud";
 import type { WeeklyCapacitySnapshot, WorkBlock } from "../../../../packages/domain/src/models";
 import {
   buildSharedWorkloadSnapshot,
+  type SharedSnapshotBuildSuccess,
   type SharedSnapshotBuildResult
 } from "../../../../packages/inference/src/sharedSnapshot";
 import {
@@ -12,6 +13,26 @@ import {
 export interface ReservedSharedSnapshotResult {
   buildResult: SharedSnapshotBuildResult;
   reservation: CloudPendingSnapshot | null;
+}
+
+/**
+ * Preview construction and upload authorization are deliberately separate. A
+ * person can inspect the exact candidate payload while sharing is off, but no
+ * manual upload may cross this boundary without the current individual approval.
+ */
+export function isSharedSnapshotUploadAuthorized(
+  policy: CloudSharePolicyV1,
+  buildResult: SharedSnapshotBuildResult
+): buildResult is SharedSnapshotBuildSuccess {
+  return (
+    policy.enabled === true
+    && typeof policy.consentedAt === "string"
+    && policy.consentedAt.trim().length > 0
+    && typeof policy.teamId === "string"
+    && policy.teamId.trim().length > 0
+    && buildResult.ok
+    && buildResult.snapshot.teamId === policy.teamId.trim()
+  );
 }
 
 /**

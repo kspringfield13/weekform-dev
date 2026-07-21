@@ -22,9 +22,7 @@ import { normalizeWeekId } from "./capacity";
 
 /** Why a policy cannot produce a payload. Typed so callers render honest copy, never a throw. */
 export type SharedSnapshotRejectionReason =
-  | "sharing_disabled"
-  | "team_missing"
-  | "consent_missing";
+  | "team_missing";
 
 export interface SharedSnapshotRejection {
   ok: false;
@@ -386,13 +384,6 @@ export function buildSharedWorkloadSnapshot(
 ): SharedSnapshotBuildResult {
   const { snapshot, workBlocks, policy, now } = input;
 
-  if (policy.enabled !== true) {
-    return {
-      ok: false,
-      reason: "sharing_disabled",
-      message: "Sharing is off. Nothing is uploaded until you turn sharing on."
-    };
-  }
   const teamId = typeof policy.teamId === "string" ? policy.teamId.trim() : "";
   if (teamId.length === 0) {
     return {
@@ -401,15 +392,6 @@ export function buildSharedWorkloadSnapshot(
       message: "No team selected. Choose the team that should receive your capacity signals."
     };
   }
-  if (typeof policy.consentedAt !== "string" || policy.consentedAt.trim().length === 0) {
-    return {
-      ok: false,
-      reason: "consent_missing",
-      message:
-        'Consent not recorded. Review the exact payload and confirm "I reviewed what will be shared with this team."'
-    };
-  }
-
   const weekId = normalizeWeekId(snapshot.week_id);
   const weekBlocks = (Array.isArray(workBlocks) ? workBlocks : []).filter(
     (block) => normalizeWeekId(block.week_id) === weekId

@@ -17,6 +17,7 @@ import type {
 } from "../../../../packages/domain/src/personalCloud";
 import {
   buildCloudBackupMetadata,
+  approveCloudSharePolicy,
   createDefaultCloudSharePolicy,
   createEmptyCloudSyncState,
   type CloudBackupMetadata,
@@ -76,8 +77,8 @@ export interface CloudAccountController {
   signOut: () => Promise<boolean>;
   refreshTeams: () => Promise<void>;
   updatePolicy: (patch: Partial<CloudSharePolicyV1>) => void;
-  /** Records "I reviewed what will be shared with this team" with a timestamp. */
-  recordConsent: () => void;
+  /** Durably records the individual's approval and arms bounded automatic sync. */
+  approveSharing: () => Promise<boolean>;
   /** For useCloudSync: sync bookkeeping + strict reserved clientSnapshotId persistence. */
   setSyncState: (updater: (current: CloudSyncState) => CloudSyncState) => void;
   persistPendingSnapshot: (value: CloudPendingSnapshot) => Promise<void>;
@@ -421,15 +422,47 @@ export function useCloudAccount({
     [emitAudit]
   );
 
-  const recordConsent = useCallback(() => {
-    if (accountResetClosedRef.current) return;
+  const approveSharing = useCallback(async (): Promise<boolean> => {
+    const operation = accountOperationBoundary.begin();
+    if (!operation) return false;
+    if (accountResetClosedRef.current) {
+      operation.finish();
+      return false;
+    }
+    const epoch = accountEpochRef.current;
     const consentedAt = new Date().toISOString();
-    setPolicy((current) => ({ ...current, consentedAt }));
-    emitAudit("policy_change", "Reviewed the exact shared payload and recorded consent", {
-      changed_fields: ["consentedAt"],
-      consented_at: consentedAt
-    });
-  }, [emitAudit]);
+    const currentPolicy = cloudEnvelopeRef.current.policy;
+    const selectedTeamIsActive = typeof currentPolicy.teamId === "string"
+      && teams.some((team) => team.teamId === currentPolicy.teamId);
+    if (!selectedTeamIsActive) {
+      operation.finish();
+      return false;
+    }
+    const approvedPolicy = approveCloudSharePolicy(currentPolicy, consentedAt);
+    const nextEnvelope: PersistedCloudStateV1 = {
+      ...cloudEnvelopeRef.current,
+      policy: approvedPolicy
+    };
+    try {
+      await enqueueCloudWrite(nextEnvelope);
+      if (!operation.isCurrent() || epoch !== accountEpochRef.current) return false;
+      cloudEnvelopeRef.current = nextEnvelope;
+      setPolicy(approvedPolicy);
+      emitAudit("policy_change", "Approved team sharing and enabled bounded automatic sync", {
+        changed_fields: ["enabled", "autoSyncEnabled", "consentedAt"],
+        consented_at: consentedAt,
+        team_id: approvedPolicy.teamId,
+        share_level: approvedPolicy.shareLevel,
+        shared_metric_count: Object.values(approvedPolicy.metrics).filter(Boolean).length,
+        auto_sync_enabled: true
+      });
+      return true;
+    } catch {
+      return false;
+    } finally {
+      operation.finish();
+    }
+  }, [accountOperationBoundary, emitAudit, enqueueCloudWrite, teams]);
 
   const updatePersonalReplicaPolicy = useCallback((patch: Partial<PersonalReplicaPolicyV1>) => {
     if (accountResetClosedRef.current) return;
@@ -705,7 +738,7 @@ export function useCloudAccount({
       signOut,
       refreshTeams,
       updatePolicy,
-      recordConsent,
+      approveSharing,
       updatePersonalReplicaPolicy,
       setSyncState,
       persistPendingSnapshot,
@@ -739,7 +772,7 @@ export function useCloudAccount({
       signOut,
       refreshTeams,
       updatePolicy,
-      recordConsent,
+      approveSharing,
       updatePersonalReplicaPolicy,
       setSyncState,
       persistPendingSnapshot,

@@ -80,8 +80,8 @@ Raw activity data starts local and stays under the user's control. Network-backe
 
 **In the team cloud layer:**
 
-- Sharing is off until the member completes an explicit, ordered flow: sign in, select exactly one recipient team, turn sharing on, choose a share level and per-metric toggles, review the **exact JSON payload** that would upload, and record consent. Only then does a manually approved "Sync Now" upload one `SharedWorkloadSnapshotV1` row.
-- An optional auto-sync preference exists but is off by default, and scheduled sync only runs while the app is open. There is no background sync while the app is closed.
+- Sharing is off until the member signs in, selects exactly one recipient team, reviews or narrows the team-capped sharing rules, and chooses **Approve and start sharing**. The exact candidate payload remains inspectable before approval; approval is persisted before the first `SharedWorkloadSnapshotV1` upload can begin.
+- Approval starts the first sync and enables bounded hourly checks while the app is open. Unchanged content is not re-uploaded, retries are capped, and there is no background sync while the app is closed.
 - Members can delete previously synced snapshots from the cloud, and disconnecting or resetting local data clears the session, policy, and sync state. Every connect, policy change, sync, deletion, pause, and disconnect emits a local audit event.
 - Server-side access is governed by Postgres Row Level Security policies in the Supabase schema (see [Limitations](#limitations) for their current verification status).
 
@@ -120,7 +120,7 @@ Weekform does not require a manager or a team account. When a user chooses to sh
 2. **Manager invites a member** by generating a one-time, hashed-token invite link and sharing it out of band (copy-link only — no email delivery is built).
 3. **Member accepts** at `/invite` with an explicit confirmation button (a GET never consumes the token), joins the team, and reaches the account-gated `/download` page for the Mac app. The download appears only for a private artifact carrying complete signed, notarized, stapled, checksum, and verification-time metadata; otherwise the page fails closed and routes the member to Weekform Web.
 4. **Member reviews their week locally** in the desktop app — confirming, relabeling, or excluding inferred work blocks as usual.
-5. **Member opts in to sharing** in Account & Sharing: selects the team, picks share level and metric toggles, previews the exact payload (no raw titles or evidence appear in it), records consent, and presses **Sync Now**.
+5. **Member opts in to sharing** in Account & Sharing: selects the team, reviews or narrows its sharing rules, can inspect the exact payload (no raw titles or evidence appear in it), and chooses **Approve and start sharing**. Weekform durably records that individual approval before starting the first sync.
 6. **Manager's team dashboard** shows the shared weekly aggregates per member.
 7. **Team Briefing** (`/teams/[teamId]/briefing`) generates a narrative for managers from allowlisted aggregates only, with a deterministic fallback when no AI provider is configured.
 8. **Member stays in control:** turning off a metric or deleting synced history is honored by the manager view on the next load; plain members see an honest limited team view rather than the full roster.
@@ -231,7 +231,7 @@ capture → sessionize → classify → review → model → decide → act → 
 
 **Optional connected experience:**
 
-- Opt-in team cloud sharing with payload preview, consent recording, manual Sync Now, and an optional in-app scheduled sync
+- Opt-in team cloud sharing with one individual approval, an inspectable exact-data preview, an immediate first sync, and bounded in-app hourly checks
 - Next.js web app with teams, hashed-token invites, manager dashboards, Team Briefing, and an account-gated Mac download
 
 ## How capacity is calculated

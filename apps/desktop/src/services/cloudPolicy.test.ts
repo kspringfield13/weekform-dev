@@ -10,6 +10,7 @@ import type {
 } from "../../../../packages/domain/src/cloud";
 import {
   applyTeamSharePolicy,
+  approveCloudSharePolicy,
   buildCloudBackupMetadata,
   CLOUD_METRIC_KEYS,
   createDefaultCloudSharePolicy,
@@ -38,6 +39,18 @@ test("default policy is disabled, teamless, unconsented, manual-sync only", () =
   assert.equal(policy.shareLevel, "summary");
   assert.equal(policy.intervalMinutes, 60);
   assert.deepEqual(policy.allowedProjectNames, []);
+});
+
+test("individual approval enables sharing and bounded automatic sync in one durable policy", () => {
+  const current = createDefaultCloudSharePolicy();
+  current.teamId = "team-1";
+  const approved = approveCloudSharePolicy(current, "2026-07-21T14:30:00.000Z");
+
+  assert.equal(approved.enabled, true);
+  assert.equal(approved.autoSyncEnabled, true);
+  assert.equal(approved.consentedAt, "2026-07-21T14:30:00.000Z");
+  assert.equal(approved.teamId, "team-1");
+  assert.equal(current.enabled, false, "approval must return a new policy object");
 });
 
 // ---------------------------------------------------------------------------

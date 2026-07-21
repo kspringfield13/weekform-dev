@@ -1122,6 +1122,13 @@ The Week dashboard simplification is recorded in a separate in-period task:
 
 Only the session IDs and concise evidence summaries are intended for publication. Raw Codex rollout/session files can contain prompts, local paths, tool output, or other private context and are not part of the repository.
 
+### Individual-approved team sharing simplification
+
+- **Date:** July 21, 2026
+- **Outcome:** Codex replaced the circular first-use consent gate and separate sharing, consent, auto-sync, and Sync Now controls with one individual **Approve and start sharing** action. The exact candidate payload can now be inspected before approval, advanced share level and metric rules remain individually adjustable, approval is durably stored before upload eligibility, and the first upload starts immediately before bounded hourly checks take over while Weekform is running.
+- **Observable evidence:** A regression test reproduced the prior state in which an unconsented policy could not build the preview required to expose its own consent control. Focused tests now prove preview-before-approval, upload denial before approval, one-action approval policy construction, retry-safe reservation persistence, and the approval-to-first-sync UI path. The root TypeScript/pricing/Vite build completed successfully. Live authenticated Supabase row insertion remains a separate production-data proof surface.
+- **Human product direction:** Kyle identified that the Account & Sharing ceremony obscured the actual decision and asked for operational sync driven by team sharing rules plus approval at the individual level. The resulting flow preserves the narrowing-only team boundary and exact-data inspection while making the individual approval the single consequential action.
+
 ## Required `/feedback` submission field
 
 Use this primary Project-thread value for the required feedback field:

@@ -3,7 +3,7 @@
 // manually approved sync. Sharing is off by default; nothing here claims "all data
 // synced" — the preview names the recipient team and every selected field.
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -17,7 +17,6 @@ import {
   LogOut,
   RefreshCw,
   ShieldCheck,
-  Timer,
   Trash2,
   Users
 } from "lucide-react";
@@ -145,9 +144,18 @@ export function CloudAccountPanel({
   const [password, setPassword] = useState("");
   const [activeOAuthProvider, setActiveOAuthProvider] = useState<"google" | "github" | null>(null);
   const [projectNamesDraft, setProjectNamesDraft] = useState<string | null>(null);
-  const [confirmingFirstSync, setConfirmingFirstSync] = useState(false);
+  const [approvingSharing, setApprovingSharing] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [syncAfterApproval, setSyncAfterApproval] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
+  const policy = ctrl.policy;
+
+  useEffect(() => {
+    if (!syncAfterApproval || policy.consentedAt === null || !sync.buildResult.ok || sync.syncBusy) return;
+    setSyncAfterApproval(false);
+    void sync.syncNow();
+  }, [policy.consentedAt, sync.buildResult, sync.syncBusy, sync.syncNow, syncAfterApproval]);
 
   if (!ctrl.configured) {
     return (
@@ -173,11 +181,14 @@ export function CloudAccountPanel({
   }
 
   const signedIn = ctrl.account !== null;
-  const policy = ctrl.policy;
   const selectedTeam = ctrl.teams.find((team) => team.teamId === policy.teamId) ?? null;
   const sharedMetricLabels = CLOUD_METRIC_KEYS.filter((key) => policy.metrics[key]).map(
     (key) => CLOUD_METRIC_LABELS[key]
   );
+  const sharingApproved = policy.enabled && policy.consentedAt !== null;
+  const teamRuleLabel = selectedTeam?.sharePolicy
+    ? `${SHARE_LEVEL_OPTIONS.find((option) => option.value === selectedTeam.sharePolicy?.maxShareLevel)?.label ?? "Summary"} maximum`
+    : "Your choice";
   const snapshotFreshness = sharedSnapshotFreshness(
     ctrl.syncState.lastSuccessAt,
     ctrl.syncState.lastSyncedClientSnapshotId !== null
@@ -215,14 +226,17 @@ export function CloudAccountPanel({
     setProjectNamesDraft(null);
   };
 
-  const startSync = () => {
-    if (disabled) return;
-    if (!sync.buildResult.ok) return;
-    if (ctrl.syncState.lastSuccessAt === null) {
-      setConfirmingFirstSync(true);
+  const approveAndStartSharing = async () => {
+    if (disabled || approvingSharing || !sync.buildResult.ok) return;
+    setApprovingSharing(true);
+    setApprovalError(null);
+    const approved = await ctrl.approveSharing();
+    setApprovingSharing(false);
+    if (!approved) {
+      setApprovalError("Weekform could not save your approval. Nothing was uploaded. Try again.");
       return;
     }
-    void sync.syncNow();
+    setSyncAfterApproval(true);
   };
 
   return (
@@ -468,239 +482,175 @@ export function CloudAccountPanel({
             </div>
           </section>
 
-          <section className="settings-row">
-            <div className="settings-row-icon"><ShieldCheck size={18} aria-hidden /></div>
+          <section className="settings-row cloud-sharing-summary-row">
+            <div className="settings-row-icon"><CloudUpload size={18} aria-hidden /></div>
             <div>
-              <h3>Share weekly capacity snapshot</h3>
+              <h3>{selectedTeam ? <>Sharing with {selectedTeam.teamName}</> : "Team sharing"}</h3>
               <p>
-                Off by default. When on, only the fields you select below can be shared — never raw
-                activity, window titles, sessions, evidence, notes, calendar or chat details,
-                screenshots, audit entries, or AI keys.
+                The team rule can only narrow your choices. Your approval starts the first sync and
+                keeps approved updates current about hourly while Weekform is running.
               </p>
-            </div>
-            <div className="settings-row-status">
-              <strong>{policy.enabled ? "On" : "Off"}</strong>
-              <span>
-                {policy.enabled
-                  ? `${sharedMetricLabels.length} metric${sharedMetricLabels.length === 1 ? "" : "s"} at the "${policy.shareLevel}" level`
-                  : "Nothing is uploaded"}
-              </span>
-            </div>
-            <button
-              className={policy.enabled ? "settings-control is-on" : "settings-control"}
-              type="button"
-              aria-pressed={policy.enabled}
-              onClick={() => ctrl.updatePolicy({ enabled: !policy.enabled })}
-            >
-              {policy.enabled ? "Turn Sharing Off" : "Turn Sharing On"}
-            </button>
-          </section>
-
-          {policy.enabled && (
-            <>
-              <section className="settings-row">
-                <div className="settings-row-icon"><ShieldCheck size={18} aria-hidden /></div>
-                <div>
-                  <h3>Share level</h3>
-                  <p>{SHARE_LEVEL_OPTIONS.find((option) => option.value === policy.shareLevel)?.hint}.</p>
-                </div>
-                <div className="settings-row-status" role="status" aria-live="polite" aria-atomic="true">
-                  <strong>{SHARE_LEVEL_OPTIONS.find((option) => option.value === policy.shareLevel)?.label}</strong>
-                  <span>Each level adds to the previous one</span>
-                </div>
-                <div className="data-export-options">
-                  <label className="sr-only" htmlFor="cloud-share-level">Share level</label>
-                  <select
-                    id="cloud-share-level"
-                    value={policy.shareLevel}
-                    onChange={(event) => ctrl.updatePolicy({ shareLevel: event.target.value as CloudShareLevel })}
-                  >
-                    {SHARE_LEVEL_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </section>
-
-              <section className="settings-row cloud-metric-row">
-                <div className="settings-row-icon"><ShieldCheck size={18} aria-hidden /></div>
-                <div>
-                  <h3>Shared metrics</h3>
-                  <p>
-                    Each metric is an individual consent switch. A metric that is off is omitted from
-                    the payload entirely — never sent as zero.
-                  </p>
-                  <div className="cloud-metric-grid" role="group" aria-label="Shared metrics">
-                    {CLOUD_METRIC_KEYS.map((key: keyof CloudMetricPolicy) => (
-                      <label key={key} className="cloud-metric-toggle">
-                        <input
-                          type="checkbox"
-                          checked={policy.metrics[key]}
-                          onChange={(event) =>
-                            ctrl.updatePolicy({
-                              metrics: { ...policy.metrics, [key]: event.target.checked }
-                            })
-                          }
-                        />
-                        <span>{CLOUD_METRIC_LABELS[key]}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div className="settings-row-status">
-                  <strong>{sharedMetricLabels.length} of {CLOUD_METRIC_KEYS.length}</strong>
-                  <span>Review coverage counts are always included</span>
-                </div>
-              </section>
-
-              {policy.shareLevel === "projects" && (
-                <section className="settings-row">
-                  <div className="settings-row-icon"><ShieldCheck size={18} aria-hidden /></div>
-                  <div>
-                    <h3>Allowed project names</h3>
-                    <p>
-                      One exact project name per line, up to {MAX_SHARED_PROJECTS}. Project allocation is built only from work
-                      blocks you verified whose project name matches this list verbatim — any other
-                      name never appears, not even grouped.
-                    </p>
-                    <textarea
-                      className="cloud-project-allowlist"
-                      aria-label="Allowed project names, one per line"
-                      rows={4}
-                      value={projectNamesDraft ?? policy.allowedProjectNames.join("\n")}
-                      onChange={(event) => setProjectNamesDraft(event.target.value)}
-                      onBlur={commitProjectNames}
-                    />
-                    {projectNamesDraft !== null && (
-                      <p className="cloud-allowlist-hint" role="status">
-                        <AlertCircle size={13} aria-hidden /> Unsaved edits — they apply when you leave
-                        the field.
-                        <button
-                          type="button"
-                          className="link-action"
-                          // Commit on mousedown: the textarea's blur handler would otherwise
-                          // commit first and unmount this button before its click lands.
-                          onMouseDown={(event) => {
-                            event.preventDefault();
-                            commitProjectNames();
-                          }}
-                        >
-                          Apply now
-                        </button>
-                      </p>
-                    )}
-                  </div>
-                  <div className="settings-row-status">
-                    <strong>{policy.allowedProjectNames.length} of {MAX_SHARED_PROJECTS} allowed</strong>
-                    <span>Empty list shares no project names</span>
-                  </div>
-                </section>
+              <div className="cloud-sharing-rule-summary" aria-label="Effective sharing rules">
+                <span><strong>Team rule</strong>{teamRuleLabel}</span>
+                <span>
+                  <strong>Your selection</strong>
+                  {SHARE_LEVEL_OPTIONS.find((option) => option.value === policy.shareLevel)?.label}
+                  {" · "}{sharedMetricLabels.length} metric{sharedMetricLabels.length === 1 ? "" : "s"}
+                </span>
+              </div>
+              <p className="cloud-never-shared">
+                Never shared: raw activity, app or window titles, sessions, evidence, notes,
+                calendar or chat details, screenshots, audit entries, or AI credentials.
+              </p>
+              {approvalError && <p className="import-error" role="alert">{approvalError}</p>}
+              {policy.consentedAt !== null && (
+                <p className="cloud-consent-note">
+                  <CheckCircle2 size={13} aria-hidden /> Approved{" "}
+                  <time dateTime={policy.consentedAt}>{formatAuditTime(policy.consentedAt)}</time>.
+                  Changing the team or shared fields requires your approval again.
+                </p>
               )}
 
-              <section className="settings-row">
-                <div className="settings-row-icon"><Timer size={18} aria-hidden /></div>
-                <div>
-                  <h3>Hourly auto-sync</h3>
-                  <p>
-                    Off by default. When on, Weekform re-syncs the approved snapshot about once an hour
-                    — only while the app is running, and only after your first manually approved sync.
-                  </p>
+              <details className="cloud-sharing-details">
+                <summary>Adjust sharing rules</summary>
+                <div className="cloud-sharing-details-body">
+                  <label className="cloud-sharing-field" htmlFor="cloud-share-level">
+                    <span>Detail level</span>
+                    <small>{SHARE_LEVEL_OPTIONS.find((option) => option.value === policy.shareLevel)?.hint}</small>
+                    <select
+                      id="cloud-share-level"
+                      value={policy.shareLevel}
+                      onChange={(event) => ctrl.updatePolicy({ shareLevel: event.target.value as CloudShareLevel })}
+                    >
+                      {SHARE_LEVEL_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="cloud-sharing-field">
+                    <span>Metrics</span>
+                    <small>An off metric is omitted entirely, never sent as zero.</small>
+                    <div className="cloud-metric-grid" role="group" aria-label="Shared metrics">
+                      {CLOUD_METRIC_KEYS.map((key: keyof CloudMetricPolicy) => (
+                        <label key={key} className="cloud-metric-toggle">
+                          <input
+                            type="checkbox"
+                            checked={policy.metrics[key]}
+                            onChange={(event) =>
+                              ctrl.updatePolicy({
+                                metrics: { ...policy.metrics, [key]: event.target.checked }
+                              })
+                            }
+                          />
+                          <span>{CLOUD_METRIC_LABELS[key]}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  {policy.shareLevel === "projects" && (
+                    <label className="cloud-sharing-field">
+                      <span>Allowed project names</span>
+                      <small>One verified project name per line, up to {MAX_SHARED_PROJECTS}.</small>
+                      <textarea
+                        className="cloud-project-allowlist"
+                        aria-label="Allowed project names, one per line"
+                        rows={4}
+                        value={projectNamesDraft ?? policy.allowedProjectNames.join("\n")}
+                        onChange={(event) => setProjectNamesDraft(event.target.value)}
+                        onBlur={commitProjectNames}
+                      />
+                      {projectNamesDraft !== null && (
+                        <span className="cloud-allowlist-hint" role="status">
+                          <AlertCircle size={13} aria-hidden /> Unsaved edits apply when you leave the field.
+                          <button
+                            type="button"
+                            className="link-action"
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              commitProjectNames();
+                            }}
+                          >
+                            Apply now
+                          </button>
+                        </span>
+                      )}
+                    </label>
+                  )}
                 </div>
-                <div className="settings-row-status">
-                  <strong>{policy.autoSyncEnabled ? "On" : "Off"}</strong>
-                  <span>Requires the app to be open</span>
-                </div>
-                <button
-                  className={policy.autoSyncEnabled ? "settings-control is-on" : "settings-control"}
-                  type="button"
-                  aria-pressed={policy.autoSyncEnabled}
-                  onClick={() => ctrl.updatePolicy({ autoSyncEnabled: !policy.autoSyncEnabled })}
-                >
-                  {policy.autoSyncEnabled ? "Disable Auto-Sync" : "Enable Auto-Sync"}
-                </button>
-              </section>
+              </details>
 
-              <section className="settings-row cloud-preview-row">
-                <div className="settings-row-icon"><CloudUpload size={18} aria-hidden /></div>
-                <div>
-                  <h3>Review and sync</h3>
-                  <p>
-                    This is the exact payload the selected team receives — nothing more. Review it,
-                    record your consent, then sync.
-                  </p>
-                  <SharePreview result={sync.buildResult} teamName={selectedTeam?.teamName ?? null} />
-                  {sync.buildResult.ok && policy.consentedAt === null && (
-                    <button className="secondary-action" type="button" onClick={ctrl.recordConsent}>
-                      <ShieldCheck size={15} aria-hidden />
-                      <span>I reviewed what will be shared with this team</span>
-                    </button>
-                  )}
-                  {policy.consentedAt !== null && (
-                    <p className="cloud-consent-note">
-                      <CheckCircle2 size={13} aria-hidden /> Consent recorded{" "}
-                      <time dateTime={policy.consentedAt}>{formatAuditTime(policy.consentedAt)}</time>.
-                      Changing the team or the shared fields asks you to review again.
-                    </p>
-                  )}
-                </div>
-                <div className="settings-row-status" role="status" aria-live="polite" aria-atomic="true">
-                  <strong>
-                    {ctrl.syncState.status === "syncing"
-                      ? "Syncing…"
-                      : sync.upToDate
-                        ? "Up to date"
-                        : ctrl.syncState.status === "error"
-                          ? "Last attempt failed"
-                          : "Not synced yet"}
-                  </strong>
-                  <span>
-                    {ctrl.syncState.lastSuccessAt
-                      ? <>Last success <time dateTime={ctrl.syncState.lastSuccessAt}>{formatAuditTime(ctrl.syncState.lastSuccessAt)}</time></>
-                      : "No successful sync yet"}
-                  </span>
-                  {ctrl.syncState.lastAttemptAt && (
-                    <span>
-                      Last attempt <time dateTime={ctrl.syncState.lastAttemptAt}>{formatAuditTime(ctrl.syncState.lastAttemptAt)}</time>
-                    </span>
-                  )}
-                  {snapshotFreshness && <span>{snapshotFreshness}</span>}
-                  {policy.autoSyncEnabled && ctrl.syncState.nextScheduledAt && (
-                    <span>
-                      Next auto-sync attempt{" "}
-                      <time dateTime={ctrl.syncState.nextScheduledAt}>{formatAuditTime(ctrl.syncState.nextScheduledAt)}</time>
-                    </span>
-                  )}
-                  {policy.autoSyncEnabled && !ctrl.syncState.nextScheduledAt && policy.consentedAt !== null && (
-                    <span>Auto-sync is not currently scheduled — sync once manually to arm it.</span>
-                  )}
-                  {ctrl.syncState.lastSyncedClientSnapshotId && (
-                    <small>Synced row id: {ctrl.syncState.lastSyncedClientSnapshotId}</small>
-                  )}
-                  {ctrl.syncState.lastError && (
-                    <small className="import-error" role="alert">
-                      <AlertCircle size={12} aria-hidden /> {ctrl.syncState.lastError}
-                    </small>
-                  )}
-                </div>
+              <details className="cloud-sharing-details cloud-exact-data-details">
+                <summary>View exact data</summary>
+                <SharePreview result={sync.buildResult} teamName={selectedTeam?.teamName ?? null} />
+              </details>
+            </div>
+
+            <div className="settings-row-status" role="status" aria-live="polite" aria-atomic="true">
+              <strong>
+                {approvingSharing
+                  ? "Saving approval…"
+                  : sync.syncBusy
+                    ? "Syncing…"
+                    : sharingApproved && sync.upToDate
+                      ? "Up to date"
+                      : sharingApproved && ctrl.syncState.status === "error"
+                        ? "Needs attention"
+                        : sharingApproved
+                          ? "Sharing approved"
+                          : "Not sharing"}
+              </strong>
+              <span>
+                {ctrl.syncState.lastSuccessAt
+                  ? <>Last synced <time dateTime={ctrl.syncState.lastSuccessAt}>{formatAuditTime(ctrl.syncState.lastSuccessAt)}</time></>
+                  : selectedTeam
+                    ? "No data sent yet"
+                    : "Choose a team first"}
+              </span>
+              {snapshotFreshness && <span>{snapshotFreshness}</span>}
+              {sharingApproved && ctrl.syncState.nextScheduledAt && (
+                <span>
+                  Next check{" "}
+                  <time dateTime={ctrl.syncState.nextScheduledAt}>{formatAuditTime(ctrl.syncState.nextScheduledAt)}</time>
+                </span>
+              )}
+              {ctrl.syncState.lastError && (
+                <small className="import-error" role="alert">
+                  <AlertCircle size={12} aria-hidden /> {ctrl.syncState.lastError}
+                </small>
+              )}
+            </div>
+
+            {!sharingApproved ? (
+              <button
+                className="primary-action"
+                type="button"
+                disabled={!selectedTeam || !sync.buildResult.ok || approvingSharing}
+                aria-busy={approvingSharing}
+                onClick={() => void approveAndStartSharing()}
+              >
+                {approvingSharing
+                  ? <LoaderCircle className="spin" size={15} aria-hidden />
+                  : <ShieldCheck size={15} aria-hidden />}
+                <span>{approvingSharing ? "Saving approval…" : "Approve and start sharing"}</span>
+              </button>
+            ) : (
+              <div className="data-export-options">
+                {ctrl.syncState.status === "error" && (
+                  <button className="primary-action" type="button" disabled={sync.syncBusy} onClick={() => void sync.syncNow()}>
+                    <RefreshCw className={sync.syncBusy ? "spin" : undefined} size={15} aria-hidden />
+                    <span>{sync.syncBusy ? "Syncing…" : "Retry sync"}</span>
+                  </button>
+                )}
                 <button
-                  className="primary-action"
+                  className="settings-control"
                   type="button"
-                  disabled={
-                    !sync.buildResult.ok ||
-                    policy.consentedAt === null ||
-                    sync.syncBusy
-                  }
-                  aria-busy={sync.syncBusy}
-                  onClick={startSync}
+                  onClick={() => ctrl.updatePolicy({ enabled: false, autoSyncEnabled: false, consentedAt: null })}
                 >
-                  {sync.syncBusy
-                    ? <LoaderCircle className="spin" size={15} aria-hidden />
-                    : <CloudUpload size={15} aria-hidden />}
-                  <span>{sync.syncBusy ? "Syncing…" : "Sync Now"}</span>
+                  Stop sharing
                 </button>
-              </section>
-            </>
-          )}
+              </div>
+            )}
+          </section>
 
           <section className="settings-row">
             <div className="settings-row-icon"><Trash2 size={18} aria-hidden /></div>
@@ -730,32 +680,6 @@ export function CloudAccountPanel({
             </button>
           </section>
         </>
-      )}
-
-      {confirmingFirstSync && sync.buildResult.ok && (
-        <ConfirmDialog
-          title="Share this snapshot with your team?"
-          tone="default"
-          description={`This uploads the previewed weekly snapshot to ${selectedTeam ? selectedTeam.teamName : "the selected team"}. Only the listed fields are sent — nothing else.`}
-          confirmLabel="Share snapshot"
-          onConfirm={() => {
-            setConfirmingFirstSync(false);
-            void sync.syncNow();
-          }}
-          onCancel={() => setConfirmingFirstSync(false)}
-        >
-          <ul className="dialog-delete-list">
-            <li>Recipient: {selectedTeam ? selectedTeam.teamName : sync.buildResult.snapshot.teamId}</li>
-            <li>Week {sync.buildResult.snapshot.weekId} at the "{sync.buildResult.snapshot.shareLevel}" level</li>
-            <li>
-              {sharedMetricLabels.length > 0
-                ? `Metrics: ${sharedMetricLabels.join(", ")}`
-                : "Metrics: none selected"}
-            </li>
-            <li>Review coverage counts (reviewed / eligible blocks)</li>
-            <li>Never sent: raw activity, titles, evidence, notes, calendar or chat details, screenshots, AI keys</li>
-          </ul>
-        </ConfirmDialog>
       )}
 
       {confirmingDelete && (

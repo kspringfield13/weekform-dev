@@ -115,9 +115,9 @@ function buildOrFail(policy: CloudSharePolicyV1, blocks: WorkBlock[] = [makeBloc
   return result;
 }
 
-// Case 0 (precondition for everything): disabled/teamless/unconsented policies are rejected with
-// typed reasons, never thrown strings and never partial payloads.
-test("rejects disabled, teamless, and unconsented policies with typed reasons", () => {
+// Case 0: preview construction is independent from upload approval. A selected team can always
+// be reviewed before the individual approves sharing; only a missing recipient blocks preview.
+test("builds a preview before approval and rejects only a missing recipient", () => {
   const base = makePolicy();
   const disabled = buildSharedWorkloadSnapshot({
     snapshot: makeCapacitySnapshot(),
@@ -125,7 +125,7 @@ test("rejects disabled, teamless, and unconsented policies with typed reasons", 
     policy: { ...base, enabled: false },
     now: NOW
   });
-  assert.deepEqual([disabled.ok, !disabled.ok && disabled.reason], [false, "sharing_disabled"]);
+  assert.equal(disabled.ok, true);
 
   const teamless = buildSharedWorkloadSnapshot({
     snapshot: makeCapacitySnapshot(),
@@ -141,7 +141,11 @@ test("rejects disabled, teamless, and unconsented policies with typed reasons", 
     policy: { ...base, consentedAt: null },
     now: NOW
   });
-  assert.deepEqual([unconsented.ok, !unconsented.ok && unconsented.reason], [false, "consent_missing"]);
+  assert.equal(unconsented.ok, true);
+  assert.deepEqual(
+    unconsented.ok ? unconsented.preview.payload : null,
+    unconsented.ok ? unconsented.snapshot : null
+  );
 });
 
 // Case 1: summary level includes only enabled numeric metrics — no allocation arrays at all.

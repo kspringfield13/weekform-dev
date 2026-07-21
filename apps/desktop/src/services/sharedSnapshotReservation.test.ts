@@ -6,6 +6,7 @@ import type { CloudSharePolicyV1 } from "../../../../packages/domain/src/cloud";
 import type { WeeklyCapacitySnapshot, WorkBlock } from "../../../../packages/domain/src/models";
 import {
   buildReservedSharedSnapshot,
+  isSharedSnapshotUploadAuthorized,
   runAfterDurableSharedSnapshotReservation,
 } from "./sharedSnapshotReservation";
 
@@ -18,6 +19,10 @@ const cloudAccountSource = readFileSync(
 );
 const cloudSyncSource = readFileSync(
   new URL("../hooks/useCloudSync.ts", import.meta.url),
+  "utf8",
+);
+const cloudPanelSource = readFileSync(
+  new URL("../components/settings/CloudAccountPanel.tsx", import.meta.url),
   "utf8",
 );
 
@@ -125,12 +130,12 @@ test("an unchanged fingerprint reuses the persisted reservation without generati
   assert.equal(generated, 0);
 });
 
-test("unbuildable content neither reserves nor generates a client snapshot ID", () => {
+test("a missing recipient neither reserves nor generates a client snapshot ID", () => {
   let generated = 0;
   const result = buildReservedSharedSnapshot({
     snapshot: snapshot(),
     workBlocks: [],
-    policy: policy({ enabled: false }),
+    policy: policy({ teamId: null }),
     pendingSnapshot: null,
     now: NOW,
     generateId: () => {
@@ -142,6 +147,28 @@ test("unbuildable content neither reserves nor generates a client snapshot ID", 
   assert.equal(result.buildResult.ok, false);
   assert.equal(result.reservation, null);
   assert.equal(generated, 0);
+});
+
+test("upload authorization stays closed until the individual approves the preview", () => {
+  const unapprovedPolicy = policy({ enabled: false, consentedAt: null });
+  const preview = buildReservedSharedSnapshot({
+    snapshot: snapshot(),
+    workBlocks: [],
+    policy: unapprovedPolicy,
+    pendingSnapshot: null,
+    now: NOW,
+    generateId: () => FIRST_ID,
+  }).buildResult;
+
+  assert.equal(preview.ok, true, "an individual must be able to inspect data before approval");
+  assert.equal(isSharedSnapshotUploadAuthorized(unapprovedPolicy, preview), false);
+  assert.equal(
+    isSharedSnapshotUploadAuthorized(
+      { ...unapprovedPolicy, enabled: true, consentedAt: NOW },
+      preview,
+    ),
+    true,
+  );
 });
 
 test("upload waits until the exact first-use reservation is durably confirmed", async () => {
@@ -219,4 +246,22 @@ test("manual and automatic team uploads use the account's strict reservation per
     assert.match(call[1] ?? "", /persistReservation:\s*account\.persistPendingSnapshot/);
     assert.match(call[1] ?? "", /operation:\s*\(\)\s*=>\s*runFreshGuardedUpload/);
   }
+  assert.match(
+    cloudSyncSource,
+    /isSharedSnapshotUploadAuthorized\(policy, buildResult\)/,
+    "manual sync must re-check individual approval at the upload boundary",
+  );
+  assert.match(
+    cloudAccountSource,
+    /const approveSharing[\s\S]*?await enqueueCloudWrite\(nextEnvelope\)[\s\S]*?setPolicy\(approvedPolicy\)/,
+    "approval must be durably stored before it becomes upload-eligible in React state",
+  );
+});
+
+test("Account & Sharing offers one individual approval action and starts the first sync", () => {
+  assert.match(cloudPanelSource, /Approve and start sharing/);
+  assert.match(cloudPanelSource, /await ctrl\.approveSharing\(\)/);
+  assert.match(cloudPanelSource, /setSyncAfterApproval\(true\)/);
+  assert.match(cloudPanelSource, /syncAfterApproval[\s\S]*?void sync\.syncNow\(\)/);
+  assert.doesNotMatch(cloudPanelSource, /I reviewed what will be shared with this team/);
 });

@@ -20,7 +20,7 @@ test("manual-resync marker is durable in sync-state error text without matching 
   assert.equal(isManualResyncRequired(REMOTE_SNAPSHOT_MISSING_MESSAGE), true);
   assert.equal(
     isManualResyncRequired(
-      `${REMOTE_SNAPSHOT_MISSING_MESSAGE} Latest Sync Now attempt failed: offline`
+      `${REMOTE_SNAPSHOT_MISSING_MESSAGE} Latest retry attempt failed: offline`
     ),
     true
   );
@@ -31,7 +31,7 @@ test("manual-resync marker is durable in sync-state error text without matching 
 test("a failed manual retry cannot erase the deletion guard that blocks automatic re-upload", () => {
   assert.equal(
     preserveManualResyncRequirement(REMOTE_SNAPSHOT_MISSING_MESSAGE, "offline"),
-    `${REMOTE_SNAPSHOT_MISSING_MESSAGE} Latest Sync Now attempt failed: offline`
+    `${REMOTE_SNAPSHOT_MISSING_MESSAGE} Latest retry attempt failed: offline`
   );
   assert.equal(
     preserveManualResyncRequirement("older transient failure", "offline"),

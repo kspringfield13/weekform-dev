@@ -5,7 +5,7 @@ export type RemoteSnapshotReconciliation =
   | { ok: false; message: string };
 
 export const REMOTE_SNAPSHOT_MISSING_MESSAGE =
-  "The synced snapshot was deleted from the cloud. Review the current preview and use Sync Now to share it again.";
+  "The synced snapshot was deleted from the cloud. Review the current rules and use Retry sync to share it again.";
 
 export function isManualResyncRequired(lastError: string | null): boolean {
   return lastError?.startsWith(REMOTE_SNAPSHOT_MISSING_MESSAGE) === true;
@@ -17,7 +17,7 @@ export function preserveManualResyncRequirement(
   nextError: string
 ): string {
   return isManualResyncRequired(currentLastError)
-    ? `${REMOTE_SNAPSHOT_MISSING_MESSAGE} Latest Sync Now attempt failed: ${nextError}`
+    ? `${REMOTE_SNAPSHOT_MISSING_MESSAGE} Latest retry attempt failed: ${nextError}`
     : nextError;
 }
 

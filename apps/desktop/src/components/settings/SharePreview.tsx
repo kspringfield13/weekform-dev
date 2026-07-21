@@ -1,5 +1,5 @@
 // The consent preview: renders the EXACT SharedWorkloadSnapshotV1 the shared builder
-// produced (the same object reference "Sync Now" uploads) — human-readable lines plus
+// produced (the same object reference the approved sync uploads) — human-readable lines plus
 // the verbatim JSON. Never a second calculation, so the preview cannot claim more or
 // less than the sync sends.
 

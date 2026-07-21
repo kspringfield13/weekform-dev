@@ -108,6 +108,24 @@ export function createDefaultCloudSharePolicy(): CloudSharePolicyV1 {
   };
 }
 
+/**
+ * One individual approval starts the team-sharing lifecycle: sharing is enabled,
+ * bounded hourly sync is armed, and the exact reviewed configuration receives its
+ * consent timestamp. The caller is responsible for durably persisting this new
+ * object before allowing the first upload.
+ */
+export function approveCloudSharePolicy(
+  current: CloudSharePolicyV1,
+  consentedAt: string
+): CloudSharePolicyV1 {
+  return {
+    ...current,
+    enabled: true,
+    autoSyncEnabled: true,
+    consentedAt
+  };
+}
+
 const SHARE_LEVELS: ReadonlySet<CloudShareLevel> = new Set(["summary", "categories", "projects"]);
 
 /**

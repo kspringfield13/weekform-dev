@@ -1,4 +1,4 @@
-// Manual "Sync Now" for the Account & Sharing surface.
+// Approval-triggered first sync, explicit retry, and bounded automatic sync for Account & Sharing.
 //
 // THE TEAM-SHARING RULE (cloud.ts): the only object this team path uploads is
 // `SharedWorkloadSnapshotV1`, built by the shared allowlist builder in
@@ -19,6 +19,7 @@ import {
 } from "../services/cloudPolicy";
 import {
   buildReservedSharedSnapshot,
+  isSharedSnapshotUploadAuthorized,
   runAfterDurableSharedSnapshotReservation,
 } from "../services/sharedSnapshotReservation";
 import {
@@ -201,7 +202,7 @@ export function useCloudSync({
 
   const syncNow = useCallback(async (): Promise<boolean> => {
     const env = getCloudEnv();
-    if (!env || !buildResult.ok || syncBusy) return false;
+    if (!env || !isSharedSnapshotUploadAuthorized(policy, buildResult) || syncBusy) return false;
     const operation = cloudOperationBarrier.begin();
     if (!operation) return false;
     const attemptedAt = new Date().toISOString();
@@ -346,7 +347,7 @@ export function useCloudSync({
         return false;
       }
       // The team no longer holds this user's rows; forget the "already synced"
-      // fingerprint so the next Sync Now re-uploads the current approved content.
+      // fingerprint so an explicit retry re-uploads the current approved content.
       setSyncState((current) => ({
         ...current,
         status: "error",
@@ -431,7 +432,7 @@ export function useCloudSync({
 
   // A deletion guard belongs to its recipient. Switching accounts or teams starts a
   // different remote boundary, but merely toggling auto-sync must never erase the
-  // requirement for a successful explicit Sync Now on the same recipient.
+  // requirement for a successful explicit retry on the same recipient.
   const recipientKey = `${account.account?.userId ?? ""}|${policy.teamId ?? ""}`;
   const previousRecipientKeyRef = useRef(recipientKey);
   useEffect(() => {

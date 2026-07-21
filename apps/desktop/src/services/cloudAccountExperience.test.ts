@@ -40,3 +40,12 @@ test("Account & Sharing places an Open Web App control beside the Weekform Web h
   assert.match(headingSource, /openWeekformWebApp\(\)/);
   assert.match(stylesSource, /\.account-sharing-title-row/);
 });
+
+test("team sharing is one approval-first surface with advanced rules and exact data disclosed", () => {
+  assert.match(panelSource, /Sharing with \{selectedTeam\.teamName\}/);
+  assert.match(panelSource, /Approve and start sharing/);
+  assert.match(panelSource, /Adjust sharing rules/);
+  assert.match(panelSource, /View exact data/);
+  assert.doesNotMatch(panelSource, /<h3>Hourly auto-sync<\/h3>/);
+  assert.doesNotMatch(panelSource, /<h3>Review and sync<\/h3>/);
+});
