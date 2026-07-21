@@ -54,6 +54,8 @@ import { createCloudSharingAuditEvent, type CloudSharingAuditAction } from "../l
 export interface CloudAccountController {
   /** True when this build carries publishable Supabase env; false = cloud UI renders "not configured". */
   configured: boolean;
+  /** True after the persisted native account session has been read or ruled out. */
+  hydrated: boolean;
   isDemoMode: boolean;
   account: CloudAccountSummary | null;
   teams: CloudTeamMembership[];
@@ -590,6 +592,7 @@ export function useCloudAccount({
   return useMemo(
     () => ({
       configured,
+      hydrated,
       isDemoMode,
       account,
       teams,
@@ -621,6 +624,7 @@ export function useCloudAccount({
     }),
     [
       configured,
+      hydrated,
       isDemoMode,
       account,
       teams,

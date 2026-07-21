@@ -5,6 +5,7 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { WeekformMark } from "@/components/WeekformMark";
+import { MacAppLink } from "@/components/MacAppLink";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { WebCompactWindowHandoff } from "@/components/WebCompactWindowHandoff";
 import { WebCompactWorkspace } from "@/components/WebCompactWorkspace";
@@ -38,6 +39,8 @@ const DESTINATIONS: Array<{
   { id: "settings", label: "Settings", description: "Account and sharing", shortcutKey: "Meta+9" },
 ];
 const SETTINGS_DESTINATION = DESTINATIONS[4]!;
+const WEEKFORM_START_TRACKING_URL =
+  "weekform://open?source=weekform.dev&action=start-tracking&view=compact";
 
 const DEFAULT_SUBVIEW: Record<IndividualDestination, IndividualSubview> = {
   today: "today",
@@ -112,6 +115,15 @@ function CompactWindowIcon() {
   return (
     <svg className="web-window-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M4 4h16v16H4zM14 4v6h6M4 14h6v6" />
+    </svg>
+  );
+}
+
+function StartTrackingIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m9 7 8 5-8 5Z" />
+      <circle cx="12" cy="12" r="9" />
     </svg>
   );
 }
@@ -523,6 +535,17 @@ export function IndividualWorkspaceShell({
         aria-hidden={mobileNavigationOpen ? true : undefined}
       >
         <div className="web-workspace-mode-row">
+          {!managerWorkspace && (active === "today" || active === "week") ? (
+            <MacAppLink
+              openUrl={WEEKFORM_START_TRACKING_URL}
+              fallbackHref="/download"
+              className="button button-primary web-start-tracking-action"
+              title="Open compact Weekform Desktop and start local tracking"
+            >
+              <StartTrackingIcon />
+              Start Tracking
+            </MacAppLink>
+          ) : null}
           <WorkspaceModeToggle
             individualHref={individualHref}
             teamAvailable={teamAvailable}

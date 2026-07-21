@@ -217,9 +217,13 @@ test("download page keeps the Mac choice minimal and actionable", () => {
   assert.match(source, /getReleasePresentation/);
   assert.match(source, /officialReleasePresentation\.kind === "available"/);
   assert.match(source, /download-page-minimal/);
+  assert.match(source, /<WeekformMark className="download-title-mark" \/>/);
+  assert.match(source, /download-title-wordmark/);
+  assert.match(source, /download-title-product/);
   assert.match(source, /download-hero-minimal/);
   assert.match(source, /download-source-install/);
   assert.match(source, /download-command-list/);
+  assert.doesNotMatch(source, /openUrl=/);
   assert.doesNotMatch(source, /ExampleWeek|download-product-preview/);
   assert.doesNotMatch(source, /RELEASE_INFO\.(?:releaseNotes|features|tips)/);
   assert.doesNotMatch(

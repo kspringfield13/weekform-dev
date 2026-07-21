@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 import { MacAppLink } from "@/components/MacAppLink";
+import { WeekformMark } from "@/components/WeekformMark";
 import {
   RELEASE_INFO,
   getBetaReleasePresentation,
@@ -115,8 +116,14 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
           aria-labelledby="download-title"
         >
           <div className="download-hero-copy">
-            <p className="download-eyebrow">Weekform for macOS</p>
-            <h1 id="download-title">Weekform Desktop</h1>
+            <p className="download-eyebrow">For macOS</p>
+            <h1 id="download-title" className="download-title-lockup">
+              <span className="download-title-brand">
+                <WeekformMark className="download-title-mark" />
+                <span className="download-title-wordmark">Weekform</span>
+              </span>
+              <span className="download-title-product">Desktop</span>
+            </h1>
             <p className="download-lede">
               Install the local-first Mac app, or continue in Weekform Web.
             </p>
@@ -172,8 +179,7 @@ export default async function DownloadPage({ searchParams }: DownloadPageProps) 
             </li>
           </ol>
           <p className="download-minimal-note">
-            The guided setup builds locally, installs one copy in Applications,
-            and opens Weekform. Raw activity stays on this Mac.
+            The guided setup builds, installs, and opens Weekform Desktop.
           </p>
           <div className="download-minimal-meta">
             <span>{RELEASE_INFO.macOsRequirement}</span>

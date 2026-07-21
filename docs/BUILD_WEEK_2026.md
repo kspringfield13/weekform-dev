@@ -301,10 +301,11 @@ the alignment QA.
   desktop root also renders a local-data-safe recovery screen for later React
   failures. A source install rendered the full Capacity surface and two
   menu-bar reopen passes each moved the native window count from zero to one.
-  Every Web and authenticated-app Mac CTA now attempts the registered
-  `weekform://` scheme first, with single-instance native handling that restores,
-  activates, and focuses the full dashboard; Macs without the app retain the
-  authenticated download fallback. A fail-closed publisher now encodes the
+  Explicit operational handoffs can use the registered `weekform://` scheme,
+  with single-instance native handling that restores, activates, and focuses
+  the requested window. Download/Get Mac acquisition buttons remain normal,
+  prompt-free links to the authenticated download page; they do not trigger a
+  browser-owned “Open Weekform.app?” dialog. A fail-closed publisher now encodes the
   signed universal build, Apple notarization, stapling, Gatekeeper, immutable
   private upload, hosted-byte checksum, proof-env, and production deployment
   sequence. A local Keychain notarization profile is now available, but the two
@@ -315,6 +316,13 @@ the alignment QA.
   signature shape produced by a local build. Focused red-first regressions,
   269 desktop service tests, 570 Web tests, the root build, optimized Web build,
   shell syntax check, and both dependency audits passed before deployment.
+- **July 20 Web-to-Mac tracking handoff:** Individual Today and every Week view
+  now share one Start Tracking action. It attempts the registered desktop app,
+  opens the compact top-right native window, and resumes local tracking only
+  after the desktop account state is hydrated and signed in. A signed-out app
+  opens Account & Sharing without changing the current pause state; a missing
+  app falls back to the authenticated download route. No raw activity or native
+  permission moves into the browser.
 
 ### Layered Supabase sign-in
 

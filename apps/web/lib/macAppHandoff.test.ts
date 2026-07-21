@@ -24,12 +24,21 @@ const buildSource = readFileSync(
   new URL("../../desktop/src-tauri/build.rs", import.meta.url),
   "utf8",
 );
+const individualShellSource = readFileSync(
+  new URL("../components/IndividualWorkspaceShell.tsx", import.meta.url),
+  "utf8",
+);
+const desktopAppSource = readFileSync(
+  new URL("../../desktop/src/App.tsx", import.meta.url),
+  "utf8",
+);
 
-test("Mac calls to action attempt the installed app before their download fallback", () => {
+test("download acquisition stays prompt-free while explicit Mac actions retain a fallback", () => {
   assert.equal(existsSync(launcherUrl), true);
   const source = existsSync(launcherUrl) ? readFileSync(launcherUrl, "utf8") : "";
 
-  assert.match(source, /weekform:\/\/open/);
+  assert.match(source, /export const WEEKFORM_OPEN_URL = "weekform:\/\/open/);
+  assert.match(source, /!openUrl/);
   assert.match(source, /window\.addEventListener\("blur"/);
   assert.match(source, /visibilitychange/);
   assert.match(source, /window\.location\.assign\(fallbackHref\)/);
@@ -75,4 +84,22 @@ test("the packaged Mac app owns the Weekform scheme and focuses one existing ins
   assert.doesNotMatch(macActivationSource, /ActivateIgnoringOtherApps/);
   assert.match(buildSource, /macos_app_activation\.m/);
   assert.match(nativeSource, /weekform_activate_app/);
+});
+
+test("Individual Today and Week offer a desktop-gated Start Tracking handoff", () => {
+  const launcherSource = readFileSync(launcherUrl, "utf8");
+
+  assert.match(launcherSource, /openUrl/);
+  assert.match(
+    individualShellSource,
+    /weekform:\/\/open\?source=weekform\.dev&action=start-tracking&view=compact/,
+  );
+  assert.match(individualShellSource, /active === "today" \|\| active === "week"/);
+  assert.match(individualShellSource, /fallbackHref="\/download"/);
+  assert.match(individualShellSource, /Start Tracking/);
+  assert.match(nativeSource, /consume_pending_web_handoff/);
+  assert.match(nativeSource, /show_quick_view/);
+  assert.match(desktopAppSource, /resolveWebTrackingHandoff/);
+  assert.match(desktopAppSource, /setActiveSettingsTab\("account"\)/);
+  assert.match(desktopAppSource, /setPaused\(false\)/);
 });

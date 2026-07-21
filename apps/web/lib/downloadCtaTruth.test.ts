@@ -4,6 +4,14 @@ import { extname, relative } from "node:path";
 import test from "node:test";
 
 const webRoot = new URL("..", import.meta.url);
+const launcherSource = readFileSync(
+  new URL("../components/MacAppLink.tsx", import.meta.url),
+  "utf8",
+);
+const productEntrySource = readFileSync(
+  new URL("./productEntry.ts", import.meta.url),
+  "utf8",
+);
 
 function tsxFiles(directory: URL): URL[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -13,7 +21,7 @@ function tsxFiles(directory: URL): URL[] {
   });
 }
 
-test("every Web Mac CTA uses the installed-app launcher instead of a raw download link", () => {
+test("every Web Mac CTA uses the shared prompt-free acquisition or explicit-action link", () => {
   const rawDownloadLinks: string[] = [];
   const launcherFiles: string[] = [];
 
@@ -30,4 +38,13 @@ test("every Web Mac CTA uses the installed-app launcher instead of a raw downloa
 
   assert.deepEqual(rawDownloadLinks, []);
   assert.ok(launcherFiles.length >= 10, "Mac handoffs across marketing and the Web app must share the launcher");
+});
+
+test("every acquisition link retains the authenticated download page when the app is absent", () => {
+  assert.match(launcherSource, /fallbackHref\s*=\s*"\/download"/);
+  assert.match(launcherSource, /!openUrl/);
+  assert.match(
+    productEntrySource,
+    /id:\s*"mac"[\s\S]*?href:\s*"\/download"/,
+  );
 });

@@ -2,7 +2,7 @@
 
 import type { AnchorHTMLAttributes, MouseEvent, ReactNode } from "react";
 
-const WEEKFORM_OPEN_URL = "weekform://open?source=weekform.dev";
+export const WEEKFORM_OPEN_URL = "weekform://open?source=weekform.dev";
 // Chrome shows a browser-owned confirmation before opening a custom scheme the
 // first time. Keep the fallback long enough for a person to read and accept it;
 // accepting the prompt blurs the page and cancels this timer immediately.
@@ -14,6 +14,7 @@ type MacAppLinkProps = Omit<
 > & {
   children: ReactNode;
   fallbackHref?: string;
+  openUrl?: string;
 };
 
 function isMacBrowser(): boolean {
@@ -28,11 +29,13 @@ function isMacBrowser(): boolean {
 export function MacAppLink({
   children,
   fallbackHref = "/download",
+  openUrl,
   ...anchorProps
 }: MacAppLinkProps) {
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     if (
-      event.defaultPrevented
+      !openUrl
+      || event.defaultPrevented
       || event.button !== 0
       || event.metaKey
       || event.ctrlKey
@@ -80,7 +83,7 @@ export function MacAppLink({
     }, DOWNLOAD_FALLBACK_DELAY_MS);
 
     try {
-      window.location.assign(WEEKFORM_OPEN_URL);
+      window.location.assign(openUrl);
     } catch {
       cleanup();
       window.location.assign(fallbackHref);

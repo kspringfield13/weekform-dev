@@ -147,6 +147,10 @@ struct ActivityCaptureState {
 struct DefaultOpenState {
     compact: AtomicBool,
 }
+
+struct PendingWebHandoff(Mutex<Option<String>>);
+
+const WEB_HANDOFF_START_TRACKING: &str = "start_tracking";
 #[derive(Clone, Deserialize, Serialize)]
 struct ActiveWindowPayload {
     sample_id: String,
@@ -439,6 +443,23 @@ fn is_weekform_open_url(raw_url: &str) -> bool {
         || raw_url.starts_with("weekform://open/")
 }
 
+fn weekform_query_value<'a>(raw_url: &'a str, key: &str) -> Option<&'a str> {
+    let query = raw_url.split_once('?')?.1.split('#').next()?;
+    query.split('&').find_map(|pair| {
+        let (candidate_key, value) = pair.split_once('=')?;
+        (candidate_key == key).then_some(value)
+    })
+}
+
+fn web_handoff_action(raw_url: &str) -> Option<&'static str> {
+    if !is_weekform_open_url(raw_url) {
+        return None;
+    }
+    (weekform_query_value(raw_url, "action") == Some("start-tracking")
+        && weekform_query_value(raw_url, "view") == Some("compact"))
+    .then_some(WEB_HANDOFF_START_TRACKING)
+}
+
 fn apply_window_mode(app: &AppHandle, mode: &str) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         match mode {
@@ -483,6 +504,59 @@ fn show_large_dashboard(app: &AppHandle) {
     apply_window_mode(app, "large");
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         let _ = window.eval("window.dispatchEvent(new CustomEvent('clear-capacity:large-view'))");
+    }
+}
+
+fn handle_weekform_open_url(app: &AppHandle, raw_url: &str) -> bool {
+    if !is_weekform_open_url(raw_url) {
+        return false;
+    }
+
+    if let Some(action) = web_handoff_action(raw_url) {
+        if let Ok(mut pending) = app.state::<PendingWebHandoff>().0.lock() {
+            *pending = Some(action.to_string());
+        }
+        show_quick_view(app);
+        if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+            let _ =
+                window.eval("window.dispatchEvent(new CustomEvent('clear-capacity:web-handoff'))");
+        }
+    } else {
+        show_large_dashboard(app);
+    }
+
+    true
+}
+
+#[cfg(test)]
+mod web_handoff_tests {
+    use super::{is_weekform_open_url, web_handoff_action, WEB_HANDOFF_START_TRACKING};
+
+    #[test]
+    fn tracking_handoff_requires_the_owned_action_and_compact_view() {
+        assert_eq!(
+            web_handoff_action(
+                "weekform://open?source=weekform.dev&action=start-tracking&view=compact"
+            ),
+            Some(WEB_HANDOFF_START_TRACKING),
+        );
+        assert_eq!(
+            web_handoff_action("weekform://open?action=start-tracking&view=large"),
+            None,
+        );
+        assert_eq!(
+            web_handoff_action("https://weekform.dev/?action=start-tracking&view=compact"),
+            None,
+        );
+    }
+
+    #[test]
+    fn ordinary_weekform_open_links_remain_valid_without_starting_tracking() {
+        assert!(is_weekform_open_url("weekform://open?source=weekform.dev"));
+        assert_eq!(
+            web_handoff_action("weekform://open?source=weekform.dev"),
+            None,
+        );
     }
 }
 
@@ -2326,6 +2400,11 @@ fn set_default_window_mode(open_state: State<'_, DefaultOpenState>, mode: String
     open_state
         .compact
         .store(mode == "compact", Ordering::SeqCst);
+}
+
+#[tauri::command]
+fn consume_pending_web_handoff(state: State<'_, PendingWebHandoff>) -> Option<String> {
+    state.0.lock().ok()?.take()
 }
 
 /// Bring the main window forward in the full dashboard layout. Called by the
@@ -4545,8 +4624,8 @@ pub fn run() {
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            if args.iter().any(|arg| is_weekform_open_url(arg)) {
-                show_large_dashboard(app);
+            if let Some(url) = args.iter().find(|arg| is_weekform_open_url(arg)) {
+                handle_weekform_open_url(app, url);
             }
         }));
     }
@@ -4558,6 +4637,7 @@ pub fn run() {
         .manage(DefaultOpenState {
             compact: AtomicBool::new(false),
         })
+        .manage(PendingWebHandoff(Mutex::new(None)))
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -4583,6 +4663,7 @@ pub fn run() {
             capture_visual_context_with_openai,
             set_clear_capacity_window_mode,
             set_default_window_mode,
+            consume_pending_web_handoff,
             get_env_ai_key_status,
             connect_codex_via_chatgpt,
             disconnect_codex,
@@ -4605,26 +4686,26 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let opened_from_web = app
-                .deep_link()
-                .get_current()?
-                .is_some_and(|urls| urls.iter().any(|url| is_weekform_open_url(url.as_str())));
+            let opened_from_web = app.deep_link().get_current()?.and_then(|urls| {
+                urls.into_iter()
+                    .find(|url| is_weekform_open_url(url.as_str()))
+            });
             let app_handle = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
-                if event
+                if let Some(url) = event
                     .urls()
                     .iter()
-                    .any(|url| is_weekform_open_url(url.as_str()))
+                    .find(|url| is_weekform_open_url(url.as_str()))
                 {
-                    show_large_dashboard(&app_handle);
+                    handle_weekform_open_url(&app_handle, url.as_str());
                 }
             });
 
             configure_tray(app)?;
             start_activity_capture(app.handle().clone(), activity_capture_paused.clone());
 
-            if opened_from_web {
-                show_large_dashboard(app.handle());
+            if let Some(url) = opened_from_web {
+                handle_weekform_open_url(app.handle(), url.as_str());
             } else if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
                 let _ = window.hide();
             }

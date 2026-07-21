@@ -421,6 +421,17 @@ selection and web freshness use a server-owned `synced_at` receipt timestamp;
 client `observed_at` and `source_updated_at` remain provenance and cannot win
 latest ordering through clock skew.
 
+In Individual mode, the Today and Week surfaces include a user-initiated
+**Start Tracking** handoff. The browser sends only the registered
+`weekform://` action; it does not start browser collection or receive Mac
+activity. An installed desktop waits until its local Weekform account state has
+been restored. If that desktop is signed in, it opens the compact top-right
+window and resumes the existing native collector under the same macOS
+permission, encrypted-journal, retention, and local audit boundaries described
+above. If it is signed out, Weekform opens Account & Sharing and leaves the
+current tracking pause state unchanged. If the app is unavailable, the browser
+falls back to the authenticated Mac download page.
+
 ## Individual Web Ask (weekform.dev, server-side AI)
 
 An authenticated individual can explicitly send a question from the private Web

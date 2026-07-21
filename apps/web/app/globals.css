@@ -4089,6 +4089,36 @@ button.text-link {
   line-height: 1;
 }
 
+.download-title-lockup {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+}
+
+.download-title-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+}
+
+.download-title-mark {
+  width: 58px;
+  height: 46px;
+  flex: none;
+  color: var(--text);
+}
+
+.download-title-wordmark {
+  font-weight: 720;
+}
+
+.download-title-product {
+  color: var(--text-muted);
+  font-weight: 520;
+}
+
 .download-hero-minimal .download-lede {
   max-width: 42ch;
   margin-top: 15px;
@@ -4331,6 +4361,19 @@ button.text-link {
 
   .download-hero-minimal h1 {
     font-size: clamp(40px, 12vw, 50px);
+  }
+
+  .download-title-lockup {
+    gap: 8px 13px;
+  }
+
+  .download-title-brand {
+    gap: 10px;
+  }
+
+  .download-title-mark {
+    width: 48px;
+    height: 38px;
   }
 
   .download-minimal-actions {
@@ -5990,16 +6033,33 @@ button.text-link {
   z-index: 7;
   top: 0;
   display: flex;
+  align-items: center;
+  gap: 10px;
   justify-content: flex-end;
   padding: 14px clamp(24px, 4vw, 64px) 0;
   pointer-events: none;
 }
 
 .web-workspace-mode-row .workspace-mode-toggle {
+  width: fit-content;
   margin: 0;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
   backdrop-filter: blur(16px);
   pointer-events: auto;
+}
+
+.web-start-tracking-action {
+  min-height: 44px;
+  margin-right: auto;
+  padding: 0 16px;
+  border-radius: 11px;
+  box-shadow: 0 8px 24px color-mix(in srgb, #000 12%, transparent);
+  pointer-events: auto;
+}
+
+.web-start-tracking-action svg {
+  width: 16px;
+  height: 16px;
 }
 
 .team-workspace-shell {
@@ -7122,6 +7182,14 @@ button.text-link {
   .web-window-button > span { display: none; }
   .web-toolbar-button { padding-inline: 8px; }
   .web-individual-app .workspace-shell { padding-inline: 12px; }
+  .web-workspace-mode-row {
+    flex-wrap: wrap;
+    padding: 10px 12px 0;
+  }
+  .web-start-tracking-action {
+    min-height: 40px;
+    padding-inline: 13px;
+  }
   .web-individual-app .page-context-navigation { padding: 10px 8px 0; }
   .web-individual-app .web-desktop-screen { padding: 18px 12px 24px; }
 }

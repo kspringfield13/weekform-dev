@@ -128,6 +128,7 @@ import {
   resolveSettingsTab,
 } from "./services/adminPortal";
 import { deriveWeeklyReviewState } from "./services/weeklyReview";
+import { resolveWebTrackingHandoff } from "./services/webTrackingHandoff";
 import {
   resolveGettingStartedDemoExit,
   resolveGettingStartedExit,
@@ -835,6 +836,7 @@ export function App() {
       setAuditEvents((current) => [...current, event].slice(-1000));
     },
   });
+  const desktopSignedIn = cloudAccount.account !== null;
   const cloudSync = useCloudSync({
     account: cloudAccount,
     snapshot,
@@ -1337,6 +1339,45 @@ export function App() {
       window.removeEventListener("clear-capacity:large-view", openLargeViewFromNative);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime || !cloudAccount.hydrated) return;
+
+    let active = true;
+    let consuming = false;
+    const consumeWebHandoff = async () => {
+      if (consuming) return;
+      consuming = true;
+      try {
+        const action = await invoke<string | null>("consume_pending_web_handoff");
+        if (!active || action !== "start_tracking") return;
+
+        const resolution = resolveWebTrackingHandoff(desktopSignedIn);
+        if (resolution.startTracking) {
+          setPaused(false);
+          setWindowMode(resolution.windowMode);
+          pushToast({ tone: "success", message: "Tracking started in compact view" });
+          return;
+        }
+
+        if (resolution.settingsTab) setActiveSettingsTab(resolution.settingsTab);
+        if (resolution.screen) setActive(resolution.screen);
+        setWindowMode(resolution.windowMode);
+        void invoke("present_main_window").catch(() => undefined);
+        pushToast({ tone: "info", message: "Sign in to Weekform Desktop to start tracking" });
+      } finally {
+        consuming = false;
+      }
+    };
+    const handleWebHandoff = () => { void consumeWebHandoff(); };
+
+    window.addEventListener("clear-capacity:web-handoff", handleWebHandoff);
+    void consumeWebHandoff();
+    return () => {
+      active = false;
+      window.removeEventListener("clear-capacity:web-handoff", handleWebHandoff);
+    };
+  }, [cloudAccount.hydrated, desktopSignedIn, isTauriRuntime, pushToast]);
 
   useEffect(() => {
     async function copyManagerSummaryFromNative() {
