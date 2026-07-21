@@ -976,7 +976,7 @@ export function App() {
     () => resolveTeamWorkspaceMembership(teamMemberships, cloudAccount.policy.teamId),
     [cloudAccount.policy.teamId, teamMemberships],
   );
-  const teamAvailable = isTeamWorkspaceAvailable(
+  const teamAvailable = isDemoMode || isTeamWorkspaceAvailable(
     cloudAccount.account !== null,
     teamMemberships,
     cloudAccount.policy.enabled,
@@ -3135,6 +3135,7 @@ export function App() {
         visualContextInsights={visualContextInsights}
         onDiscardInsight={discardVisualInsight}
         calendarEvents={calendarEvents}
+        chatEvents={chatEvents}
         captureError={captureError}
         importError={importError}
         lastCalendarImportSummary={lastCalendarImportSummary}

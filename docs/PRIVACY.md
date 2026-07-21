@@ -322,6 +322,25 @@ OAuth verification where applicable, a deployed and rate-limited Webex token
 broker, and account-level transfer tests against each provider's current API
 and retention limits.
 
+## Team Calendar local evidence layer
+
+The macOS Team workload calendar can align the signed-in user's existing local
+Calendar and Chat evidence with approved weekly team summaries. This is a
+display-only local projection: per day it contains only a calendar-event count,
+unioned non-all-day meeting minutes, normalized observed Chat-episode count,
+directed-trigger count, reviewed-block count, and one deterministic pressure
+label. Overlapping meetings are unioned rather than double-counted. Calendar
+titles, locations, organizers, attendees, Chat content, people, provider ids,
+conversation keys, and raw evidence are not copied into the projection.
+
+These daily facts never enter `SharedWorkloadSnapshotV1`, the private Web
+replica, Team Briefing, or any Team cloud table. Managers see the local overlay
+only for their own Mac evidence; other members remain represented solely by
+their approved aggregate summaries. Email is explicitly unavailable because
+Weekform has no inbox connector and requests no inbox access. The public demo
+uses synthetic Calendar, Chat, roster, and summary data and performs no Team
+network request.
+
 ## AI and OpenAI/Codex Data
 
 OpenAI is Weekform's default and recommended AI provider. AI is optional and supports two distinct connection boundaries:

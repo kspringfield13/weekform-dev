@@ -4,6 +4,7 @@ import type {
   ActivitySession,
   AuditEvent,
   OutlookCalendarEvent,
+  RawEvent,
   ReviewCopilotSuggestion,
   TokenUsageDay,
   TokenUsageSettings,
@@ -103,6 +104,7 @@ interface ScreenRouterProps {
   visualContextInsights: VisualContextInsight[];
   onDiscardInsight: (insightId: string) => void;
   calendarEvents: OutlookCalendarEvent[];
+  chatEvents: RawEvent[];
   captureError: string | null;
   importError: string | null;
   lastCalendarImportSummary: string | null;
@@ -239,6 +241,7 @@ export function ScreenRouter({
   visualContextInsights,
   onDiscardInsight,
   calendarEvents,
+  chatEvents,
   captureError,
   importError,
   lastCalendarImportSummary,
@@ -348,6 +351,11 @@ export function ScreenRouter({
         <TeamScreen
           cloud={cloud}
           snapshot={snapshot}
+          blocks={blocks}
+          calendarEvents={calendarEvents}
+          chatEvents={chatEvents}
+          calendarConnected={calendarSources.statuses.some((status) => status.connected)}
+          chatConnected={chatSources.statuses.some((status) => status.connected)}
           hasWorkBlocks={blocks.length > 0}
           onOpenIndividual={() => onOpenScreen("daily")}
           onOpenManagerWorkspace={onOpenManagerWorkspace}

@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   buildTeamCalendar,
+  buildTeamCalendarEvidence,
+  defaultTeamCalendarEvidenceDate,
   buildTeamCalendarWeeks,
   buildTeamTimelineCapacityForecast,
   buildTeamTimeline,
@@ -161,6 +163,69 @@ test("Team calendar week analytics use medians, preserve unknowns, and expose re
   assert.equal(week29?.eligibleBlocks, 8);
   assert.equal(week28?.reliableCapacityPct, null);
   assert.equal(week28?.sharedCount, 0);
+});
+
+test("Team calendar evidence blends private Calendar, content-free Chat, and reviewed facts by day", () => {
+  const evidence = buildTeamCalendarEvidence({
+    calendarEvents: [
+      { start_time: "2026-07-20T09:00:00.000Z", end_time: "2026-07-20T11:00:00.000Z", all_day: false },
+      { start_time: "2026-07-20T10:30:00.000Z", end_time: "2026-07-20T12:00:00.000Z", all_day: false },
+      { start_time: "2026-07-21T00:00:00.000Z", end_time: "2026-07-22T00:00:00.000Z", all_day: true },
+    ],
+    chatEvents: [
+      { timestamp_start: "2026-07-20T12:10:00.000Z", timestamp_end: "2026-07-20T12:16:00.000Z", source_type: "chat", metadata: { directed_trigger: "true" } },
+      { timestamp_start: "2026-07-20T14:00:00.000Z", timestamp_end: "2026-07-20T14:05:00.000Z", source_type: "chat", metadata: { directed_trigger: "false" } },
+      { timestamp_start: "2026-07-20T15:00:00.000Z", timestamp_end: "2026-07-20T15:04:00.000Z", source_type: "window", metadata: {} },
+    ],
+    workBlocks: [
+      { start_time: "2026-07-20T13:00:00.000Z", user_verified: true },
+      { start_time: "2026-07-20T16:00:00.000Z", user_verified: false },
+    ],
+    timeZone: "UTC",
+  });
+
+  assert.deepEqual(evidence, [{
+    dateId: "2026-07-20",
+    calendarEventCount: 2,
+    calendarMinutes: 180,
+    chatEpisodeCount: 2,
+    directedChatCount: 1,
+    reviewedBlockCount: 1,
+    insight: "meeting-dense",
+  }]);
+});
+
+test("Team calendar evidence labels combined meeting and communication pressure without inventing missing sources", () => {
+  const evidence = buildTeamCalendarEvidence({
+    calendarEvents: [
+      { start_time: "2026-07-20T09:00:00.000Z", end_time: "2026-07-20T12:00:00.000Z", all_day: false },
+    ],
+    chatEvents: Array.from({ length: 4 }, (_, index) => ({
+      timestamp_start: `2026-07-20T${String(13 + index).padStart(2, "0")}:00:00.000Z`,
+      timestamp_end: `2026-07-20T${String(13 + index).padStart(2, "0")}:05:00.000Z`,
+      source_type: "chat" as const,
+      metadata: { directed_trigger: index < 3 ? "true" : "false" },
+    })),
+    workBlocks: [],
+    timeZone: "UTC",
+  });
+
+  assert.equal(evidence[0]?.insight, "blended-pressure");
+  assert.equal(evidence[0]?.directedChatCount, 3);
+  assert.equal(evidence.length, 1);
+});
+
+test("Team calendar opens on today's evidence, then falls back to the nearest useful day", () => {
+  const evidence = [
+    { dateId: "2026-07-18" },
+    { dateId: "2026-07-20" },
+    { dateId: "2026-07-22" },
+  ];
+
+  assert.equal(defaultTeamCalendarEvidenceDate(evidence, "2026-07-20T16:00:00.000Z", "UTC"), "2026-07-20");
+  assert.equal(defaultTeamCalendarEvidenceDate(evidence, "2026-07-21T16:00:00.000Z", "UTC"), "2026-07-20");
+  assert.equal(defaultTeamCalendarEvidenceDate([{ dateId: "2026-07-22" }], "2026-07-21T16:00:00.000Z", "UTC"), "2026-07-22");
+  assert.equal(defaultTeamCalendarEvidenceDate([], "2026-07-21T16:00:00.000Z", "UTC"), null);
 });
 
 test("Team calendar forecast uses team weekly medians and withholds low-coverage predictions", () => {

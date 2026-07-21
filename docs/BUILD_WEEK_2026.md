@@ -923,6 +923,19 @@ The hackathon-readiness and provenance task is supplemental evidence:
   inference tests and sixteen Desktop/Web Team contract tests pass, along with
   both production builds. Live authenticated visual proof remains a separate
   surface and is not claimed by these repository checks.
+  A July 21 evidence-layer upgrade adds a private daily projection of the
+  signed-in Mac user's connected Calendar counts/unioned minutes, content-free
+  observed Chat episodes, directed triggers, and reviewed-block counts. The
+  visual calendar now combines those fact markers with approved weekly cards,
+  an aligned weekly evidence weave, and the existing team workload runway; its
+  inspector keeps observed facts separate from deterministic pressure labels.
+  No title, person, message content, provider identifier, or conversation key
+  enters the projection or Team sync, and Email remains honestly unavailable
+  until a real metadata-only connector exists. The synthetic demo can now open
+  the Team destination with an invented roster and network-disabled evidence so
+  judges can inspect the experience without a live account. Focused red-first
+  inference tests and the authoritative root build pass; rendered month,
+  quarter, light/dark, inspector, and 1024x720 checks use synthetic data only.
 
 - **July 20 capacity drill-in parity:** The desktop sidebar's Reliable capacity
   card is now keyboard- and pointer-actionable in both workspace modes. The

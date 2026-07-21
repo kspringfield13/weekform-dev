@@ -90,6 +90,46 @@ export interface TeamTimelineCapacityForecast {
   latestWeekId: string | null;
 }
 
+export type TeamCalendarEvidenceInsight =
+  | "blended-pressure"
+  | "meeting-dense"
+  | "communication-burst"
+  | null;
+
+/**
+ * Local-only, display-safe facts for one calendar day. These values are counts
+ * and unioned minutes; they deliberately cannot carry event titles, people,
+ * message content, provider ids, or opaque conversation identifiers.
+ */
+export interface TeamCalendarEvidenceDay {
+  dateId: string;
+  calendarEventCount: number;
+  calendarMinutes: number;
+  chatEpisodeCount: number;
+  directedChatCount: number;
+  reviewedBlockCount: number;
+  insight: TeamCalendarEvidenceInsight;
+}
+
+interface TeamCalendarEvidenceInput {
+  calendarEvents: Array<{
+    start_time: string;
+    end_time: string;
+    all_day?: boolean;
+  }>;
+  chatEvents: Array<{
+    timestamp_start: string;
+    timestamp_end: string;
+    source_type: string;
+    metadata: Record<string, string | null>;
+  }>;
+  workBlocks: Array<{
+    start_time: string;
+    user_verified: boolean;
+  }>;
+  timeZone?: string;
+}
+
 const ZOOM_WEEK_COUNTS: Record<TeamTimelineZoom, number> = {
   week: 1,
   month: 4,
@@ -102,6 +142,138 @@ const FORECAST_WINDOW_WEEKS = 6;
 const MIN_FORECAST_SHARED_COUNT = 2;
 const MIN_FORECAST_SHARED_RATIO = 0.5;
 const STALE_AFTER_MS = 7 * DAY_MS;
+
+function dateIdInTimeZone(value: string, timeZone: string): string | null {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone,
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
+  const year = part("year");
+  const month = part("month");
+  const day = part("day");
+  return year && month && day ? `${year}-${month}-${day}` : null;
+}
+
+/** Pick the most useful evidence day when the calendar opens. */
+export function defaultTeamCalendarEvidenceDate(
+  evidence: ReadonlyArray<{ dateId: string }>,
+  todayIso: string,
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+): string | null {
+  const todayId = dateIdInTimeZone(todayIso, timeZone);
+  if (!todayId) return null;
+  const dates = [...new Set(evidence
+    .map(({ dateId }) => dateId)
+    .filter((dateId) => /^\d{4}-\d{2}-\d{2}$/.test(dateId)))]
+    .sort();
+  if (dates.includes(todayId)) return todayId;
+  const historicalDates = dates.filter((dateId) => dateId < todayId);
+  return historicalDates[historicalDates.length - 1]
+    ?? dates.find((dateId) => dateId > todayId)
+    ?? null;
+}
+
+function unionMinutes(spans: Array<{ start: number; end: number }>): number {
+  const sorted = spans
+    .filter(({ start, end }) => Number.isFinite(start) && Number.isFinite(end) && end > start)
+    .sort((left, right) => left.start - right.start);
+  if (sorted.length === 0) return 0;
+  let total = 0;
+  let cursorStart = sorted[0]?.start ?? 0;
+  let cursorEnd = sorted[0]?.end ?? 0;
+  for (const span of sorted.slice(1)) {
+    if (span.start <= cursorEnd) {
+      cursorEnd = Math.max(cursorEnd, span.end);
+    } else {
+      total += cursorEnd - cursorStart;
+      cursorStart = span.start;
+      cursorEnd = span.end;
+    }
+  }
+  return Math.round((total + cursorEnd - cursorStart) / 60_000);
+}
+
+/**
+ * Blend the current Mac user's already-normalized Calendar and Chat evidence
+ * into daily facts for the Team calendar. The result never enters Team cloud
+ * sharing: it is a private local overlay beside approved team aggregates.
+ */
+export function buildTeamCalendarEvidence({
+  calendarEvents,
+  chatEvents,
+  workBlocks,
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+}: TeamCalendarEvidenceInput): TeamCalendarEvidenceDay[] {
+  const days = new Map<string, {
+    calendarEventCount: number;
+    meetingSpans: Array<{ start: number; end: number }>;
+    chatEpisodeCount: number;
+    directedChatCount: number;
+    reviewedBlockCount: number;
+  }>();
+  const day = (dateId: string) => {
+    const current = days.get(dateId) ?? {
+      calendarEventCount: 0,
+      meetingSpans: [],
+      chatEpisodeCount: 0,
+      directedChatCount: 0,
+      reviewedBlockCount: 0,
+    };
+    days.set(dateId, current);
+    return current;
+  };
+
+  for (const event of calendarEvents) {
+    if (event.all_day) continue;
+    const dateId = dateIdInTimeZone(event.start_time, timeZone);
+    const start = Date.parse(event.start_time);
+    const end = Date.parse(event.end_time);
+    if (!dateId || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) continue;
+    const current = day(dateId);
+    current.calendarEventCount += 1;
+    current.meetingSpans.push({ start, end });
+  }
+
+  for (const event of chatEvents) {
+    if (event.source_type !== "chat") continue;
+    const dateId = dateIdInTimeZone(event.timestamp_start, timeZone);
+    if (!dateId) continue;
+    const current = day(dateId);
+    current.chatEpisodeCount += 1;
+    if (event.metadata.directed_trigger === "true") current.directedChatCount += 1;
+  }
+
+  for (const block of workBlocks) {
+    if (!block.user_verified) continue;
+    const dateId = dateIdInTimeZone(block.start_time, timeZone);
+    if (dateId) day(dateId).reviewedBlockCount += 1;
+  }
+
+  return [...days.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([dateId, value]) => {
+    const calendarMinutes = unionMinutes(value.meetingSpans);
+    const insight: TeamCalendarEvidenceInsight = calendarMinutes >= 180 && value.chatEpisodeCount >= 4
+      ? "blended-pressure"
+      : calendarMinutes >= 180 || value.calendarEventCount >= 4
+        ? "meeting-dense"
+        : value.chatEpisodeCount >= 6 || value.directedChatCount >= 3
+          ? "communication-burst"
+          : null;
+    return {
+      dateId,
+      calendarEventCount: value.calendarEventCount,
+      calendarMinutes,
+      chatEpisodeCount: value.chatEpisodeCount,
+      directedChatCount: value.directedChatCount,
+      reviewedBlockCount: value.reviewedBlockCount,
+      insight,
+    };
+  });
+}
 
 function isoDateId(date: Date): string {
   return date.toISOString().slice(0, 10);

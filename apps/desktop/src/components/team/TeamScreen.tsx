@@ -10,11 +10,18 @@ import {
   UserRound,
   Waypoints,
 } from "lucide-react";
-import type { WeeklyCapacitySnapshot } from "../../../../../packages/domain/src/models";
 import type {
+  OutlookCalendarEvent,
+  RawEvent,
+  WeeklyCapacitySnapshot,
+  WorkBlock,
+} from "../../../../../packages/domain/src/models";
+import type {
+  TeamCalendarEvidenceDay,
   TeamTimelineIdentity,
   TeamTimelinePoint,
 } from "../../../../../packages/inference/src/teamTimeline";
+import { buildTeamCalendarEvidence } from "../../../../../packages/inference/src/teamTimeline";
 import type { CloudController } from "../../hooks/useCloudSync";
 import {
   buildManagerRosterMember,
@@ -68,6 +75,11 @@ function reviewCoverage(member: LiveManagerRosterMember): number | null {
 export function TeamScreen({
   cloud,
   snapshot,
+  blocks,
+  calendarEvents,
+  chatEvents,
+  calendarConnected,
+  chatConnected,
   hasWorkBlocks,
   onOpenIndividual,
   onOpenManagerWorkspace,
@@ -75,15 +87,26 @@ export function TeamScreen({
 }: {
   cloud: CloudController;
   snapshot: WeeklyCapacitySnapshot;
+  blocks: WorkBlock[];
+  calendarEvents: OutlookCalendarEvent[];
+  chatEvents: RawEvent[];
+  calendarConnected: boolean;
+  chatConnected: boolean;
   hasWorkBlocks: boolean;
   onOpenIndividual: () => void;
   onOpenManagerWorkspace: () => void;
   onOpenSharingSettings: () => void;
 }) {
-  const membership = resolveTeamWorkspaceMembership(
+  const demoMode = cloud.account.isDemoMode;
+  const membership = useMemo(() => demoMode ? {
+    teamId: "demo-atlas-team",
+    teamName: "Atlas Analytics",
+    role: "manager" as const,
+    sharePolicy: null,
+  } : resolveTeamWorkspaceMembership(
     cloud.account.teams,
     cloud.account.policy.teamId,
-  );
+  ), [cloud.account.policy.teamId, cloud.account.teams, demoMode]);
   const manager = membership?.role === "owner" || membership?.role === "manager";
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -92,9 +115,26 @@ export function TeamScreen({
   const [timelineState, setTimelineState] = useState<LoadState>("idle");
   const [timelineError, setTimelineError] = useState<string | null>(null);
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done">("idle");
+  const localCalendarEvidence = useMemo<TeamCalendarEvidenceDay[]>(() => (
+    buildTeamCalendarEvidence({ calendarEvents, chatEvents, workBlocks: blocks })
+  ), [blocks, calendarEvents, chatEvents]);
 
   useEffect(() => {
     let current = true;
+    if (demoMode) {
+      const now = new Date().toISOString();
+      setManagerData({
+        latestSyncedAt: now,
+        members: [
+          { id: "demo-atlas-team:demo-manager", userId: "demo-manager", teamId: "demo-atlas-team", teamName: "Atlas Analytics", role: "manager", joinedAt: now, displayName: "Morgan Lee", email: "morgan@example.test", isSelf: true, snapshot: { weekId: snapshot.week_id, syncedAt: now, shareLevel: "summary", reliableCapacityPct: snapshot.reliable_new_work_capacity_pct, reactivePct: snapshot.reactive_pct, meetingPct: snapshot.meeting_pct, fragmentedPct: snapshot.fragmented_work_pct, summaryConfidence: snapshot.summary_confidence, reviewedBlocks: blocks.filter((block) => block.user_verified).length, eligibleBlocks: blocks.length } },
+          { id: "demo-atlas-team:demo-member-a", userId: "demo-member-a", teamId: "demo-atlas-team", teamName: "Atlas Analytics", role: "member", joinedAt: now, displayName: "Ari Chen", email: "ari@example.test", isSelf: false, snapshot: { weekId: snapshot.week_id, syncedAt: now, shareLevel: "summary", reliableCapacityPct: 18, reactivePct: 34, meetingPct: 27, fragmentedPct: 24, summaryConfidence: 0.82, reviewedBlocks: 11, eligibleBlocks: 13 } },
+          { id: "demo-atlas-team:demo-member-b", userId: "demo-member-b", teamId: "demo-atlas-team", teamName: "Atlas Analytics", role: "member", joinedAt: now, displayName: "Sam Rivera", email: "sam@example.test", isSelf: false, snapshot: { weekId: snapshot.week_id, syncedAt: now, shareLevel: "summary", reliableCapacityPct: 31, reactivePct: 19, meetingPct: 21, fragmentedPct: 16, summaryConfidence: 0.88, reviewedBlocks: 9, eligibleBlocks: 10 } },
+        ],
+      });
+      setLoadError(null);
+      setLoadState("ready");
+      return () => { current = false; };
+    }
     if (!manager || !membership) {
       setManagerData(null);
       setLoadState("idle");
@@ -132,10 +172,21 @@ export function TeamScreen({
     };
     void load();
     return () => { current = false; };
-  }, [cloud.account.getFreshSession, manager, membership]);
+  }, [blocks, cloud.account.getFreshSession, demoMode, manager, membership, snapshot]);
 
   useEffect(() => {
     let current = true;
+    if (demoMode) {
+      const now = new Date().toISOString();
+      setTimelineSnapshots([
+        { userId: "demo-manager", weekId: snapshot.week_id, syncedAt: now, reliableCapacityPct: snapshot.reliable_new_work_capacity_pct, reactivePct: snapshot.reactive_pct, meetingPct: snapshot.meeting_pct, fragmentedPct: snapshot.fragmented_work_pct, reviewedBlocks: blocks.filter((block) => block.user_verified).length, eligibleBlocks: blocks.length },
+        { userId: "demo-member-a", weekId: snapshot.week_id, syncedAt: now, reliableCapacityPct: 18, reactivePct: 34, meetingPct: 27, fragmentedPct: 24, reviewedBlocks: 11, eligibleBlocks: 13 },
+        { userId: "demo-member-b", weekId: snapshot.week_id, syncedAt: now, reliableCapacityPct: 31, reactivePct: 19, meetingPct: 21, fragmentedPct: 16, reviewedBlocks: 9, eligibleBlocks: 10 },
+      ]);
+      setTimelineError(null);
+      setTimelineState("ready");
+      return () => { current = false; };
+    }
     if (!membership) return () => { current = false; };
     const loadTimeline = async () => {
       const env = getCloudEnv();
@@ -168,7 +219,7 @@ export function TeamScreen({
     };
     void loadTimeline();
     return () => { current = false; };
-  }, [cloud.account.getFreshSession, membership]);
+  }, [blocks, cloud.account.getFreshSession, demoMode, membership, snapshot]);
 
   const managerMembers = useMemo(
     () => (managerData?.members ?? []).map((member) => (
@@ -189,7 +240,7 @@ export function TeamScreen({
     const identityByUser = new Map(
       (managerData?.members ?? []).map((member) => [member.userId, member] as const),
     );
-    const viewerId = cloud.account.account?.userId ?? "";
+    const viewerId = demoMode ? "demo-manager" : cloud.account.account?.userId ?? "";
     return timelineSnapshots
       .filter((point) => manager || point.userId === viewerId)
       .map((point) => {
@@ -203,9 +254,9 @@ export function TeamScreen({
           isSelf,
         };
       });
-  }, [cloud.account.account, manager, managerData, timelineSnapshots]);
+  }, [cloud.account.account, demoMode, manager, managerData, timelineSnapshots]);
   const timelineIdentities = useMemo<TeamTimelineIdentity[]>(() => {
-    const viewerId = cloud.account.account?.userId ?? "";
+    const viewerId = demoMode ? "demo-manager" : cloud.account.account?.userId ?? "";
     if (!manager) {
       return viewerId ? [{
         userId: viewerId,
@@ -220,7 +271,7 @@ export function TeamScreen({
         : (member.displayName || member.email || "Team member"),
       isSelf: member.isSelf,
     }));
-  }, [cloud.account.account, manager, managerData]);
+  }, [cloud.account.account, demoMode, manager, managerData]);
   const timelineAnchorWeek = timelinePoints.reduce(
     (latest, point) => point.weekId > latest ? point.weekId : latest,
     snapshot.week_id,
@@ -406,8 +457,14 @@ export function TeamScreen({
       ) : (
         <TeamGantt
           anchorWeekId={timelineAnchorWeek}
+          evidence={localCalendarEvidence}
           identities={timelineIdentities}
           points={timelinePoints}
+          sourceStatus={{
+            calendar: calendarConnected ? "connected" : calendarEvents.length > 0 ? "imported" : "not-connected",
+            chat: chatConnected ? "connected" : chatEvents.length > 0 ? "imported" : "not-connected",
+            email: "unavailable",
+          }}
           teamRole={manager ? "manager" : "member"}
         />
       )}
