@@ -37,7 +37,6 @@ test("Web Team uses the Desktop Team screen header, evidence, and decision geome
     "team-screen-header",
     "team-screen-actions",
     "team-role-indicator",
-    "team-view-toggle",
     "team-evidence-rail",
     "team-decision-layout",
     "team-decision-card",

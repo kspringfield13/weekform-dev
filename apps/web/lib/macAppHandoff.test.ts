@@ -49,12 +49,28 @@ const personalCloudSource = readFileSync(
   "utf8",
 );
 
-test("all Web Mac links navigate normally to Download without a custom protocol", () => {
+test("Mac acquisition links always navigate normally without attempting a custom-protocol launch", () => {
   assert.equal(existsSync(launcherUrl), true);
   const source = existsSync(launcherUrl) ? readFileSync(launcherUrl, "utf8") : "";
 
+  assert.match(source, /export const WEEKFORM_OPEN_URL = "weekform:\/\/open/);
+  assert.match(source, /openUrl\s*=\s*WEEKFORM_OPEN_URL/);
+  assert.match(source, /attemptAppOpen\s*=\s*false/);
+  assert.match(source, /!attemptAppOpen/);
+  assert.match(source, /!openUrl/);
+  assert.match(source, /window\.addEventListener\("blur"/);
+  assert.match(source, /visibilitychange/);
+  assert.match(source, /window\.location\.assign\(fallbackHref\)/);
   assert.match(source, /href=\{fallbackHref\}/);
-  assert.doesNotMatch(source, /weekform:\/\/|openUrl|attemptAppOpen|window\.location\.assign/);
+  const fallbackDelay = source.match(
+    /DOWNLOAD_FALLBACK_DELAY_MS\s*=\s*([\d_]+)/,
+  );
+  const fallbackDelayValue = fallbackDelay?.[1];
+  assert.ok(fallbackDelayValue, "the not-installed fallback delay must stay explicit");
+  assert.ok(
+    Number(fallbackDelayValue.replaceAll("_", "")) >= 10_000,
+    "Chrome's first-open confirmation needs enough time before download fallback",
+  );
   assert.doesNotMatch(landingSource, /attemptAppOpen=/);
   assert.doesNotMatch(downloadSource, /attemptAppOpen=/);
   assert.doesNotMatch(headerSource, /attemptAppOpen=/);
@@ -146,21 +162,23 @@ test("Individual Today and Week queue a prompt-free authenticated Start Tracking
   );
 });
 
-test("the sidebar mark is a borderless two-times Download link", () => {
+test("the borderless sidebar mark opens the matching current page through an allowlisted native handoff", () => {
+  const handoffSource = readFileSync(new URL("desktopPageHandoff.ts", import.meta.url), "utf8");
   const stylesSource = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 
-  assert.doesNotMatch(individualShellSource, /desktopPageHandoffUrl|attemptAppOpen|openUrl=/);
+  assert.match(individualShellSource, /desktopPageHandoffUrl\(activeRoute, workspaceMode\)/);
   assert.match(
     individualShellSource,
-    /<MacAppLink[\s\S]*?fallbackHref="\/download"[\s\S]*?aria-label="Download Weekform Desktop"/,
+    /<MacAppLink[\s\S]*?attemptAppOpen[\s\S]*?openUrl=\{desktopHandoffUrl\}[\s\S]*?fallbackHref="\/download"[\s\S]*?aria-label="Open current page in Weekform Desktop"/,
   );
   assert.match(individualShellSource, /<WeekformMark className="web-open-desktop-mark"/);
+  assert.match(handoffSource, /source=weekform\.dev&view=large&screen=/);
   assert.match(stylesSource, /\.web-open-desktop-mark\s*\{[^}]*width:\s*22px[^}]*height:\s*18px/s);
   assert.match(stylesSource, /\.web-open-desktop-button\s*\{[^}]*border:\s*0[^}]*background:\s*transparent/s);
   assert.doesNotMatch(stylesSource, /\.web-open-desktop-button:hover\s*\{[^}]*border-color|\.web-open-desktop-button:hover\s*\{[^}]*background:/s);
 });
 
-test("the packaged app may still own deep links without any Web control invoking them", () => {
+test("the packaged app owns the deep links the sidebar handoff invokes", () => {
   assert.match(nativeSource, /fn web_handoff_screen/);
   assert.match(nativeSource, /consume_pending_web_navigation/);
   assert.match(nativeSource, /clear-capacity:web-navigation/);

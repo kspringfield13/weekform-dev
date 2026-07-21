@@ -308,10 +308,13 @@ weaken the official signed/notarized/stapled release gate.
    command queue. It reports confirmed tracking only after a fresh native sample
    is durably journaled, and the Mac acknowledges a start request only after that
    confirmation. Offline users are told to open the Mac app, while accounts
-   without a registered desktop follow the authenticated installer route. Every
-   Web Mac link, including the Weekform mark beside Settings, navigates normally
-   to `/download`; Web never invokes `weekform://` or triggers a browser-owned
-   app-opening confirmation.
+   without a registered desktop follow the authenticated installer route.
+   Acquisition links navigate normally to `/download`. Separately, the explicit
+   Weekform-mark button beside Web Settings may invoke `weekform://` to open the
+   current allowlisted screen in the large Desktop window, falling back to
+   `/download` when the app is absent. That opt-in navigation can show the
+   browser-owned app-opening confirmation and does not carry account, team, or
+   workload data.
    Update `RELEASE_INFO` in `apps/web/lib/download.ts` for every later version.
 
 The Web app validates that proof metadata is complete and well-formed; the

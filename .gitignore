@@ -22,3 +22,6 @@ supabase/.temp/
 
 # Claude Code workspace (local tooling, not project source)
 .claude/
+
+# Playwright MCP session logs
+.playwright-mcp/

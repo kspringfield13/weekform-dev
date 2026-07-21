@@ -1108,6 +1108,16 @@ This task is supporting evidence for the public presentation only. It does not r
   This entry describes the local candidate until deployment is independently
   verified.
 
+- **July 21 sidebar mark Desktop handoff restored:** user verification asked
+  for the bottom-left Weekform mark to open the installed Mac app again rather
+  than navigate to Download. The mark is once more the single explicit
+  **Open current page in Weekform Desktop** control: on macOS it invokes the
+  allowlisted `weekform://open?source=weekform.dev&view=large&screen=…` URL
+  (matching the active route, Team for manager/member workspaces) and falls
+  back to the authenticated Download page when no app answers. Acquisition
+  CTAs and Start Tracking remain prompt-free ordinary navigation; the earlier
+  protocol-prompt removal stays in effect for every other Web control.
+
 - **July 21 integrated calendar and local Web demo:** Codex upgraded the Team
   calendar from a sparse row timeline into a responsive evidence calendar and
   workload runway. Week, month, and quarter ranges now align approved team

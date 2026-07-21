@@ -6865,17 +6865,13 @@ button.web-team-gantt-cell {
   gap: 8px;
 }
 
-.team-role-indicator,
-.team-view-toggle {
+.team-role-indicator {
   display: inline-flex;
   align-items: center;
   min-height: 32px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--surface);
-}
-
-.team-role-indicator {
   gap: 7px;
   padding: 0 10px;
   color: var(--text-muted);
@@ -6883,34 +6879,9 @@ button.web-team-gantt-cell {
   font-weight: 650;
 }
 
-.team-role-indicator svg,
-.team-view-toggle svg {
+.team-role-indicator svg {
   width: 14px;
   height: 14px;
-}
-
-.team-view-toggle {
-  padding: 3px;
-}
-
-.team-view-toggle a,
-.team-view-toggle > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 26px;
-  padding: 0 9px;
-  border: 0;
-  border-radius: 6px;
-  color: var(--text-subtle);
-  background: transparent;
-  font-size: 11px;
-  text-decoration: none;
-}
-
-.team-view-toggle .is-active {
-  color: var(--text);
-  background: var(--surface-muted);
 }
 
 .team-evidence-rail.team-status-rail {

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { LogOut, Mail, ShieldCheck, UserRound, UsersRound, Waypoints } from "lucide-react";
+import { LogOut, Mail, ShieldCheck, UsersRound, Waypoints } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/server";
 import {
@@ -345,14 +345,6 @@ function TeamWorkspaceHeader({
         <div className="team-role-indicator">
           {manager ? <Waypoints aria-hidden="true" /> : <ShieldCheck aria-hidden="true" />}
           <span>{manager ? "Manager · approved summaries" : `${role} · your data only`}</span>
-        </div>
-        <div className="team-view-toggle" aria-label="Weekform workspace mode">
-          <Link href="/app">
-            <UserRound aria-hidden="true" /> Individual
-          </Link>
-          <span className="is-active" aria-current="page">
-            <Waypoints aria-hidden="true" /> {manager ? "Manager" : "Team"}
-          </span>
         </div>
       </div>
     </header>

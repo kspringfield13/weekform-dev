@@ -13,7 +13,7 @@ test("the narrow Individual drawer keeps Settings touch-ready beside its route t
   assert.match(
     globalStyles,
     /@media \(max-width: 820px\)[\s\S]*?\.web-open-desktop-button\s*\{[^}]*width:\s*44px[^}]*min-height:\s*44px[^}]*\}/,
-    "the icon-only Download link must remain a full touch target in the mobile drawer",
+    "the icon-only Desktop handoff must remain a full touch target in the mobile drawer",
   );
   assert.match(
     globalStyles,

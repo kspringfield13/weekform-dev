@@ -21,7 +21,7 @@ function tsxFiles(directory: URL): URL[] {
   });
 }
 
-test("every Web Mac CTA uses the shared prompt-free Download link", () => {
+test("every Web Mac CTA uses the shared prompt-free acquisition or explicit-action link", () => {
   const rawDownloadLinks: string[] = [];
   const launcherFiles: string[] = [];
   const protocolAttemptFiles: string[] = [];
@@ -42,13 +42,16 @@ test("every Web Mac CTA uses the shared prompt-free Download link", () => {
 
   assert.deepEqual(rawDownloadLinks, []);
   assert.ok(launcherFiles.length >= 10, "Mac handoffs across marketing and the Web app must share the launcher");
-  assert.deepEqual(protocolAttemptFiles, [], "no Web control may trigger a custom-protocol prompt");
+  assert.deepEqual(
+    protocolAttemptFiles,
+    ["components/IndividualWorkspaceShell.tsx"],
+    "only the explicit open-current-page Desktop icon may trigger a custom-protocol prompt",
+  );
 });
 
-test("every Mac link always targets the authenticated Download page", () => {
+test("every acquisition link retains the authenticated download page when the app is absent", () => {
   assert.match(launcherSource, /fallbackHref\s*=\s*"\/download"/);
-  assert.doesNotMatch(launcherSource, /weekform:\/\//);
-  assert.doesNotMatch(launcherSource, /openUrl|attemptAppOpen|window\.location\.assign/);
+  assert.match(launcherSource, /!openUrl/);
   assert.match(
     productEntrySource,
     /id:\s*"mac"[\s\S]*?href:\s*"\/download"/,

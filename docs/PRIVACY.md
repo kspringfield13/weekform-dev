@@ -578,13 +578,19 @@ recent successful capture confirmation and its server receipt time. Weekform
 Web cannot launch a quit Mac app, start collection itself, or render a compact
 workspace view.
 
-The Web sidebar includes a Weekform-mark link beside Settings. It is a normal
-link to the authenticated Download page, as are all other Web Mac links. No Web
-control invokes the registered `weekform://` scheme, so navigating weekform.dev
-cannot create a browser-owned “Open Weekform.app?” confirmation. The packaged
-Mac app may retain its registered scheme for non-Web operating-system links;
-that native capability carries no account token, team identifier, activity,
-workload evidence, or page content from Weekform Web.
+The Web sidebar includes a separate, explicitly labeled **Open current page in
+Weekform Desktop** icon beside Settings. On macOS, activating that icon invokes
+the registered `weekform://` scheme, so the browser may display its own
+confirmation before it opens Weekform; when the app is not installed, the icon
+falls back to the authenticated Download page. The URL carries only the fixed
+`weekform.dev` source label, the large-window mode, and one allowlisted
+Weekform screen identifier; it does not carry an account token, team
+identifier, activity, workload evidence, or page content. Desktop validates
+the mode and screen against a static allowlist before showing the window.
+Individual routes map to their matching native screen, while Manager and
+member Team routes map to the native Team workspace. This explicit navigation
+handoff is independent of the prompt-free Start Tracking command and cannot
+start, resume, or pause native collection.
 
 ## Individual Web Ask (weekform.dev, server-side AI)
 
