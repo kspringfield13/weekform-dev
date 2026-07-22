@@ -115,7 +115,7 @@ test("review-safe Summary preserves the Desktop composition as a deterministic r
   assert.match(webSource, /error:\s*string\s*\|\s*null/);
   assert.match(webSource, /role=["']alert["']/);
   assert.match(webSource, /role=["']status["']/);
-  assert.match(webSource, /<MacAppLink\b/);
+  assert.match(webSource, /<WeekformDesktopLink\b/);
   assert.doesNotMatch(webSource, /<textarea\b/);
   assert.doesNotMatch(
     webSource,

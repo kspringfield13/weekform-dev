@@ -17,7 +17,12 @@ import { FormSubmitButton } from "@/components/FormSubmitButton";
 export const metadata: Metadata = { title: "Account" };
 
 interface LoginPageProps {
-  searchParams: Promise<{ error?: string; notice?: string; next?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    notice?: string;
+    next?: string;
+    reason?: string;
+  }>;
 }
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
@@ -81,6 +86,19 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             {params.notice ? (
               <div className="form-notice" role="status">
                 {params.notice}
+              </div>
+            ) : null}
+
+            {params.reason === "account-not-found" ? (
+              <div className="form-alert" role="alert">
+                No account was found for that email.{" "}
+                <Link
+                  href={`/signup?next=${encodeURIComponent(next)}`}
+                  className="text-link"
+                >
+                  Create an account
+                </Link>{" "}
+                to continue.
               </div>
             ) : null}
 

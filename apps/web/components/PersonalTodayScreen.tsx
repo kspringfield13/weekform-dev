@@ -7,7 +7,7 @@ import {
 import type { PersonalReplicaView, ReviewCommandView } from "@/lib/personalReplica";
 import { formatDateTime } from "@/components/WorkloadSnapshot";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
-import { MacAppLink } from "@/components/MacAppLink";
+import { WeekformDesktopLink } from "@/components/MacAppLink";
 import {
   queuePersonalReviewConfirmBatch,
   queuePersonalReviewCommand,
@@ -291,7 +291,7 @@ export function PersonalTodayScreen({
         <div className="panel web-screen-empty web-today-state" role="status">
           <h2>Your review queue is not connected.</h2>
           <p>Turn on Private Web workspace in Weekform for Mac to publish review-safe derived blocks.</p>
-          <MacAppLink className="button button-primary">Get Weekform for Mac</MacAppLink>
+          <WeekformDesktopLink className="button button-primary" />
         </div>
       ) : (
         <>

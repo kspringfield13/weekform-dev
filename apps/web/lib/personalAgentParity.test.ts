@@ -13,7 +13,7 @@ test("Individual Web Agent mirrors the desktop grounded Ask hierarchy", () => {
 
 test("operational Ask uses the authenticated endpoint while consequential actions hand off to Mac", () => {
   assert.match(source, /fetch\("\/api\/personal-agent"/);
-  assert.match(source, /Get Weekform for Mac/);
+  assert.match(source, /<WeekformDesktopLink\b/);
   assert.match(source, /mac_handoff/);
   assert.doesNotMatch(source, /localStorage|sessionStorage|supabase/i);
 });

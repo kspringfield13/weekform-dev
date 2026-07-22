@@ -113,6 +113,6 @@ test("the private workspace preserves the Mac-authoritative approval model", () 
     assert.match(dashboardSource, new RegExp(`data-web-subview=["']${subview}["']`));
   }
 
-  assert.match(dashboardSource, /Get Weekform for Mac/);
+  assert.match(dashboardSource, /<WeekformDesktopLink\b/);
   assert.match(stylesSource, /data-active-subview/);
 });

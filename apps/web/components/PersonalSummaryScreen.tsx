@@ -1,4 +1,4 @@
-import { MacAppLink } from "@/components/MacAppLink";
+import { WeekformDesktopLink } from "@/components/MacAppLink";
 import type { PersonalReplicaView } from "@/lib/personalReplica";
 import { buildPersonalSummaryReadout } from "@/lib/personalSummaryPresentation";
 import styles from "./PersonalWeekIntelligence.module.css";
@@ -78,10 +78,9 @@ export function PersonalSummaryScreen({
             <p>Enable Private Web workspace in Weekform for Mac to connect the derived capacity fields this deterministic view can display.</p>
           </div>
           <div className={`${styles.summaryEmptyActions} empty-state-actions`}>
-            <MacAppLink className={`button button-primary ${styles.summaryHandoff}`}>
-              <span>Get Weekform for Mac</span>
+            <WeekformDesktopLink className={`button button-primary ${styles.summaryHandoff}`}>
               <ArrowUpRightIcon />
-            </MacAppLink>
+            </WeekformDesktopLink>
           </div>
         </div>
       </section>
@@ -106,12 +105,11 @@ export function PersonalSummaryScreen({
               <span>Review-safe fields only</span>
             </div>
             <div className={styles.summaryActions}>
-              <MacAppLink
+              <WeekformDesktopLink
                 className={`button button-secondary ${styles.summaryHandoff}`}
               >
-                <span>Get Weekform for Mac</span>
                 <ArrowUpRightIcon />
-              </MacAppLink>
+              </WeekformDesktopLink>
             </div>
           </div>
         </header>

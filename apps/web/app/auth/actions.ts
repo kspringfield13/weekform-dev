@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { safeNextPath } from "@/lib/safeNextPath";
 import {
   buildEmailCallbackUrl,
+  isMissingMagicLinkAccountError,
   normalizeMagicLinkEmail,
 } from "@/lib/emailAuth";
 import {
@@ -97,6 +98,11 @@ export async function loginWithMagicLink(formData: FormData): Promise<void> {
   });
 
   if (error) {
+    if (isMissingMagicLinkAccountError(error)) {
+      redirect(
+        `/login?reason=account-not-found&next=${encodeURIComponent(next)}`,
+      );
+    }
     redirect(
       `/login?error=${encodeMessage("The sign-in email could not be sent. Try again shortly.")}&next=${encodeURIComponent(next)}`,
     );

@@ -32,7 +32,7 @@ test("every Web Mac CTA uses the shared prompt-free acquisition or explicit-acti
     if (/<Link\s+[^>]*href=["']\/download["']/.test(source)) {
       rawDownloadLinks.push(relativePath);
     }
-    if (relativePath !== "components/MacAppLink.tsx" && /<MacAppLink\b/.test(source)) {
+    if (relativePath !== "components/MacAppLink.tsx" && /<(?:MacAppLink|WeekformDesktopLink)\b/.test(source)) {
       launcherFiles.push(relativePath);
     }
     if (relativePath !== "components/MacAppLink.tsx" && /\battemptAppOpen(?:=|\s|>)/.test(source)) {

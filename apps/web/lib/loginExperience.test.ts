@@ -50,6 +50,16 @@ test("login prioritizes Google and GitHub before Magic Link and password", () =>
   assert.match(loginSource, /name="provider" value="github"/);
 });
 
+test("a missing magic-link account points directly to account creation", () => {
+  assert.match(loginSource, /params\.reason === "account-not-found"/);
+  assert.match(loginSource, /No account was found for that email/);
+  assert.match(
+    loginSource,
+    /href={`\/signup\?next=\$\{encodeURIComponent\(next\)\}`}/,
+  );
+  assert.match(loginSource, />\s*Create an account\s*<\/Link>/);
+});
+
 test("email and password sign-in is an accessible disclosure closed by default", () => {
   assert.match(
     loginSource,

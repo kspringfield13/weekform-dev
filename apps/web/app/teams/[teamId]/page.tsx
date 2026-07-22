@@ -78,7 +78,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
 import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
-import { MacAppLink } from "@/components/MacAppLink";
+import { MacAppLink, WeekformDesktopLink } from "@/components/MacAppLink";
 import { IndividualWorkspaceShell } from "@/components/IndividualWorkspaceShell";
 import { signOut } from "@/app/auth/actions";
 import { leaveTeam, updateTeamSharePolicy } from "@/app/teams/actions";
@@ -991,9 +991,10 @@ async function ManagerView({
             <li><ShieldCheck aria-hidden="true" /> Raw activity, notes, screenshots, and window titles stay unavailable.</li>
           </ul>
           {!ownSnapshot ? (
-            <MacAppLink className="button button-secondary team-open-desktop-action">
-              Get Weekform for Mac to review sharing
-            </MacAppLink>
+            <WeekformDesktopLink
+              className="button button-secondary team-open-desktop-action"
+              aria-label="Weekform Desktop (Mac): review sharing"
+            />
           ) : null}
         </aside>
       </div>

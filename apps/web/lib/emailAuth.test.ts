@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildEmailCallbackUrl,
+  isMissingMagicLinkAccountError,
   normalizeMagicLinkEmail,
 } from "./emailAuth";
 
@@ -10,6 +11,30 @@ test("magic-link email is normalized and blank input is rejected", () => {
   assert.equal(normalizeMagicLinkEmail("  PERSON@Example.COM  "), "person@example.com");
   assert.equal(normalizeMagicLinkEmail("   "), null);
   assert.equal(normalizeMagicLinkEmail(null), null);
+});
+
+test("magic-link sign-in identifies Supabase's missing-account response", () => {
+  assert.equal(
+    isMissingMagicLinkAccountError({
+      code: "otp_disabled",
+      message: "Signups not allowed for otp",
+    }),
+    true,
+  );
+  assert.equal(
+    isMissingMagicLinkAccountError({
+      code: "over_email_send_rate_limit",
+      message: "Email rate limit exceeded",
+    }),
+    false,
+  );
+  assert.equal(
+    isMissingMagicLinkAccountError({
+      code: "otp_disabled",
+      message: "OTP sign-in is disabled",
+    }),
+    false,
+  );
 });
 
 test("magic-link callback returns to the requested same-origin Weekform path", () => {

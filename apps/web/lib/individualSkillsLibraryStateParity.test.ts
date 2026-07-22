@@ -39,7 +39,7 @@ test("Skills reserves the Desktop saved-card footprint without inventing browser
   assert.match(componentSource, /className=\{styles\.boundaryCard\}/);
   assert.match(componentSource, /Not included in replica/);
   assert.match(componentSource, /Recipe content is not uploaded/);
-  assert.match(componentSource, /Get Weekform for Mac/);
+  assert.match(componentSource, /<WeekformDesktopLink\b/);
 
   assert.match(stylesSource, /\.boundaryCard\s*\{[\s\S]*flex-direction:\s*column[\s\S]*border-radius:\s*14px/);
   assert.match(stylesSource, /\.recipeBoundary\s*\{[\s\S]*white-space:\s*pre-wrap/);

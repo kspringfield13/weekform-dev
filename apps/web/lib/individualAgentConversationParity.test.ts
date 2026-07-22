@@ -28,5 +28,5 @@ test("the latest answer offers supported follow-ups while actions remain Mac-onl
   assert.match(source, /What is the safest commitment I can make next\?/);
   assert.match(source, /Mac approval required · no action run/);
   assert.match(source, /turn\.mode === "mac_handoff"/);
-  assert.match(source, /Get Weekform for Mac/);
+  assert.match(source, /<WeekformDesktopLink\b/);
 });

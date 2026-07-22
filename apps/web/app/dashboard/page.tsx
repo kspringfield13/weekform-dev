@@ -18,7 +18,7 @@ import { describeCloudRetention } from "@/lib/retention";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { FormSubmitButton } from "@/components/FormSubmitButton";
-import { MacAppLink } from "@/components/MacAppLink";
+import { MacAppLink, WeekformDesktopLink } from "@/components/MacAppLink";
 import { RequestFreshnessRefresh } from "@/components/RequestFreshnessRefresh";
 import { PersonalReplicaRealtime } from "@/components/PersonalReplicaRealtime";
 import {
@@ -427,7 +427,7 @@ function PersonalCapacityScreen({
           )}
         </div>
       ) : !current ? (
-        <div className="panel web-screen-empty"><h2>No review-safe week is connected</h2><p>Enable Private Web workspace in Weekform for Mac to publish the derived capacity fields this screen can display.</p><MacAppLink className="button button-primary">Get Weekform for Mac</MacAppLink></div>
+        <div className="panel web-screen-empty"><h2>No review-safe week is connected</h2><p>Enable Private Web workspace in Weekform for Mac to publish the derived capacity fields this screen can display.</p><WeekformDesktopLink className="button button-primary" /></div>
       ) : (
         <div className="web-capacity-panel">
           <PersonalWeekOverview replica={current.payload} />

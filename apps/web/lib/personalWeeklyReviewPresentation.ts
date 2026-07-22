@@ -53,7 +53,7 @@ export function buildPersonalWeeklyReviewPresentation(
           ? "ready"
           : "needs_attention",
       count: pendingBlocks,
-      actionLabel: current === null ? "Get Weekform for Mac" : "Open Today",
+      actionLabel: current === null ? "Weekform Desktop (Mac)" : "Open Today",
       target: current === null ? "mac" : "today",
     },
     {
@@ -62,7 +62,7 @@ export function buildPersonalWeeklyReviewPresentation(
       description: "Flagged screenshots, summaries, and local review outcomes stay on your Mac and are never reconstructed from the Web replica.",
       status: "mac_only",
       count: null,
-      actionLabel: "Get Weekform for Mac",
+      actionLabel: "Weekform Desktop (Mac)",
       target: "mac",
     },
     {

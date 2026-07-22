@@ -1,4 +1,4 @@
-import { MacAppLink } from "@/components/MacAppLink";
+import { WeekformDesktopLink } from "@/components/MacAppLink";
 import styles from "./PersonalSensitiveBoundaryScreen.module.css";
 
 function ShieldIcon() {
@@ -46,7 +46,7 @@ export function PersonalSensitiveBoundaryScreen() {
           <p>Open Weekform on this Mac to inspect or remove flagged material. This Web view cannot reveal whether local items exist.</p>
         </div>
         <div className={styles.actions}>
-          <MacAppLink className="button button-primary">Get Weekform for Mac</MacAppLink>
+          <WeekformDesktopLink className="button button-primary" />
         </div>
       </div>
     </section>

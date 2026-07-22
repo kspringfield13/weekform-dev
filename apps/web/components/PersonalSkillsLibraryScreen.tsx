@@ -2,7 +2,7 @@
 
 import type { ReactNode, SVGProps } from "react";
 
-import { MacAppLink } from "@/components/MacAppLink";
+import { WeekformDesktopLink } from "@/components/MacAppLink";
 import styles from "./PersonalSkillsLibraryScreen.module.css";
 
 type SkillsIconName = "library" | "lock";
@@ -112,9 +112,7 @@ export function PersonalSkillsLibraryScreen() {
               <SkillsIcon name="lock" size={13} aria-hidden="true" />
               Copy, export, and remove stay local. This Web view has no workload cache.
             </p>
-            <MacAppLink className="button button-secondary">
-              Get Weekform for Mac
-            </MacAppLink>
+            <WeekformDesktopLink className="button button-secondary" />
           </div>
         </article>
       </section>

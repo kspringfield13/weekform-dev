@@ -24,7 +24,7 @@ test("unavailable Desktop actions become explicit Mac handoffs instead of inert 
   assert.doesNotMatch(componentSource, /<button[\s\S]{0,300}disabled[\s\S]{0,200}Generate Skills/);
   assert.match(componentSource, /Generate Skills on Mac/);
   assert.match(componentSource, /review today on Mac/);
-  assert.match(componentSource, /Get Weekform for Mac/);
+  assert.match(componentSource, /<WeekformDesktopLink\b/);
   assert.doesNotMatch(componentSource, /href="\/download"[^>]*>(?:(?!<\/Link>)[\s\S])*?\b(?:Review|Generate|Finish|Open)\b/i);
   assert.doesNotMatch(componentSource, /Web matches the Desktop workspace/);
 });

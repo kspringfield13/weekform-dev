@@ -120,7 +120,7 @@ test("every Weekly Review Mac target truthfully describes the download acquisiti
     const macTargets = presentation.items.filter((item) => item.target === "mac");
     assert.ok(macTargets.length > 0);
     assert.ok(
-      macTargets.every((item) => item.actionLabel === "Get Weekform for Mac"),
+      macTargets.every((item) => item.actionLabel === "Weekform Desktop (Mac)"),
       "ReviewAction uses the installed-app launcher with a download fallback, so labels remain truthful for both states",
     );
   }

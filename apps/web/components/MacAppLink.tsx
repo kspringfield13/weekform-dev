@@ -2,6 +2,8 @@
 
 import type { AnchorHTMLAttributes, MouseEvent, ReactNode } from "react";
 
+import { WeekformMark } from "@/components/WeekformMark";
+
 export const WEEKFORM_OPEN_URL = "weekform://open?source=weekform.dev";
 // Chrome shows a browser-owned confirmation before opening a custom scheme the
 // first time. Keep the fallback long enough for a person to read and accept it;
@@ -21,6 +23,23 @@ type MacAppLinkProps = Omit<
 function isMacBrowser(): boolean {
   return /Macintosh|Mac OS X/i.test(window.navigator.userAgent)
     || /Mac/i.test(window.navigator.platform);
+}
+
+type WeekformDesktopLinkProps = Omit<MacAppLinkProps, "children"> & {
+  children?: ReactNode;
+};
+
+export function WeekformDesktopLink({
+  children,
+  ...linkProps
+}: WeekformDesktopLinkProps) {
+  return (
+    <MacAppLink {...linkProps}>
+      <WeekformMark className="weekform-desktop-cta-mark" />
+      <span>Weekform Desktop (Mac)</span>
+      {children}
+    </MacAppLink>
+  );
 }
 
 /**

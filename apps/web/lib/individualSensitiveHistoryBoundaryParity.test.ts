@@ -79,7 +79,7 @@ test("the Web Flagged view announces that local-only captures are unavailable he
     /(?:unavailable|cannot|does not|never)[\s\S]{0,120}(?:Web|browser)|(?:Web|browser)[\s\S]{0,120}(?:unavailable|cannot|does not|never)/i,
     "copy must say plainly that Web cannot display or manage flagged local captures",
   );
-  assert.match(historySource, /Get Weekform for Mac/);
+  assert.match(historySource, /<WeekformDesktopLink\b/);
   assert.doesNotMatch(historySource, /localStorage|sessionStorage/);
   assert.match(
     sensitiveBoundarySource,

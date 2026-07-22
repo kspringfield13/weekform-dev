@@ -118,6 +118,6 @@ test("review-safe parity views are mounted distinctly while Mac-only views fail 
     );
   }
 
-  assert.match(dashboardSource, /Mac-only|Get Weekform for Mac/);
+  assert.match(dashboardSource, /Mac-only|WeekformDesktopLink/);
   assert.doesNotMatch(shellSource, /Forecast requires the full local workload model/);
 });

@@ -149,7 +149,7 @@ test("Weekly Review ends with one truthful Mac handoff and no dead completion co
     "Web must not present a disabled Finish control that can never complete the local audit event",
   );
   assert.equal(
-    [...footer.matchAll(/<MacAppLink\b/g)].length,
+    [...footer.matchAll(/<WeekformDesktopLink\b/g)].length,
     1,
     "the terminal action region must contain one honest Mac handoff",
   );

@@ -1,6 +1,6 @@
 import { LockKeyhole, TrendingUp } from "lucide-react";
 
-import { MacAppLink } from "@/components/MacAppLink";
+import { WeekformDesktopLink } from "@/components/MacAppLink";
 import type { PersonalWorkloadReplicaV1 } from "../../../packages/domain/src/personalCloud";
 import {
   buildPersonalForecastPresentation,
@@ -52,7 +52,7 @@ export function PersonalForecastScreen({
             <p>{forecast.explanation}</p>
           </div>
           <div className="empty-state-actions">
-            <MacAppLink className="button button-primary">Get Weekform for Mac</MacAppLink>
+            <WeekformDesktopLink className="button button-primary" />
           </div>
         </section>
       ) : (
@@ -77,7 +77,7 @@ export function PersonalForecastScreen({
                 <strong>AI forecast generation stays on your Mac.</strong>
                 <span>Not included in the review-safe replica · no forecast action has run.</span>
               </div>
-              <MacAppLink className="button button-secondary">Get Weekform for Mac</MacAppLink>
+              <WeekformDesktopLink className="button button-secondary" />
             </div>
 
             <div className="forecast-result">

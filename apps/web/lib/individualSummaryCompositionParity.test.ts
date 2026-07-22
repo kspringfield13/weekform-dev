@@ -30,7 +30,7 @@ test("Individual Web Summary exposes Desktop-shaped evidence and manager panels 
   assert.match(source, /className=\{styles\.signalList\}/);
   assert.match(source, /className=\{styles\.managerToolbar\}/);
   assert.match(source, /Private local draft/);
-  assert.match(source, /Get Weekform for Mac/);
+  assert.match(source, /<WeekformDesktopLink\b/);
   assert.doesNotMatch(source, /fetch\(|createClient\(|localStorage|sessionStorage/);
 });
 

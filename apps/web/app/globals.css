@@ -406,6 +406,12 @@ a {
   padding: 12px 20px;
 }
 
+.weekform-desktop-cta-mark {
+  width: 18px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
 .text-link {
   color: var(--text);
   font-weight: 550;

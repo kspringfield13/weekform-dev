@@ -32,7 +32,7 @@ test("consequential requests use a Mac approval card with no Web execute control
     source,
     /turn\.mode === ["']mac_handoff["'] \? <div className=\{styles\.macActionCard\} role=["']group["'] aria-label=["']Mac approval required["']/,
   );
-  assert.match(source, /className=\{styles\.macActionCard\}[\s\S]{0,1200}<MacAppLink\b/);
+  assert.match(source, /className=\{styles\.macActionCard\}[\s\S]{0,1200}<WeekformDesktopLink\b/);
   assert.match(styles, /\.macActionCard\s*\{/);
   assert.doesNotMatch(source, /(?:execute|confirm|approve)(?:Action|Request)?\s*\(/);
 });

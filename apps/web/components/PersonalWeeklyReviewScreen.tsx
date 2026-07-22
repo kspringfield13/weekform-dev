@@ -1,6 +1,6 @@
 "use client";
 
-import { MacAppLink } from "@/components/MacAppLink";
+import { WeekformDesktopLink } from "@/components/MacAppLink";
 
 import {
   buildPersonalWeeklyReviewPresentation,
@@ -44,13 +44,12 @@ function ReviewAction({ item }: { item: PersonalWeeklyReviewItem }) {
   }
 
   return (
-    <MacAppLink
+    <WeekformDesktopLink
       className="button button-secondary weekly-review-action"
       aria-label={`${item.actionLabel}: ${item.title}`}
     >
-      <span>{item.actionLabel}</span>
       <ArrowIcon />
-    </MacAppLink>
+    </WeekformDesktopLink>
   );
 }
 
@@ -126,12 +125,10 @@ export function PersonalWeeklyReviewScreen({
                 <span>Web cannot record the local completion audit event or mark omitted private checks ready.</span>
               </p>
             </div>
-            <MacAppLink
+            <WeekformDesktopLink
               className="button button-primary weekly-review-finish-action"
               title="Get the Mac app to finish with the local audit trail"
-            >
-              Get Weekform for Mac
-            </MacAppLink>
+            />
           </footer>
         </>
       )}

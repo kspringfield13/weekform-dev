@@ -25,7 +25,7 @@ import { PersonalAIAssistanceSettings } from "./PersonalAIAssistanceSettings";
 import { PersonalAIUsageSettings } from "./PersonalAIUsageSettings";
 import { PersonalNotificationsSettings } from "./PersonalNotificationsSettings";
 import { PersonalSensitiveBoundaryScreen } from "./PersonalSensitiveBoundaryScreen";
-import { MacAppLink } from "./MacAppLink";
+import { WeekformDesktopLink } from "./MacAppLink";
 import styles from "./PersonalHistoryScreen.module.css";
 
 export type HistoryTab = "activity" | "audit";
@@ -58,7 +58,7 @@ function MacBoundary({ children }: { children: ReactNode }) {
     <div className={`panel web-screen-empty ${styles.macBoundary}`}>
       {children}
       <p>Raw activity stays on your Mac. This browser never receives window titles, screenshots, notes, or AI credentials.</p>
-      <MacAppLink className="button button-primary">Get Weekform for Mac</MacAppLink>
+      <WeekformDesktopLink className="button button-primary" />
     </div>
   );
 }
@@ -249,7 +249,7 @@ export function IndividualHistoryView({
           <aside className={styles.flaggedBoundary} aria-label="Flagged captures privacy boundary">
             <div><span className={styles.eyebrow}>Flagged captures</span><strong>Raw visual captures stay on your Mac.</strong></div>
             <p>This view appears in Desktop only when Visual Context finds potentially sensitive material. Web never receives the capture, screenshot, or sensitive summary.</p>
-            <MacAppLink>Get Weekform for Mac</MacAppLink>
+            <WeekformDesktopLink />
           </aside>
         </>
       )}

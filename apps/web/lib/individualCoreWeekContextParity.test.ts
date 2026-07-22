@@ -62,7 +62,7 @@ test("Weekly Review keeps the Desktop's single consequential action slot", () =>
     "utf8",
   );
 
-  assert.match(reviewSource, /Get Weekform for Mac/);
+  assert.match(reviewSource, /<WeekformDesktopLink\b/);
   assert.match(reviewSource, /weekly-review-finish-action/);
   assert.doesNotMatch(reviewSource, /<button[^>]*disabled[^>]*>[\s\S]*?Finish weekly review/);
   assert.doesNotMatch(reviewSource, />\s*Finish weekly review on Mac\s*</);
